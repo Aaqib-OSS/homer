@@ -271,6 +271,7 @@ jobs:
           path: ${{ runner.temp }}/reports
       - run: for f in "$RUNNER_TEMP"/reports/*/reports.tgz; do tar -xzf "$f"; done
       - run: cd tools/quality && npm ci --no-audit --no-fund
+      - run: cd tools/quality && npm test
       - run: node tools/quality/kotlin-warnings.mjs app/build/gradle-check.log
       - run: node tools/quality/architecture-backend.mjs
       - run: node tools/quality/duplication.mjs
