@@ -33,6 +33,12 @@ function proposedCitations(textsByFile, statuses) {
   return found
 }
 
+// The four statuses docs/adr/README.md defines.
+const KNOWN_STATUS = /^(proposed|accepted|deprecated|superseded by ADR-\d{4})$/
+
+const unknownStatuses = (statuses) =>
+  [...statuses].filter(([, status]) => status !== undefined && !KNOWN_STATUS.test(status)).map(([number, status]) => `${number}: ${status}`)
+
 function indexDisagreements(statuses, index) {
   return [...new Set([...statuses.keys(), ...index.keys()])]
     .filter((number) => statuses.get(number) !== index.get(number))
@@ -70,6 +76,12 @@ test('the guards flag a proposed or status-less citation and an index disagreeme
   assert.deepEqual(proposedCitations(texts, statuses), ['ADR-9997 cited from a.kt', 'ADR-9998 cited from a.kt'])
   const index = new Map([['9996', 'accepted'], ['9997', 'accepted'], ['9998', undefined], ['9999', 'deprecated'], ['9995', 'accepted']])
   assert.deepEqual(indexDisagreements(statuses, index), ['9997: front matter proposed, index accepted', '9995: front matter undefined, index accepted'])
+  const vocabulary = new Map([['9993', 'superseded by ADR-0001'], ['9994', 'accpeted'], ['9999', 'deprecated']])
+  assert.deepEqual(unknownStatuses(vocabulary), ['9994: accpeted'])
+})
+
+test('every ADR status is one the ADR README defines', () => {
+  assert.deepEqual(unknownStatuses(adrStatuses()), [])
 })
 
 test('no ADR cited from code or a CLAUDE.md is still proposed', () => {

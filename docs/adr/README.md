@@ -56,7 +56,8 @@ One of:
 5. Open a PR. Before it merges, set `status: accepted` in the front matter and the index: the
    merge is the acceptance, and nothing flips the status afterwards. A `site/` test fails while
    an ADR that code, a workflow or a `CLAUDE.md` cites still reads `proposed`, or while the
-   index and the front matter disagree.
+   index and the front matter disagree. It also fails on a cited ADR with no parsable status, and
+   on any status outside the four above.
 
 ## Index
 
