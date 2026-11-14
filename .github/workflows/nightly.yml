@@ -1,9 +1,10 @@
-# Daily: dependency-check. Weekly (Sunday): the full mutation runs, every backend mutant sharded per
-# package, one job per package to stay under the 6-hour job limit (tools/quality/pit-full.mjs), and
-# every console mutant. By hand with workflow_dispatch: dependency-check, plus each full mutation
-# run whose input is set. The schedules skip everything in a private copy of the repository, whose
-# Actions minutes go to per-commit CI. Each mutation report writes its score and undetected (survived
-# or uncovered) mutants to the run's job summary (tools/quality/step-summary.mjs).
+# Daily: dependency-check and the image scan. Weekly (Sunday): the full mutation runs, every backend
+# mutant sharded per package, one job per package to stay under the 6-hour job limit
+# (tools/quality/pit-full.mjs), and every console mutant. By hand with workflow_dispatch:
+# dependency-check and the image scan, plus each full mutation run whose input is set. The schedules
+# skip everything in a private copy of the repository, whose Actions minutes go to per-commit CI.
+# Each mutation report writes its score and undetected (survived or uncovered) mutants to the run's
+# job summary (tools/quality/step-summary.mjs).
 name: Nightly
 
 on:
@@ -65,6 +66,75 @@ jobs:
           path: |
             app/app/build/reports/dependency-check/dependency-check-report.html
             app/homer-runner/build/reports/dependency-check/dependency-check-report.html
+          retention-days: 7
+
+  # grype over the images a release publishes, built here from the checkout (linux/amd64): OS
+  # packages, the JRE, the jars, the Python tree and the global npm tree. homer-app's slim variant is
+  # not scanned on its own: homer-app is built from it, so it holds everything the slim image does.
+  # Fails on a High or Critical vulnerability that has a fixed version, the kind a bump can act on;
+  # the job summary counts every finding per severity and lists the High and Critical ones. grype
+  # rather than trivy: syft, from the same project, already makes the release SBOMs (ADR-0086), and
+  # trivy's actions and a trivy release were compromised in March 2026 (GHSA-69fq-xp46-6x23).
+  image-scan:
+    if: github.event_name == 'workflow_dispatch' || (github.event.schedule == '17 2 * * *' && !github.event.repository.private)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Report-first (ADR-0082) while the images' backlog of fixable findings is worked off
+    # (docs/quality-checks.md § Open backlog): a failure warns. Remove once the scan passes.
+    continue-on-error: true
+    env:
+      GRYPE_VERSION: 0.121.3
+      GRYPE_SHA256: e9da18cc1429e786722e32161288103600efffd8e483c90761f90485bd1bec85
+      GRYPE_CHECK_FOR_APP_UPDATE: 'false'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the images
+        run: |
+          docker build -f app/Dockerfile --target runner -t homer-app:scan .
+          docker build -f app/Dockerfile --target homer-runner -t homer-runner:scan .
+          docker build -f console/Dockerfile --target runner -t homer-console:scan console
+      - name: Install grype
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/grype.tar.gz" \
+            "https://github.com/anchore/grype/releases/download/v$GRYPE_VERSION/grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
+          echo "$GRYPE_SHA256  $RUNNER_TEMP/grype.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/grype.tar.gz" -C "$RUNNER_TEMP" grype
+      # Per image: the count per severity, then every High and Critical finding. A scan that fails
+      # leaves no report, so the step fails on it too.
+      - name: Scan
+        run: |
+          mkdir grype
+          "$RUNNER_TEMP/grype" db update
+          status=0
+          for image in homer-app homer-runner homer-console; do
+            report="grype/$image.json"
+            "$RUNNER_TEMP/grype" "docker:$image:scan" -o json --file "$report" || { status=1; continue; }
+            fixable=$(jq '[.matches[] | select(.vulnerability.severity == ("Critical", "High") and .vulnerability.fix.state == "fixed")] | length' "$report")
+            [ "$fixable" -eq 0 ] || status=1
+            {
+              echo "### $image: $fixable High or Critical with a fix"
+              echo
+              echo '| Severity | Findings | With a fix |'
+              echo '| --- | --- | --- |'
+              jq -r '["Critical", "High", "Medium", "Low", "Negligible", "Unknown"][] as $s
+                | [.matches[] | select(.vulnerability.severity == $s)]
+                | "| \($s) | \(length) | \(map(select(.vulnerability.fix.state == "fixed")) | length) |"' "$report"
+              echo
+              echo '| Package | Version | Type | Vulnerability | Severity | Fixed in |'
+              echo '| --- | --- | --- | --- | --- | --- |'
+              jq -r '.matches[] | select(.vulnerability.severity == ("Critical", "High"))
+                | "| \(.artifact.name) | \(.artifact.version) | \(.artifact.type) | \(.vulnerability.id) | \(.vulnerability.severity) | \(.vulnerability.fix.versions | join(", ")) |"' "$report"
+              echo
+            } >>"$GITHUB_STEP_SUMMARY"
+          done
+          exit "$status"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: image-scan
+          path: grype/
           retention-days: 7
 
   # The backend shards: one per package directory, the matrix of backend-mutation.
