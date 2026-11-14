@@ -100,6 +100,13 @@ object TokenConfigSerializer : YamlContentPolymorphicSerializer<TokenConfig>(Tok
         }
         return super.deserialize(decoder)
     }
+
+    // The base class would look up TokenConfig's class serializer — this object — and recurse (#238).
+    // Always the object form: it carries every field, so a field added later cannot be dropped on encode.
+    override fun serialize(
+        encoder: Encoder,
+        value: TokenConfig,
+    ) = encoder.encodeSerializableValue(FullTokenConfigSerializer, value)
 }
 
 @Serializable
