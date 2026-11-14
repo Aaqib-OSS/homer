@@ -181,9 +181,6 @@ class SchemaEquivalenceTest {
                 // #232: v18 added retained_truncated as INTEGER; Tables.kt's bool() declares BOOLEAN (NUMERIC affinity).
                 "column processes.retained_truncated: fresh affinity=NUMERIC notnull=0 default=null pk=0, " +
                     "upgraded affinity=INTEGER notnull=0 default=null pk=0",
-                // #231: v7 added consumer_agent with DEFAULT ''; Tables.kt declares no default.
-                "column result_tokens.consumer_agent: fresh affinity=TEXT notnull=1 default=null pk=0, " +
-                    "upgraded affinity=TEXT notnull=1 default='' pk=0",
                 // #233: v10 added fire_attempts without the int32 range CHECK Exposed declares for integer().
                 "table continuations check fire_attempts between -2147483648 and 2147483647: fresh present, upgraded absent",
                 // #233: v30 added failure_reason_run_id without the int32 range CHECK Exposed declares for integer().
