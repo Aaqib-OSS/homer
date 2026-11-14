@@ -42,6 +42,8 @@ class SchemaEquivalenceTest {
     fun `the schema-version table in the persistence guide ends at SCHEMA_VERSION`() {
         val guide = repoRoot.resolve("app/app/src/main/kotlin/homer/app/services/persistence/CLAUDE.md").readText()
         val rows = Regex("^\\| (\\d+) \\|", RegexOption.MULTILINE).findAll(guide).map { it.groupValues[1].toInt() }.toList()
+        assertEquals(rows.distinct(), rows, "a version has more than one row")
+        assertEquals(rows.sorted(), rows, "version rows are out of order")
         assertEquals(DatabaseService.SCHEMA_VERSION, rows.last())
     }
 
@@ -208,7 +210,7 @@ class SchemaEquivalenceTest {
     }
 }
 
-/** `processes` as `Tables.kt` declared it at schema v1. */
+/** `processes` as `Tables.kt` declared it at schema v1; keep it agreeing with the raw-SQL v1 seed in `DatabaseMigrationTest`. */
 private object V1Processes : Table("processes") {
     val id = integer("id").autoIncrement()
     val status = varchar("status", 16)
@@ -226,7 +228,7 @@ private object V1Processes : Table("processes") {
     override val primaryKey = PrimaryKey(id)
 }
 
-/** `questions` as `Tables.kt` declared it at schema v1. */
+/** `questions` as `Tables.kt` declared it at schema v1; keep it agreeing with the raw-SQL v1 seed in `DatabaseMigrationTest`. */
 private object V1Questions : Table("questions") {
     val id = varchar("id", 64)
     val processId = integer("process_id")
