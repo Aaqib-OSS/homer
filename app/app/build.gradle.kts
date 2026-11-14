@@ -177,6 +177,7 @@ tasks.test {
             fileTree(repoRoot.resolve(".github/ISSUE_TEMPLATE")),
             repoRoot.resolve(".github/pull_request_template.md"),
             repoRoot.resolve("app/AGENT.md"),
+            repoRoot.resolve("app/SERVER.md"),
             repoRoot.resolve("README.md"),
             repoRoot.resolve("DOCKER.md"),
             repoRoot.resolve("CHANGELOG.md"),

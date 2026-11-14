@@ -34,9 +34,9 @@ import kotlin.test.fail
  * deliberately shows the legacy syntax opts out with
  * `<!-- legacy-syntax-example -->` on the line before its fence.
  *
- * Does NOT catch prose drift (wrong default values in field tables,
- * misdescribed validation semantics, missing rows). Per root §10 those
- * rely on reviewer discipline when changing the model.
+ * Does NOT catch table or prose drift: field-table rows, required flags
+ * and schema-stated defaults are [SchemaDocTableContractTest]'s job;
+ * misdescribed validation semantics rely on review (root §10).
  */
 class AgentMdExamplesTest {
     private val agentMd = File(repoRoot, "app/AGENT.md")
