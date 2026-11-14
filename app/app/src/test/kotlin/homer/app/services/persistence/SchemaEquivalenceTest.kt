@@ -176,19 +176,7 @@ class SchemaEquivalenceTest {
          * Each difference an upgraded database still has, exactly as the test reports it. Exact in
          * both directions: a fix makes its entry fail until it is deleted.
          */
-        val KNOWN_DIFFERENCES: Set<String> =
-            setOf(
-                // #233: v10 added fire_attempts without the int32 range CHECK Exposed declares for integer().
-                "table continuations check fire_attempts between -2147483648 and 2147483647: fresh present, upgraded absent",
-                // #233: v30 added failure_reason_run_id without the int32 range CHECK Exposed declares for integer().
-                "table processes check failure_reason_run_id between -2147483648 and 2147483647: fresh present, upgraded absent",
-                // #233: v19 added parent_process_id without the int32 range CHECK Exposed declares for integer().
-                "table processes check parent_process_id between -2147483648 and 2147483647: fresh present, upgraded absent",
-                // #233: v22 added root_process_id without the int32 range CHECK Exposed declares for integer().
-                "table processes check root_process_id between -2147483648 and 2147483647: fresh present, upgraded absent",
-                // #233: v2 added dispatch_bound without the int32 range CHECK Exposed declares for integer().
-                "table questions check dispatch_bound between -2147483648 and 2147483647: fresh present, upgraded absent",
-            )
+        val KNOWN_DIFFERENCES: Set<String> = emptySet()
 
         /**
          * The databases upgraded: v1, the oldest version `migrate()` upgrades from, and v4, the
