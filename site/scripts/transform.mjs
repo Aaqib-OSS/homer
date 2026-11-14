@@ -2,7 +2,8 @@
 // their pages, images in the repository are served by the site itself (so they show while the
 // repository is private and match the built version), links to anything else point at the file on
 // GitHub, and text that Vue would compile ({{ }}, stray tags such as `!<cmd>` outside code) is
-// kept literal.
+// kept literal. Whether a link resolves on GitHub, anchors included, is md-links.mjs's check over
+// every tracked Markdown file; this file only rewrites published pages and reports their dead links.
 import { posix } from 'node:path'
 
 const HTML_TAGS =
