@@ -53,7 +53,10 @@ One of:
    Consequences may be nested under Decision Outcome or its own top-level
    section.
 4. Add a line to the [Index](#index) below.
-5. Open a PR. Merging the PR is what flips `proposed` → `accepted`.
+5. Open a PR. Before it merges, set `status: accepted` in the front matter and the index: the
+   merge is the acceptance, and nothing flips the status afterwards. A `site/` test fails while
+   an ADR that code, a workflow or a `CLAUDE.md` cites still reads `proposed`, or while the
+   index and the front matter disagree.
 
 ## Index
 
@@ -139,34 +142,34 @@ One of:
 | [0078](0078-runner-jvm-is-non-dumpable.md) | The runner JVM is non-dumpable, and refuses to start when it cannot be | accepted |
 | [0079](0079-llm-steps-escalate-to-another-model-on-a-bad-outcome.md) | LLM steps escalate to another model on a bad outcome | accepted |
 | [0080](0080-manual-cron-fire-endpoint.md) | The manual cron-fire endpoint is admin-only, body-less and silent about refusals | accepted |
-| [0081](0081-crap-score-gate.md) | A CRAP score report for the backend and the console, gated as a warning first | proposed |
-| [0082](0082-quality-reports-report-first.md) | Quality checks are reported first and made required one by one | proposed |
-| [0083](0083-backend-layers-through-ports-and-packages.md) | Backend layers are enforced through kernel types, ports and one package per layer | proposed |
-| [0084](0084-github-actions-ci-on-hosted-runners.md) | GitHub Actions CI on GitHub-hosted runners, without Artifactory | proposed |
-| [0085](0085-one-way-github-mirror-during-migration.md) | A one-way GitHub mirror from a single initial commit during the migration | proposed |
-| [0086](0086-sign-and-attest-release-images.md) | Sign release images with cosign and attest their SBOM and provenance | proposed |
-| [0087](0087-versioned-documentation-site.md) | A versioned documentation site generated from the repository's Markdown | proposed |
-| [0088](0088-dependency-check-on-the-nvd-mirror.md) | Check runtime dependencies against the dependency-check project's NVD mirror | proposed |
-| [0089](0089-settle-llm-cost-in-the-background.md) | Settle an LLM step's session cost in the background | proposed |
-| [0090](0090-accepted-issue-pull-request-gate.md) | A pull request merges only for an issue a maintainer accepted | proposed |
-| [0091](0091-ai-review-of-github-pull-requests.md) | The AI review of GitHub pull requests, gated before any model runs | proposed |
-| [0092](0092-maintenance-mode-queues-starts-and-skips-cron.md) | Maintenance mode queues new starts and skips cron, above the claim queue | proposed |
-| [0093](0093-the-default-compose-stack-runs-published-images.md) | The default compose stack runs published release images | proposed |
-| [0094](0094-slim-server-image-for-pull-runner-deployments.md) | A slim server image for deployments whose agents run on pull runners | proposed |
-| [0095](0095-local-runner-can-be-turned-off.md) | The built-in local runner can be turned off | proposed |
-| [0096](0096-unhealthy-runners-stop-claiming-and-idle-consumers-take-turns.md) | Unhealthy runners stop claiming, and idle consumers take turns | proposed |
-| [0097](0097-per-run-inbox.md) | A per-run inbox carries operator messages to a running run | proposed |
-| [0098](0098-pre-start-failure-reason-is-a-fixed-vocabulary.md) | The stored pre-start failure reason is a fixed-vocabulary sentence | proposed |
-| [0099](0099-runner-affinity-prefers-the-instance-holding-the-flows-caches.md) | `runnerAffinity` prefers the instance that served the flow's earlier runs | proposed |
-| [0100](0100-kubernetes-job-workload-and-pod-run-limit.md) | The Kubernetes runner can run a session in a one-pod Job, and its run limit is on the pod | proposed |
-| [0101](0101-continuation-inherits-origin-run-inputs.md) | A continuation can inherit the registering run's inputs | proposed |
-| [0102](0102-shutdown-drain-waits-for-descendant-runs.md) | The shutdown drain re-reads the run jobs it joins, admits the runs they start, and stops the consumers last | proposed |
-| [0103](0103-a-lost-exec-channel-kills-and-fails-without-reattach.md) | A lost exec channel kills the leftover command and fails the step — there is no reattach | proposed |
-| [0104](0104-lock-before-slot-admission-order.md) | A run takes its lock before its parallel-run slot, and the lock-wait queue is bounded | proposed |
-| [0105](0105-langgraph-fanout-retries-are-client-side.md) | Fan-out retries are a client-side graph capability with replay-derived attempt counts | proposed |
-| [0106](0106-cooldown-key-scopes-windows-per-subject.md) | `cooldown.key` counts the cooldown windows per rendered subject | proposed |
-| [0107](0107-agent-status-hooks.md) | Agent-declared status hooks fire a target agent on every run status | proposed |
-| [0108](0108-graceful-stop-of-a-run.md) | A run can be stopped gracefully — opt-in, SIGINT before SIGKILL, and `FAILED` plus a `stop` record | proposed |
-| [0109](0109-grouped-ask-and-dispatch.md) | Grouped ask-and-dispatch — N questions, one fire | proposed |
-| [0110](0110-run-identity-for-egress-proxies.md) | Homer tells an egress proxy which run holds a callback token; the egress policy stays with the proxy | proposed |
-| [0111](0111-read-grant-on-star-reads-runner-state.md) | A `read` grant on `*` reads the server-wide runner state, with operator naming withheld | proposed |
+| [0081](0081-crap-score-gate.md) | A CRAP score report for the backend and the console, gated as a warning first | accepted |
+| [0082](0082-quality-reports-report-first.md) | Quality checks are reported first and made required one by one | accepted |
+| [0083](0083-backend-layers-through-ports-and-packages.md) | Backend layers are enforced through kernel types, ports and one package per layer | accepted |
+| [0084](0084-github-actions-ci-on-hosted-runners.md) | GitHub Actions CI on GitHub-hosted runners, without Artifactory | accepted |
+| [0085](0085-one-way-github-mirror-during-migration.md) | A one-way GitHub mirror from a single initial commit during the migration | deprecated |
+| [0086](0086-sign-and-attest-release-images.md) | Sign release images with cosign and attest their SBOM and provenance | accepted |
+| [0087](0087-versioned-documentation-site.md) | A versioned documentation site generated from the repository's Markdown | accepted |
+| [0088](0088-dependency-check-on-the-nvd-mirror.md) | Check runtime dependencies against the dependency-check project's NVD mirror | accepted |
+| [0089](0089-settle-llm-cost-in-the-background.md) | Settle an LLM step's session cost in the background | accepted |
+| [0090](0090-accepted-issue-pull-request-gate.md) | A pull request merges only for an issue a maintainer accepted | accepted |
+| [0091](0091-ai-review-of-github-pull-requests.md) | The AI review of GitHub pull requests, gated before any model runs | accepted |
+| [0092](0092-maintenance-mode-queues-starts-and-skips-cron.md) | Maintenance mode queues new starts and skips cron, above the claim queue | accepted |
+| [0093](0093-the-default-compose-stack-runs-published-images.md) | The default compose stack runs published release images | accepted |
+| [0094](0094-slim-server-image-for-pull-runner-deployments.md) | A slim server image for deployments whose agents run on pull runners | accepted |
+| [0095](0095-local-runner-can-be-turned-off.md) | The built-in local runner can be turned off | accepted |
+| [0096](0096-unhealthy-runners-stop-claiming-and-idle-consumers-take-turns.md) | Unhealthy runners stop claiming, and idle consumers take turns | accepted |
+| [0097](0097-per-run-inbox.md) | A per-run inbox carries operator messages to a running run | accepted |
+| [0098](0098-pre-start-failure-reason-is-a-fixed-vocabulary.md) | The stored pre-start failure reason is a fixed-vocabulary sentence | accepted |
+| [0099](0099-runner-affinity-prefers-the-instance-holding-the-flows-caches.md) | `runnerAffinity` prefers the instance that served the flow's earlier runs | accepted |
+| [0100](0100-kubernetes-job-workload-and-pod-run-limit.md) | The Kubernetes runner can run a session in a one-pod Job, and its run limit is on the pod | accepted |
+| [0101](0101-continuation-inherits-origin-run-inputs.md) | A continuation can inherit the registering run's inputs | accepted |
+| [0102](0102-shutdown-drain-waits-for-descendant-runs.md) | The shutdown drain re-reads the run jobs it joins, admits the runs they start, and stops the consumers last | accepted |
+| [0103](0103-a-lost-exec-channel-kills-and-fails-without-reattach.md) | A lost exec channel kills the leftover command and fails the step — there is no reattach | accepted |
+| [0104](0104-lock-before-slot-admission-order.md) | A run takes its lock before its parallel-run slot, and the lock-wait queue is bounded | accepted |
+| [0105](0105-langgraph-fanout-retries-are-client-side.md) | Fan-out retries are a client-side graph capability with replay-derived attempt counts | accepted |
+| [0106](0106-cooldown-key-scopes-windows-per-subject.md) | `cooldown.key` counts the cooldown windows per rendered subject | accepted |
+| [0107](0107-agent-status-hooks.md) | Agent-declared status hooks fire a target agent on every run status | accepted |
+| [0108](0108-graceful-stop-of-a-run.md) | A run can be stopped gracefully — opt-in, SIGINT before SIGKILL, and `FAILED` plus a `stop` record | accepted |
+| [0109](0109-grouped-ask-and-dispatch.md) | Grouped ask-and-dispatch — N questions, one fire | accepted |
+| [0110](0110-run-identity-for-egress-proxies.md) | Homer tells an egress proxy which run holds a callback token; the egress policy stays with the proxy | accepted |
+| [0111](0111-read-grant-on-star-reads-runner-state.md) | A `read` grant on `*` reads the server-wide runner state, with operator naming withheld | accepted |

@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-11-13
 deciders: Lukáš Vlk
 consulted: ADR-0037, ADR-0047, ADR-0077, ADR-0092

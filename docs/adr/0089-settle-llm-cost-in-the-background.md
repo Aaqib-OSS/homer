@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-16
 deciders: Tomáš Hrstka
 consulted: ADR-0047, ADR-0061, ADR-0074, ADR-0083

@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: deprecated
 date: 2026-10-14
 deciders: Lukáš Vlk
 consulted: ADR-0084
