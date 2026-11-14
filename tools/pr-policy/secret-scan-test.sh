@@ -97,6 +97,48 @@ git add fixture.txt
 git commit -qm fixture
 expect pass "a fixture the base's allowlist covers" "$trusted" "$(git rev-parse HEAD)"
 
+# The repository's own .gitleaks.toml: each placeholder entry covers its file and no other.
+git checkout -q -b repo-config "$base"
+cp "$here/../../.gitleaks.toml" .gitleaks.toml
+git add .gitleaks.toml
+git commit -qm repo-config
+repo_config=$(git rev-parse HEAD)
+
+# Commits LINE to PATH on a branch off repo-config and expects WANT from the scan.
+expect_placeholder() {
+  want=$1 path=$2 line=$3
+  git checkout -q -b "placeholder-$(printf '%s' "$path" | tr '/.' '--')" "$repo_config"
+  mkdir -p "$(dirname "$path")"
+  printf '%s\n' "$line" >"$path"
+  git add "$path"
+  git commit -qm "placeholder in $path"
+  expect "$want" "the placeholder line in $path" "$repo_config" "$(git rev-parse HEAD)"
+}
+readme_line='curl -X POST -H "Authorization: Bearer your-token-here" http://localhost:8080/api/v1/agent/x'
+server_line='curl -H "Authorization: Bearer ci-token-value" http://localhost:8080/api/v1/status/all'
+expect_placeholder pass app/README.md "$readme_line"
+expect_placeholder fail docs/readme-copy.md "$readme_line"
+expect_placeholder pass app/SERVER.md "$server_line"
+expect_placeholder fail docs/server-copy.md "$server_line"
+
+# The installer refuses an archive whose SHA-256 differs from the pin, and installs nothing.
+mkdir -p "$scratch/tampered"
+printf '#!/bin/sh\necho tampered\n' >"$scratch/tampered/gitleaks"
+chmod +x "$scratch/tampered/gitleaks"
+tar -czf "$scratch/tampered.tar.gz" -C "$scratch/tampered" gitleaks
+if HOMER_TEST_GITLEAKS_URL="file://$scratch/tampered.tar.gz" "$here/install-gitleaks.sh" "$scratch/refused" >/dev/null 2>&1; then
+  echo "FAIL: the installer accepted a tampered archive"
+  failures=$((failures + 1))
+fi
+if [ -e "$scratch/refused/gitleaks" ] || [ -e "$scratch/refused/gitleaks.tar.gz" ]; then
+  echo "FAIL: the installer left a tampered archive or binary behind"
+  failures=$((failures + 1))
+fi
+if HOMER_TEST_UNAME=Plan9-mips "$here/install-gitleaks.sh" "$scratch/unsupported" >/dev/null 2>&1; then
+  echo "FAIL: the installer accepted a platform with no pinned archive"
+  failures=$((failures + 1))
+fi
+
 if [ "$failures" -gt 0 ]; then
   echo "$failures secret-scan test(s) failed"
   exit 1
