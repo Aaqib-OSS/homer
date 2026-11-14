@@ -116,15 +116,15 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
   | `clients/python/**` | `cd clients/python && .venv/bin/python -m pytest` (venv setup: [`clients/python/homer_langgraph/CLAUDE.md`](clients/python/homer_langgraph/CLAUDE.md)) |
   | `tools/quality/**` | `cd tools/quality && npm ci && npm test` |
   | `site/**`, or a file the site publishes (listed in `site/scripts/sources.mjs`, every ADR) | `cd site && npm ci && npm test && npm run docs:build` (fails on a link to a missing file) |
-  | `app/schemas/**` or `Agent.kt` / `AppConfig.kt` | backend verify (runs `SchemaValidationTest`, `AgentMdExamplesTest`) |
+  | `app/schemas/**`, `app/AGENT.md`, `app/SERVER.md`, or `Agent.kt` / `AppConfig.kt` | backend verify (runs the §10 contract tests) |
   | `.github/ISSUE_TEMPLATE/**` or `.github/pull_request_template.md` | `JAVA_HOME=<path to a JDK 25> app/gradlew -p app :app:test --tests 'homer.app.CommunityTemplatesTest'` (the community-template guard; `node tools/quality/changed.mjs` selects no check for a template-only change) |
 
 - **Before every commit, also re-check §9 doc map.** For each file you
   changed, ask: *"what surface does this affect, and which canonical
   doc(s) describe it?"* Update those docs in the **same** commit. This
   is the cheapest way to stop doc drift: a doc update one PR late is
-  almost never written. Backstop tests cover only schemas and
-  `AGENT.md`; everything else relies on this check.
+  almost never written. Backstop tests cover only the schemas,
+  `AGENT.md` and `SERVER.md` (§10); everything else relies on this check.
 - JAVA_HOME pinning matters — the backend does not build on system Java.
 - **Quality reports** ([`docs/quality-checks.md`](docs/quality-checks.md)
   lists every check). CI job `quality-gate` lists every check's findings
@@ -328,67 +328,58 @@ ADR with a pointer, not in the code.
 
 ## 10. Schema ↔ model ↔ doc sync (the contract-surface instance of §9)
 
-This is §9 applied to the strongest contract surface in the repo:
-the serializable Kotlin models, their JSON schemas, and the reference
-docs that describe them to agent authors. Because these three forms
-of the same contract drift apart easily, the rule is spelled out
-explicitly and backed by automated tests.
+This is §9 applied to the strongest contract surface in the repo: the
+serializable Kotlin models, their hand-written JSON schemas, and the
+reference docs that describe them. Editing `homer.app.models.AppConfig`,
+`Agent`, any `Command` subclass, or a type they reach requires a
+**same-commit** update to:
 
-Editing `homer.app.models.Agent`, any `homer.app.models.Command`
-subclass, `homer.app.models.AppConfig`, or related serializable
-models requires a **same-commit** update to **both**:
+1. The schema — `app/schemas/homer-config.schema.json` for config,
+   `homer-agent.schema.json` for agents and commands.
+2. The field table in the canonical doc per §9 —
+   [`app/SERVER.md`](app/SERVER.md) for config,
+   [`app/AGENT.md`](app/AGENT.md) for agents and commands — column for
+   column: type, required, default, description.
+3. For `AGENT.md`, at least one **YAML example** using the field, its
+   `type`-discriminated **JSON twin** in the `<details>` block, and any
+   "Default workspace" / "Default lock" comment that names it.
+4. The **authoring-plugin copies** under `plugins/homer-authoring/` —
+   generated artifacts: after any edit to `app/AGENT.md` or
+   `app/schemas/*.json`, re-run `app/gradlew -p app :app:syncAuthoringPlugin`
+   in the same commit.
 
-1. The matching file under `app/schemas/` — `homer-agent.schema.json` for
-   `Agent`/`Command` changes; `homer-config.schema.json` for
-   `AppConfig` changes.
-2. The canonical reference doc per §9 —
-   [`app/AGENT.md`](app/AGENT.md) for agent/command changes;
-   [`app/SERVER.md`](app/SERVER.md) for config changes.
+The model is authoritative: a schema may differ from it only by being
+stricter, and only with a reason listed in `ModelSchemaContractTest`.
 
-For `AGENT.md`, specifically update **every** affected surface in the
-same commit:
+Enforced mechanically, all in `:app:test`:
 
-- The Agent Fields / Cmd / Script / Claude / RunAgent / Workspace /
-  LockStrategy / etc. **field table** (column for column: type,
-  required, default, description).
-- At least one **YAML example** showing the new/changed field.
-- The matching **JSON example** inside the `<details>` block (kaml-tag
-  YAML and the `type`-discriminated JSON form are both reference
-  surfaces).
-- The default-value comment in any "Default workspace" / "Default
-  lock" / etc. example block that mentions the field.
+- `ModelSchemaContractTest` — walks the serial descriptors of `AppConfig`
+  and `Agent` (sealed variants included), plus the bearer token's object
+  form `TokenConfigObject` as a root of its own (the walk stops at the
+  content-polymorphic `TokenConfig`), and fails when a schema object's
+  property names or `required` set differ from the model's. Deliberate
+  differences (the schema stricter than the model) are listed with a
+  reason in the test.
+- `SchemaDocTableContractTest` — every schema property has a row in its
+  mapped `SERVER.md` / `AGENT.md` field table, with the same required
+  flag and, where the schema states a `default`, the same default; a row
+  naming no property fails. An object documented in prose instead is
+  listed with a reason, and its properties must appear in the doc's code.
+  A new schema object fails until it is mapped or listed.
+- `SchemaValidationTest` — the schemas validate `example/config/*` and
+  `example/agents/*`.
+- `AgentMdExamplesTest` / `ServerMdExamplesTest` — every complete agent /
+  config block (YAML and JSON) in `AGENT.md` / `SERVER.md` parses with the
+  model and validates against its schema.
+- `AuthoringPluginBundleTest` — each bundled plugin copy is
+  byte-identical to its `app/...` source.
 
-The distributed authoring plugin under `plugins/homer-authoring/` is a
-**fourth, derived form** of this contract: it bundles its own copies of
-`app/AGENT.md` and the `app/schemas/*.json` files so it can ship to external
-users without the repo layout. Those copies are **generated artifacts** — any
-edit to `app/AGENT.md` or `app/schemas/*.json` requires re-running
-`app/gradlew -p app :app:syncAuthoringPlugin` in the **same commit** so the bundled
-copies stay byte-identical.
-
-Three automated backstops fail loudly when this drifts:
-
-- `SchemaValidationTest` — schema validates the on-disk
-  `example/config/*` and `example/agents/*` fixtures.
-- `AgentMdExamplesTest` — every complete-agent YAML/JSON block in
-  `app/AGENT.md` is deserialized via `Agent.serializer()` and
-  validated against `homer-agent.schema.json`. Catches structural
-  drift (e.g. `agents: [...]` list form when the model expects a map,
-  or `resultEnvParam: {…}` object form when it expects an array).
-- `AuthoringPluginBundleTest` — asserts each bundled copy under
-  `plugins/homer-authoring/` is byte-identical to its `app/...` source;
-  fails with "run `app/gradlew -p app :app:syncAuthoringPlugin`" on drift.
-
-Neither backstop catches prose drift — wrong default values in field
-tables, missing rows, misdescribed validation semantics. Those rely
-on the reviewer reading the diff. If you change a field's *default*
-or *required* status without touching its row in the AGENT.md table,
-the test won't notice.
-
-For all other canonical docs in the §9 table (README, SERVER.md,
-CLAUDE.md dev guides, DOCKER.md, ADR set, console docs) there is no
-automated backstop — keeping them in sync is reviewer discipline
-under §5 + §9.
+Still on the reviewer: the Type and Description columns; defaults the
+schema does not state, and whether a schema `default` matches the model's;
+enum values and value constraints (patterns, minimums); validation
+semantics; whether an example shows a new field; and the prose of objects
+documented outside a table. The other canonical docs in §9 have no
+automated backstop.
 
 ## 12. Security by design (binds every other section)
 

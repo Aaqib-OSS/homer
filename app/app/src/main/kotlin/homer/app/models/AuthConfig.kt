@@ -38,7 +38,7 @@ data class TokenConfig(
 }
 
 @Serializable
-private data class TokenConfigObject(
+internal data class TokenConfigObject(
     val token: String,
     val role: String? = null,
     val grants: List<Grant> = emptyList(),
