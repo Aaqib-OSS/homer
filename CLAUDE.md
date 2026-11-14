@@ -354,7 +354,9 @@ stricter, and only with a reason listed in `ModelSchemaContractTest`.
 Enforced mechanically, all in `:app:test`:
 
 - `ModelSchemaContractTest` — walks the serial descriptors of `AppConfig`
-  and `Agent` (sealed variants included) and fails when a schema object's
+  and `Agent` (sealed variants included), plus the bearer token's object
+  form `TokenConfigObject` as a root of its own (the walk stops at the
+  content-polymorphic `TokenConfig`), and fails when a schema object's
   property names or `required` set differ from the model's. Deliberate
   differences (the schema stricter than the model) are listed with a
   reason in the test.

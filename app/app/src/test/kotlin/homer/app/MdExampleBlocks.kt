@@ -57,6 +57,8 @@ internal object MdExampleBlocks {
                 }
             }
         }
+        // An unclosed fence would otherwise drop the doc's last example from validation without a word.
+        check(start < 0) { "unclosed ${lines[start].trim()} fence opened at line ${start + 1}" }
         return blocks
     }
 
