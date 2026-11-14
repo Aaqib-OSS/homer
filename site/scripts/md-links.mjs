@@ -1,7 +1,7 @@
 // Link check over the repository's Markdown as GitHub renders it (GH-226): every relative link
 // must name a file or directory, every #anchor a heading or explicit anchor of its target, and in
 // a CLAUDE.md every backticked repository path must exist. md-links.test.mjs runs it over every
-// tracked *.md. transform.mjs owns the published pages' rewriting for the site and its dead-link
+// tracked *.md outside `site/pages/` (the site build's dead-link check covers those). transform.mjs owns the published pages' rewriting for the site and its dead-link
 // report; its grammar stays its own, since it rewrites lines in place while this one only resolves.
 import { dirname, join, normalize } from 'node:path'
 
@@ -10,7 +10,10 @@ const QUOTE = /^ {0,3}(?:> ?)+/
 const ATX = /^ {0,3}#{1,6}(?:\s+(.*?))?(?:\s+#+)?\s*$/
 const SETEXT = /^ {0,3}(=+|-+)\s*$/
 const NOT_PARAGRAPH = /^\s*$|^ {0,3}(?:#|[-*+] |\d+[.)] |\||<|`{3}|~{3})/
-const REFERENCE = /^ {0,3}\[(?!\^)[^\]]+\]:[ \t]*(<[^>\n]*>|\S+)/gm
+const REFERENCE = /^ {0,3}\[(?!\^)[^\]]+\]:[ \t]*\n?[ \t]*(<[^>\n]*>|\S+)/gm
+// Whitespace inside a link's parentheses: spaces and tabs with at most one line break (CommonMark).
+const GAP = /^[ \t]*(?:\n[ \t]*)?/
+const TITLE_AND_CLOSE = /^(?:(?=[ \t\n])[ \t]*(?:\n[ \t]*)?(?:"[^"]*"|'[^']*'|\([^)]*\)))?[ \t]*(?:\n[ \t]*)?\)/
 const CODE_SPAN = /(`+)(?!`)((?:(?!\n\s*\n)[\s\S])*?[^`])\1(?!`)/g
 const ANCHOR_TAG = /<a\s[^>]*>/gi
 const ANCHOR_ATTR = /\b(?:id|name)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+))/gi
@@ -97,9 +100,11 @@ export function anchors(raw) {
 }
 
 // The destination of an inline link whose `](` ends at [at]: `<...>` (spaces allowed) or a run
-// without spaces whose parentheses balance, followed by an optional title and `)`.
+// without spaces whose parentheses balance, followed by an optional title and `)`. Undefined, so
+// skipped, for an empty destination (`[x]()` names the page itself) and for an unclosed `<`
+// (CommonMark renders that as text, not a link).
 function destination(prose, at) {
-  let i = at
+  let i = at + GAP.exec(prose.slice(at))[0].length
   let target = ''
   if (prose[i] === '<') {
     const close = prose.indexOf('>', i)
@@ -112,8 +117,7 @@ function destination(prose, at) {
       target += prose[i]
     }
   }
-  const rest = /^(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/.exec(prose.slice(i))
-  return rest && target ? target : undefined
+  return TITLE_AND_CLOSE.test(prose.slice(i)) && target ? target : undefined
 }
 
 export function linkTargets(prose) {

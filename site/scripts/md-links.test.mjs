@@ -82,3 +82,35 @@ test('anchors follow GitHub: slugs, repeats, setext, blockquotes and explicit an
   // Fragments are case-sensitive on GitHub.
   assert.deepEqual(check({ 'a.md': '## Intro\n[x](#Intro)' }), ['a.md: no heading for #Intro'])
 })
+
+test('whitespace around a destination, and a reference destination on the next line, are checked', () => {
+  assert.deepEqual(check({ 'a.md': '[x]( gone1.md ) [y](\ngone2.md\n)\n\n[ref]:\n  gone3.md\n\n[z](\n\ngone4.md)' }), [
+    'a.md: link to missing gone1.md',
+    'a.md: link to missing gone2.md',
+    'a.md: link to missing gone3.md',
+  ])
+})
+
+test('empty and unclosed-angle destinations are skipped; angle-bracket references are checked', () => {
+  // `[x]()` names the page itself and `[x](<a.md` is text in CommonMark: neither is a link to check.
+  assert.deepEqual(linkTargets('[x]() [y](<gone.md'), [])
+  assert.deepEqual(check({ 'a.md': '[x]() [y](<gone.md\n\n[ref]: <gone ref.md>' }), ['a.md: link to missing gone ref.md'])
+})
+
+test('front matter, unclosed comments and inline tags are handled as GitHub renders them', () => {
+  assert.deepEqual(check({ 'a.md': '---\ntitle: x\n---\n[dead](gone.md)' }), ['a.md: link to missing gone.md'])
+  const ids = anchors('---\n# not a heading\ntitle: x\n---\n# A <b>bold</b> head\n')
+  assert.ok(!ids.has('not-a-heading') && !ids.has('title-x'))
+  assert.ok(ids.has('a-bold-head'))
+  assert.deepEqual(check({ 'a.md': '[a](gone1.md)\n<!-- never closed\n[b](gone2.md)' }), ['a.md: link to missing gone1.md'])
+})
+
+test('file existence is case-sensitive; an anchor on a non-Markdown target is not checked', () => {
+  assert.deepEqual(check({ 'a.md': '[x](Docs/b.md) [y](img.png#frag)', 'docs/b.md': '', 'img.png': '' }), ['a.md: link to missing Docs/b.md'])
+})
+
+test('a CLAUDE.md may name a module without its extension', () => {
+  const tree = { 'console/lib/instances/store.ts': '' }
+  assert.deepEqual(check({ ...tree, 'console/CLAUDE.md': 'See `lib/instances/store`.' }), [])
+  assert.deepEqual(check({ ...tree, 'console/CLAUDE.md': 'See `lib/instances/nope`.' }), ['console/CLAUDE.md: missing path `lib/instances/nope`'])
+})
