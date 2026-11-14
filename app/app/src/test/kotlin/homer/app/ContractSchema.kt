@@ -15,12 +15,15 @@ internal class ContractSchema(
 ) {
     val root: JsonObject = Json.parseToJsonElement(File(repoRoot, "app/schemas/$fileName").readText()).jsonObject
 
-    /** The node a local `$ref` (`#/$defs/Name`, or any `#/...` pointer) points at. */
+    /** The node a local `$ref` (`#`, `#/$defs/Name`, or any `#/...` pointer) points at. */
     fun resolve(ref: String): JsonObject {
+        if (ref == "#") return root
         require(ref.startsWith("#/")) { "$fileName: only local refs are supported, got $ref" }
-        return ref.removePrefix("#/").split('/').fold(root) { node, key ->
-            node[key] as? JsonObject ?: error("$fileName: $ref does not resolve")
-        }
+        val target =
+            ref.removePrefix("#/").split('/').fold<String, JsonElement?>(root) { node, key ->
+                if (node is JsonArray) node.getOrNull(key.toInt()) else (node as? JsonObject)?.get(key)
+            }
+        return target as? JsonObject ?: error("$fileName: $ref does not resolve")
     }
 
     /**

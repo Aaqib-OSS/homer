@@ -2,15 +2,11 @@ package homer.app
 
 import com.charleskorn.kaml.Yaml
 import com.networknt.schema.InputFormat
-import com.networknt.schema.SchemaRegistry
-import com.networknt.schema.SpecificationVersion
 import homer.app.fixtures.repoRoot
 import homer.app.models.AppConfig
 import homer.app.models.AuthConfig
-import homer.app.models.Grant
-import homer.app.models.TokenConfig
+import homer.app.models.TokenConfigObject
 import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -19,7 +15,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Test
 import java.io.File
-import kotlin.test.assertTrue
+import kotlin.test.assertEquals
 import kotlin.test.fail
 
 /**
@@ -33,20 +29,17 @@ import kotlin.test.fail
  */
 class ServerMdExamplesTest {
     private val serverMd = File(repoRoot, "app/SERVER.md")
-    private val schema =
-        SchemaRegistry
-            .withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
-            .getSchema(File(repoRoot, "app/schemas/homer-config.schema.json").readText())
-    private val encoder =
-        Json {
-            encodeDefaults = true
-            explicitNulls = false
-        }
+    private val schema = MdExampleBlocks.schema("homer-config.schema.json")
+    private val encoder = MdExampleBlocks.encoder
 
     @Test
     fun `every complete config block in SERVER md deserializes and validates against schema`() {
-        val blocks = completeConfigBlocks(serverMd.readText())
-        assertTrue(blocks.size >= 2, "Expected complete config blocks in SERVER.md, found ${blocks.size} — extractor regression?")
+        val blocks = MdExampleBlocks.blocksSetting(serverMd.readText(), requiredKeys)
+        assertEquals(
+            COMPLETE_BLOCKS,
+            blocks.size,
+            "Complete config blocks in SERVER.md: update COMPLETE_BLOCKS when SERVER.md gains or loses a complete config example",
+        )
         val failures = blocks.mapNotNull(::check)
         if (failures.isNotEmpty()) {
             fail("SERVER.md drift detected (${failures.size} of ${blocks.size} blocks failed):\n\n" + failures.joinToString("\n\n"))
@@ -54,7 +47,7 @@ class ServerMdExamplesTest {
     }
 
     /** The failure for [block], or null when it parses and validates. */
-    private fun check(block: Block): String? {
+    private fun check(block: MdBlock): String? {
         val config =
             try {
                 if (block.lang == "yaml") {
@@ -79,16 +72,16 @@ class ServerMdExamplesTest {
         return JsonObject(json + ("server" to server))
     }
 
-    /**
-     * [TokenConfig]'s serializer cannot encode (kaml's content-polymorphic base looks the class's own
-     * serializer up again and recurses), so bearer tokens are written by hand as their object form.
-     */
+    /** Bearer tokens go through their object form by hand: `TokenConfig`'s own serializer cannot encode (#238). */
     private fun authJson(auth: AuthConfig): JsonElement =
         when (auth) {
             is AuthConfig.Bearer -> {
                 val tokens =
                     auth.tokens.mapValues { (_, t) ->
-                        encoder.encodeToJsonElement(TokenObject.serializer(), TokenObject(t.token, t.role, t.grants))
+                        encoder.encodeToJsonElement(
+                            TokenConfigObject.serializer(),
+                            TokenConfigObject(t.token, t.role, t.grants, t.endpoints),
+                        )
                     }
                 JsonObject(mapOf("type" to JsonPrimitive("bearer"), "tokens" to JsonObject(tokens)))
             }
@@ -102,54 +95,13 @@ class ServerMdExamplesTest {
             }
         }
 
-    @Serializable
-    private data class TokenObject(
-        val token: String,
-        val role: String? = null,
-        val grants: List<Grant> = emptyList(),
-    )
-
-    private data class Block(
-        val lang: String,
-        val content: String,
-        val line: Int,
-    )
-
-    private fun completeConfigBlocks(text: String): List<Block> {
-        val lines = text.lines()
-        val blocks = mutableListOf<Block>()
-        var start = -1
-        lines.forEachIndexed { i, line ->
-            when {
-                start < 0 && (line == "```yaml" || line == "```json") -> {
-                    start = i
-                }
-
-                start >= 0 && line == "```" -> {
-                    blocks += Block(lines[start].removePrefix("```"), lines.subList(start + 1, i).joinToString("\n"), start + 1)
-                    start = -1
-                }
-            }
-        }
-        return blocks.filter { requiredKeys.all(topLevelKeys(it)::contains) }
-    }
-
-    /** Top-level keys: unindented `key:` in YAML; `"key":` at the two-space indent SERVER.md's JSON blocks use. */
-    private fun topLevelKeys(block: Block): Set<String> {
-        val key =
-            if (block.lang ==
-                "yaml"
-            ) {
-                Regex("^([A-Za-z]\\w*):", RegexOption.MULTILINE)
-            } else {
-                Regex("^ {2}\"(\\w+)\"\\s*:", RegexOption.MULTILINE)
-            }
-        return key.findAll(block.content).map { it.groupValues[1] }.toSet()
-    }
-
     @OptIn(ExperimentalSerializationApi::class)
     private val requiredKeys: List<String> =
         AppConfig.serializer().descriptor.let { d ->
             (0 until d.elementsCount).filterNot(d::isElementOptional).map(d::getElementName)
         }
+
+    private companion object {
+        const val COMPLETE_BLOCKS = 8
+    }
 }

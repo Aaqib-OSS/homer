@@ -2,6 +2,7 @@ package homer.app
 
 import homer.app.models.Agent
 import homer.app.models.AppConfig
+import homer.app.models.TokenConfigObject
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.descriptors.PolymorphicKind
 import kotlinx.serialization.descriptors.SerialDescriptor
@@ -21,48 +22,65 @@ import kotlin.test.fail
  * and checks every object it reaches against the schema node that describes it — the same property
  * names, and the same required set (an element with no default is required). A sealed type is
  * matched variant by variant through the schema's `oneOf`, keyed by each variant's `type` const.
- * `@Transient` fields have no descriptor element, so they are never compared.
+ * `@Transient` fields have no descriptor element, so they are never compared. The bearer token's
+ * object form is a root of its own: the walk stops at the content-polymorphic `TokenConfig`.
  */
 class ModelSchemaContractTest {
     @Test
     fun `AppConfig and every type it reaches match homer-config schema`() {
-        assertNoDrift(ContractSchema("homer-config.schema.json"), AppConfig.serializer().descriptor)
+        assertNoDrift(CONFIG)
     }
 
     @Test
     fun `Agent and every type it reaches match homer-agent schema`() {
-        assertNoDrift(ContractSchema("homer-agent.schema.json"), Agent.serializer().descriptor)
+        assertNoDrift(AGENT)
+    }
+
+    @Test
+    fun `the bearer token object form matches its homer-config schema branch`() {
+        assertNoDrift(TOKEN_OBJECT)
     }
 
     @Test
     fun `every exception still matches a difference`() {
-        val keys =
-            ModelSchemaWalker(ContractSchema("homer-config.schema.json")).walk(AppConfig.serializer().descriptor).keys +
-                ModelSchemaWalker(ContractSchema("homer-agent.schema.json")).walk(Agent.serializer().descriptor).keys
-        val stale = EXCEPTIONS.keys - keys
+        val stale = EXCEPTIONS.keys - listOf(CONFIG, AGENT, TOKEN_OBJECT).flatMap { differences(it).keys }.toSet()
         assertTrue(stale.isEmpty(), "Exceptions that no longer match a difference, remove them: $stale")
     }
 
-    private fun assertNoDrift(
-        schema: ContractSchema,
-        descriptor: SerialDescriptor,
-    ) {
-        val problems = ModelSchemaWalker(schema).walk(descriptor).filterKeys { it !in EXCEPTIONS }
+    private fun assertNoDrift(root: Root) {
+        val problems = differences(root).filterKeys { it !in EXCEPTIONS }
         if (problems.isNotEmpty()) {
             fail(
-                "${schema.fileName} drifted from the ${descriptor.simpleName()} model (the model is the truth):\n" +
+                "${root.schemaFile} drifted from the ${root.descriptor.simpleName()} model (the model is the truth):\n" +
                     problems.values.joinToString("\n") { "  - $it" },
             )
         }
     }
 
+    private fun differences(root: Root): Map<String, String> {
+        val schema = ContractSchema(root.schemaFile)
+        return ModelSchemaWalker(schema).walk(root.descriptor, schema.resolve(root.pointer))
+    }
+
+    /** A model type and the schema node, by JSON pointer, that describes it. */
+    private class Root(
+        val schemaFile: String,
+        val descriptor: SerialDescriptor,
+        val pointer: String = "#",
+    )
+
     private companion object {
+        val CONFIG = Root("homer-config.schema.json", AppConfig.serializer().descriptor)
+        val AGENT = Root("homer-agent.schema.json", Agent.serializer().descriptor)
+        val TOKEN_OBJECT = Root("homer-config.schema.json", TokenConfigObject.serializer().descriptor, "#/\$defs/TokenConfig/oneOf/1")
+
         /** Differences the schema keeps on purpose: it is stricter than the descriptor. Key → reason. */
         val EXCEPTIONS =
             mapOf(
                 "AppConfig.server required" to "defaulted, but the default has no apiAuth, which startup rejects (ADR-0036)",
                 "Server.apiAuth required" to "nullable so a missing key reaches the explicit startup error (ADR-0036)",
                 "Workspace.purgeRecordAfter property" to "removed; kept only to fail with a migration hint (ADR-0053)",
+                "TokenConfigObject.endpoints property" to "removed; kept only to fail startup with a migration hint (ADR-0037)",
                 "HmacKeyConfig.endpoints property" to "removed; kept only to fail startup with a migration hint (ADR-0037)",
                 "PasswordUserConfig.endpoints property" to "removed; kept only to fail startup with a migration hint (ADR-0037)",
                 "AuthConfig<combined>.schemes<combined> variant" to "AuthConfig.Combined rejects a nested Combined at load",
@@ -85,8 +103,11 @@ private class ModelSchemaWalker(
     private val problems = linkedMapOf<String, String>()
     private val visited = mutableSetOf<Pair<String, JsonObject>>()
 
-    fun walk(descriptor: SerialDescriptor): Map<String, String> {
-        compare(descriptor, schema.root, descriptor.simpleName(), descriptor.simpleName())
+    fun walk(
+        descriptor: SerialDescriptor,
+        node: JsonObject,
+    ): Map<String, String> {
+        compare(descriptor, node, descriptor.simpleName(), descriptor.simpleName())
         return problems
     }
 
@@ -152,7 +173,8 @@ private class ModelSchemaWalker(
     }
 
     // A sealed descriptor has two elements: the discriminator and a "value" whose elements are the subclasses.
-    // A content-based polymorphic serializer (TokenConfig: scalar or object) has none: recursion stops there.
+    // A content-based polymorphic serializer (TokenConfig: scalar or object) has none: recursion stops there
+    // (its object form is checked as a root of its own).
     private fun compareSealed(
         descriptor: SerialDescriptor,
         node: JsonObject,

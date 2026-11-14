@@ -348,6 +348,9 @@ reference docs that describe them. Editing `homer.app.models.AppConfig`,
    `app/schemas/*.json`, re-run `app/gradlew -p app :app:syncAuthoringPlugin`
    in the same commit.
 
+The model is authoritative: a schema may differ from it only by being
+stricter, and only with a reason listed in `ModelSchemaContractTest`.
+
 Enforced mechanically, all in `:app:test`:
 
 - `ModelSchemaContractTest` — walks the serial descriptors of `AppConfig`
