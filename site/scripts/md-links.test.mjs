@@ -89,6 +89,12 @@ test('whitespace around a destination, and a reference destination on the next l
     'a.md: link to missing gone2.md',
     'a.md: link to missing gone3.md',
   ])
+  // A title on the next line, a line break before `)`, and an angle destination holding a line break
+  // (not a link in CommonMark, so skipped).
+  assert.deepEqual(check({ 'a.md': '[x](\ngone5.md\n"t")\n\n[w](gone6.md "t"\n)\n\n[y](<go\nne.md>)' }), [
+    'a.md: link to missing gone5.md',
+    'a.md: link to missing gone6.md',
+  ])
 })
 
 test('empty and unclosed-angle destinations are skipped; angle-bracket references are checked', () => {
