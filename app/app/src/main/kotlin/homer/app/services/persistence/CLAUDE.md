@@ -124,6 +124,11 @@ per-version steps in [`SchemaMigrations.kt`](SchemaMigrations.kt), and stamps
 `PRAGMA user_version`. One row per version — a new migration adds its step
 there and a row here (SQLite rule 1 in
 [`app/CLAUDE.md`](../../../../../../../../CLAUDE.md) § SQLite rules).
+`SchemaEquivalenceTest` fails when a database the steps upgraded differs from a fresh one
+(columns, indexes, CHECK constraints; drift not yet fixed is listed there) or when this table's
+rows are not unique, ascending and ending at `SCHEMA_VERSION`. It seeds v1 and v4 only, so a table
+created after v4 is built from today's `Tables.kt` on both sides and its drift is not compared;
+for those tables the per-version tests in `DatabaseMigrationTest` remain the guard.
 
 | v | What changed | ADR |
 | --- | --- | --- |
