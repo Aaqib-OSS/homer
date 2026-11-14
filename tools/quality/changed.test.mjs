@@ -324,3 +324,31 @@ test('changedLinesOf covers the whole tree, so a finding outside app/ and consol
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('results gives each selected check its status, and drops a build row that did not run', () => {
+  const finding = { path: 'tools/x.sh', line: 1, message: 'SC2086' };
+  const checks = [
+    { name: 'clean', mode: 'required' },
+    { name: 'strict', mode: 'required' },
+    { name: 'lenient', mode: 'warn' },
+    { name: 'skipped', mode: 'required' },
+  ];
+  const found = new Map([
+    ['clean', []],
+    ['strict', [finding]],
+    ['lenient', [finding]],
+  ]);
+  const rows = results(checks, found, new Map(), new Map());
+  assert.deepEqual(
+    rows.map((r) => [r.name, r.status, r.findings]),
+    [
+      ['clean', 'ok', 0],
+      ['strict', 'failed', 1],
+      ['lenient', 'warning', 1],
+      ['skipped', 'not run', 0],
+    ],
+  );
+
+  const withBuild = results(checks, new Map([...found, ['build', []]]), new Map(), new Map());
+  assert.deepEqual(withBuild[0], { name: 'build', mode: 'required', findings: 0, list: [], status: 'ok', error: undefined, missing: [] });
+});
