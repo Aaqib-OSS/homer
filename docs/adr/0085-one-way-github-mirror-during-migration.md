@@ -7,6 +7,9 @@ consulted: ADR-0084
 
 # ADR-0085: A one-way GitHub mirror from a single initial commit during the migration
 
+> Deprecated on 2026-11-14: development moved to GitHub, so the mirror ended as this ADR
+> planned. No later ADR replaces the decision, which is why it is not `superseded by`.
+
 ## Context and Problem Statement
 
 Homer moves from a private upstream repository to a public GitHub repository
