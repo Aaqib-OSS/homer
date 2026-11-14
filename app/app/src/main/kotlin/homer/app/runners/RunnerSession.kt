@@ -42,7 +42,9 @@ data class RunDeadline(
  *
  * The workspace/transfer methods are mechanism primitives with no-op
  * defaults: a backend whose execution filesystem is the server's own
- * (local) or shared with it (kubernetes PVC) implements nothing. Sync
+ * (local) implements nothing; ssh and external implement createWorkspace,
+ * upload, download and cleanWorkspace, kubernetes all but cleanWorkspace
+ * (its emptyDir dies with the pod, ADR-0043). Sync
  * *policy* — what to transfer and when — belongs to the orchestrator
  * (AgentExecutor), not to sessions. See ADR-0033.
  *
