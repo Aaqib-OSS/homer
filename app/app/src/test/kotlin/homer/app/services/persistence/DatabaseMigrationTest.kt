@@ -2148,6 +2148,60 @@ class DatabaseMigrationTest {
         }
     }
 
+    /** Wraps a writer connection so the statement whose SQL contains [fragment] throws instead of running. */
+    private fun failingOn(fragment: String): (java.sql.Connection) -> java.sql.Connection =
+        { connection ->
+            java.lang.reflect.Proxy.newProxyInstance(
+                javaClass.classLoader,
+                arrayOf(java.sql.Connection::class.java),
+            ) { _, method, args ->
+                val result = delegate(connection, method, args)
+                if (method.name != "createStatement" || result == null) return@newProxyInstance result
+                java.lang.reflect.Proxy.newProxyInstance(
+                    javaClass.classLoader,
+                    arrayOf(java.sql.Statement::class.java),
+                ) { _, statementMethod, statementArgs ->
+                    val sql = statementArgs?.firstOrNull() as? String
+                    if (sql != null && fragment in sql) throw java.sql.SQLException("injected failure: $sql")
+                    delegate(result, statementMethod, statementArgs)
+                }
+            } as java.sql.Connection
+        }
+
+    @Test
+    fun `a v33 rebuild that fails part-way leaves the v32 table untouched`(
+        @TempDir dir: Path,
+    ) = runTest {
+        val dbPath = dir.resolve("v32-failed.db").toString()
+        DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
+            c.createStatement().use { st ->
+                st.execute(v32ResultTokensDdl)
+                st.execute("INSERT INTO result_tokens VALUES ('tok-live', 5, 'cmd_0.out', NULL, 99999, 100, 4000, 'agent-a')")
+                st.execute("PRAGMA user_version = 32")
+            }
+        }
+        val before = DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c -> c.createStatement().use(::resultTokenRows) }
+        // The last statement of the step: the rename, the new table and the copy have all run.
+        val db = DatabaseService(dbPath, logger, wrapWriterConnection = failingOn("DROP TABLE result_tokens_v32"))
+        try {
+            val failure = kotlin.test.assertFails { db.migrate() }
+            assertTrue(
+                generateSequence(failure) { it.cause }.any { "injected failure" in it.message.orEmpty() },
+                "unexpected failure: $failure",
+            )
+        } finally {
+            db.close()
+        }
+        DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
+            c.createStatement().use { st ->
+                assertEquals(32, userVersion(st))
+                assertEquals("''", consumerAgentDefault(st))
+                assertEquals(before, resultTokenRows(st))
+                assertTrue("result_tokens_v32" !in tableNames(st), "the rename must have rolled back")
+            }
+        }
+    }
+
     @Test
     fun `a fresh database has no consumer_agent default and skips the v33 rebuild`(
         @TempDir dir: Path,
@@ -2163,7 +2217,8 @@ class DatabaseMigrationTest {
             c.createStatement().use { st ->
                 assertEquals(33, userVersion(st))
                 assertEquals(null, consumerAgentDefault(st))
-                assertTrue(kotlin.runCatching { insertOmittingConsumerAgent(st) }.isFailure)
+                val failure = kotlin.test.assertFailsWith<java.sql.SQLException> { insertOmittingConsumerAgent(st) }
+                assertTrue("NOT NULL" in failure.message.orEmpty(), "unexpected failure: ${failure.message}")
             }
         }
     }
