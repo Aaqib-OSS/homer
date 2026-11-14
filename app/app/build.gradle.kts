@@ -185,6 +185,8 @@ tasks.test {
             repoRoot.resolve("docs/homer-feature-atlas.html"),
             repoRoot.resolve("rebuild-docker.sh"),
             repoRoot.resolve(".env.example"),
+            // Inside :app, but not compiled into any test input.
+            repoRoot.resolve("app/app/src/main/kotlin/homer/app/services/persistence/CLAUDE.md"),
         ).withPropertyName("guardedRepoFiles")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 

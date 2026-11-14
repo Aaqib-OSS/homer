@@ -124,6 +124,9 @@ per-version steps in [`SchemaMigrations.kt`](SchemaMigrations.kt), and stamps
 `PRAGMA user_version`. One row per version — a new migration adds its step
 there and a row here (SQLite rule 1 in
 [`app/CLAUDE.md`](../../../../../../../../CLAUDE.md) § SQLite rules).
+`SchemaEquivalenceTest` fails when a database the steps upgraded differs from a fresh one
+(columns, indexes, CHECK constraints; drift not yet fixed is listed there) or when this table's
+last row is not `SCHEMA_VERSION`.
 
 | v | What changed | ADR |
 | --- | --- | --- |
