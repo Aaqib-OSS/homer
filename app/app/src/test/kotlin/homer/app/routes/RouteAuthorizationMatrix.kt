@@ -13,15 +13,18 @@ internal const val HIDDEN_AGENT = "secret-agent"
 /**
  * One registered route and the status each denial case must answer (root CLAUDE.md §12 rules 3
  * and 8). The cases, driven by [RouteAuthorizationMatrixTest]:
- * - [noGrant]: the bearer token of an operator principal holding no grant on the seeded agent;
- * - [wrongDomain]: every credential of another domain (callback, runner or operator token);
+ * - [noGrant]: a live credential of the route's own domain that owns none of the seeded resources —
+ *   operator and public routes: the bearer token of a principal holding no grant on the hidden agent;
+ *   callback routes: the callback token of that principal's own run; runner routes: the token of a
+ *   second runner domain, aimed at the first domain's instance;
+ * - [wrongDomain]: every live credential of another domain (callback, runner or operator token);
  * - [none]: no credential at all.
  *
  * A no-grant `404` aimed at a seeded resource must also match, byte for byte, the answer for a
- * resource that does not exist (existence hidden, §12 rule 3).
+ * resource that does not exist (existence hidden, §12 rule 3). See ADR-0112.
  *
  * [sample] is the request target when the route path alone does not reach the check: a `{name}`
- * placeholder is filled from the seeded data (`{processId}` is a run of the hidden agent owned by
+ * placeholder in it or in [body] is filled from the seeded data (`{processId}` is a run of the hidden agent owned by
  * the admin). [listFiltered] marks a list read whose `200` body must not name the hidden agent.
  */
 internal data class RouteAuthz(
@@ -57,13 +60,18 @@ private fun operator(
 private fun callback(
     route: String,
     rule: String,
+    noGrant: Int,
     sample: String? = null,
-) = RouteAuthz(route, CALLBACK, rule, 401, 401, 401, sample)
+    body: String? = null,
+) = RouteAuthz(route, CALLBACK, rule, noGrant, 401, 401, sample, body)
 
 private fun runner(
     route: String,
+    rule: String,
+    noGrant: Int,
     sample: String? = null,
-) = RouteAuthz(route, RUNNER, "runner domain token", 401, 401, 401, sample)
+    body: String? = null,
+) = RouteAuthz(route, RUNNER, rule, noGrant, 401, 401, sample, body)
 
 private fun public(
     route: String,
@@ -76,6 +84,9 @@ private const val VISIBLE = "visible: admin, owner or READ"
 private const val CONTROL = "control: admin, owner or visible + CONTROL"
 private const val ANY_AUTHENTICATED = "any authenticated"
 private const val CALLBACK_TOKEN = "callback token (own run)"
+private const val HOP = "callback token; dispatch hop + dispatch.enabled; 404 like an unknown agent"
+private const val OWN_INSTANCE = "runner domain token; instance of own domain"
+private const val OWN_SESSION = "runner domain token; session of own domain (none seeded: 404 either way)"
 
 /**
  * Every route `configureRouting` mounts with every optional surface on, in registration order. A new
@@ -88,24 +99,44 @@ internal val ROUTE_AUTHZ: List<RouteAuthz> =
         public("POST /api/v1/auth/login", "username + password", 401, body = """{"username":"nobody","password":"wrong"}"""),
         public("POST /api/v1/auth/logout", "none: clears the session cookie", 204),
         operator("GET /api/v1/auth/me", "session cookie only; a bearer token is not read", 401),
-        callback("POST /api/v1/callback/questions", CALLBACK_TOKEN),
-        callback("GET /api/v1/callback/questions/{id}", "callback token; question of own run", "/api/v1/callback/questions/{questionId}"),
-        callback("POST /api/v1/callback/tags", CALLBACK_TOKEN),
-        callback("POST /api/v1/callback/dispatches", "callback token; dispatch hop + dispatch.enabled"),
-        callback("POST /api/v1/callback/dispatch-groups", "callback token; dispatch hop + dispatch.enabled"),
-        callback("POST /api/v1/callback/runs", "callback token; dispatch hop + dispatch.enabled"),
-        callback("POST /api/v1/callback/joins", "callback token; dispatch hop + dispatch.enabled"),
-        callback("GET /api/v1/callback/results/{token}", "callback token + result token for the caller's agent"),
-        callback("POST /api/v1/callback/messages/take", CALLBACK_TOKEN),
-        callback("* /api/v1/callback/whoami", "callback token of a live run; any method"),
-        runner("POST /api/v1/runner/register"),
-        runner("DELETE /api/v1/runner/instances/{id}", "/api/v1/runner/instances/x"),
-        runner("POST /api/v1/runner/instances/{id}/claim", "/api/v1/runner/instances/x/claim"),
-        runner("POST /api/v1/runner/sessions/{sid}/next"),
-        runner("GET /api/v1/runner/sessions/{sid}/ops/{opId}/tar"),
-        runner("POST /api/v1/runner/sessions/{sid}/ops/{opId}/tar"),
-        runner("POST /api/v1/runner/sessions/{sid}/ops/{opId}/output", "/api/v1/runner/sessions/x/ops/x/output?stream=stdout&seq=0"),
-        RouteAuthz("POST /mcp/questions", CALLBACK, CALLBACK_TOKEN, 401, 401, 401, body = MCP_INITIALIZE),
+        callback("POST /api/v1/callback/questions", CALLBACK_TOKEN, 200, body = """{"text":"own?"}"""),
+        callback(
+            "GET /api/v1/callback/questions/{id}",
+            "callback token; question of own run",
+            404,
+            "/api/v1/callback/questions/{questionId}",
+        ),
+        callback("POST /api/v1/callback/tags", "callback token; key declared by own agent", 400, body = """{"tag":"team:x"}"""),
+        callback("POST /api/v1/callback/dispatches", HOP, 404, body = """{"text":"go?","agent":"{agentName}"}"""),
+        callback("POST /api/v1/callback/dispatch-groups", HOP, 404, body = """{"questions":[{"text":"go?"}],"agent":"{agentName}"}"""),
+        callback("POST /api/v1/callback/runs", HOP, 404, body = """{"agent":"{agentName}"}"""),
+        callback(
+            "POST /api/v1/callback/joins",
+            HOP,
+            404,
+            body = """{"subs":[{"agent":"{agentName}","interruptId":"i1"}],"continueAgent":"{agentName}"}""",
+        ),
+        callback(
+            "GET /api/v1/callback/results/{token}",
+            "callback token + result token minted for the caller's agent (403 otherwise, ADR-0025)",
+            403,
+            "/api/v1/callback/results/{resultToken}",
+        ),
+        callback("POST /api/v1/callback/messages/take", CALLBACK_TOKEN, 200),
+        callback("* /api/v1/callback/whoami", "callback token of a live run; any method", 200),
+        runner("POST /api/v1/runner/register", "runner domain token; registers in own domain", 201, body = """{"name":"probe"}"""),
+        runner("DELETE /api/v1/runner/instances/{id}", OWN_INSTANCE, 404, "/api/v1/runner/instances/{instanceId}"),
+        runner("POST /api/v1/runner/instances/{id}/claim", OWN_INSTANCE, 404, "/api/v1/runner/instances/{instanceId}/claim"),
+        runner("POST /api/v1/runner/sessions/{sid}/next", OWN_SESSION, 404),
+        runner("GET /api/v1/runner/sessions/{sid}/ops/{opId}/tar", OWN_SESSION, 404),
+        runner("POST /api/v1/runner/sessions/{sid}/ops/{opId}/tar", OWN_SESSION, 404),
+        runner(
+            "POST /api/v1/runner/sessions/{sid}/ops/{opId}/output",
+            OWN_SESSION,
+            404,
+            "/api/v1/runner/sessions/{sid}/ops/{opId}/output?stream=stdout&seq=0",
+        ),
+        RouteAuthz("POST /mcp/questions", CALLBACK, CALLBACK_TOKEN, 200, 401, 401, body = MCP_INITIALIZE),
         public("GET /mcp/questions", "none: always 405, the endpoint is POST-only", 405),
         public("DELETE /mcp/questions", "none: always 405, the endpoint is POST-only", 405),
         operator("GET /api/v1/heartbeat", ANY_AUTHENTICATED, 200),
@@ -125,7 +156,7 @@ internal val ROUTE_AUTHZ: List<RouteAuthz> =
         operator("POST /api/v1/maintenance", "admin; 404 like an unmounted path", 404, body = """{"enabled":true}"""),
         operator("GET /api/v1/agents", "rows filtered to agents with any grant", 200, listFiltered = true),
         operator("POST /api/v1/agents/reload", "admin", 403),
-        operator("POST /api/v1/agents", "EDIT on the body's name", 403, body = """{"name":"$HIDDEN_AGENT"}"""),
+        operator("POST /api/v1/agents", "EDIT on the body's name", 403, body = """{"name":"{agentName}"}"""),
         operator("GET /api/v1/agents/{agentName}/files", "EDIT on agent", 403),
         operator("GET /api/v1/agents/{agentName}/files/{...}", "EDIT on agent", 403),
         operator("PUT /api/v1/agents/{agentName}/files/{...}", "EDIT on agent", 403, body = """{"content":"x"}"""),
@@ -211,9 +242,23 @@ internal val QUESTIONS_MCP_TOOLS: List<McpToolAuthz> =
     )
 
 /**
- * Denial cases that do not answer as their row expects, keyed `"<route> [<case>]"` (an MCP tool:
- * `"mcp:<tool> [no grant]"` or `"mcp/questions:<tool> [no grant]"`) with a one-line description and a
- * `// TODO-ISSUE` comment naming the issue that fixes it. Exact both ways: a listed gap that no longer
- * reproduces fails the test. Empty: every route and tool denies as designed.
+ * A denial case that does not answer as its row expects: [description] in one line, and [issue], the
+ * open GitHub issue (`#NNN`) tracking the fix. A gap merges only together with that issue (ADR-0112).
  */
-internal val KNOWN_GAPS: Map<String, String> = emptyMap()
+internal data class KnownGap(
+    val description: String,
+    val issue: String,
+) {
+    init {
+        require(ISSUE_REFERENCE.matches(issue)) { "KnownGap.issue must be a GitHub issue reference like #123, got '$issue'" }
+    }
+}
+
+internal val ISSUE_REFERENCE = Regex("""^#\d+$""")
+
+/**
+ * The gaps, keyed `"<route> [<case>]"` (an MCP tool: `"mcp:<tool> [no grant]"` or
+ * `"mcp/questions:<tool> [no grant]"`). Exact both ways: a listed gap that no longer reproduces fails
+ * the test. Empty: every route and tool denies as designed.
+ */
+internal val KNOWN_GAPS: Map<String, KnownGap> = emptyMap()

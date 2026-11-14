@@ -15,10 +15,13 @@ import homer.app.models.RateLimitConfig
 import homer.app.models.RunnerConfig
 import homer.app.models.Server
 import homer.app.models.TokenConfig
+import homer.app.runners.RunnerRegistry
+import homer.app.runners.external.RegisterInstanceRequest
 import homer.app.services.ContinuationService
 import homer.app.services.DispatchService
 import homer.app.services.ProcessManager
 import homer.app.services.QuestionsService
+import homer.app.services.ResultTokenService
 import io.ktor.client.request.header
 import io.ktor.client.request.prepareRequest
 import io.ktor.client.request.setBody
@@ -46,15 +49,17 @@ import org.junit.jupiter.api.io.TempDir
 import org.koin.ktor.ext.get
 import java.io.File
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
  * The runtime counterpart of the architecture module's static `RouteAuthorizationTest`: boots the
- * real server module with every optional surface on (bearer + session auth, MCP, an external runner
- * domain), enumerates every registered route, requires each to have a row in [ROUTE_AUTHZ], and
- * drives every row's denial cases against seeded data the no-grant principal cannot see (root
+ * real server module with every optional surface on (bearer + session auth, MCP, two external runner
+ * domains), enumerates every registered route, requires each to have a row in [ROUTE_AUTHZ], and
+ * drives every row's denial cases against seeded data the no-grant credentials do not own (root
  * CLAUDE.md §12 rules 3 and 8). The MCP tool sets are held to [OPERATOR_MCP_TOOLS] and
- * [QUESTIONS_MCP_TOOLS] the same way. Divergences live in [KNOWN_GAPS].
+ * [QUESTIONS_MCP_TOOLS] the same way. Divergences live in [KNOWN_GAPS], each of which merges only
+ * with an open GitHub issue tracking its fix. See ADR-0112.
  */
 @ExtendWith(ResetDrainingExtension::class)
 class RouteAuthorizationMatrixTest {
@@ -80,6 +85,8 @@ class RouteAuthorizationMatrixTest {
         val questionId: String,
         val dispatchId: Int,
         val continuationId: Int,
+        val resultToken: String,
+        val instanceId: String,
         val hiddenRunToken: String,
         val noGrantRunToken: String,
         val agentName: String = HIDDEN_AGENT,
@@ -90,6 +97,8 @@ class RouteAuthorizationMatrixTest {
                 "{questionId}" to questionId,
                 "{dispatchId}" to "$dispatchId",
                 "{continuationId}" to "$continuationId",
+                "{resultToken}" to resultToken,
+                "{instanceId}" to instanceId,
                 "{agentName}" to agentName,
                 "{...}" to "agent.yaml",
                 "{key}" to "team",
@@ -105,7 +114,18 @@ class RouteAuthorizationMatrixTest {
             return filled
         }
 
-        fun ghost(): Seeds = Seeds(999_901, "ghost-question", 999_902, 999_903, hiddenRunToken, noGrantRunToken, "ghost-agent")
+        fun ghost(): Seeds =
+            Seeds(
+                999_901,
+                "ghost-question",
+                999_902,
+                999_903,
+                "ghost-result-token",
+                "ghost-instance",
+                hiddenRunToken,
+                noGrantRunToken,
+                "ghost-agent",
+            )
 
         /** [ghostText] (an answer about [ghost]'s resources) with each ghost value replaced by this seed's. */
         fun fromGhost(
@@ -146,7 +166,11 @@ class RouteAuthorizationMatrixTest {
             databasePath = File(dir, "homer.db").absolutePath,
             langfuse = LangfuseConfig(serverUrl = "http://localhost:9", publicKey = "pk-test", secretKey = "sk-test"),
             openTelemetryExport = OpenTelemetryExport.LOG,
-            runners = mapOf("workers" to RunnerConfig.External(token = RUNNER_TOKEN)),
+            runners =
+                mapOf(
+                    "workers" to RunnerConfig.External(token = RUNNER_TOKEN),
+                    "others" to RunnerConfig.External(token = OTHER_RUNNER_TOKEN),
+                ),
         )
     }
 
@@ -180,9 +204,21 @@ class RouteAuthorizationMatrixTest {
         val watched = processes.obtainProcessId(HIDDEN_AGENT, owner = ADMIN)
         val continuation =
             app.get<ContinuationService>().create(hidden, watched, HIDDEN_AGENT, emptyMap(), "result", null, null)
+        val resultToken = app.get<ResultTokenService>().mint(watched, "out.txt", null, 1, HIDDEN_AGENT)
+        val workers = app.get<RunnerRegistry>().externalDomains.single { it.alias == "workers" }
+        val instance = workers.register(RegisterInstanceRequest(name = "workers-host"))
         val own = processes.obtainProcessId(VISIBLE_AGENT, owner = NO_GRANT)
         val noGrantRunToken = questions.registerProcess(own, VISIBLE_AGENT)
-        return Seeds(hidden, question.id, dispatch.dispatchId, continuation, hiddenRunToken, noGrantRunToken)
+        return Seeds(
+            hidden,
+            question.id,
+            dispatch.dispatchId,
+            continuation,
+            resultToken,
+            instance.id,
+            hiddenRunToken,
+            noGrantRunToken,
+        )
     }
 
     private fun registeredRoutes(app: Application): List<String> =
@@ -220,7 +256,10 @@ class RouteAuthorizationMatrixTest {
             Case.NONE -> none
         }
 
-    /** The credentials [case] sends to a route of [domain]: every wrong-domain credential is tried. */
+    /**
+     * The credentials [case] sends to a route of [domain]: for no grant, the domain's own live credential
+     * that owns no seeded resource; for the wrong domain, every other domain's live credential.
+     */
     private fun credentials(
         case: Case,
         domain: CredentialDomain,
@@ -228,7 +267,11 @@ class RouteAuthorizationMatrixTest {
     ): List<String?> =
         when (case) {
             Case.NO_GRANT -> {
-                listOf(NO_GRANT_TOKEN)
+                when (domain) {
+                    CredentialDomain.OPERATOR, CredentialDomain.PUBLIC -> listOf(NO_GRANT_TOKEN)
+                    CredentialDomain.CALLBACK -> listOf(seeds.noGrantRunToken)
+                    CredentialDomain.RUNNER -> listOf(OTHER_RUNNER_TOKEN)
+                }
             }
 
             Case.NONE -> {
@@ -253,7 +296,8 @@ class RouteAuthorizationMatrixTest {
     ): String? {
         val (method, path) = row.route.split(' ', limit = 2)
         val target = row.sample ?: path
-        val (status, body) = send(method, seeds.fill(target), bearer, row.body, row.listFiltered)
+        val (status, body) = send(method, seeds.fill(target), bearer, row.body?.let(seeds::fill), row.listFiltered)
+        val namesResource = PLACEHOLDER.containsMatchIn(target + row.body.orEmpty())
         return when {
             status != row.expected(case) -> {
                 "expected ${row.expected(case)}, got $status"
@@ -263,7 +307,7 @@ class RouteAuthorizationMatrixTest {
                 "the list names $HIDDEN_AGENT"
             }
 
-            case == Case.NO_GRANT && status == 404 && PLACEHOLDER.containsMatchIn(target) -> {
+            case == Case.NO_GRANT && status == 404 && namesResource -> {
                 existenceLeak(method, target, bearer, row.body, seeds, body.orEmpty())
             }
 
@@ -287,12 +331,16 @@ class RouteAuthorizationMatrixTest {
         hiddenBody: String,
     ): String? {
         val ghost = seeds.ghost()
-        val (status, ghostBody) = send(method, ghost.fill(target), bearer, body)
+        val (status, ghostBody) = send(method, ghost.fill(target), bearer, body?.let(ghost::fill))
         val unknown = "$status ${seeds.fromGhost(ghost, ghostBody.orEmpty())}"
         return "answers '404 $hiddenBody', an unknown one '$unknown'".takeIf { unknown != "404 $hiddenBody" }
     }
 
-    /** Fails unless the admin sees every seed: a `404` for the no-grant principal must not be a plain not-found. */
+    /**
+     * Fails unless the admin sees every seed — a `404` for the no-grant principal must not be a plain
+     * not-found — and every credential the cases send is live, so a `401` means the wrong domain, not a
+     * dead token.
+     */
     private suspend fun ApplicationTestBuilder.assertSeedsExist(seeds: Seeds) {
         listOf(
             "/api/v1/status/${seeds.processId}",
@@ -302,7 +350,17 @@ class RouteAuthorizationMatrixTest {
         ).forEach { assertEquals(200, send("GET", it, ADMIN_TOKEN).first, "admin must see $it") }
         val questions = send("GET", "/api/v1/questions", ADMIN_TOKEN, readBody = true).second.orEmpty()
         assertTrue(seeds.questionId in questions, "admin must see question ${seeds.questionId}")
-        assertEquals(200, send("GET", "/api/v1/callback/whoami", seeds.noGrantRunToken).first, "the no-grant run's token must be live")
+        listOf(seeds.noGrantRunToken, seeds.hiddenRunToken).forEach {
+            assertEquals(200, send("GET", "/api/v1/callback/whoami", it).first, "every callback token sent must be live")
+        }
+        listOf(RUNNER_TOKEN, OTHER_RUNNER_TOKEN).forEach {
+            assertEquals(
+                404,
+                send("POST", "/api/v1/runner/instances/ghost-instance/claim", it).first,
+                "every runner token sent must be live",
+            )
+        }
+        assertEquals(200, send("GET", "/api/v1/heartbeat", NO_GRANT_TOKEN).first, "the no-grant operator token must be live")
     }
 
     @Test
@@ -449,6 +507,15 @@ class RouteAuthorizationMatrixTest {
         )
     }
 
+    @Test
+    fun `a known gap must name the GitHub issue tracking its fix`() {
+        assertTrue(KNOWN_GAPS.values.all { ISSUE_REFERENCE.matches(it.issue) })
+        assertEquals("#235", KnownGap("tracked", "#235").issue)
+        listOf("", "TODO-ISSUE", "235", "#", "#12a", "https://github.com/livesport/homer/issues/235").forEach { issue ->
+            assertFailsWith<IllegalArgumentException>("'$issue' must be refused") { KnownGap("untracked", issue) }
+        }
+    }
+
     private companion object {
         const val ADMIN = "ops"
         const val NO_GRANT = "nogrant"
@@ -456,6 +523,7 @@ class RouteAuthorizationMatrixTest {
         const val ADMIN_TOKEN = "matrix-admin-token-aaaaaaaaaaaaaaaa"
         const val NO_GRANT_TOKEN = "matrix-nogrant-token-aaaaaaaaaaaaaaa"
         const val RUNNER_TOKEN = "matrix-runner-domain-token-aaaaaaaaaaaaaaaaaaaaaa"
+        const val OTHER_RUNNER_TOKEN = "matrix-other-runner-domain-token-aaaaaaaaaaaaaaaa"
         val PLACEHOLDER = Regex("""\{[A-Za-z.]+}""")
     }
 }

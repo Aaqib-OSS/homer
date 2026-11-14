@@ -460,7 +460,9 @@ create `app.log` or `api.log`.
    add a [`../CHANGELOG.md`](../CHANGELOG.md) entry (root §8).
 5. Add the route's row (credential domain, rule, denial statuses) to `ROUTE_AUTHZ` in
    `routes/RouteAuthorizationMatrix.kt` (test sources); `RouteAuthorizationMatrixTest` fails on an
-   unlisted route and drives each row's denials. A new MCP tool goes into its tool table there.
+   unlisted route and drives each row's denials. A new MCP tool goes into its tool table there. A
+   denial that diverges goes into `KNOWN_GAPS` only with an open issue
+   ([ADR-0112](../docs/adr/0112-runtime-route-authorization-matrix.md)).
 
 ## Build commands
 
