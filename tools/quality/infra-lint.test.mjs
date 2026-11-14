@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { test } from 'node:test';
-import { findings, lint, parseActionlint, parseHadolint, parseShellcheck, parseZizmor, targets } from './infra-lint.mjs';
+import { findings, lint, listFiles, main, parseActionlint, parseHadolint, parseShellcheck, parseZizmor, targets } from './infra-lint.mjs';
 
 // Outputs captured from shellcheck 0.11.0, actionlint 1.7.12, zizmor 1.32.0 and hadolint 2.15.1.
 const SHELLCHECK = JSON.stringify({
@@ -135,4 +139,75 @@ test('a missing tool, an error exit or unreadable output fails the check instead
   assert.throws(() => lint('shellcheck', [], [0, 1], parse, () => ({ status: 2, stdout: '', stderr: 'bad option' })), /shellcheck exited 2: bad option/);
   assert.throws(() => lint('actionlint', [], [0, 1], parseActionlint, () => ({ status: 1, stdout: 'not json', stderr: '' })), /actionlint wrote output this check cannot read/);
   assert.throws(() => lint('zizmor', [], [0], parseZizmor, () => ({ status: 14, stdout: '[]', stderr: '' })), /zizmor exited 14/);
+});
+
+/** A temporary repository: tracked a.sh, a workflow and a Dockerfile; gone.sh tracked but deleted; new.sh untracked; build/ ignored. */
+function repository() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'infra-lint-'));
+  const git = (...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: root, encoding: 'utf8' });
+  const write = (file, text) => {
+    fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+    fs.writeFileSync(path.join(root, file), text);
+  };
+  git('init', '-q');
+  write('.gitignore', 'build/\n');
+  write('a.sh', '#!/bin/sh\necho $1\n');
+  write('gone.sh', '#!/bin/sh\n');
+  write('.github/workflows/ci.yml', 'on: push\n');
+  write('app/Dockerfile', 'FROM alpine\n');
+  git('add', '.');
+  git('commit', '-q', '-m', 'base');
+  fs.rmSync(path.join(root, 'gone.sh'));
+  write('new.sh', '#!/bin/sh\n');
+  write('build/out.sh', '#!/bin/sh\n');
+  return root;
+}
+
+test('listFiles: tracked and untracked files, not ignored ones or those the working tree deleted', () => {
+  const root = repository();
+  try {
+    assert.deepEqual(listFiles(root).sort(), ['.github/workflows/ci.yml', '.gitignore', 'a.sh', 'app/Dockerfile', 'new.sh']);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('main runs every tool in the repository and writes the three report files with the counts it read', () => {
+  const root = repository();
+  const out = path.join(root, 'build', 'report');
+  const calls = [];
+  const spawn = (tool, args, options) => {
+    calls.push({ tool, args, cwd: options.cwd });
+    const stdout = { shellcheck: SHELLCHECK.replace('"b.sh"', '"a.sh"'), actionlint: '[]', zizmor: '[]', hadolint: '[]' }[tool];
+    return { status: tool === 'shellcheck' ? 1 : 0, stdout, stderr: '' };
+  };
+  try {
+    assert.match(main([out], { cwd: root, spawn }), /^Shell, workflow and Dockerfile lint: 2 finding\(s\)\n/);
+    assert.deepEqual(calls.map((c) => c.tool), ['shellcheck', 'actionlint', 'zizmor', 'hadolint']);
+    assert.ok(calls.every((c) => c.cwd === root), 'every tool runs in the repository');
+    assert.deepEqual(calls[0].args.filter((a) => a.endsWith('.sh')).sort(), ['./a.sh', './new.sh'], 'no deleted or ignored script');
+    assert.equal(fs.readFileSync(path.join(out, 'infra-lint-summary.txt'), 'utf8'), 'findings=2\nshell-scripts=2\nworkflows=1\ndockerfiles=1\n');
+    assert.match(fs.readFileSync(path.join(out, 'infra-lint-report.txt'), 'utf8'), /^a\.sh:2  shellcheck SC2086: /m);
+    const quality = JSON.parse(fs.readFileSync(path.join(out, 'gl-code-quality-infra-lint.json'), 'utf8'));
+    assert.deepEqual(
+      quality.map((q) => [q.check_name, q.location.path, q.location.lines.begin, q.severity]),
+      [
+        ['infra-lint', 'a.sh', 2, 'minor'],
+        ['infra-lint', 'a.sh', 4, 'major'],
+      ],
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('main writes no report when a tool fails', () => {
+  const root = repository();
+  const out = path.join(root, 'build', 'report');
+  try {
+    assert.throws(() => main([out], { cwd: root, spawn: () => ({ error: Object.assign(new Error('spawn'), { code: 'ENOENT' }) }) }), /shellcheck did not run/);
+    assert.ok(!fs.existsSync(path.join(out, 'infra-lint-summary.txt')), 'a missing report is what fails the gate');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

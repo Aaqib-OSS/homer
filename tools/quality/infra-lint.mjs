@@ -8,6 +8,7 @@
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import path from 'node:path';
 import { repoRelative, runMain, writeCheck } from './lib.mjs';
 
 const SHELL = /\.sh$/;
@@ -56,9 +57,9 @@ export const parseZizmor = (json) =>
 export const parseHadolint = (json) =>
   JSON.parse(json).map((c) => finding('hadolint', c.file, c.line, c.code, c.message, c.level === 'error'));
 
-/** Runs `tool` and parses its stdout; an exit code outside `ok` or output that does not parse is a real error. */
-export function lint(tool, args, ok, parse, spawn = spawnSync) {
-  const result = spawn(tool, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+/** Runs `tool` in `cwd` and parses its stdout; an exit code outside `ok` or output that does not parse is a real error. */
+export function lint(tool, args, ok, parse, spawn = spawnSync, cwd = process.cwd()) {
+  const result = spawn(tool, args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   if (result.error) throw new Error(`${tool} did not run (${result.error.code ?? result.error.message}); install it, see docs/quality-checks.md`);
   if (!ok.includes(result.status)) throw new Error(`${tool} exited ${result.status}: ${result.stderr.trim()}`);
   try {
@@ -71,25 +72,31 @@ export function lint(tool, args, ok, parse, spawn = spawnSync) {
 // A path is branch content and may read as an option (`--norc.sh`), so each one starts with `./` (CWE-88).
 const asPaths = (files) => files.map((f) => `./${f}`);
 
-/** Every finding of the four tools over `files`; a tool with no file to read does not run. */
-export function findings(files, spawn = spawnSync) {
+/** Every finding of the four tools over `files` (relative to `cwd`); a tool with no file to read does not run. */
+export function findings(files, spawn = spawnSync, cwd = process.cwd()) {
   const { shell, workflows, dockerfiles } = targets(files);
+  const run = (tool, args, ok, parse) => lint(tool, args, ok, parse, spawn, cwd);
   return [
-    ...(shell.length ? lint('shellcheck', ['-f', 'json1', ...asPaths(shell)], [0, 1], parseShellcheck, spawn) : []),
-    ...(workflows.length ? lint('actionlint', ['-no-color', '-format', '{{json .}}', ...asPaths(workflows)], [0, 1], parseActionlint, spawn) : []),
-    ...(workflows.length
-      ? lint('zizmor', ['--offline', '--no-exit-codes', '--format=json-v1', ...asPaths(workflows)], [0], parseZizmor, spawn)
-      : []),
-    ...(dockerfiles.length ? lint('hadolint', ['--no-fail', '--no-color', '-f', 'json', ...asPaths(dockerfiles)], [0], parseHadolint, spawn) : []),
+    ...(shell.length ? run('shellcheck', ['-f', 'json1', ...asPaths(shell)], [0, 1], parseShellcheck) : []),
+    ...(workflows.length ? run('actionlint', ['-no-color', '-format', '{{json .}}', ...asPaths(workflows)], [0, 1], parseActionlint) : []),
+    ...(workflows.length ? run('zizmor', ['--offline', '--no-exit-codes', '--format=json-v1', ...asPaths(workflows)], [0], parseZizmor) : []),
+    ...(dockerfiles.length ? run('hadolint', ['--no-fail', '--no-color', '-f', 'json', ...asPaths(dockerfiles)], [0], parseHadolint) : []),
   ].sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line);
 }
 
-/** Writes the check's three files into `outDir`: tracked and untracked files, not ignored or deleted ones. */
-export function main([outDir = 'reports/quality/infra-lint']) {
-  const files = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).split('\0').filter((f) => f && fs.existsSync(f));
+/** The files of the repository at `cwd` git tracks or does not ignore, without the ones the working tree deleted. */
+export function listFiles(cwd = process.cwd()) {
+  return execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+    .split('\0')
+    .filter((f) => f && fs.existsSync(path.join(cwd, f)));
+}
+
+/** Writes the check's three files into `outDir` for the repository at `cwd`, with the count of files each tool read. */
+export function main([outDir = 'reports/quality/infra-lint'], { cwd = process.cwd(), spawn = spawnSync } = {}) {
+  const files = listFiles(cwd);
   const { shell, workflows, dockerfiles } = targets(files);
   const extra = { 'shell-scripts': shell.length, workflows: workflows.length, dockerfiles: dockerfiles.length };
-  return writeCheck(outDir, 'infra-lint', 'Shell, workflow and Dockerfile lint', findings(files), extra);
+  return writeCheck(outDir, 'infra-lint', 'Shell, workflow and Dockerfile lint', findings(files, spawn, cwd), extra);
 }
 
 runMain(import.meta, main);
