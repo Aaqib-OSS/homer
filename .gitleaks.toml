@@ -2,16 +2,26 @@
 # docs/quality-checks.md). The default rules, plus allowlist entries for placeholder values the
 # docs and tests hold on purpose. Each entry names one file, one rule and the exact value: a new
 # placeholder elsewhere is a finding until it gets an entry of its own here.
+#
+# The scan reads this file from the pull request's base, never from the pull request: an entry for
+# a new fixture must merge before the fixture, in a pull request of its own.
 
 [extend]
 useDefault = true
 
 [[allowlists]]
-description = "API reference curl examples: placeholder bearer tokens"
+description = "README.md API reference curl example: placeholder bearer token"
 targetRules = ["curl-auth-header"]
 condition = "AND"
-paths = ['''^app/(README|SERVER)\.md$''']
-regexes = ['''^(your-token|your-token-here|ci-token-value)$''']
+paths = ['''^app/README\.md$''']
+regexes = ['''^your-token-here$''']
+
+[[allowlists]]
+description = "SERVER.md API reference curl examples: placeholder bearer tokens"
+targetRules = ["curl-auth-header"]
+condition = "AND"
+paths = ['''^app/SERVER\.md$''']
+regexes = ['''^(your-token|ci-token-value)$''']
 
 [[allowlists]]
 description = "SERVER.md Langfuse config example: placeholder secret key"

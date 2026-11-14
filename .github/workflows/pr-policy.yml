@@ -26,6 +26,7 @@ jobs:
         with:
           persist-credentials: false
       - run: tools/pr-policy/check-test.sh
+      - run: tools/pr-policy/secret-scan-test.sh
 
   # Free on public repositories only. A known-bad package fails here, before any review reads
   # the pull request.
@@ -37,43 +38,39 @@ jobs:
         with:
           fail-on-severity: high
 
-  # gitleaks over every commit the pull request adds, so a secret committed and removed again
-  # still fails it. The release binary, not gitleaks-action, which needs a license key for an
-  # organization's repositories. The rules are the defaults plus the placeholder allowlist in the
-  # pull request's own .gitleaks.toml: a change to that file shows in the diff review reads.
+  # gitleaks over every commit the pull request adds (tools/pr-policy/secret-scan.sh; tool choice
+  # and trust model: docs/quality-checks.md). The script, the pinned release and the rules all come
+  # from the base, never from the pull request, which must not rewrite the rule it is checked against.
   secret-scan:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
-    env:
-      GITLEAKS_VERSION: 8.30.1
-      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: policy
+          persist-credentials: false
       # The merge commit with full history: both the base and the head commit are its ancestors.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          path: pr
           fetch-depth: 0
           persist-credentials: false
-      - name: Install gitleaks
-        run: |
-          curl -fsSL -o "$RUNNER_TEMP/gitleaks.tar.gz" \
-            "https://github.com/gitleaks/gitleaks/releases/download/v$GITLEAKS_VERSION/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          echo "$GITLEAKS_SHA256  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
-      # -m: a merge commit's patch against each parent, so a secret added while resolving a merge
-      # is scanned too (plain git log prints no patch for a merge). gitleaks scans an unknown range
-      # as 0 commits and passes, so both ends are checked first. --verbose --redact: each finding
-      # by commit, file and rule, never its value, since the job log is public.
+      # A base without the script predates the scan (only the pull request that adds it): skipped.
       - name: Scan the pull request's commits
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          git cat-file -e "$BASE_SHA^{commit}"
-          git cat-file -e "$HEAD_SHA^{commit}"
-          "$RUNNER_TEMP/gitleaks" git --no-banner --verbose --redact --config .gitleaks.toml \
-            --log-opts="-m $BASE_SHA..$HEAD_SHA" .
+          if [ ! -f policy/tools/pr-policy/secret-scan.sh ]; then
+            echo "::warning title=Secret scan::The base has no tools/pr-policy/secret-scan.sh; nothing scanned."
+            exit 0
+          fi
+          gitleaks=$(policy/tools/pr-policy/install-gitleaks.sh "$RUNNER_TEMP/gitleaks")
+          cd pr
+          ../policy/tools/pr-policy/secret-scan.sh "$gitleaks" "$BASE_SHA" "$HEAD_SHA"
 
   accepted-issue:
     needs: pr-policy-tests

@@ -68,19 +68,13 @@ jobs:
             app/homer-runner/build/reports/dependency-check/dependency-check-report.html
           retention-days: 7
 
-  # grype over the images a release publishes, built here from the checkout (linux/amd64): OS
-  # packages, the JRE, the jars, the Python tree and the global npm tree. homer-app's slim variant is
-  # not scanned on its own: homer-app is built from it, so it holds everything the slim image does.
-  # Fails on a High or Critical vulnerability that has a fixed version, the kind a bump can act on;
-  # the job summary counts every finding per severity and lists the High and Critical ones. grype
-  # rather than trivy: syft, from the same project, already makes the release SBOMs (ADR-0086), and
-  # trivy's actions and a trivy release were compromised in March 2026 (GHSA-69fq-xp46-6x23).
+  # grype over the images a release publishes, built from the checkout: tool, scope, failure policy
+  # and rollout in ADR-0113.
   image-scan:
     if: github.event_name == 'workflow_dispatch' || (github.event.schedule == '17 2 * * *' && !github.event.repository.private)
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    # Report-first (ADR-0082) while the images' backlog of fixable findings is worked off
-    # (docs/quality-checks.md § Open backlog): a failure warns. Remove once the scan passes.
+    # Report-first until the three images are clean (ADR-0113): a failure warns.
     continue-on-error: true
     env:
       GRYPE_VERSION: 0.121.3
@@ -101,8 +95,8 @@ jobs:
             "https://github.com/anchore/grype/releases/download/v$GRYPE_VERSION/grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
           echo "$GRYPE_SHA256  $RUNNER_TEMP/grype.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/grype.tar.gz" -C "$RUNNER_TEMP" grype
-      # Per image: the count per severity, then every High and Critical finding. A scan that fails
-      # leaves no report, so the step fails on it too.
+      # Per image: the count per severity, then every High and Critical finding. A scan or a report
+      # that cannot be read fails the step, after the other images are scanned.
       - name: Scan
         run: |
           mkdir grype
@@ -111,7 +105,7 @@ jobs:
           for image in homer-app homer-runner homer-console; do
             report="grype/$image.json"
             "$RUNNER_TEMP/grype" "docker:$image:scan" -o json --file "$report" || { status=1; continue; }
-            fixable=$(jq '[.matches[] | select(.vulnerability.severity == ("Critical", "High") and .vulnerability.fix.state == "fixed")] | length' "$report")
+            fixable=$(jq '[(.matches // [])[] | select(.vulnerability.severity == ("Critical", "High") and .vulnerability.fix.state == "fixed")] | length' "$report") || { status=1; continue; }
             [ "$fixable" -eq 0 ] || status=1
             {
               echo "### $image: $fixable High or Critical with a fix"
@@ -119,13 +113,13 @@ jobs:
               echo '| Severity | Findings | With a fix |'
               echo '| --- | --- | --- |'
               jq -r '["Critical", "High", "Medium", "Low", "Negligible", "Unknown"][] as $s
-                | [.matches[] | select(.vulnerability.severity == $s)]
-                | "| \($s) | \(length) | \(map(select(.vulnerability.fix.state == "fixed")) | length) |"' "$report"
+                | [(.matches // [])[] | select(.vulnerability.severity == $s)]
+                | "| \($s) | \(length) | \(map(select(.vulnerability.fix.state == "fixed")) | length) |"' "$report" || status=1
               echo
               echo '| Package | Version | Type | Vulnerability | Severity | Fixed in |'
               echo '| --- | --- | --- | --- | --- | --- |'
-              jq -r '.matches[] | select(.vulnerability.severity == ("Critical", "High"))
-                | "| \(.artifact.name) | \(.artifact.version) | \(.artifact.type) | \(.vulnerability.id) | \(.vulnerability.severity) | \(.vulnerability.fix.versions | join(", ")) |"' "$report"
+              jq -r '(.matches // [])[] | select(.vulnerability.severity == ("Critical", "High"))
+                | "| \(.artifact.name) | \(.artifact.version) | \(.artifact.type) | \(.vulnerability.id) | \(.vulnerability.severity) | \((.vulnerability.fix.versions // []) | if length == 0 then "none" else join(", ") end) |"' "$report" || status=1
               echo
             } >>"$GITHUB_STEP_SUMMARY"
           done

@@ -175,3 +175,4 @@ One of:
 | [0110](0110-run-identity-for-egress-proxies.md) | Homer tells an egress proxy which run holds a callback token; the egress policy stays with the proxy | accepted |
 | [0111](0111-read-grant-on-star-reads-runner-state.md) | A `read` grant on `*` reads the server-wide runner state, with operator naming withheld | accepted |
 | [0112](0112-runtime-route-authorization-matrix.md) | Every route and MCP tool has a row in a runtime authorization matrix | accepted |
+| [0113](0113-nightly-image-scan-with-grype.md) | Scan the release images nightly with grype, failing on fixable High and Critical findings | accepted |
