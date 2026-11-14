@@ -1,0 +1,11 @@
+# hadolint over every tracked Dockerfile (check `infra-lint`, docs/quality-checks.md). A rule is
+# ignored here only when it holds for the whole repository; a single deliberate exception is an
+# inline `# hadolint ignore=<rule>` above its instruction, with the reason beside it.
+ignored:
+  # Pinning apk package versions: each base image is pinned by digest, and Alpine drops a package's
+  # old versions from its index, so a pinned version would break the next rebuild.
+  - DL3018
+  # A named USER: every image creates its user (homer, nextjs) with a fixed numeric UID first.
+  - DL3066
+  # Consecutive RUN instructions: each is a layer on purpose, and merging them changes the layers.
+  - DL3059

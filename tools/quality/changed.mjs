@@ -26,6 +26,7 @@ import { coverageLookup, isConsoleSource, isKotlinSource, measure, toFindings as
 import { main as duplication } from './duplication.mjs';
 import { parseSarif } from './detekt.mjs';
 import { parseJUnit } from './architecture-backend.mjs';
+import { main as infraLint, reads as infraReads } from './infra-lint.mjs';
 import { exitCode, formatTable } from './gate.mjs';
 import { changedFiles, worktreeChanges } from './git-diff.mjs';
 import { diagnostic, parseLog } from './kotlin-warnings.mjs';
@@ -74,6 +75,7 @@ export function selectChecks(files, checks, only) {
     ...(files.some((f) => DTO_SOURCES.test(f)) ? ['dto-contract'] : []),
     ...(front ? ['mutation-console'] : []),
     ...(files.some((f) => APP_MAIN.test(f)) ? ['mutation-backend'] : []),
+    ...(files.some(infraReads) ? ['infra-lint'] : []),
   ]);
   return new Set(
     checks
@@ -448,7 +450,8 @@ export function main(argv) {
   if (files.length === 0) return `${head}\n`;
   const { checks } = readJson(path.join(import.meta.dirname, 'checks.json'));
   const selected = selectChecks(files, checks, options.only);
-  const changed = worktreeChanges(base, ['app', 'console'], root);
+  // The whole tree: infra-lint reads files outside app/ and console/, and marks findings outside the change by it.
+  const changed = worktreeChanges(base, ['.'], root);
   fs.mkdirSync(OUT, { recursive: true });
   const found = new Map();
   const errors = new Map();
@@ -476,6 +479,14 @@ export function main(argv) {
       duplication([path.join(OUT, 'duplication')]);
       report('duplication', readCodeQuality(path.join(OUT, 'duplication', 'gl-code-quality-duplication.json')));
     });
+  }
+  if (selected.has('infra-lint')) {
+    try {
+      infraLint([path.join(OUT, 'infra-lint')]);
+      report('infra-lint', readCodeQuality(path.join(OUT, 'infra-lint', 'gl-code-quality-infra-lint.json')));
+    } catch (error) {
+      report('infra-lint', [], error.message);
+    }
   }
   const rows = results(checks, found, errors, changed);
   const notes = [

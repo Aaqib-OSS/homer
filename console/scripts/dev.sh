@@ -36,6 +36,7 @@ fi
 
 # Load environment variables
 if [ -f .env.local ]; then
+    # shellcheck disable=SC2046 # word splitting turns each KEY=value line into its own export argument
     export $(cat .env.local | grep -v '^#' | xargs)
 fi
 

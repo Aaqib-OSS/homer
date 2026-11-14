@@ -310,3 +310,16 @@ one-second spin calls it about 140,000 times on a developer machine: the failure
 above the first and still catches the second on a runner several times slower, so more calls from a
 growing test never fail the build. Raising the test heap instead was rejected: it hides the next spin
 until it outgrows the new limit.
+
+*Amended (2026-11-14):* `infra-lint` joined as `required` (#225): the change that added it fixed
+or marked every finding. No check read the shell scripts (six of them ship into every agent workspace
+and handle the callback token), the GitHub workflows or the Dockerfiles. One check runs four tools:
+shellcheck, actionlint, zizmor and hadolint. It is a gate check, not a CI job that fails on its own: the
+gate is the one required status for quality, so a new job outside it would block nothing until the
+ruleset named it. Job `homer-infra-lint` installs each tool as a release binary pinned by version
+and SHA-256, runs `tools/quality/infra-lint.mjs` and hands the report to `quality-gate`; a failed job
+leaves the report missing, which fails the gate. zizmor runs `--offline`: its online audits would
+make a pull request's result depend on the network and on advisories published after it was
+written. A finding whose fix would change behaviour is not fixed in the code. It is marked inline
+with the tool's own comment and its reason, or, for a hadolint rule that holds for the whole
+repository, ignored in `.hadolint.yaml` with its reason. A baseline file would hide the reason.

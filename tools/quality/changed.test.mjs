@@ -29,6 +29,7 @@ const CHECKS = [
   'detekt',
   'query-plans',
   'query-repeats',
+  'infra-lint',
 ].map((name) => ({ name, mode: 'required' }));
 const ALL = [...CHECKS, { name: 'mutation-console', mode: 'warn' }, { name: 'mutation-backend', mode: 'warn' }];
 const SRC = 'app/app/src/main/kotlin/homer/app';
@@ -58,6 +59,13 @@ test('a backend change selects the backend checks, dto-contract only for main so
 test('docs, build scripts, buildSrc and tooling select nothing', () => {
   const files = ['docs/x.md', 'app/app/build.gradle.kts', 'app/settings.gradle.kts', 'app/buildSrc/src/main/kotlin/CrapScore.kt', 'tools/quality/gate.mjs', 'console/README.md'];
   assert.equal(selectChecks(files, ALL).size, 0);
+});
+
+test('a shell script, a workflow, a Dockerfile or the hadolint config selects infra-lint alone', () => {
+  for (const file of ['app/entrypoint.sh', '.github/workflows/ci.yml', 'console/Dockerfile', 'app/e2e/Dockerfile', '.hadolint.yaml']) {
+    assert.deepEqual([...selectChecks([file], ALL)], ['infra-lint'], file);
+  }
+  assert.ok(!selectChecks(['.github/ISSUE_TEMPLATE/bug.yml', 'app/gradlew'], ALL).has('infra-lint'));
 });
 
 test('--only narrows the selection and alone selects a warn-mode check', () => {

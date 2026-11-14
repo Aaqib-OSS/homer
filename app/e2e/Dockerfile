@@ -19,6 +19,8 @@ COPY app/e2e/build.gradle.kts ./e2e/build.gradle.kts
 # plugins, and deps (`|| true`: a warm-up miss is caught by the real
 # testClasses run below).
 # Optional Artifactory credentials as BuildKit secrets; see app/Dockerfile.
+# The $(…) ends in `|| true`, so the export masks no failure.
+# hadolint ignore=SC2155
 RUN --mount=type=secret,id=artifactory_url \
     --mount=type=secret,id=artifactory_user \
     --mount=type=secret,id=artifactory_token \
@@ -30,6 +32,8 @@ RUN --mount=type=secret,id=artifactory_url \
 
 COPY app/e2e ./e2e
 
+# The $(…) ends in `|| true`, so the export masks no failure.
+# hadolint ignore=SC2155
 RUN --mount=type=secret,id=artifactory_url \
     --mount=type=secret,id=artifactory_user \
     --mount=type=secret,id=artifactory_token \
