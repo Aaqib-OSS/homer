@@ -120,8 +120,8 @@ fun Application.configureCors(allowedOrigins: List<String>) {
         // in Access-Control-Expose-Headers. The console reads both off the
         // artifact endpoint; without this it sees `null` and treats every
         // finished artifact as still streaming (stuck Live badge).
-        exposeHeader("X-File-Complete")
-        exposeHeader("X-Process-Status")
+        exposeHeader(HomerHeaders.FILE_COMPLETE)
+        exposeHeader(HomerHeaders.PROCESS_STATUS)
 
         // Credentialed CORS only with pinned origins: anyHost() + credentials
         // would reflect any Origin and let any site read the API with the

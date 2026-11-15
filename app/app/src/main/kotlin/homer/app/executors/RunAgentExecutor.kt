@@ -2,6 +2,7 @@ package homer.app.executors
 
 import com.jayway.jsonpath.JsonPath
 import homer.app.EnvConstants
+import homer.app.SpanAttributes
 import homer.app.exceptions.HomerException
 import homer.app.infra.AgentInputResolver
 import homer.app.infra.BoundedRegex
@@ -37,7 +38,7 @@ internal class RunAgentExecutor(
     ): CommandResult {
         val params = resolveQueryParams(command, context)
         val agentName = textCompiler.replaceArguments(command.agentName, context.workspace.config.env)
-        span.setAttribute("agent.name", agentName)
+        span.setAttribute(SpanAttributes.AGENT_NAME, agentName)
         span.setAttribute("agent.params", params.keys.joinToString(", "))
 
         // An unauthorized hop reads exactly like an unknown agent: the target name can come from

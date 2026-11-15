@@ -1,5 +1,6 @@
 package homer.app.executors.llm
 
+import homer.app.SpanAttributes
 import homer.app.exceptions.MalformedLlmOutputException
 import homer.app.infra.TranslatedStream
 import homer.app.models.Command
@@ -66,22 +67,22 @@ internal fun returnedOrThrow(
 ): RetryOutcome.Returned =
     when (val outcome = lastOutcome ?: error("retry loop produced no outcome; should be unreachable")) {
         is RetryOutcome.Success -> {
-            span.setAttribute("retry.attempts.used", (outcome.attemptIndex + 1).toLong())
+            span.setAttribute(SpanAttributes.RETRY_ATTEMPTS_USED, (outcome.attemptIndex + 1).toLong())
             outcome
         }
 
         is RetryOutcome.MalformedFailure -> {
-            span.setAttribute("retry.attempts.used", retry.attempts.toLong())
+            span.setAttribute(SpanAttributes.RETRY_ATTEMPTS_USED, retry.attempts.toLong())
             throw outcome.exception
         }
 
         is RetryOutcome.OtherFailure -> {
-            span.setAttribute("retry.attempts.used", retry.attempts.toLong())
+            span.setAttribute(SpanAttributes.RETRY_ATTEMPTS_USED, retry.attempts.toLong())
             outcome
         }
 
         is RetryOutcome.CappedStop -> {
-            span.setAttribute("retry.attempts.used", 1L)
+            span.setAttribute(SpanAttributes.RETRY_ATTEMPTS_USED, 1L)
             outcome
         }
     }

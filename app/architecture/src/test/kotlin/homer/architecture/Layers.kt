@@ -90,6 +90,9 @@ internal enum class Layer {
         private val HTTP_PACKAGES = listOf("homer.app.routes", "homer.app.auth", "homer.app.di")
         private val KERNEL_PACKAGES = listOf("homer.app.models", "homer.app.config", "homer.app.exceptions")
 
+        /** Root-package files the kernel owns: the constant objects every layer may import. */
+        private val KERNEL_ROOT_FILES = setOf("EnvConstants", "SpanAttributes", "HomerHeaders")
+
         /**
          * The layer of one :app source file: its row in the diagram when it declares a type named there,
          * else the default of its package (the "Directory layout" reading noted in app/CLAUDE.md
@@ -98,7 +101,7 @@ internal enum class Layer {
         fun of(file: KoFileDeclaration): Layer {
             val pkg = file.packagee?.name.orEmpty()
             return when {
-                pkg.isIn(KERNEL_PACKAGES) || (pkg == "homer.app" && file.name == "EnvConstants") -> KERNEL
+                pkg.isIn(KERNEL_PACKAGES) || (pkg == "homer.app" && file.name in KERNEL_ROOT_FILES) -> KERNEL
                 pkg == "homer.app" || pkg.isIn(HTTP_PACKAGES) -> HTTP
                 else -> rowOf(file) ?: packageDefault(pkg, file.name)
             }

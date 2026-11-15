@@ -1,6 +1,7 @@
 package homer.app.executors
 
 import homer.app.EnvConstants
+import homer.app.SpanAttributes
 import homer.app.exceptions.CommandExecutionException
 import homer.app.infra.ResultToEnvMapper
 import homer.app.infra.SecretRedactor
@@ -84,7 +85,7 @@ internal fun startCommandSpan(
             .spanBuilder("command_execution_${index + 1}")
             .setParent(parentContext)
             .startSpan()
-    commandSpan.setAttribute("runner.alias", session.runnerAlias)
+    commandSpan.setAttribute(SpanAttributes.RUNNER_ALIAS, session.runnerAlias)
     // The step's own name, next to the index the span is named after: an LLM
     // step's generation carries it too, a script step's span is the only place
     // it appears.

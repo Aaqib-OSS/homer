@@ -8,6 +8,7 @@ import homer.app.fixtures.mountApiV1Routes
 import homer.app.models.Action
 import homer.app.models.Agent
 import homer.app.models.AgentDispatchConfig
+import homer.app.models.ErrorResponse
 import homer.app.models.Grant
 import homer.app.models.NewRunRecord
 import homer.app.models.ProcessInfo
@@ -255,6 +256,28 @@ class QuestionsRoutesTest {
 
             assertEquals(HttpStatusCode.BadRequest, client.get("/api/v1/questions?status=bogus").status)
             assertEquals(HttpStatusCode.BadRequest, client.get("/api/v1/questions?processId=abc").status)
+        }
+
+    @Test
+    fun `GET questions rejects a limit outside 1 to 1000 and a negative offset with exact bodies`() =
+        testApplication {
+            mountApiV1Routes { every { questionsService } returns newService() }
+
+            // The questions list shares recordPageParams with the dispatch and continuation lists,
+            // so a regression in the shared helper must show up in this family's own error body.
+            val cases =
+                listOf(
+                    "limit=0" to "Validation error for 'limit': Must be between 1 and 1000",
+                    "limit=1001" to "Validation error for 'limit': Must be between 1 and 1000",
+                    "offset=-1" to "Validation error for 'offset': Must be >= 0",
+                )
+            for ((query, message) in cases) {
+                val response = client.get("/api/v1/questions?$query")
+
+                assertEquals(HttpStatusCode.BadRequest, response.status, query)
+                assertEquals(apiJson.encodeToString(ErrorResponse(msg = message)), response.bodyAsText(), query)
+            }
+            assertEquals(HttpStatusCode.OK, client.get("/api/v1/questions?limit=1000&offset=0").status)
         }
 
     @Test

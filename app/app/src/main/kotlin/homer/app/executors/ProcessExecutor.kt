@@ -1,5 +1,6 @@
 package homer.app.executors
 
+import homer.app.SpanAttributes
 import homer.app.exceptions.AnotherProcessStillActive
 import homer.app.exceptions.MaxParallelRunsExceededException
 import homer.app.exceptions.UnresolvedLockKeyPlaceholderException
@@ -81,9 +82,9 @@ class ProcessExecutor(
         // the sub it just started), and an unguarded write would reset KILLED to CREATED.
         processManager.compareAndSetStatus(processId, setOf(ProcessStatus.CREATED), ProcessStatus.CREATED)
         try {
-            processSpan.setAttribute("process.id", processId.toLong())
-            processSpan.setAttribute("process.status", ProcessStatus.CREATED.name)
-            processSpan.addEvent("process.status.created")
+            processSpan.setAttribute(SpanAttributes.PROCESS_ID, processId.toLong())
+            processSpan.setAttribute(SpanAttributes.PROCESS_STATUS, ProcessStatus.CREATED.name)
+            processSpan.addEvent("${SpanAttributes.PROCESS_STATUS_EVENT_PREFIX}created")
             process.execute(processId, processSpan)
             commitFinished(processId, process, processSpan)
         } catch (e: Exception) {
@@ -110,14 +111,14 @@ class ProcessExecutor(
             )
         schedulePurge(processId, process)
         if (transitionedToFinished) {
-            processSpan.setAttribute("process.status", ProcessStatus.FINISHED.name)
-            processSpan.addEvent("process.status.finished")
+            processSpan.setAttribute(SpanAttributes.PROCESS_STATUS, ProcessStatus.FINISHED.name)
+            processSpan.addEvent("${SpanAttributes.PROCESS_STATUS_EVENT_PREFIX}finished")
             processSpan.setStatus(StatusCode.OK)
             logger.info("Process {} completed successfully", processId)
         } else {
             val finalStatus = processManager.getProcessStatus(processId)
-            processSpan.setAttribute("process.status", finalStatus.name)
-            processSpan.addEvent("process.status.${finalStatus.name.lowercase()}")
+            processSpan.setAttribute(SpanAttributes.PROCESS_STATUS, finalStatus.name)
+            processSpan.addEvent("${SpanAttributes.PROCESS_STATUS_EVENT_PREFIX}${finalStatus.name.lowercase()}")
             processSpan.setStatus(
                 StatusCode.ERROR,
                 "Process completed but final status is $finalStatus",
@@ -158,8 +159,8 @@ class ProcessExecutor(
 
         if (e is AnotherProcessStillActive || e is MaxParallelRunsExceededException || e is UnresolvedLockKeyPlaceholderException) {
             // Slot/lock collision, or a lock key the run cannot render - process never ran
-            processSpan.setAttribute("process.status", ProcessStatus.FAILED.name)
-            processSpan.addEvent("process.status.failed")
+            processSpan.setAttribute(SpanAttributes.PROCESS_STATUS, ProcessStatus.FAILED.name)
+            processSpan.addEvent("${SpanAttributes.PROCESS_STATUS_EVENT_PREFIX}failed")
             processSpan.setStatus(
                 StatusCode.ERROR,
                 "Agent execution cancelled: ${e.message}",
@@ -168,8 +169,8 @@ class ProcessExecutor(
             logger.error("Process {} cancelled: {}", processId, e.message)
         } else if (finalStatus == ProcessStatus.KILLED) {
             // Process was killed (user or lock manager)
-            processSpan.setAttribute("process.status", ProcessStatus.KILLED.name)
-            processSpan.addEvent("process.status.killed")
+            processSpan.setAttribute(SpanAttributes.PROCESS_STATUS, ProcessStatus.KILLED.name)
+            processSpan.addEvent("${SpanAttributes.PROCESS_STATUS_EVENT_PREFIX}killed")
             processSpan.setStatus(
                 StatusCode.ERROR,
                 "Process killed: ${e.message}",
@@ -178,8 +179,8 @@ class ProcessExecutor(
             logger.error("Process {} killed: {}", processId, e.message, e)
         } else {
             // Normal failure
-            processSpan.setAttribute("process.status", ProcessStatus.FAILED.name)
-            processSpan.addEvent("process.status.failed")
+            processSpan.setAttribute(SpanAttributes.PROCESS_STATUS, ProcessStatus.FAILED.name)
+            processSpan.addEvent("${SpanAttributes.PROCESS_STATUS_EVENT_PREFIX}failed")
             processSpan.setStatus(
                 StatusCode.ERROR,
                 "Agent execution failed: ${e.message}",

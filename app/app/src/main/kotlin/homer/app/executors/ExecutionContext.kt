@@ -1,6 +1,7 @@
 package homer.app.executors
 
 import homer.app.EnvConstants
+import homer.app.SpanAttributes
 import homer.app.config.ExecutionConfig
 import homer.app.infra.DefaultTextCompiler
 import homer.app.infra.FileOperations
@@ -92,8 +93,8 @@ fun Span.setOutputValue(
     redactor: SecretRedactor,
 ) {
     if (fileOperations.fileSize(context.stdOut) < context.config.maxOutputSizeForTracing) {
-        setAttribute("output.value", redactor.redact(fileOperations.readText(context.stdOut)))
+        setAttribute(SpanAttributes.OUTPUT_VALUE, redactor.redact(fileOperations.readText(context.stdOut)))
     } else {
-        setAttribute("output.value", "Output too large to display, file path: ${context.stdOut}")
+        setAttribute(SpanAttributes.OUTPUT_VALUE, "Output too large to display, file path: ${context.stdOut}")
     }
 }

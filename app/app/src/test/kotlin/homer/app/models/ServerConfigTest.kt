@@ -40,15 +40,20 @@ class ServerConfigTest {
     fun `runner queue settings default to 300 s claim TTL and 1000 pending claims`() {
         assertEquals(300, Server().runnerClaimTimeoutSec)
         assertEquals(1000, Server().maxPendingRunnerClaims)
+        // The constants RunnerRegistry's defaults read, so the two bounds cannot drift.
+        assertEquals(1000, Server.DEFAULT_MAX_PENDING_RUNNER_CLAIMS)
+        assertEquals(300, Server.DEFAULT_RUNNER_CLAIM_TIMEOUT_SEC)
         assertEquals(LocalRunnerConfig(), Server().localRunner)
     }
 
     @Test
     fun `runner queue settings reject values below 1`() {
-        val ttl = assertThrows<IllegalArgumentException> { Server(runnerClaimTimeoutSec = 0) }
-        assertTrue(ttl.message!!.contains("server.runnerClaimTimeoutSec"), ttl.message)
-        val pending = assertThrows<IllegalArgumentException> { Server(maxPendingRunnerClaims = 0) }
-        assertTrue(pending.message!!.contains("server.maxPendingRunnerClaims"), pending.message)
+        for (bad in listOf(0, -1)) {
+            val ttl = assertThrows<IllegalArgumentException>("runnerClaimTimeoutSec=$bad") { Server(runnerClaimTimeoutSec = bad) }
+            assertTrue(ttl.message!!.contains("server.runnerClaimTimeoutSec"), ttl.message)
+            val pending = assertThrows<IllegalArgumentException>("maxPendingRunnerClaims=$bad") { Server(maxPendingRunnerClaims = bad) }
+            assertTrue(pending.message!!.contains("server.maxPendingRunnerClaims"), pending.message)
+        }
     }
 
     @Test

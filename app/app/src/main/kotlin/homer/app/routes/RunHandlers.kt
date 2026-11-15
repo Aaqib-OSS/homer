@@ -1,6 +1,7 @@
 package homer.app.routes
 
 import homer.app.EnvConstants
+import homer.app.SpanAttributes
 import homer.app.exceptions.QueryParamValidationException
 import homer.app.executors.ProcessExecutor
 import homer.app.executors.ProcessFactory
@@ -34,6 +35,7 @@ import io.ktor.server.request.httpMethod
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
 import io.opentelemetry.api.common.Attributes
+import io.opentelemetry.api.common.AttributesBuilder
 import io.opentelemetry.api.trace.Span
 import io.opentelemetry.api.trace.StatusCode
 import io.opentelemetry.context.Context
@@ -192,14 +194,9 @@ internal suspend fun handleAgentDebug(
                 context,
             )
         result.processId to
-            Attributes
-                .builder()
-                .put("process.id", result.processId.toLong())
-                .put("server.id", serverId)
-                .put("agent.name", agent.name)
-                .put("debug.command_index", req.commandIndex.toLong())
-                .put("request.source", "debug")
-                .build()
+            startedRunAttributes(result.processId, serverId, agent.name, "debug") {
+                put("debug.command_index", req.commandIndex.toLong())
+            }
     }
 }
 
@@ -284,16 +281,16 @@ internal suspend fun handleRetry(
             )
 
         result.processId to
-            Attributes
-                .builder()
-                .put("process.id", result.processId.toLong())
-                .put("server.id", serverId)
-                .put("agent.name", agent.name)
-                .put("retry.of_process_id", sourceProcess.id.toLong())
-                .put("request.source", "retry")
-                .apply { sourceProcess.parentProcessId?.let { put("parent.process.id", it.toLong()) } }
-                .apply { retryRootProcessId?.let { put("root.process.id", it.toLong()) } }
-                .build()
+            startedRunAttributes(
+                result.processId,
+                serverId,
+                agent.name,
+                "retry",
+                parentProcessId = sourceProcess.parentProcessId,
+                rootProcessId = retryRootProcessId,
+            ) {
+                put("retry.of_process_id", sourceProcess.id.toLong())
+            }
     }
 }
 
@@ -358,18 +355,44 @@ internal suspend fun handleResume(
             )
 
         result.processId to
-            Attributes
-                .builder()
-                .put("process.id", result.processId.toLong())
-                .put("server.id", serverId)
-                .put("agent.name", agent.name)
-                .put("resume.of_process_id", sourceProcess.id.toLong())
-                .put("request.source", "resume")
-                .apply { sourceProcess.parentProcessId?.let { put("parent.process.id", it.toLong()) } }
-                .apply { resumeRootProcessId?.let { put("root.process.id", it.toLong()) } }
-                .build()
+            startedRunAttributes(
+                result.processId,
+                serverId,
+                agent.name,
+                "resume",
+                parentProcessId = sourceProcess.parentProcessId,
+                rootProcessId = resumeRootProcessId,
+            ) {
+                put("resume.of_process_id", sourceProcess.id.toLong())
+            }
     }
 }
+
+/**
+ * The root span's attributes of a run one of the retry / resume / debug paths starts itself: the
+ * run's identity, how it was started, the source run's parent and flow root when it has them, and
+ * whatever [extra] adds for that path. The three paths share this shape, and a key typo here would
+ * silently stop matching a trace query.
+ */
+private fun startedRunAttributes(
+    processId: Int,
+    serverId: String,
+    agentName: String,
+    source: String,
+    parentProcessId: Int? = null,
+    rootProcessId: Int? = null,
+    extra: AttributesBuilder.() -> Unit,
+): Attributes =
+    Attributes
+        .builder()
+        .put(SpanAttributes.PROCESS_ID, processId.toLong())
+        .put(SpanAttributes.SERVER_ID, serverId)
+        .put(SpanAttributes.AGENT_NAME, agentName)
+        .put(SpanAttributes.REQUEST_SOURCE, source)
+        .apply { parentProcessId?.let { put(SpanAttributes.PARENT_PROCESS_ID, it.toLong()) } }
+        .apply { rootProcessId?.let { put(SpanAttributes.ROOT_PROCESS_ID, it.toLong()) } }
+        .apply(extra)
+        .build()
 
 /**
  * Starts a run under a fresh root span [spanName] and answers its process id. [start] gets the

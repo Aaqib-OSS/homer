@@ -1,6 +1,7 @@
 package homer.app.executors
 
 import homer.app.EnvConstants
+import homer.app.SpanAttributes
 import homer.app.config.ExecutionConfig
 import homer.app.infra.PurgeSchedule
 import homer.app.infra.QuestionsWorkspaceSetup
@@ -255,7 +256,7 @@ class Process(
         if (!deps.processManager.compareAndSetStatus(processId, setOf(ProcessStatus.CREATED), ProcessStatus.WORKING)) {
             throw CancellationException("Process $processId was killed before it started")
         }
-        processSpan.setAttribute("process.status", ProcessStatus.CREATED.name)
+        processSpan.setAttribute(SpanAttributes.PROCESS_STATUS, ProcessStatus.CREATED.name)
         // Register the artifacts dir before creating it: the purge sweep's shared-dir
         // check must be able to see this run as an owner of the directory.
         deps.processManager.setArtifactsDir(processId, workspace.config.artifacts)
