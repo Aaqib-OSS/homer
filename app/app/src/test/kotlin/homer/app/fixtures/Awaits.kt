@@ -86,7 +86,8 @@ fun awaitProcessExit(
  * Reads the `/proc` state rather than `ProcessHandle.isAlive`: a group-killed orphan dies as a
  * zombie (state `Z`) until its reparent target wait()s on it — in a CI container a PID 1 that
  * may never get around to it — and `ProcessHandle` counts an unreaped zombie as alive. `Z` means
- * the kill worked. Only called under the setsid assumption, so `/proc` exists. (Linux only.)
+ * the kill worked. Callers run on Linux, so `/proc` exists; the setsid tests additionally rely
+ * on the zombie semantics described above. (Linux only.)
  */
 private fun processGone(pid: Long): Boolean {
     val stat = runCatching { Path.of("/proc/$pid/stat").readText() }.getOrNull() ?: return true

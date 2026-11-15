@@ -1,6 +1,8 @@
 package homer.app.fixtures
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.test.runTest
 import java.util.concurrent.TimeUnit
 import kotlin.test.Test
@@ -53,6 +55,16 @@ class AwaitsTest {
         }
 
     @Test
+    fun `eventually rethrows the bare timeout when the block never completed`() =
+        runTest {
+            // A block that suspends past the timeout records no failure of its own, so the caller
+            // gets the timeout itself rather than a wrapped last failure.
+            assertFailsWith<TimeoutCancellationException> {
+                eventually(timeout = 100.milliseconds, poll = 10.milliseconds) { awaitCancellation() }
+            }
+        }
+
+    @Test
     fun `eventually lets a cancelled block's cancellation through`() =
         runTest {
             val failure =
@@ -77,6 +89,20 @@ class AwaitsTest {
 
         assertTrue(held)
         assertEquals(3, calls)
+    }
+
+    @Test
+    fun `pollUntil accepts a probe that already holds on its first call`() {
+        var calls = 0
+
+        val held =
+            pollUntil(timeoutMs = 1_000, pollMs = 10) {
+                calls++
+                true
+            }
+
+        assertTrue(held)
+        assertEquals(1, calls, "a probe that holds immediately must not be polled again")
     }
 
     @Test
