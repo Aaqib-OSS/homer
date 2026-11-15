@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-04-21
 deciders: Lukáš Vlk
+amended: 2026-11-15
 ---
 # ADR-0001: Record architecture decisions
 
@@ -48,6 +49,17 @@ that most contributors will already recognise.
 - Bad: ADRs can drift from reality if superseded decisions are not marked.
   Mitigation: when a decision is replaced, the old ADR's `status` flips to
   `superseded by ADR-NNNN` rather than being edited in place.
+
+## Amendment (2026-11-15): a partial change amends the ADR in place
+
+The mitigation above covers a decision replaced **in full**: a new ADR is
+written and the old one's `status` flips. A decision that changes only **in
+part** — a mechanism it names is replaced, a bound moves, a detail reverses —
+is instead amended where it stands: a dated `## Amendment` section or
+blockquote records the change, the original decision text stays, and
+`status: accepted` holds because the rest of the decision still does. The
+[ADR README](README.md) defines the `amended:` and `superseded-by:` front
+matter that marks this.
 
 ## More Information
 

@@ -100,11 +100,30 @@ function numberingGaps(docs, reasons = GAP_REASONS) {
 
 // An `Amendment` heading at any level, or a `> **Amendment` blockquote, amends a decision in place.
 const AMENDMENT = /^(?:#{2,6} Amendment|> \*\*Amendment)/m
-// The date each amendment heading or blockquote carries; a bare `## Amendments` list drops out.
-const amendmentDates = (text) =>
-  [...text.matchAll(/^(?:#{2,6} Amendment[^\n]*|> \*\*Amendment[^\n]*)/gm)]
+// The dated `- YYYY-MM-DD:` bullets a plural `## Amendments` section lists, until the next heading
+// of the section's level or above ends it.
+const bulletDates = (text) => {
+  const dates = []
+  let level = 0
+  for (const line of text.split('\n')) {
+    const heading = line.match(/^(#{2,6}) Amendments\s*$/)
+    if (heading !== null) level = heading[1].length
+    else if (level !== 0 && new RegExp(`^#{1,${level}} `).test(line)) level = 0
+    else if (level !== 0) {
+      const date = line.match(/^\s*- (\d{4}-\d{2}-\d{2}):/)?.[1]
+      if (date !== undefined) dates.push(date)
+    }
+  }
+  return dates
+}
+// The date each amendment carries: a singular heading, a blockquote, or a dated bullet under a
+// plural `## Amendments` heading — the list README.md calls "the same thing".
+const amendmentDates = (text) => [
+  ...[...text.matchAll(/^(?:#{2,6} Amendment[^\n]*|> \*\*Amendment[^\n]*)/gm)]
     .map((line) => line[0].match(/\d{4}-\d{2}-\d{2}/)?.[0])
-    .filter((date) => date !== undefined)
+    .filter((date) => date !== undefined),
+  ...bulletDates(text),
+]
 // `YYYY-MM-DD` with the month and day ranges: a date, not a run of digits.
 const DATE = /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/
 const ADR_NUMBER = /^ADR-\d{4}$/
@@ -207,6 +226,8 @@ test('an amendment must be dated and a supersession must name an ADR file', () =
     ['9993', { name: '9993-nonsense.md', text: withFrontMatter('status: accepted\namended: 2026-01-02\nsuperseded-by: foo', `# ADR-9993: Nonsense\n\n${amendment}`) }],
     ['9992', { name: '9992-subheading.md', text: withFrontMatter('status: accepted', '# ADR-9992: Subheading\n\n### Amendment 2026-01-02 — later\n') }],
     ['9991', { name: '9991-partial.md', text: withFrontMatter('status: accepted\namended: 2026-01-02', '# ADR-9991: Partial\n\n> **Amendment — no date of its own.**\n\n## Amendment 2026-01-02 — one\n\n### Amendment 2026-03-04 — two\n') }],
+    ['9989', { name: '9989-list.md', text: withFrontMatter('status: accepted\namended: 2026-02-01', '# ADR-9989: List\n\n## Amendments\n\n- 2026-02-01: one\n- 2026-02-03: two\n') }],
+    ['9988', { name: '9988-scoped.md', text: withFrontMatter('status: accepted\namended: 2026-02-01', '# ADR-9988: Scoped\n\n## Amendments\n\n- 2026-02-01: one\n\n## Notes\n\n- 2026-02-03: not an amendment, the section ended above\n') }],
   ])
   assert.deepEqual(unmarkedAmendments(docs), [
     '9996: an amendment with no `amended:`',
@@ -216,6 +237,7 @@ test('an amendment must be dated and a supersession must name an ADR file', () =
     '9993: `superseded-by: foo` is not a comma-separated ADR-NNNN list',
     '9992: an amendment with no `amended:`',
     '9991: `amended: 2026-01-02` does not list 2026-03-04',
+    '9989: `amended: 2026-02-01` does not list 2026-02-03',
   ])
 })
 
@@ -260,5 +282,6 @@ test('every amended ADR is marked in its front matter', () => {
   const docs = adrDocs()
   const amended = [...docs.values()].filter(({ text }) => AMENDMENT.test(text))
   assert.ok(amended.length > 0, 'no amendment found: has the marker moved?')
+  assert.ok([...docs.values()].some(({ text }) => bulletDates(text).length > 0), 'no dated bullet under a plural `## Amendments` section: has the form moved?')
   assert.deepEqual(unmarkedAmendments(docs), [])
 })

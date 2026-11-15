@@ -80,8 +80,9 @@ Neither key is a status: `status:` stays one of the four values above.
    an ADR that code, a workflow or a `CLAUDE.md` cites still reads `proposed`, or while the
    index and the front matter disagree. It also fails on a cited ADR with no parsable status, on
    any status outside the four above, on an index row that links no ADR file or an ADR file with
-   no row, on a `# ADR-NNNN` heading whose number is not the filename's, on a hole in the
-   numbering, and on an `Amendment` heading or `> **Amendment` blockquote whose `amended:` is
+   no row, on a `# ADR-NNNN` heading that is missing or whose number is not the filename's, on a
+   hole in the numbering, and on an `Amendment` heading, a `> **Amendment` blockquote or a dated
+   bullet under a plural `## Amendments` section whose `amended:` is
    missing, is not an ascending `YYYY-MM-DD` list, or omits a date the ADR's amendments carry,
    or whose `superseded-by:` names no existing ADR.
 
