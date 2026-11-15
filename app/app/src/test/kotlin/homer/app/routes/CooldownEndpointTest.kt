@@ -6,6 +6,7 @@ import homer.app.configureStatusPages
 import homer.app.executors.CommandExecutorFactory
 import homer.app.executors.LockManager
 import homer.app.executors.ParallelRunsManager
+import homer.app.executors.ProcessDeps
 import homer.app.executors.ProcessExecutor
 import homer.app.executors.ProcessFactory
 import homer.app.executors.RunMessageExpiry
@@ -102,17 +103,19 @@ class CooldownEndpointTest {
 
         val processFactory: ProcessFactory =
             ProcessFactory(
-                workspaceConfigFactory = mockk<WorkspaceConfigFactory>(relaxed = true),
-                executorFactory = mockk<CommandExecutorFactory>(relaxed = true),
-                telemetryService = TestFixtures.mockTelemetryService(),
-                lockManager = mockk<LockManager>(relaxed = true),
-                parallelRunsManager = mockk<ParallelRunsManager>(relaxed = true),
-                config = ExecutionConfig(),
-                processManager = processManager,
-                runnerRegistry = mockk<RunnerRegistry>(relaxed = true),
-                activeSessions = mockk<ActiveSessionsRegistry>(relaxed = true),
-                questionsService = mockk<QuestionsService>(relaxed = true),
-                questionsWorkspaceSetup = mockk<QuestionsWorkspaceSetup>(relaxed = true),
+                ProcessDeps(
+                    workspaceConfigFactory = mockk<WorkspaceConfigFactory>(relaxed = true),
+                    executorFactory = mockk<CommandExecutorFactory>(relaxed = true),
+                    telemetryService = TestFixtures.mockTelemetryService(),
+                    lockManager = mockk<LockManager>(relaxed = true),
+                    parallelRunsManager = mockk<ParallelRunsManager>(relaxed = true),
+                    config = ExecutionConfig(),
+                    processManager = processManager,
+                    runnerRegistry = mockk<RunnerRegistry>(relaxed = true),
+                    activeSessions = mockk<ActiveSessionsRegistry>(relaxed = true),
+                    questionsService = mockk<QuestionsService>(relaxed = true),
+                    questionsWorkspaceSetup = mockk<QuestionsWorkspaceSetup>(relaxed = true),
+                ),
             )
 
         /**

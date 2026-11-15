@@ -142,20 +142,12 @@ class ProcessTest {
         // Create a real Process instance with mocked dependencies
         process =
             Process(
-                workspaceConfigFactory = mockWorkspaceConfigFactory,
-                executorFactory = mockExecutorFactory,
-                telemetryService = mockTelemetryService,
-                config = testConfig,
-                lockManager = mockLockManager,
-                parallelRunsManager = mockParallelRunsManager,
-                processManager = mockProcessManager,
-                runnerRegistry = mockRunnerRegistry,
-                activeSessions = ActiveSessionsRegistry(),
-                questionsService = mockQuestionsService,
-                questionsWorkspaceSetup = mockQuestionsWorkspaceSetup,
-                agent = testAgent,
-                queryParams = testQueryParams,
-                parentContext = testContext,
+                processDeps(),
+                RunSpec(
+                    agent = testAgent,
+                    queryParams = testQueryParams,
+                    parentContext = testContext,
+                ),
             )
     }
 
@@ -163,6 +155,22 @@ class ProcessTest {
     fun teardown() {
         unmockkAll()
     }
+
+    /** The mocked collaborators set up above; a test `copy`s in the real ones it exercises. */
+    private fun processDeps() =
+        ProcessDeps(
+            workspaceConfigFactory = mockWorkspaceConfigFactory,
+            executorFactory = mockExecutorFactory,
+            telemetryService = mockTelemetryService,
+            config = testConfig,
+            lockManager = mockLockManager,
+            parallelRunsManager = mockParallelRunsManager,
+            processManager = mockProcessManager,
+            runnerRegistry = mockRunnerRegistry,
+            activeSessions = ActiveSessionsRegistry(),
+            questionsService = mockQuestionsService,
+            questionsWorkspaceSetup = mockQuestionsWorkspaceSetup,
+        )
 
     // ========== Constructor and Properties Tests ==========
 
@@ -177,20 +185,12 @@ class ProcessTest {
             val customAgent = AgentFixtures.simpleAgent().copy(name = "custom-agent-name")
             val customProcess =
                 Process(
-                    workspaceConfigFactory = mockWorkspaceConfigFactory,
-                    executorFactory = mockExecutorFactory,
-                    telemetryService = mockTelemetryService,
-                    config = testConfig,
-                    lockManager = mockLockManager,
-                    parallelRunsManager = mockParallelRunsManager,
-                    processManager = mockProcessManager,
-                    runnerRegistry = mockRunnerRegistry,
-                    activeSessions = ActiveSessionsRegistry(),
-                    questionsService = mockQuestionsService,
-                    questionsWorkspaceSetup = mockQuestionsWorkspaceSetup,
-                    agent = customAgent,
-                    queryParams = emptyMap(),
-                    parentContext = testContext,
+                    processDeps(),
+                    RunSpec(
+                        agent = customAgent,
+                        queryParams = emptyMap(),
+                        parentContext = testContext,
+                    ),
                 )
 
             assertEquals("custom-agent-name", customProcess.name)
@@ -248,20 +248,12 @@ class ProcessTest {
             val remoteAgent = testAgent.copy(runner = "ssh-test")
             val remoteProcess =
                 Process(
-                    workspaceConfigFactory = mockWorkspaceConfigFactory,
-                    executorFactory = mockExecutorFactory,
-                    telemetryService = mockTelemetryService,
-                    config = testConfig,
-                    lockManager = mockLockManager,
-                    parallelRunsManager = mockParallelRunsManager,
-                    processManager = mockProcessManager,
-                    runnerRegistry = mockRunnerRegistry,
-                    activeSessions = ActiveSessionsRegistry(),
-                    questionsService = mockQuestionsService,
-                    questionsWorkspaceSetup = mockQuestionsWorkspaceSetup,
-                    agent = remoteAgent,
-                    queryParams = testQueryParams,
-                    parentContext = testContext,
+                    processDeps(),
+                    RunSpec(
+                        agent = remoteAgent,
+                        queryParams = testQueryParams,
+                        parentContext = testContext,
+                    ),
                 )
             val mockWorkspaceConfig = TestFixtures.mockWorkspaceConfig()
             every {
@@ -353,20 +345,12 @@ class ProcessTest {
                 )
             val processWithCleanup =
                 Process(
-                    workspaceConfigFactory = mockWorkspaceConfigFactory,
-                    executorFactory = mockExecutorFactory,
-                    telemetryService = mockTelemetryService,
-                    config = testConfig,
-                    lockManager = mockLockManager,
-                    parallelRunsManager = mockParallelRunsManager,
-                    processManager = mockProcessManager,
-                    runnerRegistry = mockRunnerRegistry,
-                    activeSessions = ActiveSessionsRegistry(),
-                    questionsService = mockQuestionsService,
-                    questionsWorkspaceSetup = mockQuestionsWorkspaceSetup,
-                    agent = agentWithCleanup,
-                    queryParams = testQueryParams,
-                    parentContext = testContext,
+                    processDeps(),
+                    RunSpec(
+                        agent = agentWithCleanup,
+                        queryParams = testQueryParams,
+                        parentContext = testContext,
+                    ),
                 )
 
             val mockWorkspaceConfig = TestFixtures.mockWorkspaceConfig()
@@ -591,20 +575,12 @@ class ProcessTest {
             val processId = 999
             val customProcess =
                 Process(
-                    workspaceConfigFactory = mockWorkspaceConfigFactory,
-                    executorFactory = mockExecutorFactory,
-                    telemetryService = mockTelemetryService,
-                    config = testConfig,
-                    lockManager = mockLockManager,
-                    parallelRunsManager = mockParallelRunsManager,
-                    processManager = mockProcessManager,
-                    runnerRegistry = mockRunnerRegistry,
-                    activeSessions = ActiveSessionsRegistry(),
-                    questionsService = mockQuestionsService,
-                    questionsWorkspaceSetup = mockQuestionsWorkspaceSetup,
-                    agent = testAgent,
-                    queryParams = testQueryParams,
-                    parentContext = testContext,
+                    processDeps(),
+                    RunSpec(
+                        agent = testAgent,
+                        queryParams = testQueryParams,
+                        parentContext = testContext,
+                    ),
                 )
             val mockWorkspaceConfig = TestFixtures.mockWorkspaceConfig()
 
@@ -717,20 +693,12 @@ class ProcessTest {
             val queryParams = mapOf("key1" to "value1", "key2" to "value2")
             val processWithParams =
                 Process(
-                    workspaceConfigFactory = mockWorkspaceConfigFactory,
-                    executorFactory = mockExecutorFactory,
-                    telemetryService = mockTelemetryService,
-                    config = testConfig,
-                    lockManager = mockLockManager,
-                    parallelRunsManager = mockParallelRunsManager,
-                    processManager = mockProcessManager,
-                    runnerRegistry = mockRunnerRegistry,
-                    activeSessions = ActiveSessionsRegistry(),
-                    questionsService = mockQuestionsService,
-                    questionsWorkspaceSetup = mockQuestionsWorkspaceSetup,
-                    agent = testAgent,
-                    queryParams = queryParams,
-                    parentContext = testContext,
+                    processDeps(),
+                    RunSpec(
+                        agent = testAgent,
+                        queryParams = queryParams,
+                        parentContext = testContext,
+                    ),
                 )
 
             val mockWorkspaceConfig = TestFixtures.mockWorkspaceConfig()
@@ -773,20 +741,12 @@ class ProcessTest {
         runTest {
             val processWithoutParams =
                 Process(
-                    workspaceConfigFactory = mockWorkspaceConfigFactory,
-                    executorFactory = mockExecutorFactory,
-                    telemetryService = mockTelemetryService,
-                    config = testConfig,
-                    lockManager = mockLockManager,
-                    parallelRunsManager = mockParallelRunsManager,
-                    processManager = mockProcessManager,
-                    runnerRegistry = mockRunnerRegistry,
-                    activeSessions = ActiveSessionsRegistry(),
-                    questionsService = mockQuestionsService,
-                    questionsWorkspaceSetup = mockQuestionsWorkspaceSetup,
-                    agent = testAgent,
-                    queryParams = emptyMap(),
-                    parentContext = testContext,
+                    processDeps(),
+                    RunSpec(
+                        agent = testAgent,
+                        queryParams = emptyMap(),
+                        parentContext = testContext,
+                    ),
                 )
 
             val mockWorkspaceConfig = TestFixtures.mockWorkspaceConfig()
@@ -832,21 +792,15 @@ class ProcessTest {
         processManager: ProcessManager = mockProcessManager,
     ): Process =
         Process(
-            workspaceConfigFactory = mockWorkspaceConfigFactory,
-            executorFactory = mockExecutorFactory,
-            telemetryService = mockTelemetryService,
-            config = testConfig,
-            lockManager = mockLockManager,
-            parallelRunsManager = mockParallelRunsManager,
-            processManager = processManager,
-            runnerRegistry = mockRunnerRegistry,
-            activeSessions = ActiveSessionsRegistry(),
-            questionsService = mockQuestionsService,
-            questionsWorkspaceSetup = mockQuestionsWorkspaceSetup,
-            agent = agent,
-            queryParams = emptyMap(),
-            parentContext = testContext,
-            ancestorLockKeys = ancestorLockKeys,
+            processDeps().copy(
+                processManager = processManager,
+            ),
+            RunSpec(
+                agent = agent,
+                queryParams = emptyMap(),
+                parentContext = testContext,
+                ancestorLockKeys = ancestorLockKeys,
+            ),
         )
 
     @Test
@@ -971,22 +925,17 @@ class ProcessTest {
         parallelRunsManager: ParallelRunsManager,
     ): Process =
         Process(
-            workspaceConfigFactory = mockWorkspaceConfigFactory,
-            executorFactory = mockExecutorFactory,
-            telemetryService = mockTelemetryService,
-            config = testConfig,
-            lockManager = lockManager,
-            parallelRunsManager = parallelRunsManager,
-            processManager = mockProcessManager,
-            runnerRegistry = mockRunnerRegistry,
-            activeSessions = ActiveSessionsRegistry(),
-            questionsService = mockQuestionsService,
-            questionsWorkspaceSetup = mockQuestionsWorkspaceSetup,
-            agent = agent,
-            queryParams = queryParams,
-            parentContext = testContext,
-            // A mocked workspace: these tests are about admission order, not filesystem work.
-            workspaceFactory = { config, _, _ -> TestFixtures.mockWorkspace(config) },
+            processDeps().copy(
+                lockManager = lockManager,
+                parallelRunsManager = parallelRunsManager,
+                // A mocked workspace: these tests are about admission order, not filesystem work.
+                workspaceFactory = { config, _, _ -> TestFixtures.mockWorkspace(config) },
+            ),
+            RunSpec(
+                agent = agent,
+                queryParams = queryParams,
+                parentContext = testContext,
+            ),
         )
 
     /** Renders `mr-<MR>` from the run's inputs, as the production factory would for that template. */
@@ -1289,26 +1238,22 @@ class ProcessTest {
         parallelRunsManager: ParallelRunsManager = DefaultParallelRunsManager(),
     ): Process =
         Process(
-            workspaceConfigFactory =
-                WorkspaceConfigFactory(
-                    workspaceRoot = "/tmp/homer",
-                    globalEnv = emptyMap(),
-                    textCompiler = DefaultTextCompiler(),
-                ),
-            executorFactory = mockExecutorFactory,
-            telemetryService = mockTelemetryService,
-            config = testConfig,
-            lockManager = lockManager,
-            parallelRunsManager = parallelRunsManager,
-            processManager = mockProcessManager,
-            runnerRegistry = mockRunnerRegistry,
-            activeSessions = ActiveSessionsRegistry(),
-            questionsService = mockQuestionsService,
-            questionsWorkspaceSetup = mockQuestionsWorkspaceSetup,
-            agent = agent,
-            queryParams = queryParams,
-            parentContext = testContext,
-            workspaceFactory = { _, _, _ -> throw AssertionError("a denied run must not create a workspace") },
+            processDeps().copy(
+                workspaceConfigFactory =
+                    WorkspaceConfigFactory(
+                        workspaceRoot = "/tmp/homer",
+                        globalEnv = emptyMap(),
+                        textCompiler = DefaultTextCompiler(),
+                    ),
+                lockManager = lockManager,
+                parallelRunsManager = parallelRunsManager,
+                workspaceFactory = { _, _, _ -> throw AssertionError("a denied run must not create a workspace") },
+            ),
+            RunSpec(
+                agent = agent,
+                queryParams = queryParams,
+                parentContext = testContext,
+            ),
         )
 
     /**
@@ -1383,26 +1328,27 @@ class ProcessTest {
             val lockManager = mockLockManager
             val process =
                 Process(
-                    workspaceConfigFactory =
-                        WorkspaceConfigFactory(
-                            workspaceRoot = "/tmp/homer",
-                            globalEnv = emptyMap(),
-                            textCompiler = DefaultTextCompiler(),
-                        ),
-                    executorFactory = mockExecutorFactory,
-                    telemetryService = mockTelemetryService,
-                    config = testConfig,
-                    lockManager = lockManager,
-                    parallelRunsManager = mockParallelRunsManager,
-                    processManager = mockProcessManager,
-                    runnerRegistry = mockRunnerRegistry,
-                    activeSessions = ActiveSessionsRegistry(),
-                    questionsService = mockQuestionsService,
-                    questionsWorkspaceSetup = mockQuestionsWorkspaceSetup,
-                    agent = agent,
-                    queryParams = mapOf("TICKET_ID" to "T-1"),
-                    parentContext = testContext,
-                    workspaceFactory = { _, _, _ -> TestFixtures.mockWorkspace(TestFixtures.mockWorkspaceConfig(lockKey = "ticket-T-1")) },
+                    processDeps().copy(
+                        workspaceConfigFactory =
+                            WorkspaceConfigFactory(
+                                workspaceRoot = "/tmp/homer",
+                                globalEnv = emptyMap(),
+                                textCompiler = DefaultTextCompiler(),
+                            ),
+                        lockManager = lockManager,
+                        workspaceFactory = {
+                            _,
+                            _,
+                            _,
+                            ->
+                            TestFixtures.mockWorkspace(TestFixtures.mockWorkspaceConfig(lockKey = "ticket-T-1"))
+                        },
+                    ),
+                    RunSpec(
+                        agent = agent,
+                        queryParams = mapOf("TICKET_ID" to "T-1"),
+                        parentContext = testContext,
+                    ),
                 )
 
             process.execute(1, mockSpan)
@@ -1639,21 +1585,16 @@ class ProcessTest {
         workspaceFactory: (WorkspaceConfig, Span, suspend () -> Boolean) -> Workspace,
     ): Process =
         Process(
-            workspaceConfigFactory = mockWorkspaceConfigFactory,
-            executorFactory = mockExecutorFactory,
-            telemetryService = mockTelemetryService,
-            config = testConfig,
-            lockManager = lockManager,
-            parallelRunsManager = parallelRunsManager,
-            processManager = mockProcessManager,
-            runnerRegistry = mockRunnerRegistry,
-            activeSessions = ActiveSessionsRegistry(),
-            questionsService = mockQuestionsService,
-            questionsWorkspaceSetup = mockQuestionsWorkspaceSetup,
-            agent = agent,
-            queryParams = emptyMap(),
-            parentContext = testContext,
-            workspaceFactory = workspaceFactory,
+            processDeps().copy(
+                lockManager = lockManager,
+                parallelRunsManager = parallelRunsManager,
+                workspaceFactory = workspaceFactory,
+            ),
+            RunSpec(
+                agent = agent,
+                queryParams = emptyMap(),
+                parentContext = testContext,
+            ),
         )
 
     private fun throwingCleanupWorkspace(): Workspace =
@@ -1896,21 +1837,13 @@ class ProcessTest {
                 )
             val replay =
                 Process(
-                    workspaceConfigFactory = mockWorkspaceConfigFactory,
-                    executorFactory = mockExecutorFactory,
-                    telemetryService = mockTelemetryService,
-                    config = testConfig,
-                    lockManager = mockLockManager,
-                    parallelRunsManager = mockParallelRunsManager,
-                    processManager = mockProcessManager,
-                    runnerRegistry = mockRunnerRegistry,
-                    activeSessions = ActiveSessionsRegistry(),
-                    questionsService = mockQuestionsService,
-                    questionsWorkspaceSetup = mockQuestionsWorkspaceSetup,
-                    agent = agent,
-                    queryParams = mapOf("MR_IID" to "tok-historical"),
-                    extraSecretInputKeys = setOf("MR_IID"),
-                    parentContext = testContext,
+                    processDeps(),
+                    RunSpec(
+                        agent = agent,
+                        queryParams = mapOf("MR_IID" to "tok-historical"),
+                        extraSecretInputKeys = setOf("MR_IID"),
+                        parentContext = testContext,
+                    ),
                 )
             // Full-arity matcher: this replay's secretEnvNames (extraSecretInputKeys
             // union) is non-empty, so the common 5-arg-any() stub (which only matches
@@ -1969,20 +1902,12 @@ class ProcessTest {
             )
         val processWithSecrets =
             Process(
-                workspaceConfigFactory = mockWorkspaceConfigFactory,
-                executorFactory = mockExecutorFactory,
-                telemetryService = mockTelemetryService,
-                config = testConfig,
-                lockManager = mockLockManager,
-                parallelRunsManager = mockParallelRunsManager,
-                processManager = mockProcessManager,
-                runnerRegistry = mockRunnerRegistry,
-                activeSessions = ActiveSessionsRegistry(),
-                questionsService = mockQuestionsService,
-                questionsWorkspaceSetup = mockQuestionsWorkspaceSetup,
-                agent = agent,
-                queryParams = mapOf("MR_IID" to "param-secret-value"),
-                parentContext = testContext,
+                processDeps(),
+                RunSpec(
+                    agent = agent,
+                    queryParams = mapOf("MR_IID" to "param-secret-value"),
+                    parentContext = testContext,
+                ),
             )
 
         val redactor = processWithSecrets.failureReasonRedactor

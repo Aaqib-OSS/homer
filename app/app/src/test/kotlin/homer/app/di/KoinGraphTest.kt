@@ -155,6 +155,7 @@ class KoinGraphTest {
                     "SweepStatus",
                     "KubernetesRunnerStartupSweep",
                     "RunnerRegistry",
+                    "ProcessDeps",
                     "ProcessFactory",
                     "AgentRunStarter",
                     "CoroutineScope",

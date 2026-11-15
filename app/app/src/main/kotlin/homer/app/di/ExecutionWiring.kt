@@ -6,6 +6,7 @@ import homer.app.executors.DefaultParallelRunsManager
 import homer.app.executors.LangGraphExecutor
 import homer.app.executors.LockManager
 import homer.app.executors.ParallelRunsManager
+import homer.app.executors.ProcessDeps
 import homer.app.executors.ProcessExecutor
 import homer.app.executors.ProcessFactory
 import homer.app.executors.RunAgentExecutor
@@ -95,7 +96,7 @@ internal val executionModule =
         }
 
         single {
-            ProcessFactory(
+            ProcessDeps(
                 workspaceConfigFactory = get(),
                 executorFactory = get(),
                 telemetryService = get<TelemetryService>(),
@@ -109,6 +110,8 @@ internal val executionModule =
                 questionsWorkspaceSetup = get(),
             )
         }
+
+        single { ProcessFactory(get()) }
 
         single {
             AgentRunStarter(
