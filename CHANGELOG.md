@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Homer
+
+- **Fixed: image entrypoint passes `CONFIG_PATH` as one argument** — A config path with spaces or glob characters is no longer split or expanded; an unset or empty `CONFIG_PATH` still passes none.
+
 ### Console
 
 - **Fixed: Runners page ignores the `-slim` server image suffix** — A runner on the same release as a slim Homer server is no longer flagged as a version mismatch.
