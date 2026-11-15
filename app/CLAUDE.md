@@ -232,10 +232,11 @@ cache (ADR-0084): those runners reach no key server.
   names each artifact and why: a checksum that does not match, a key that is not trusted, a key that could
   not be fetched. A checksum mismatch on a version nobody changed is a supply-chain incident — stop and
   investigate, never regenerate over it.
-- **Never weaken the mode.** `org.gradle.dependency.verification=lenient|off` and
-  `--dependency-verification=lenient|off` turn the gate into a log line, and `--write-verification-metadata`
+- **Never weaken the mode.** `org.gradle.dependency.verification=lenient|off`,
+  `--dependency-verification=lenient|off` and the `GRADLE_DEPENDENCY_VERIFICATION=lenient|off`
+  environment variable turn the gate into a log line, and `--write-verification-metadata`
   in a build or workflow trusts whatever that run downloaded. Strict is the default; the gate test fails on
-  all three anywhere in `gradle.properties`, the workflows or a Dockerfile.
+  all four anywhere in `gradle.properties`, the workflows or a Dockerfile.
 - **Read the regeneration diff before committing it.** Gradle adds an entry for everything the run
   resolved; an artifact nobody meant to add, or a checksum that changes under an unchanged version, is
   exactly what the gate exists to surface.

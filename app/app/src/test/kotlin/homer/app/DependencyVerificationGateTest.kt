@@ -43,7 +43,7 @@ class DependencyVerificationGateTest {
             .filter { path ->
                 val name = path.substringAfterLast('/')
                 name == "gradle.properties" || name == "Dockerfile" ||
-                    (path.startsWith(".github/workflows/") && name.endsWith(".yml"))
+                    (path.startsWith(".github/workflows/") && (name.endsWith(".yml") || name.endsWith(".yaml")))
             }.sorted()
             .toList()
 
@@ -136,11 +136,13 @@ class DependencyVerificationGateTest {
     }
 
     /**
-     * Every spelling of turning verification down: the Gradle property and the CLI flag, `=` and a
-     * space between, either mode, and any capitalisation — `=Lenient` must fail exactly like
-     * `=lenient` does.
+     * Every spelling of turning verification down: the Gradle property and the CLI flag, the
+     * `GRADLE_DEPENDENCY_VERIFICATION` environment variable (`_` separators, a YAML `:` value),
+     * `=` a space and a colon between, either mode, and any capitalisation — `=Lenient` must fail
+     * exactly like `=lenient` does.
      */
-    private val weakened = Regex("""dependency[-.]verification\s*[=\s]\s*(lenient|off)\b""", RegexOption.IGNORE_CASE)
+    private val weakened =
+        Regex("""(gradle_)?dependency[-._]verification\s*[=\s:]\s*(lenient|off)\b""", RegexOption.IGNORE_CASE)
 
     @Test
     fun `the weakening guard recognizes every spelling of lenient and off`() {
@@ -150,6 +152,9 @@ class DependencyVerificationGateTest {
                 "dependency-verification=off",
                 "org.gradle.dependency-verification=off",
                 "dependency.verification=off",
+                "dependency_verification=off",
+                "GRADLE_DEPENDENCY_VERIFICATION=lenient",
+                "GRADLE_DEPENDENCY_VERIFICATION: off",
                 "--dependency-verification lenient",
                 "dependency-verification=LENIENT",
                 "dependency-verification=Off",
@@ -170,7 +175,18 @@ class DependencyVerificationGateTest {
 
     @Test
     fun `no build file or workflow weakens dependency verification`() {
-        for (path in buildFiles()) {
+        val files = buildFiles()
+        // An empty walk passes the loop vacuously: a regression in `skippedDirs`, the name filter or
+        // the repo-root resolution would silently switch the lenient/off and metadata-rewrite guard
+        // off for every build file (CI stays green while nothing is scanned).
+        assertTrue(files.isNotEmpty(), "buildFiles() discovered no build file, workflow or Dockerfile to scan.")
+        for (sentinel in listOf("app/gradle.properties", "app/Dockerfile", ".github/workflows/ci.yml")) {
+            assertTrue(
+                sentinel in files,
+                "buildFiles() no longer discovers `$sentinel`, so the weakening guard no longer scans it.",
+            )
+        }
+        for (path in files) {
             val text = read(path)
             val lenient = weakened.find(text)?.value
             assertTrue(
