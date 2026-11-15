@@ -129,3 +129,16 @@ Chosen: **A**.
   (ADR-0084).
 - Neutral: the atlas moves from the upstream Pages root to `/atlas/`.
 - Neutral: releases before the site have no archive and do not appear on it.
+
+## Amendment (2026-11-15): heading ids follow GitHub's
+
+The repository's Markdown is read on GitHub and on the site, so a `#fragment`
+must name the same heading on both. VitePress's own slugger dropped different
+punctuation than GitHub's (`/`, `.`, backticks), and 37 of the deep links
+between published pages opened at the top of the page on the site. The site
+now builds heading ids with `github-slugger`, the slugger GitHub uses, and
+numbers repeated headings `-1`, `-2` as GitHub does; GitHub's form is the one
+to keep, since it is where contributors read and write the links. Rewriting
+the fragments in the generator instead would have kept two id schemes alive.
+After the build, `site/scripts/check-anchors.mjs` fails it on a link whose
+fragment names no id on the page it points at.

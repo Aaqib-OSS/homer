@@ -125,7 +125,8 @@ jobs:
           retention-days: 7
 
   # The documentation site (ADR-0087): the generator's tests and a full build, which fails on a
-  # link to a file the repository does not hold and on a dead link between pages.
+  # link to a file the repository does not hold, on a dead link between pages, and on a link whose
+  # #fragment names no id on its page.
   docs-site:
     runs-on: ubuntu-latest
     timeout-minutes: 15
