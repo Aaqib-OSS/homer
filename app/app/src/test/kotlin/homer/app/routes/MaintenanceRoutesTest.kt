@@ -4,6 +4,7 @@ import homer.app.apiJson
 import homer.app.fixtures.ApiRouteTestBase
 import homer.app.fixtures.mountApiV1Routes
 import homer.app.models.MaintenanceResponse
+import homer.app.models.NewRunRecord
 import homer.app.models.ProcessStatus
 import homer.app.services.Authorizer
 import homer.app.services.MaintenanceModeService
@@ -156,7 +157,7 @@ class MaintenanceRoutesTest : ApiRouteTestBase() {
     fun `turning the mode on leaves a run already WORKING untouched`() =
         testApplication {
             val pm = realProcessManager()
-            val id = pm.obtainProcessId("long-running-agent")
+            val id = pm.obtainProcessId(NewRunRecord("long-running-agent"))
             assertTrue(pm.compareAndSetStatus(id, setOf(ProcessStatus.CREATED), ProcessStatus.WORKING))
             val maintenance = mockk<MaintenanceModeService>(relaxed = true)
             every { maintenance.snapshot() } returns maintenanceState()

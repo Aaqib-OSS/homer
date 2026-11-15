@@ -9,6 +9,23 @@ data class ProcessCreationResult(
     val processId: Int,
 )
 
+/** The caller-supplied fields of a new run's row; [homer.app.services.persistence.ProcessRepository.obtainProcessId] inserts it. */
+data class NewRunRecord(
+    val agentName: String,
+    val inputParams: Map<String, String> = emptyMap(),
+    val owner: String? = null,
+    val cooldown: Cooldown? = null,
+    val cooldownKey: String? = null,
+    val secretInputKeys: Set<String>? = null,
+    val parentProcessId: Int? = null,
+    val rootProcessId: Int? = null,
+    val tags: List<String> = emptyList(),
+) {
+    // Input values can be secret: keys only. Root CLAUDE.md §12 rule 7.
+    override fun toString() =
+        "NewRunRecord(agentName=$agentName, inputKeys=${inputParams.keys}, parentProcessId=$parentProcessId, rootProcessId=$rootProcessId)"
+}
+
 /** The slice of a run a LangGraph `subs` entry shows (ADR-0044). */
 data class SubRunProgress(
     val agentName: String,

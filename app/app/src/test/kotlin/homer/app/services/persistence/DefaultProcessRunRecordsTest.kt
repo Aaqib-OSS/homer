@@ -3,6 +3,7 @@ package homer.app.services.persistence
 import homer.app.fixtures.PersistenceTestSupport
 import homer.app.infra.ProcessJobRegistry
 import homer.app.models.CostSource
+import homer.app.models.NewRunRecord
 import homer.app.models.PodPhase
 import homer.app.models.ProcessStatus
 import homer.app.models.RunStop
@@ -24,7 +25,7 @@ class DefaultProcessRunRecordsTest {
     @Test
     fun `annotations land on the run's row`() =
         runTest {
-            val id = repository.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repository.obtainProcessId(NewRunRecord("a"), 100).processId
 
             records.setTraceId(id, "0af7651916cd43dd8448eb211c80319c")
             records.setArtifactsDir(id, Path.of("/ws/1/artifacts"))
@@ -42,7 +43,7 @@ class DefaultProcessRunRecordsTest {
     @Test
     fun `a zero cost delta leaves the cost source unstamped`() =
         runTest {
-            val id = repository.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repository.obtainProcessId(NewRunRecord("a"), 100).processId
 
             records.addCost(id, 0.0, CostSource.SESSION)
 
@@ -52,7 +53,7 @@ class DefaultProcessRunRecordsTest {
     @Test
     fun `a runtime tag past the ceiling is refused`() =
         runTest {
-            val id = repository.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repository.obtainProcessId(NewRunRecord("a"), 100).processId
 
             assertTrue(records.addRuntimeTag(id, "k:1", maxTags = 1, fromInputsKeys = emptySet()).written)
             assertFalse(records.addRuntimeTag(id, "k:2", maxTags = 1, fromInputsKeys = emptySet()).written)
@@ -62,7 +63,7 @@ class DefaultProcessRunRecordsTest {
     @Test
     fun `a failure reason reaches the run's row through the port`() =
         runTest {
-            val id = repository.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repository.obtainProcessId(NewRunRecord("a"), 100).processId
             repository.transitionStatus(id, ProcessStatus.WORKING, 10, setOf(ProcessStatus.CREATED))
             repository.transitionStatus(id, ProcessStatus.FAILED, 20, setOf(ProcessStatus.WORKING))
 
@@ -76,13 +77,13 @@ class DefaultProcessRunRecordsTest {
     @Test
     fun `a stop reaches the run's row through the port`() =
         runTest {
-            val id = repository.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repository.obtainProcessId(NewRunRecord("a"), 100).processId
             val stop = RunStop(StopReason.STEP_TIMEOUT, 1, "Run tests", 1_700_000_000, StopStepsOutcome.FINISHED)
 
             records.setStop(id, stop)
 
             assertEquals(stop, repository.getInfo(id)?.stop)
             // A run nobody stopped reads as not stopped, not as a stop with empty fields.
-            assertNull(repository.getInfo(repository.obtainProcessId("b", emptyMap(), 100).processId)?.stop)
+            assertNull(repository.getInfo(repository.obtainProcessId(NewRunRecord("b"), 100).processId)?.stop)
         }
 }

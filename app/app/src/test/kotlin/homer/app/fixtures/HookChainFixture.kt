@@ -4,6 +4,7 @@ import homer.app.infra.AgentInputResolver
 import homer.app.infra.ProcessJobRegistry
 import homer.app.models.Agent
 import homer.app.models.HookConfig
+import homer.app.models.RunStartRequest
 import homer.app.services.AgentRunStarter
 import homer.app.services.AgentsService
 import homer.app.services.Authorizer
@@ -73,10 +74,10 @@ internal class HookChainFixture(
         // the mock's own property — which answers nothing — not this fixture's map.
         every { agentsService.agents } returns agents
         coEvery {
-            runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+            runStarter.start(any(), any(), any(), any())
         } coAnswers
             {
-                started += firstArg<Agent>().name
+                started += firstArg<RunStartRequest>().agent.name
                 firedRunId
             }
     }

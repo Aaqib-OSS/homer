@@ -2,6 +2,7 @@ package homer.app.services
 
 import homer.app.executors.CommandArtifactPaths
 import homer.app.fixtures.PersistenceTestSupport
+import homer.app.models.NewRunRecord
 import homer.app.models.ProcessStatus
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
@@ -28,7 +29,7 @@ class ProcessManagerCommandArtifactsTest {
     fun `getCommandArtifacts returns null for an unknown command index on a known process`() =
         runTest {
             val pm = PersistenceTestSupport.processManager()
-            val id = pm.obtainProcessId("agent-a")
+            val id = pm.obtainProcessId(NewRunRecord("agent-a"))
             pm.setCommandArtifacts(
                 id,
                 0,
@@ -42,7 +43,7 @@ class ProcessManagerCommandArtifactsTest {
     fun `setCommandArtifacts then getCommandArtifacts returns the tracked paths`() =
         runTest {
             val pm = PersistenceTestSupport.processManager()
-            val id = pm.obtainProcessId("agent-a")
+            val id = pm.obtainProcessId(NewRunRecord("agent-a"))
             val stdOut = Path.of("/artifacts/cmd_0_attempt_0.out")
             val stdErr = Path.of("/artifacts/cmd_0_attempt_0.err")
 
@@ -57,7 +58,7 @@ class ProcessManagerCommandArtifactsTest {
     fun `setCommandArtifacts overwrites a previous entry for the same process and command index`() =
         runTest {
             val pm = PersistenceTestSupport.processManager()
-            val id = pm.obtainProcessId("agent-a")
+            val id = pm.obtainProcessId(NewRunRecord("agent-a"))
             pm.setCommandArtifacts(
                 id,
                 0,
@@ -79,7 +80,7 @@ class ProcessManagerCommandArtifactsTest {
     fun `setCommandArtifacts tracks distinct command indices independently on the same process`() =
         runTest {
             val pm = PersistenceTestSupport.processManager()
-            val id = pm.obtainProcessId("agent-a")
+            val id = pm.obtainProcessId(NewRunRecord("agent-a"))
             pm.setCommandArtifacts(
                 id,
                 0,
@@ -99,7 +100,7 @@ class ProcessManagerCommandArtifactsTest {
     fun `removeProcess clears tracked command artifacts`() =
         runTest {
             val pm = PersistenceTestSupport.processManager()
-            val id = pm.obtainProcessId("agent-a")
+            val id = pm.obtainProcessId(NewRunRecord("agent-a"))
             pm.setCommandArtifacts(
                 id,
                 0,
@@ -115,7 +116,7 @@ class ProcessManagerCommandArtifactsTest {
     fun `latestCommandArtifacts returns null for a process with nothing tracked`() =
         runTest {
             val pm = PersistenceTestSupport.processManager()
-            val id = pm.obtainProcessId("agent-a")
+            val id = pm.obtainProcessId(NewRunRecord("agent-a"))
             assertNull(pm.latestCommandArtifacts(id))
         }
 
@@ -123,7 +124,7 @@ class ProcessManagerCommandArtifactsTest {
     fun `latestCommandArtifacts returns the highest tracked index`() =
         runTest {
             val pm = PersistenceTestSupport.processManager()
-            val id = pm.obtainProcessId("agent-a")
+            val id = pm.obtainProcessId(NewRunRecord("agent-a"))
             pm.setCommandArtifacts(
                 id,
                 0,
@@ -150,8 +151,8 @@ class ProcessManagerCommandArtifactsTest {
     fun `latestCommandArtifacts is isolated per process`() =
         runTest {
             val pm = PersistenceTestSupport.processManager()
-            val id0 = pm.obtainProcessId("agent-a")
-            val id1 = pm.obtainProcessId("agent-a")
+            val id0 = pm.obtainProcessId(NewRunRecord("agent-a"))
+            val id1 = pm.obtainProcessId(NewRunRecord("agent-a"))
             pm.setCommandArtifacts(
                 id0,
                 5,
@@ -175,8 +176,8 @@ class ProcessManagerCommandArtifactsTest {
             // itself, or an evicted process's tracked paths leak for the server's
             // remaining uptime. Mirrors ProcessManagerTest's eviction test pattern.
             val pm = PersistenceTestSupport.processManager(maxProcesses = 2)
-            val id0 = pm.obtainProcessId("agent-a")
-            pm.obtainProcessId("agent-a")
+            val id0 = pm.obtainProcessId(NewRunRecord("agent-a"))
+            pm.obtainProcessId(NewRunRecord("agent-a"))
             pm.setCommandArtifacts(
                 id0,
                 0,
@@ -185,7 +186,7 @@ class ProcessManagerCommandArtifactsTest {
             pm.setProcessStatus(id0, ProcessStatus.FINISHED)
 
             // At capacity → obtaining a new id evicts id0.
-            pm.obtainProcessId("agent-a")
+            pm.obtainProcessId(NewRunRecord("agent-a"))
 
             assertNull(pm.getCommandArtifacts(id0, 0))
         }

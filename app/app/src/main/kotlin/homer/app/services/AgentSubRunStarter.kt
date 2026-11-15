@@ -2,6 +2,7 @@ package homer.app.services
 
 import homer.app.executors.SubRunStarter
 import homer.app.models.Agent
+import homer.app.models.RunStartRequest
 
 /**
  * [SubRunStarter] over the services: a `!<agent>` hop's target comes from [agentsService], its gate and
@@ -31,30 +32,11 @@ internal class AgentSubRunStarter(
         principal: String?,
     ): Int? = processManager.visibleOriginRootProcessId(originProcessId, principal, authorizer)
 
-    // The adapter forwards the port's parameters one for one.
-    // jscpd:ignore-start
-    override suspend fun start(
-        agent: Agent,
-        invocationChain: List<String>,
-        source: String,
-        ancestorLockKeys: List<String>,
-        owner: String?,
-        parentProcessId: Int?,
-        rootProcessId: Int?,
-        resolveInputs: suspend () -> Map<String, String>,
-    ): Int =
-        // jscpd:ignore-end
+    override suspend fun start(request: RunStartRequest): Int =
         agentRunStarter().start(
-            agent = agent,
-            invocationChain = invocationChain,
-            source = source,
-            ancestorLockKeys = ancestorLockKeys,
-            owner = owner,
-            parentProcessId = parentProcessId,
-            rootProcessId = rootProcessId,
+            request,
             // The hop's parent is the executing run, which this adapter never takes from the
             // caller — so the start may be admitted while that run is still `WORKING`. ADR-0092.
             serverDerivedParent = true,
-            resolveInputs = resolveInputs,
         )
 }

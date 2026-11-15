@@ -2,6 +2,7 @@ package homer.app.services.persistence
 
 import homer.app.fixtures.PersistenceTestSupport
 import homer.app.infra.ProcessJobRegistry
+import homer.app.models.NewRunRecord
 import homer.app.models.ProcessStatus
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
@@ -17,7 +18,7 @@ class DefaultProcessRetentionRecordsTest {
     private val terminal = setOf(ProcessStatus.FINISHED)
 
     private suspend fun finishedRun(artifactsDir: Path): Int {
-        val id = repository.obtainProcessId("a", emptyMap(), 100).processId
+        val id = repository.obtainProcessId(NewRunRecord("a"), 100).processId
         repository.setArtifactsDir(id, artifactsDir.toString())
         repository.transitionStatus(id, ProcessStatus.FINISHED, 1, null)
         return id
@@ -69,7 +70,7 @@ class DefaultProcessRetentionRecordsTest {
         runTest {
             val dir = Path.of("/ws/shared/artifacts")
             val finished = finishedRun(dir)
-            val live = repository.obtainProcessId("a", emptyMap(), 100).processId
+            val live = repository.obtainProcessId(NewRunRecord("a"), 100).processId
             repository.setArtifactsDir(live, dir.toString())
 
             assertTrue(retention.isArtifactsDirShared(dir, live))

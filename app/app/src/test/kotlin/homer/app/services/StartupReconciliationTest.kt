@@ -9,9 +9,11 @@ import homer.app.infra.ProcessJobRegistry
 import homer.app.models.Agent
 import homer.app.models.AgentDispatchConfig
 import homer.app.models.AgentHook
+import homer.app.models.NewRunRecord
 import homer.app.models.ProcessStatus
 import homer.app.models.Retain
 import homer.app.models.RunMessagesConfig
+import homer.app.models.RunStartRequest
 import homer.app.services.QuestionsService.QuestionStatus
 import homer.app.services.persistence.DatabaseService
 import homer.app.services.persistence.DispatchRepository
@@ -87,7 +89,7 @@ class StartupReconciliationTest {
                         ),
                 )
             val h = Harness(agents = mapOf("keeper" to keeperAgent))
-            val interrupted = h.processRepository.obtainProcessId("keeper", emptyMap(), 100).processId
+            val interrupted = h.processRepository.obtainProcessId(NewRunRecord("keeper"), 100).processId
             h.processRepository.transitionStatus(interrupted, ProcessStatus.WORKING, 1, null)
 
             h.reconciliation.reconcile()
@@ -100,7 +102,7 @@ class StartupReconciliationTest {
     fun `reconcile stamps the default purge times when the agent no longer exists`() =
         runTest {
             val h = Harness()
-            val orphan = h.processRepository.obtainProcessId("removed-agent", emptyMap(), 100).processId
+            val orphan = h.processRepository.obtainProcessId(NewRunRecord("removed-agent"), 100).processId
             h.processRepository.transitionStatus(orphan, ProcessStatus.WORKING, 1, null)
 
             h.reconciliation.reconcile()
@@ -113,15 +115,15 @@ class StartupReconciliationTest {
     fun `reconcile backfills UNKNOWN rows left unstamped by an earlier restart and leaves stamped rows alone`() =
         runTest {
             val h = Harness()
-            val unstamped = h.processRepository.obtainProcessId("a", emptyMap(), 100).processId
+            val unstamped = h.processRepository.obtainProcessId(NewRunRecord("a"), 100).processId
             h.processRepository.transitionStatus(unstamped, ProcessStatus.UNKNOWN, 1, null)
 
-            val stamped = h.processRepository.obtainProcessId("a", emptyMap(), 100).processId
+            val stamped = h.processRepository.obtainProcessId(NewRunRecord("a"), 100).processId
             h.processRepository.transitionStatus(stamped, ProcessStatus.UNKNOWN, 1, null)
             h.processRepository.setPurgeAt(stamped, purgeAt = 123, recordPurgeAt = 456, retainArtifacts = listOf("x.json"))
 
             // Not UNKNOWN: its own coroutine stamps it, reconciliation must not.
-            val finished = h.processRepository.obtainProcessId("a", emptyMap(), 100).processId
+            val finished = h.processRepository.obtainProcessId(NewRunRecord("a"), 100).processId
             h.processRepository.transitionStatus(finished, ProcessStatus.FINISHED, 1, null)
 
             h.reconciliation.reconcile()
@@ -135,12 +137,12 @@ class StartupReconciliationTest {
     fun `reconcile marks interrupted runs UNKNOWN and expires their open questions`() =
         runTest {
             val h = Harness()
-            val working = h.processRepository.obtainProcessId("a", emptyMap(), 100).processId
+            val working = h.processRepository.obtainProcessId(NewRunRecord("a"), 100).processId
             h.processRepository.transitionStatus(working, ProcessStatus.WORKING, 1, null)
             h.questionsService.registerProcess(working, "a")
             val question = h.questionsService.ask(working, "Resume?")
 
-            val finished = h.processRepository.obtainProcessId("a", emptyMap(), 100).processId
+            val finished = h.processRepository.obtainProcessId(NewRunRecord("a"), 100).processId
             h.processRepository.transitionStatus(finished, ProcessStatus.FINISHED, 1, null)
 
             h.reconciliation.reconcile()
@@ -155,11 +157,11 @@ class StartupReconciliationTest {
     fun `reconcile closes the inbox of each interrupted run and only those`() =
         runTest {
             val h = Harness()
-            val a = h.processRepository.obtainProcessId("a", emptyMap(), 100).processId
+            val a = h.processRepository.obtainProcessId(NewRunRecord("a"), 100).processId
             h.processRepository.transitionStatus(a, ProcessStatus.WORKING, 1, null)
-            val b = h.processRepository.obtainProcessId("a", emptyMap(), 100).processId
+            val b = h.processRepository.obtainProcessId(NewRunRecord("a"), 100).processId
             h.processRepository.transitionStatus(b, ProcessStatus.WORKING, 1, null)
-            val done = h.processRepository.obtainProcessId("a", emptyMap(), 100).processId
+            val done = h.processRepository.obtainProcessId(NewRunRecord("a"), 100).processId
             h.processRepository.transitionStatus(done, ProcessStatus.FINISHED, 1, null)
 
             h.reconciliation.reconcile()
@@ -176,9 +178,9 @@ class StartupReconciliationTest {
             val messages =
                 RunMessagesService(RunMessagesRepository(db), ProcessEventBroadcaster(), RunMessagesConfig(), TestFixtures.mockLogger())
             val h = Harness(db = db, runMessagesService = messages)
-            val ended = h.processRepository.obtainProcessId("a", emptyMap(), 100).processId
+            val ended = h.processRepository.obtainProcessId(NewRunRecord("a"), 100).processId
             h.processRepository.transitionStatus(ended, ProcessStatus.WORKING, 1, null)
-            val interrupted = h.processRepository.obtainProcessId("a", emptyMap(), 100).processId
+            val interrupted = h.processRepository.obtainProcessId(NewRunRecord("a"), 100).processId
             h.processRepository.transitionStatus(interrupted, ProcessStatus.WORKING, 1, null)
             messages.send(ended, null, "lost")
             messages.send(interrupted, null, "cut off")
@@ -205,7 +207,7 @@ class StartupReconciliationTest {
     fun `reconcile is a no-op when there are no interrupted runs`() =
         runTest {
             val h = Harness()
-            val finished = h.processRepository.obtainProcessId("a", emptyMap(), 100).processId
+            val finished = h.processRepository.obtainProcessId(NewRunRecord("a"), 100).processId
             h.processRepository.transitionStatus(finished, ProcessStatus.FINISHED, 1, null)
 
             h.reconciliation.reconcile()
@@ -246,7 +248,7 @@ class StartupReconciliationTest {
         val agent = AgentFixtures.simpleAgent(name = "handler").copy(dispatch = AgentDispatchConfig(enabled = true))
         val agentsService = mockk<AgentsService> { every { agents } returns mapOf("handler" to agent) }
         val runStarter = mockk<AgentRunStarter>()
-        coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 99
+        coEvery { runStarter.start(any(), any(), any(), any()) } returns 99
         val questionsService = QuestionsService(QuestionsRepository(db), TestFixtures.mockLogger(), ProcessEventBroadcaster())
         val dispatchService =
             PersistenceTestSupport.dispatchService(
@@ -304,7 +306,7 @@ class StartupReconciliationTest {
             // A second boot must not fire the same group again.
             h.reconciliation.reconcile()
 
-            coVerify(exactly = 1) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 1) { runStarter.start(any(), any(), any(), any()) }
             assertEquals(DispatchStatus.DISPATCHED, DispatchRepository(db).get(id)!!.status)
         }
 
@@ -318,7 +320,7 @@ class StartupReconciliationTest {
 
             h.reconciliation.reconcile()
 
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
             assertEquals(DispatchStatus.PENDING, DispatchRepository(db).get(id)!!.status)
         }
 
@@ -337,7 +339,7 @@ class StartupReconciliationTest {
             h.reconciliation.reconcile()
 
             assertEquals(DispatchStatus.FAILED, repo.get(id)!!.status)
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -413,7 +415,7 @@ class StartupReconciliationTest {
     fun `a run interrupted by the restart fires its UNKNOWN hook once, and a second boot fires nothing`() =
         runTest {
             val f = chain(ProcessStatus.UNKNOWN to "notifier")
-            val working = f.processManager.obtainProcessId("declarer", owner = "alice")
+            val working = f.processManager.obtainProcessId(NewRunRecord("declarer", owner = "alice"))
             f.processManager.setProcessStatus(working, ProcessStatus.WORKING)
             assertEquals(emptyList(), f.started)
 
@@ -435,7 +437,7 @@ class StartupReconciliationTest {
             // durable and PENDING, and the boot replay is the only thing that can fire it. The
             // run never reached FINISHED here, so the row is seeded as that write left it.
             val f = chain(ProcessStatus.FINISHED to "notifier")
-            val run = f.processManager.obtainProcessId("declarer", owner = "alice")
+            val run = f.processManager.obtainProcessId(NewRunRecord("declarer", owner = "alice"))
             f.db.query {
                 insertPendingHooksTx(
                     listOf(

@@ -352,3 +352,6 @@ The test-file cap (3,300 lines) came later, for agents that had to load a 3,000-
 test: it sits at the largest test file left once `AgentExecutorTest` and `ApplicationTest` were split
 (`DatabaseMigrationTest`, 3,292), and may only be lowered. It skipped the pending lane because it was
 born with no finding.
+The parameter cap (13) came in `required` after GH #257's parameter objects, at the widest signatures
+then left (`createWorkspaceConfig`, `handleResume`, `AgentExecutor`'s constructor); it may only be
+lowered.

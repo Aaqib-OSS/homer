@@ -12,6 +12,7 @@ import homer.app.models.AgentTelemetry
 import homer.app.models.Command
 import homer.app.models.Param
 import homer.app.models.ProcessCreationResult
+import homer.app.models.RunStartRequest
 import homer.app.models.Tags
 import homer.app.models.TelemetryExport
 import io.mockk.coEvery
@@ -118,7 +119,14 @@ class AgentRunStarterTelemetryTest {
         runTest {
             executorEmittingChildSpan()
 
-            starter().start(agent(TelemetryExport.ALL), emptyList(), "cron") { emptyMap() }
+            starter().start(
+                RunStartRequest(
+                    agent = agent(TelemetryExport.ALL),
+                    invocationChain = emptyList(),
+                    source = "cron",
+                    resolveInputs = { emptyMap() },
+                ),
+            )
 
             assertEquals(listOf("agent_execution", "agent_request"), exporter.spans.map { it.name })
         }
@@ -128,7 +136,14 @@ class AgentRunStarterTelemetryTest {
         runTest {
             executorEmittingChildSpan()
 
-            starter().start(agent(TelemetryExport.OFF), emptyList(), "cron") { emptyMap() }
+            starter().start(
+                RunStartRequest(
+                    agent = agent(TelemetryExport.OFF),
+                    invocationChain = emptyList(),
+                    source = "cron",
+                    resolveInputs = { emptyMap() },
+                ),
+            )
 
             // Not just the root: the descendant is dropped too, which is the point —
             // a no-op tick of a once-a-minute agent must leave no trace behind.
@@ -140,7 +155,15 @@ class AgentRunStarterTelemetryTest {
         runTest {
             executorEmittingChildSpan()
 
-            val processId = starter().start(agent(TelemetryExport.OFF), emptyList(), "cron") { emptyMap() }
+            val processId =
+                starter().start(
+                    RunStartRequest(
+                        agent = agent(TelemetryExport.OFF),
+                        invocationChain = emptyList(),
+                        source = "cron",
+                        resolveInputs = { emptyMap() },
+                    ),
+                )
 
             assertEquals(1, processId)
         }
@@ -181,7 +204,14 @@ class AgentRunStarterTelemetryTest {
         runTest {
             executorEmittingNestedSpans()
 
-            starter().start(taggedAgent(), emptyList(), "http") { mapOf("MR_IID" to "4211") }
+            starter().start(
+                RunStartRequest(
+                    agent = taggedAgent(),
+                    invocationChain = emptyList(),
+                    source = "http",
+                    resolveInputs = { mapOf("MR_IID" to "4211") },
+                ),
+            )
 
             val byName = exporter.spans.associateBy { it.name }
             for (name in listOf("agent_request", "agent_execution", "command_execution_1", "review-diff")) {
@@ -216,7 +246,14 @@ class AgentRunStarterTelemetryTest {
                     processReads = mockk(relaxed = true),
                 )
 
-            starter.start(taggedAgent(), emptyList(), "http") { mapOf("MR_IID" to "4211") }
+            starter.start(
+                RunStartRequest(
+                    agent = taggedAgent(),
+                    invocationChain = emptyList(),
+                    source = "http",
+                    resolveInputs = { mapOf("MR_IID" to "4211") },
+                ),
+            )
 
             coVerifyOrder {
                 span.setAttribute(LANGFUSE_TRACE_NAME, "watcher")
@@ -230,7 +267,14 @@ class AgentRunStarterTelemetryTest {
         runTest {
             executorEmittingNestedSpans()
 
-            starter().start(taggedAgent(TelemetryExport.OFF), emptyList(), "http") { mapOf("MR_IID" to "4211") }
+            starter().start(
+                RunStartRequest(
+                    agent = taggedAgent(TelemetryExport.OFF),
+                    invocationChain = emptyList(),
+                    source = "http",
+                    resolveInputs = { mapOf("MR_IID" to "4211") },
+                ),
+            )
 
             assertTrue(exporter.spans.isEmpty(), "exported: ${exporter.spans.map { it.name }}")
         }

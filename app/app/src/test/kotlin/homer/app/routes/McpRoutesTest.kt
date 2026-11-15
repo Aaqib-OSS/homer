@@ -9,6 +9,7 @@ import homer.app.models.AuthConfig
 import homer.app.models.McpServerConfig
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
+import homer.app.models.RunStartRequest
 import homer.app.models.TokenConfig
 import homer.app.services.AgentRunStarter
 import homer.app.services.AgentsService
@@ -68,8 +69,8 @@ class McpRoutesTest {
         agentsService = mockk(relaxed = true)
         every { agentsService.agents } returns emptyMap()
         agentRunStarter = mockk()
-        coEvery { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } coAnswers {
-            arg<suspend () -> Map<String, String>>(10).invoke()
+        coEvery { agentRunStarter.start(any(), any(), any(), any()) } coAnswers {
+            firstArg<RunStartRequest>().resolveInputs.invoke()
             42
         }
         processManager = mockk(relaxed = true)

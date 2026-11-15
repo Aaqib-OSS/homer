@@ -4,6 +4,7 @@ import homer.app.fixtures.PersistenceTestSupport
 import homer.app.fixtures.TestFixtures
 import homer.app.fixtures.TestFixtures.firstText
 import homer.app.fixtures.all
+import homer.app.models.NewRunRecord
 import homer.app.models.QuestionsConfig
 import homer.app.models.RunMessagesConfig
 import homer.app.services.persistence.RunMessagesRepository
@@ -396,7 +397,7 @@ class QuestionsMcpToolFactoryTest {
     private suspend fun inbox(): Pair<RunMessagesService, Int> {
         val db = PersistenceTestSupport.tempDatabase()
         val pm = PersistenceTestSupport.processManager(db = db)
-        val id = pm.obtainProcessId("agent-a")
+        val id = pm.obtainProcessId(NewRunRecord("agent-a"))
         val messages =
             RunMessagesService(RunMessagesRepository(db), ProcessEventBroadcaster(), RunMessagesConfig(), TestFixtures.mockLogger())
         return messages to id

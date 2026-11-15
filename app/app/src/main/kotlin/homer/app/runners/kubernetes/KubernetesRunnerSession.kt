@@ -17,17 +17,35 @@ import kotlinx.coroutines.withContext
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 
+/**
+ * How a session's pod ends: its run deadlines, what close() does with the pod and, in Job mode, its Job
+ * (ADR-0100), and the trace close() reports under.
+ */
+data class PodLifecycle(
+    val keepPodOnFailure: Boolean,
+    val keepPodTtlSeconds: Long,
+    val maxRunSeconds: Long? = null,
+    val gracefulStopSeconds: Long? = null,
+    /** When Homer created the pod (`RunnerState.createdAt`); clamps a skewed `status.startTime`. */
+    val podCreatedAtEpochSec: Long? = null,
+    val jobName: String? = null,
+    val batchApi: BatchV1Api? = null,
+    val tracer: Tracer? = null,
+    // The run's context, captured at openSession. close() happens after the run's
+    // own scope has unwound, so there is no current context to inherit — without
+    // this the close span becomes a NEW ROOT, and a new root is sampled on its own
+    // rather than following the run. That is what `telemetry.export: OFF` relies on
+    // to mute a run: the root is valid but unsampled and ParentBased drops the
+    // subtree. An unparented span escapes it. See ADR-0050.
+    val parentContext: Context = Context.root(),
+)
+
 class KubernetesRunnerSession(
     val podName: String,
     val namespace: String,
     private val api: CoreV1Api,
     override val shell: ShellExecutor,
-    private val keepPodOnFailure: Boolean,
-    private val keepPodTtlSeconds: Long,
-    private val maxRunSeconds: Long? = null,
-    private val gracefulStopSeconds: Long? = null,
-    /** When Homer created the pod (`RunnerState.createdAt`); clamps a skewed `status.startTime`. */
-    private val podCreatedAtEpochSec: Long? = null,
+    private val lifecycle: PodLifecycle,
     override val runnerAlias: String,
     private val sync: KubernetesWorkspaceSync,
     private val translator: RemotePathTranslator,
@@ -35,20 +53,10 @@ class KubernetesRunnerSession(
     private val syncExcludes: List<String> = emptyList(),
     override val extraUploads: List<ExtraUploadSpec> = emptyList(),
     override val env: Map<String, String> = emptyMap(),
-    private val tracer: Tracer? = null,
-    // The run's context, captured at openSession. close() happens after the run's
-    // own scope has unwound, so there is no current context to inherit — without
-    // this the close span becomes a NEW ROOT, and a new root is sampled on its own
-    // rather than following the run. That is what `telemetry.export: OFF` relies on
-    // to mute a run: the root is valid but unsampled and ParentBased drops the
-    // subtree. An unparented span escapes it. See ADR-0050.
-    private val parentContext: Context = Context.root(),
-    private val jobName: String? = null,
-    private val batchApi: BatchV1Api? = null,
 ) : RunnerSession {
     private val closed = AtomicBoolean(false)
     private var failed: Boolean = false
-    private val teardown = WorkloadTeardown(api, namespace, jobName, batchApi)
+    private val teardown = WorkloadTeardown(api, namespace, lifecycle.jobName, lifecycle.batchApi)
 
     /**
      * The run's soft and hard deadlines, read once here — the session is built when the pod is
@@ -58,7 +66,7 @@ class KubernetesRunnerSession(
     override val runDeadline: RunDeadline? = runDeadlineFromPod()
 
     override val metadata: Map<String, String>
-        get() = mapOf("pod.name" to podName) + listOfNotNull(jobName?.let { "job.name" to it })
+        get() = mapOf("pod.name" to podName) + listOfNotNull(lifecycle.jobName?.let { "job.name" to it })
 
     override fun markFailed() {
         failed = true
@@ -81,19 +89,19 @@ class KubernetesRunnerSession(
     }
 
     /** `ttl` keeps a failed run's pod for debugging when configured to; else `delete`. */
-    private fun cleanupMode(): String = if (failed && keepPodOnFailure) "ttl" else "delete"
+    private fun cleanupMode(): String = if (failed && lifecycle.keepPodOnFailure) "ttl" else "delete"
 
     private fun closeSpan(mode: String): Span? {
         val finalPhase = if (mode == "ttl") "KEPT_FOR_DEBUG" else "DELETED"
-        return tracer
+        return lifecycle.tracer
             ?.spanBuilder("runner.session.close")
-            ?.setParent(parentContext)
+            ?.setParent(lifecycle.parentContext)
             ?.startSpan()
             ?.apply {
                 setAttribute("runner.alias", runnerAlias)
                 setAttribute("pod.namespace", namespace)
                 setAttribute("pod.name", podName)
-                jobName?.let { setAttribute("job.name", it) }
+                lifecycle.jobName?.let { setAttribute("job.name", it) }
                 setAttribute("pod.cleanup_mode", mode)
                 setAttribute("pod.final_phase", finalPhase)
             }
@@ -102,7 +110,7 @@ class KubernetesRunnerSession(
     /** The pod, and in Job mode its Job (ADR-0100). */
     private fun cleanUpPod(mode: String) {
         if (mode == "ttl") {
-            teardown.keep(podName, keepPodTtlSeconds, maxRunSeconds)
+            teardown.keep(podName, lifecycle.keepPodTtlSeconds, lifecycle.maxRunSeconds)
         } else {
             teardown.delete(podName)
         }
@@ -152,8 +160,8 @@ class KubernetesRunnerSession(
      * before it the soft one. Null unless both bounds are configured and the pod's start is known.
      */
     private fun runDeadlineFromPod(): RunDeadline? {
-        val grace = gracefulStopSeconds ?: return null
-        val maxRun = maxRunSeconds ?: return null
+        val grace = lifecycle.gracefulStopSeconds ?: return null
+        val maxRun = lifecycle.maxRunSeconds ?: return null
         val start = podStartEpochSec() ?: return null
         val hard = start + maxRun
         return RunDeadline(softEpochSec = hard - grace, hardEpochSec = hard)
@@ -175,7 +183,7 @@ class KubernetesRunnerSession(
                     ?.startTime
                     ?.toEpochSecond()
             }.getOrNull()
-        return listOfNotNull(reported, podCreatedAtEpochSec).minOrNull()
+        return listOfNotNull(reported, lifecycle.podCreatedAtEpochSec).minOrNull()
     }
 
     companion object {

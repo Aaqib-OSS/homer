@@ -7,9 +7,9 @@ import homer.app.executors.RunRecords
 import homer.app.executors.RunWorkRecords
 import homer.app.infra.PathSafety
 import homer.app.infra.ProcessJobRegistry
-import homer.app.models.Cooldown
 import homer.app.models.ExecutionInfo
 import homer.app.models.LlmAccounting
+import homer.app.models.NewRunRecord
 import homer.app.models.PathAsStringSerializer
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
@@ -147,35 +147,10 @@ class ProcessManager(
         onHooksRecorded(killed.hooks)
     }
 
-    // The facade forwards ProcessRepository.obtainProcessId's optional parameters one for one.
-    // jscpd:ignore-start
-    override suspend fun obtainProcessId(
-        agentName: String,
-        inputParams: Map<String, String>,
-        owner: String?,
-        cooldown: Cooldown?,
-        cooldownKey: String?,
-        secretInputKeys: Set<String>?,
-        parentProcessId: Int?,
-        rootProcessId: Int?,
-        tags: List<String>,
-    ): Int {
-        // jscpd:ignore-end
+    override suspend fun obtainProcessId(record: NewRunRecord): Int {
         val result =
             try {
-                repository.obtainProcessId(
-                    agentName,
-                    inputParams,
-                    maxProcesses,
-                    owner,
-                    cooldown,
-                    cooldownKey,
-                    secretInputKeys,
-                    parentProcessId,
-                    rootProcessId,
-                    tags,
-                    hookRecording = hookRecording(),
-                )
+                repository.obtainProcessId(record, maxProcesses, hookRecording = hookRecording())
             } catch (e: ProcessManagerAtCapacityException) {
                 logger.warn(
                     "ProcessManager at capacity ({}) and no terminal processes to evict; refusing new process",

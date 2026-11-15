@@ -8,6 +8,7 @@ import homer.app.infra.ProcessJobRegistry
 import homer.app.models.Action
 import homer.app.models.ErrorResponse
 import homer.app.models.Grant
+import homer.app.models.NewRunRecord
 import homer.app.models.ProcessStatus
 import homer.app.models.RunMessageResponse
 import homer.app.models.RunMessagesConfig
@@ -74,7 +75,7 @@ class RunMessageRoutesTest {
         val service =
             RunMessagesService(RunMessagesRepository(db), broadcaster, config, LoggerFactory.getLogger("test"))
         val processes = ProcessRepository(db, ProcessJobRegistry())
-        val id = runBlocking { pm.obtainProcessId("deploy", owner = "alice") }
+        val id = runBlocking { pm.obtainProcessId(NewRunRecord("deploy", owner = "alice")) }
         return Fixture(pm, processes, service, broadcaster, id)
     }
 
@@ -206,7 +207,7 @@ class RunMessageRoutesTest {
             assertEquals(HttpStatusCode.Accepted, client.send(path, "owner-token", """{"text":"ok"}""").status)
             assertEquals(HttpStatusCode.TooManyRequests, client.send(path, "owner-token", """{"text":"ok"}""").status)
 
-            val ended = runBlocking { f.pm.obtainProcessId("deploy", owner = "alice") }
+            val ended = runBlocking { f.pm.obtainProcessId(NewRunRecord("deploy", owner = "alice")) }
             runBlocking { f.processes.transitionStatus(ended, ProcessStatus.FINISHED, 1, null) }
             assertEquals(HttpStatusCode.Conflict, client.send("/api/v1/status/$ended/messages", "owner-token").status)
         }
@@ -227,7 +228,7 @@ class RunMessageRoutesTest {
         testApplication {
             val f = fixture()
             mount(f)
-            val otherId = runBlocking { f.pm.obtainProcessId("other", owner = "mallory") }
+            val otherId = runBlocking { f.pm.obtainProcessId(NewRunRecord("other", owner = "mallory")) }
 
             suspend fun firstEventOf(token: String): String {
                 val ready = CompletableDeferred<Unit>()

@@ -9,6 +9,7 @@ import homer.app.models.AuthConfig
 import homer.app.models.Grant
 import homer.app.models.LangfuseConfig
 import homer.app.models.McpServerConfig
+import homer.app.models.NewRunRecord
 import homer.app.models.OpenTelemetryExport
 import homer.app.models.PasswordUserConfig
 import homer.app.models.RateLimitConfig
@@ -197,17 +198,17 @@ class RouteAuthorizationMatrixTest {
     private suspend fun seed(app: Application): Seeds {
         val processes = app.get<ProcessManager>()
         val questions = app.get<QuestionsService>()
-        val hidden = processes.obtainProcessId(HIDDEN_AGENT, owner = ADMIN)
+        val hidden = processes.obtainProcessId(NewRunRecord(HIDDEN_AGENT, owner = ADMIN))
         val hiddenRunToken = questions.registerProcess(hidden, HIDDEN_AGENT)
         val question = questions.ask(hidden, "Proceed?")
         val dispatch = app.get<DispatchService>().create(hidden, "Pick?", emptyList(), HIDDEN_AGENT, "answer", emptyMap(), null)
-        val watched = processes.obtainProcessId(HIDDEN_AGENT, owner = ADMIN)
+        val watched = processes.obtainProcessId(NewRunRecord(HIDDEN_AGENT, owner = ADMIN))
         val continuation =
             app.get<ContinuationService>().create(hidden, watched, HIDDEN_AGENT, emptyMap(), "result", null, null)
         val resultToken = app.get<ResultTokenService>().mint(watched, "out.txt", null, 1, HIDDEN_AGENT)
         val workers = app.get<RunnerRegistry>().externalDomains.single { it.alias == "workers" }
         val instance = workers.register(RegisterInstanceRequest(name = "workers-host"))
-        val own = processes.obtainProcessId(VISIBLE_AGENT, owner = NO_GRANT)
+        val own = processes.obtainProcessId(NewRunRecord(VISIBLE_AGENT, owner = NO_GRANT))
         val noGrantRunToken = questions.registerProcess(own, VISIBLE_AGENT)
         return Seeds(
             hidden,

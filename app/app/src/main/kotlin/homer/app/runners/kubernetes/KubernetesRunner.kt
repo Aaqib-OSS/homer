@@ -196,16 +196,22 @@ class KubernetesRunner(
         podCreatedAtSec: Long,
     ): RunnerSession =
         KubernetesRunnerSession(
-            parentContext = params.parentContext,
             podName = podName,
             namespace = config.namespace,
             api = api,
             shell = shell,
-            keepPodOnFailure = config.keepPodOnFailure,
-            keepPodTtlSeconds = config.keepPodTtlSeconds,
-            maxRunSeconds = config.maxRunSeconds,
-            gracefulStopSeconds = config.gracefulStopSeconds,
-            podCreatedAtEpochSec = podCreatedAtSec,
+            lifecycle =
+                PodLifecycle(
+                    keepPodOnFailure = config.keepPodOnFailure,
+                    keepPodTtlSeconds = config.keepPodTtlSeconds,
+                    maxRunSeconds = config.maxRunSeconds,
+                    gracefulStopSeconds = config.gracefulStopSeconds,
+                    podCreatedAtEpochSec = podCreatedAtSec,
+                    jobName = jobName,
+                    batchApi = batchApi,
+                    tracer = tracer,
+                    parentContext = params.parentContext,
+                ),
             runnerAlias = alias,
             sync = KubernetesWorkspaceSync(execClient, config.namespace, podName),
             translator =
@@ -220,9 +226,6 @@ class KubernetesRunner(
             syncExcludes = config.syncExcludes,
             extraUploads = config.extraUploads,
             env = sessionEnv,
-            tracer = tracer,
-            jobName = jobName,
-            batchApi = batchApi,
         )
 
     private fun buildSessionEnv(): Map<String, String> =
