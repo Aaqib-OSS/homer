@@ -478,7 +478,7 @@ app/gradlew -p app :app:shadowJar                  # fat jar → app/build/libs/
 app/gradlew -p app :agentdebug:shadowJar           # CLI debugger
 app/gradlew -p app :homer-runner:shadowJar         # external runner binary
 app/gradlew -p app :app:generateThirdPartyNotices  # regenerate NOTICE + THIRD-PARTY-LICENSES.md
-app/gradlew -p app --write-verification-metadata pgp,sha256 --export-keys check koverVerify crapReport :app:queryPlanReport detektMain shadowJar dependencyCheckAnalyze :app:pitest  # regenerate gradle/verification-* (ADR-0114) — every task CI runs, the nightly's dependency-check and PIT included
+app/gradlew -p app --write-verification-metadata pgp,sha256 --export-keys check koverVerify crapReport :app:queryPlanReport detektMain shadowJar dependencyCheckAnalyze :app:pitest  # regenerate gradle/verification-* (ADR-0115) — every task CI runs, the nightly's dependency-check and PIT included
 app/gradlew -p app/buildSrc --write-verification-metadata pgp,sha256 --export-keys check  # regenerate buildSrc/gradle/verification-* (separate build)
 app/gradlew -p app/buildSrc check                  # buildSrc's own ktlint + tests (not part of `-p app check`)
 app/gradlew -p app detektMain -Dorg.gradle.jvmargs="-XX:MaxMetaspaceSize=1g"  # detekt (required in the gate), not in `check` (CI job homer-app-detekt); report in */build/reports/detekt/
@@ -494,7 +494,7 @@ MUTATE_BASE=origin/main node tools/quality/pit-changed.mjs  # PIT on the lines a
 A Kotlin compiler warning fails the build (`allWarningsAsErrors` in the convention plugin, ADR-0082): opt in or
 `@Suppress` at the narrowest scope; only `:app`'s tests are opted in to `ExperimentalCoroutinesApi` module-wide.
 
-**Dependency verification (ADR-0114).** Both Gradle builds verify every resolved artifact against the
+**Dependency verification (ADR-0115).** Both Gradle builds verify every resolved artifact against the
 committed SHA-256 checksums in `gradle/verification-metadata.xml` and, where the repository publishes a
 signature, against a PGP key trusted by full fingerprint in `<trusted-keys>` and carried in the
 committed `gradle/verification-keyring.keys`. The keyring holds **public keys only** — never a `.gpg`

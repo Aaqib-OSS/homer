@@ -17,7 +17,7 @@ import kotlin.test.assertTrue
  * rewrites the metadata mid-build. It also fails when the version catalog moves ahead of the
  * metadata, which is what a dependency bump without regeneration looks like.
  *
- * See ADR-0114.
+ * See ADR-0115.
  */
 class DependencyVerificationGateTest {
     private val mainMetadata = "app/gradle/verification-metadata.xml"
@@ -84,7 +84,7 @@ class DependencyVerificationGateTest {
             assertTrue(
                 !metadata.contains("<ignored-key"),
                 "$path ignores a signing key, which downgrades every artifact that key signs to a " +
-                    "checksum check. Add the key to the keyring by full fingerprint instead (ADR-0114).",
+                    "checksum check. Add the key to the keyring by full fingerprint instead (ADR-0115).",
             )
             val keys = trustedKeys(metadata)
             assertTrue(keys.isNotEmpty(), "$path trusts no key at all, so no signature could ever verify.")

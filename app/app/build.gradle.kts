@@ -169,7 +169,7 @@ tasks.test {
             repoRoot.resolve("app/settings.gradle.kts"),
             repoRoot.resolve("app/buildSrc/settings.gradle.kts"),
             repoRoot.resolve("app/gradle/artifactory.settings.gradle.kts"),
-            // DependencyVerificationGateTest reads these (ADR-0114). The keyrings are files, not
+            // DependencyVerificationGateTest reads these (ADR-0115). The keyrings are files, not
             // directories, so a key added to either one is part of the cache key too.
             repoRoot.resolve("app/gradle.properties"),
             repoRoot.resolve("app/gradle/libs.versions.toml"),

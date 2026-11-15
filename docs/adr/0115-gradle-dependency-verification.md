@@ -5,7 +5,7 @@ deciders: Lukáš Vlk
 consulted: ADR-0047, ADR-0084, ADR-0086, ADR-0088
 ---
 
-# ADR-0114: Gradle verifies every dependency against committed checksums and signatures
+# ADR-0115: Gradle verifies every dependency against committed checksums and signatures
 
 ## Context and Problem Statement
 
