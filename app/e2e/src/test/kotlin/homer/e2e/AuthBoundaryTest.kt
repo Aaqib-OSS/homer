@@ -14,6 +14,7 @@ import io.ktor.client.request.header
 import io.ktor.client.request.request
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
@@ -28,7 +29,10 @@ import kotlin.test.assertNotNull
 /**
  * The operator auth boundary, swept over every resource family through the live server:
  * a request with no credential is `401`, and a bearer token granted on another agent gets
- * the same `404` as not-found (ADR-0047 rule 3). The callback-token `401` is `WhoamiTest`'s.
+ * `404` — identical to not-found (ADR-0047 rule 3) — on single-resource routes, while list
+ * endpoints answer `200` with the other agent's rows filtered out. One route per family also
+ * compares the denial's body against the same request at an id that does not exist. The
+ * callback-token `401` is `WhoamiTest`'s.
  *
  * `echoScoped` (fixtures/config/config.json) holds `run`+`read` on `echo` only, so it is the
  * wrong-agent probe: every resource below belongs to an agent it holds no grant on. The one
@@ -37,6 +41,9 @@ import kotlin.test.assertNotNull
  */
 class AuthBoundaryTest : E2eTestBase() {
     private val scopedAuth = "Bearer echo-scoped-token"
+
+    /** An id no row can hold: the not-found half of the ADR-0047 rule 3 body comparison. */
+    private val unknownId = 2_000_000_000
 
     /**
      * Every operator resource family and one request per route, as `family, method, path`. The ids
@@ -94,6 +101,12 @@ class AuthBoundaryTest : E2eTestBase() {
                 )
             }
 
+            assertDenialAnswersLikeNotFound(
+                hidden = scoped(HttpMethod.Get, "/api/v1/status/$hiddenId"),
+                unknown = scoped(HttpMethod.Get, "/api/v1/status/$unknownId"),
+                label = "process family",
+            )
+
             val list: ProcessList = HomerApi.decode(scoped(HttpMethod.Get, "/api/v1/status/all?agentName=fail"))
             assertFalse(
                 list.processes.any { it.id == hiddenId },
@@ -115,6 +128,17 @@ class AuthBoundaryTest : E2eTestBase() {
                 HttpStatusCode.NotFound,
                 answer.status,
                 "question family: POST /api/v1/questions/{id}/answer must hide another agent's question",
+            )
+            val unknownAnswer =
+                scoped(
+                    HttpMethod.Post,
+                    "/api/v1/questions/00000000-0000-0000-0000-000000000000/answer",
+                    """{"answer":"A"}""",
+                )
+            assertDenialAnswersLikeNotFound(
+                hidden = answer,
+                unknown = unknownAnswer,
+                label = "question family",
             )
             assertNotNull(
                 HomerApi.questions(status = "OPEN", processId = askerId).questions.firstOrNull { it.id == question.id },
@@ -167,6 +191,13 @@ class AuthBoundaryTest : E2eTestBase() {
                 )
             }
 
+            assertDenialAnswersLikeNotFound(
+                hidden = scoped(HttpMethod.Get, "/api/v1/dispatches/${dispatch.id}"),
+                unknown = scoped(HttpMethod.Get, "/api/v1/dispatches/$unknownId"),
+                label = "dispatch family",
+                idSwap = unknownId.toString() to dispatch.id.toString(),
+            )
+
             val list: DispatchList = HomerApi.decode(scoped(HttpMethod.Get, "/api/v1/dispatches?agentName=continuation-inherit"))
             assertFalse(
                 list.dispatches.any { it.id == dispatch.id },
@@ -205,6 +236,13 @@ class AuthBoundaryTest : E2eTestBase() {
                 )
             }
 
+            assertDenialAnswersLikeNotFound(
+                hidden = scoped(HttpMethod.Get, "/api/v1/continuations/${continuation.id}"),
+                unknown = scoped(HttpMethod.Get, "/api/v1/continuations/$unknownId"),
+                label = "continuation family",
+                idSwap = unknownId.toString() to continuation.id.toString(),
+            )
+
             val list: ContinuationList = HomerApi.decode(scoped(HttpMethod.Get, "/api/v1/continuations?agentName=continued"))
             assertFalse(
                 list.continuations.any { it.id == continuation.id },
@@ -237,6 +275,12 @@ class AuthBoundaryTest : E2eTestBase() {
                     "artifacts family: GET $path must hide another agent's artifacts",
                 )
             }
+
+            assertDenialAnswersLikeNotFound(
+                hidden = scoped(HttpMethod.Get, "/api/v1/artifacts?processId=$hiddenId&path=hello.txt"),
+                unknown = scoped(HttpMethod.Get, "/api/v1/artifacts?processId=$unknownId&path=hello.txt"),
+                label = "artifacts family",
+            )
         }
 
     @Test
@@ -248,7 +292,33 @@ class AuthBoundaryTest : E2eTestBase() {
                 response.status,
                 "agent run family: POST /api/v1/agent/{name} must hide an agent the caller holds no grant on",
             )
+            assertDenialAnswersLikeNotFound(
+                hidden = response,
+                unknown = scoped(HttpMethod.Post, "/api/v1/agent/no-such-agent"),
+                label = "agent run family",
+                idSwap = "no-such-agent" to "fail",
+            )
         }
+
+    /**
+     * ADR-0047 rule 3: a denial must answer exactly like not-found, not merely share its status —
+     * the same scoped request at an id that does not exist must return the denial's body, with the
+     * two ids normalized where the message names them (as `ProcessIsolationTest` does).
+     */
+    private suspend fun assertDenialAnswersLikeNotFound(
+        hidden: HttpResponse,
+        unknown: HttpResponse,
+        label: String,
+        idSwap: Pair<String, String>? = null,
+    ) {
+        assertEquals(HttpStatusCode.NotFound, unknown.status, "$label: the not-found probe must itself be 404")
+        val unknownBody = unknown.bodyAsText()
+        assertEquals(
+            if (idSwap == null) unknownBody else unknownBody.replace(idSwap.first, idSwap.second),
+            hidden.bodyAsText(),
+            "$label: a denial must be indistinguishable from not-found (ADR-0047 rule 3)",
+        )
+    }
 
     /** A request carrying the narrowly granted fixture token instead of the admin one. */
     private suspend fun scoped(
