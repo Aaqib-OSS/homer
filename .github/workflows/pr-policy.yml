@@ -1,7 +1,7 @@
 # Fails a pull request that links no accepted issue of this repository (CONTRIBUTING.md
 # § Submitting changes), which tools/pr-policy/check.sh decides, or that adds a dependency with a
-# known high or critical advisory. The ruleset on main makes it a required
-# check. Dependabot's pull requests are exempt: they link no issue, and a skipped job counts as
+# known high or critical advisory, or whose commits hold a secret. The ruleset on main makes it
+# a required check. Dependabot's pull requests are exempt: they link no issue, and a skipped job counts as
 # passed. The exemption compares the login with `dependabot[bot]`, the App's account: GitHub
 # reserves the `[bot]` suffix for Apps, so no user account can hold that login. Labelling an
 # issue fires no pull request event, so the check is not re-run then; re-run it by hand.
@@ -26,6 +26,7 @@ jobs:
         with:
           persist-credentials: false
       - run: tools/pr-policy/check-test.sh
+      - run: tools/pr-policy/secret-scan-test.sh
 
   # Free on public repositories only. A known-bad package fails here, before any review reads
   # the pull request.
@@ -36,6 +37,40 @@ jobs:
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
+
+  # gitleaks over every commit the pull request adds (tools/pr-policy/secret-scan.sh; tool choice
+  # and trust model: docs/quality-checks.md). The script, the pinned release and the rules all come
+  # from the base, never from the pull request, which must not rewrite the rule it is checked against.
+  secret-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: policy
+          persist-credentials: false
+      # The merge commit with full history: both the base and the head commit are its ancestors.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: pr
+          fetch-depth: 0
+          persist-credentials: false
+      # A base without the script predates the scan (only the pull request that adds it): skipped.
+      - name: Scan the pull request's commits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ ! -f policy/tools/pr-policy/secret-scan.sh ]; then
+            echo "::warning title=Secret scan::The base has no tools/pr-policy/secret-scan.sh; nothing scanned."
+            exit 0
+          fi
+          gitleaks=$(policy/tools/pr-policy/install-gitleaks.sh "$RUNNER_TEMP/gitleaks")
+          cd pr
+          ../policy/tools/pr-policy/secret-scan.sh "$gitleaks" "$BASE_SHA" "$HEAD_SHA"
 
   accepted-issue:
     needs: pr-policy-tests

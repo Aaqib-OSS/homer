@@ -1,0 +1,52 @@
+# gitleaks configuration for the secret scan of pull requests (job secret-scan, pr-policy.yml;
+# docs/quality-checks.md). The default rules, plus allowlist entries for placeholder values the
+# docs and tests hold on purpose. Each entry names one file, one rule and the exact value: a new
+# placeholder elsewhere is a finding until it gets an entry of its own here.
+#
+# The scan reads this file from the pull request's base, never from the pull request: an entry for
+# a new fixture must merge before the fixture, in a pull request of its own.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "README.md API reference curl example: placeholder bearer token"
+targetRules = ["curl-auth-header"]
+condition = "AND"
+paths = ['''^app/README\.md$''']
+regexes = ['''^your-token-here$''']
+
+[[allowlists]]
+description = "SERVER.md API reference curl examples: placeholder bearer tokens"
+targetRules = ["curl-auth-header"]
+condition = "AND"
+paths = ['''^app/SERVER\.md$''']
+regexes = ['''^(your-token|ci-token-value)$''']
+
+[[allowlists]]
+description = "SERVER.md Langfuse config example: placeholder secret key"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^app/SERVER\.md$''']
+regexes = ['''^sk-lf-1234567890abcdef1234567890abcdef$''']
+
+[[allowlists]]
+description = "ResultToEnvMapperTest: marker value the test checks never reaches a log line"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^app/app/src/test/kotlin/homer/app/infra/ResultToEnvMapperTest\.kt$''']
+regexes = ['''^MARKER-abc123$''']
+
+[[allowlists]]
+description = "SecretRedactorTest: fake token the redactor must mask"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^app/app/src/test/kotlin/homer/app/infra/SecretRedactorTest\.kt$''']
+regexes = ['''^tok-ABCDEF123456$''']
+
+[[allowlists]]
+description = "test_gates.py: fake API key the test checks never reaches a printed line"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^clients/python/homer_langgraph/tests/test_gates\.py$''']
+regexes = ['''^s3cr3t-api-key$''']

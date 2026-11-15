@@ -1,9 +1,10 @@
-# Daily: dependency-check. Weekly (Sunday): the full mutation runs, every backend mutant sharded per
-# package, one job per package to stay under the 6-hour job limit (tools/quality/pit-full.mjs), and
-# every console mutant. By hand with workflow_dispatch: dependency-check, plus each full mutation
-# run whose input is set. The schedules skip everything in a private copy of the repository, whose
-# Actions minutes go to per-commit CI. Each mutation report writes its score and undetected (survived
-# or uncovered) mutants to the run's job summary (tools/quality/step-summary.mjs).
+# Daily: dependency-check and the image scan. Weekly (Sunday): the full mutation runs, every backend
+# mutant sharded per package, one job per package to stay under the 6-hour job limit
+# (tools/quality/pit-full.mjs), and every console mutant. By hand with workflow_dispatch:
+# dependency-check and the image scan, plus each full mutation run whose input is set. The schedules
+# skip everything in a private copy of the repository, whose Actions minutes go to per-commit CI.
+# Each mutation report writes its score and undetected (survived or uncovered) mutants to the run's
+# job summary (tools/quality/step-summary.mjs).
 name: Nightly
 
 on:
@@ -65,6 +66,69 @@ jobs:
           path: |
             app/app/build/reports/dependency-check/dependency-check-report.html
             app/homer-runner/build/reports/dependency-check/dependency-check-report.html
+          retention-days: 7
+
+  # grype over the images a release publishes, built from the checkout: tool, scope, failure policy
+  # and rollout in ADR-0113.
+  image-scan:
+    if: github.event_name == 'workflow_dispatch' || (github.event.schedule == '17 2 * * *' && !github.event.repository.private)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Report-first until the three images are clean (ADR-0113): a failure warns.
+    continue-on-error: true
+    env:
+      GRYPE_VERSION: 0.121.3
+      GRYPE_SHA256: e9da18cc1429e786722e32161288103600efffd8e483c90761f90485bd1bec85
+      GRYPE_CHECK_FOR_APP_UPDATE: 'false'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the images
+        run: |
+          docker build -f app/Dockerfile --target runner -t homer-app:scan .
+          docker build -f app/Dockerfile --target homer-runner -t homer-runner:scan .
+          docker build -f console/Dockerfile --target runner -t homer-console:scan console
+      - name: Install grype
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/grype.tar.gz" \
+            "https://github.com/anchore/grype/releases/download/v$GRYPE_VERSION/grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
+          echo "$GRYPE_SHA256  $RUNNER_TEMP/grype.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/grype.tar.gz" -C "$RUNNER_TEMP" grype
+      # Per image: the count per severity, then every High and Critical finding. A scan or a report
+      # that cannot be read fails the step, after the other images are scanned.
+      - name: Scan
+        run: |
+          mkdir grype
+          "$RUNNER_TEMP/grype" db update
+          status=0
+          for image in homer-app homer-runner homer-console; do
+            report="grype/$image.json"
+            "$RUNNER_TEMP/grype" "docker:$image:scan" -o json --file "$report" || { status=1; continue; }
+            fixable=$(jq '[(.matches // [])[] | select(.vulnerability.severity == ("Critical", "High") and .vulnerability.fix.state == "fixed")] | length' "$report") || { status=1; continue; }
+            [ "$fixable" -eq 0 ] || status=1
+            {
+              echo "### $image: $fixable High or Critical with a fix"
+              echo
+              echo '| Severity | Findings | With a fix |'
+              echo '| --- | --- | --- |'
+              jq -r '["Critical", "High", "Medium", "Low", "Negligible", "Unknown"][] as $s
+                | [(.matches // [])[] | select(.vulnerability.severity == $s)]
+                | "| \($s) | \(length) | \(map(select(.vulnerability.fix.state == "fixed")) | length) |"' "$report" || status=1
+              echo
+              echo '| Package | Version | Type | Vulnerability | Severity | Fixed in |'
+              echo '| --- | --- | --- | --- | --- | --- |'
+              jq -r '(.matches // [])[] | select(.vulnerability.severity == ("Critical", "High"))
+                | "| \(.artifact.name) | \(.artifact.version) | \(.artifact.type) | \(.vulnerability.id) | \(.vulnerability.severity) | \((.vulnerability.fix.versions // []) | if length == 0 then "none" else join(", ") end) |"' "$report" || status=1
+              echo
+            } >>"$GITHUB_STEP_SUMMARY"
+          done
+          exit "$status"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: image-scan
+          path: grype/
           retention-days: 7
 
   # The backend shards: one per package directory, the matrix of backend-mutation.
