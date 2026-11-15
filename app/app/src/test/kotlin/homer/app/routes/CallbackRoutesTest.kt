@@ -16,6 +16,7 @@ import homer.app.models.AskQuestionResponse
 import homer.app.models.CreateDispatchGroupResponse
 import homer.app.models.CreateRunResponse
 import homer.app.models.ErrorResponse
+import homer.app.models.NewRunRecord
 import homer.app.models.QuestionResponse
 import homer.app.models.QuestionsConfig
 import homer.app.models.ResultEnvParam
@@ -1294,7 +1295,7 @@ class CallbackRoutesTest {
         val messages =
             RunMessagesService(RunMessagesRepository(db), ProcessEventBroadcaster(), RunMessagesConfig(), TestFixtures.mockLogger())
         val pm = PersistenceTestSupport.processManager(db = db)
-        val id = runBlocking { pm.obtainProcessId("agent-a") }
+        val id = runBlocking { pm.obtainProcessId(NewRunRecord("agent-a")) }
         val token = runBlocking { questions.registerProcess(id, "agent-a") }
         return Inbox(questions, messages, pm, id, token)
     }
@@ -1440,7 +1441,7 @@ class CallbackRoutesTest {
     fun `a child run's token takes only the child's messages, never its parent's`() =
         testApplication {
             val parent = inbox()
-            val childId = runBlocking { parent.processes.obtainProcessId("child", parentProcessId = parent.processId) }
+            val childId = runBlocking { parent.processes.obtainProcessId(NewRunRecord("child", parentProcessId = parent.processId)) }
             val childToken = runBlocking { parent.questions.registerProcess(childId, "child") }
             runBlocking { parent.messages.send(parent.processId, "alice", "for the parent") }
             val forChild = runBlocking { parent.messages.send(childId, "alice", "for the child") }

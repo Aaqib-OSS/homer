@@ -15,6 +15,7 @@ import homer.app.models.LangGraphEdgeRef
 import homer.app.models.LangGraphRunStatus
 import homer.app.models.LangGraphSubCommand
 import homer.app.models.LangGraphSubProgress
+import homer.app.models.NewRunRecord
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
 import homer.app.models.SubRunProgress
@@ -1351,7 +1352,7 @@ class LangGraphRunStatusServiceTest {
         steps: List<ExecutionInfo> = emptyList(),
         running: String? = null,
     ): Int {
-        val id = obtainProcessId(agentName)
+        val id = obtainProcessId(NewRunRecord(agentName))
         setProcessStatus(id, ProcessStatus.WORKING)
         steps.forEach { completeStep(id, it, null, null) }
         running?.let { setCurrentCommand(id, it, 5L) }

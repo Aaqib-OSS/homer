@@ -3,6 +3,7 @@ package homer.app.services.persistence
 import homer.app.fixtures.SqlStatementRecorder
 import homer.app.infra.ProcessJobRegistry
 import homer.app.models.ExecutionInfo
+import homer.app.models.NewRunRecord
 import homer.app.models.ProcessStatus
 import homer.app.services.ProcessManager
 import homer.app.services.QuestionsService
@@ -2890,7 +2891,7 @@ class DatabaseMigrationTest {
         val dbPath = dir.resolve("wal.db").toString()
         val db = DatabaseService(dbPath, logger).also { it.migrate() }
         val repo = ProcessRepository(db, ProcessJobRegistry())
-        val id = repo.obtainProcessId("a", mapOf("big" to "x".repeat(5 * 1024 * 1024)), 100).processId
+        val id = repo.obtainProcessId(NewRunRecord("a", mapOf("big" to "x".repeat(5 * 1024 * 1024))), 100).processId
 
         // Passivate the connection so the WAL is checkpointed and its file holds only
         // frames written after this point — the measurement then covers the updates alone.

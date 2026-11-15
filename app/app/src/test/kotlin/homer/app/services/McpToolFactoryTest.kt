@@ -18,6 +18,7 @@ import homer.app.models.ParamSource
 import homer.app.models.ParamType
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
+import homer.app.models.RunStartRequest
 import homer.app.models.Server
 import homer.app.models.TokenConfig
 import io.mockk.coEvery
@@ -65,8 +66,8 @@ class McpToolFactoryTest {
         agentsService = mockk(relaxed = true)
         every { agentsService.agents } returns emptyMap()
         agentRunStarter = mockk()
-        coEvery { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } coAnswers {
-            resolvedInputs = arg<suspend () -> Map<String, String>>(10).invoke()
+        coEvery { agentRunStarter.start(any(), any(), any(), any()) } coAnswers {
+            resolvedInputs = firstArg<RunStartRequest>().resolveInputs.invoke()
             RUN_ID
         }
         processManager = mockk(relaxed = true)
@@ -477,7 +478,16 @@ class McpToolFactoryTest {
             assertEquals(RUN_ID, (structured["runId"] as JsonPrimitive).content.toInt())
             assertEquals("WORKING", (structured["status"] as JsonPrimitive).content)
             coVerify {
-                agentRunStarter.start(agent, emptyList(), "mcp", any(), any(), any(), any(), any(), any(), any(), any())
+                agentRunStarter.start(
+                    match {
+                        it.agent == agent &&
+                            it.invocationChain.isEmpty() &&
+                            it.source == "mcp"
+                    },
+                    any(),
+                    any(),
+                    any(),
+                )
             }
         }
 
@@ -491,7 +501,17 @@ class McpToolFactoryTest {
 
             assertNull(result.isError)
             coVerify {
-                agentRunStarter.start(agent, emptyList(), "mcp", any(), any(), "runner", any(), any(), any(), any(), any())
+                agentRunStarter.start(
+                    match {
+                        it.agent == agent &&
+                            it.invocationChain.isEmpty() &&
+                            it.source == "mcp" &&
+                            it.owner == "runner"
+                    },
+                    any(),
+                    any(),
+                    any(),
+                )
             }
         }
 

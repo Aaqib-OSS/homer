@@ -21,6 +21,7 @@ import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
 import homer.app.models.ResultEnvParam
 import homer.app.models.ResultTransformer
+import homer.app.models.RunStartRequest
 import homer.app.models.SrcType
 import homer.app.services.persistence.ContinuationRepository
 import io.mockk.coEvery
@@ -539,7 +540,7 @@ class ContinuationServiceTest {
             // The sub finished in the gap between start and insert; the live hook already ran.
             coEvery { processManager.getProcessStatus(42) } returns ProcessStatus.FINISHED
             coEvery { repo.claim(11) } returns true
-            coEvery { runStarter.start(any(), any(), eq("continuation"), any(), any(), any(), any(), any(), any(), any(), any()) } returns
+            coEvery { runStarter.start(match { it.source == "continuation" }, any(), any(), any()) } returns
                 99
 
             val id = service().create(7, 42, "h", mapOf("HMR_LG_THREAD" to "t"), "HMR_LG_RESUME", null, null)
@@ -562,7 +563,7 @@ class ContinuationServiceTest {
             service().create(7, 42, "h", emptyMap(), "HMR_LG_RESUME", null, null)
 
             coVerify(exactly = 0) { repo.claim(any()) }
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
         }
 
     // --- onProcessTerminal ---
@@ -575,14 +576,11 @@ class ContinuationServiceTest {
         coEvery { repo.claim(continuation.id) } returns true
         coEvery {
             runStarter.start(
-                eq(agent),
-                eq(emptyList()),
-                eq("continuation"),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
+                match {
+                    it.agent == agent &&
+                        it.invocationChain.isEmpty() &&
+                        it.source == "continuation"
+                },
                 any(),
                 any(),
                 any(),
@@ -598,7 +596,17 @@ class ContinuationServiceTest {
 
             service().onProcessTerminal(42, ProcessStatus.FINISHED)
 
-            coVerify { runStarter.start(any(), any(), eq("continuation"), any(), any(), any(), any(), eq(7), any(), any(), any()) }
+            coVerify {
+                runStarter.start(
+                    match {
+                        it.source == "continuation" &&
+                            it.parentProcessId == 7
+                    },
+                    any(),
+                    any(),
+                    any(),
+                )
+            }
         }
 
     @Test
@@ -624,15 +632,11 @@ class ContinuationServiceTest {
 
             coVerify {
                 runStarter.start(
+                    match {
+                        it.parentProcessId == 7 &&
+                            it.rootProcessId == 3
+                    },
                     any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    parentProcessId = eq(7),
-                    rootProcessId = eq(3),
                     any(),
                     any(),
                 )
@@ -665,15 +669,11 @@ class ContinuationServiceTest {
 
             coVerify {
                 runStarter.start(
+                    match {
+                        it.parentProcessId == 7 &&
+                            it.rootProcessId == null
+                    },
                     any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    parentProcessId = eq(7),
-                    rootProcessId = null,
                     any(),
                     any(),
                 )
@@ -693,15 +693,11 @@ class ContinuationServiceTest {
 
             coVerify {
                 runStarter.start(
+                    match {
+                        it.parentProcessId == 7 &&
+                            it.rootProcessId == 7
+                    },
                     any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    parentProcessId = eq(7),
-                    rootProcessId = eq(7),
                     any(),
                     any(),
                 )
@@ -720,15 +716,11 @@ class ContinuationServiceTest {
 
             coVerify {
                 runStarter.start(
+                    match {
+                        it.parentProcessId == 7 &&
+                            it.rootProcessId == null
+                    },
                     any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    parentProcessId = eq(7),
-                    rootProcessId = null,
                     any(),
                     any(),
                 )
@@ -750,10 +742,10 @@ class ContinuationServiceTest {
             val started = mutableListOf<Pair<Int?, Int?>>()
             var nextProcessId = 100
             coEvery {
-                runStarter.start(any(), any(), eq("continuation"), any(), any(), any(), any(), any(), any(), any(), any())
+                runStarter.start(match { it.source == "continuation" }, any(), any(), any())
             } coAnswers {
-                val parent = arg<Int?>(7)
-                val root = arg<Int?>(8)
+                val parent = firstArg<RunStartRequest>().parentProcessId
+                val root = firstArg<RunStartRequest>().rootProcessId
                 started += parent to root
                 val id = nextProcessId++
                 rows[id] =
@@ -782,21 +774,9 @@ class ContinuationServiceTest {
     fun `onProcessTerminal fires the target run with thread plus resume payload and marks dispatched`() =
         runTest {
             stubFireable(pending())
-            val resolve = slot<suspend () -> Map<String, String>>()
+            val resolve = slot<RunStartRequest>()
             coEvery {
-                runStarter.start(
-                    any(),
-                    any(),
-                    eq("continuation"),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    capture(resolve),
-                )
+                runStarter.start(capture(resolve), any(), any(), any())
             } returns
                 99
 
@@ -804,7 +784,8 @@ class ContinuationServiceTest {
 
             coVerify { repo.claim(5) }
             coVerify { repo.markDispatched(5, 99, 1000L) }
-            resolve.captured.invoke()
+            assertEquals("continuation", resolve.captured.source)
+            resolve.captured.resolveInputs.invoke()
             verify {
                 inputResolver.resolveFromParams(
                     match<Map<String, String>> {
@@ -832,34 +813,33 @@ class ContinuationServiceTest {
 
             service().onProcessTerminal(42, ProcessStatus.FINISHED)
 
-            coVerify { runStarter.start(any(), any(), eq("continuation"), any(), any(), eq("ci"), any(), any(), any(), any(), any()) }
+            coVerify {
+                runStarter.start(
+                    match {
+                        it.source == "continuation" &&
+                            it.owner == "ci"
+                    },
+                    any(),
+                    any(),
+                    any(),
+                )
+            }
         }
 
     @Test
     fun `onProcessTerminal does not let stored params inject host-controlled env names`() =
         runTest {
             stubFireable(pending().copy(params = mapOf("PATH" to "/tmp/evil:/usr/bin", "HMR_LG_THREAD" to "thread-1")))
-            val resolve = slot<suspend () -> Map<String, String>>()
+            val resolve = slot<RunStartRequest>()
             coEvery {
-                runStarter.start(
-                    any(),
-                    any(),
-                    eq("continuation"),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    capture(resolve),
-                )
+                runStarter.start(capture(resolve), any(), any(), any())
             } returns
                 99
 
             service().onProcessTerminal(42, ProcessStatus.FINISHED)
 
-            val env = resolve.captured.invoke()
+            assertEquals("continuation", resolve.captured.source)
+            val env = resolve.captured.resolveInputs.invoke()
             assertNull(env["PATH"])
             assertEquals("thread-1", env["HMR_LG_THREAD"])
         }
@@ -870,27 +850,16 @@ class ContinuationServiceTest {
             // pending() carries params {HMR_LG_THREAD: thread-1} and resumeParam HMR_LG_RESUME —
             // both reserved, so resolveDebug drops them; they must still reach the run env.
             stubFireable(pending())
-            val resolve = slot<suspend () -> Map<String, String>>()
+            val resolve = slot<RunStartRequest>()
             coEvery {
-                runStarter.start(
-                    any(),
-                    any(),
-                    eq("continuation"),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    capture(resolve),
-                )
+                runStarter.start(capture(resolve), any(), any(), any())
             } returns
                 99
 
             service().onProcessTerminal(42, ProcessStatus.FINISHED)
 
-            val env = resolve.captured.invoke()
+            assertEquals("continuation", resolve.captured.source)
+            val env = resolve.captured.resolveInputs.invoke()
             assertEquals("thread-1", env["HMR_LG_THREAD"])
             assertEquals(
                 "FINISHED",
@@ -911,27 +880,16 @@ class ContinuationServiceTest {
             // The declared input resolves WORKER_RESULT from the appended resume payload.
             every { inputResolver.resolveFromParams(any(), any(), any(), any()) } returns
                 mapOf("WORKER_RESULT" to "the-result")
-            val resolve = slot<suspend () -> Map<String, String>>()
+            val resolve = slot<RunStartRequest>()
             coEvery {
-                runStarter.start(
-                    any(),
-                    any(),
-                    eq("continuation"),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    capture(resolve),
-                )
+                runStarter.start(capture(resolve), any(), any(), any())
             } returns
                 99
 
             service().onProcessTerminal(42, ProcessStatus.FINISHED)
 
-            val env = resolve.captured.invoke()
+            assertEquals("continuation", resolve.captured.source)
+            val env = resolve.captured.resolveInputs.invoke()
             assertEquals("the-result", env["WORKER_RESULT"])
         }
 
@@ -954,7 +912,7 @@ class ContinuationServiceTest {
             coEvery { repo.findByWatchedProcessId(42) } returns listOf(pending())
             coEvery { repo.claim(5) } returns false
             service().onProcessTerminal(42, ProcessStatus.FINISHED)
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -969,27 +927,16 @@ class ContinuationServiceTest {
         coEvery { processManager.getProcessExecutions(42) } returns
             listOf(ExecutionInfo("cmd", 0, 1, 0, Path.of("cmd_0.out"), Path.of("cmd_0.err"), null))
         coEvery { processManager.getProcessInfo(42) } returns mockk(relaxed = true) { every { artifactsDir } returns dir }
-        val resolve = slot<suspend () -> Map<String, String>>()
+        val resolve = slot<RunStartRequest>()
         coEvery {
-            runStarter.start(
-                any(),
-                any(),
-                eq("continuation"),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                capture(resolve),
-            )
+            runStarter.start(capture(resolve), any(), any(), any())
         } returns
             99
 
         service().onProcessTerminal(42, ProcessStatus.FINISHED)
 
-        resolve.captured.invoke()
+        assertEquals("continuation", resolve.captured.source)
+        resolve.captured.resolveInputs.invoke()
         verify {
             inputResolver.resolveFromParams(
                 match<Map<String, String>> {
@@ -1018,27 +965,16 @@ class ContinuationServiceTest {
         coEvery { processManager.getProcessExecutions(42) } returns
             listOf(ExecutionInfo("cmd", 0, 1, 0, Path.of("cmd_0.out"), Path.of("cmd_0.err"), null))
         coEvery { processManager.getProcessInfo(42) } returns mockk(relaxed = true) { every { artifactsDir } returns dir }
-        val resolve = slot<suspend () -> Map<String, String>>()
+        val resolve = slot<RunStartRequest>()
         coEvery {
-            runStarter.start(
-                any(),
-                any(),
-                eq("continuation"),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                capture(resolve),
-            )
+            runStarter.start(capture(resolve), any(), any(), any())
         } returns
             99
 
         service().onProcessTerminal(42, ProcessStatus.FINISHED)
 
-        resolve.captured.invoke()
+        assertEquals("continuation", resolve.captured.source)
+        resolve.captured.resolveInputs.invoke()
         verify {
             inputResolver.resolveFromParams(
                 match<Map<String, String>> {
@@ -1065,27 +1001,16 @@ class ContinuationServiceTest {
             listOf(ExecutionInfo("cmd", 0, 1, 0, Path.of("cmd_0.out"), Path.of("cmd_0.err"), null))
         coEvery { processManager.getProcessInfo(42) } returns mockk(relaxed = true) { every { artifactsDir } returns dir }
         coEvery { resultTokenService.mint(42, "cmd_0.out", transformer, size.toLong(), "h") } returns "tok-xyz"
-        val resolve = slot<suspend () -> Map<String, String>>()
+        val resolve = slot<RunStartRequest>()
         coEvery {
-            runStarter.start(
-                any(),
-                any(),
-                eq("continuation"),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                capture(resolve),
-            )
+            runStarter.start(capture(resolve), any(), any(), any())
         } returns
             99
 
         service().onProcessTerminal(42, ProcessStatus.FINISHED)
 
-        resolve.captured.invoke()
+        assertEquals("continuation", resolve.captured.source)
+        resolve.captured.resolveInputs.invoke()
         // result is null AND a resultRef carrying the minted token is present; the token is
         // audience-bound to the continuation's target agent ("h").
         coVerify { resultTokenService.mint(42, "cmd_0.out", transformer, size.toLong(), "h") }
@@ -1124,27 +1049,16 @@ class ContinuationServiceTest {
         coEvery { processManager.getProcessExecutions(42) } returns
             listOf(ExecutionInfo("cmd", 0, 1, -1, Path.of("cmd_1.out"), Path.of("cmd_1.err"), null))
         coEvery { processManager.getProcessInfo(42) } returns mockk(relaxed = true) { every { artifactsDir } returns dir }
-        val resolve = slot<suspend () -> Map<String, String>>()
+        val resolve = slot<RunStartRequest>()
         coEvery {
-            runStarter.start(
-                any(),
-                any(),
-                eq("continuation"),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                capture(resolve),
-            )
+            runStarter.start(capture(resolve), any(), any(), any())
         } returns
             99
 
         service().onProcessTerminal(42, ProcessStatus.FAILED)
 
-        resolve.captured.invoke()
+        assertEquals("continuation", resolve.captured.source)
+        resolve.captured.resolveInputs.invoke()
         coVerify(exactly = 0) { resultTokenService.mint(any(), any(), any(), any(), any()) }
         verify {
             inputResolver.resolveFromParams(
@@ -1169,7 +1083,7 @@ class ContinuationServiceTest {
             every { agents.agents } returns mapOf("h" to agent)
             coEvery { repo.findByWatchedProcessId(42) } returns listOf(pending())
             coEvery { repo.claim(5) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } throws
+            coEvery { runStarter.start(any(), any(), any(), any()) } throws
                 ValidationException("input 'X' is required")
             service().onProcessTerminal(42, ProcessStatus.FINISHED)
             coVerify { repo.markFailed(5, any(), 1000L) }
@@ -1186,7 +1100,7 @@ class ContinuationServiceTest {
             every { agents.agents } returns mapOf("h" to agent)
             coEvery { repo.findByWatchedProcessId(42) } returns listOf(pending())
             coEvery { repo.claim(5) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } throws
+            coEvery { runStarter.start(any(), any(), any(), any()) } throws
                 CostCapExceededException("global", 1.0, 2.0)
 
             service().onProcessTerminal(42, ProcessStatus.FINISHED)
@@ -1204,7 +1118,7 @@ class ContinuationServiceTest {
             every { agents.agents } returns mapOf("h" to agent)
             coEvery { repo.findByWatchedProcessId(42) } returns listOf(pending().copy(fireAttempts = 3))
             coEvery { repo.claim(5) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } throws
+            coEvery { runStarter.start(any(), any(), any(), any()) } throws
                 ProcessManagerAtCapacityException(10)
 
             service().onProcessTerminal(42, ProcessStatus.FINISHED)
@@ -1221,7 +1135,7 @@ class ContinuationServiceTest {
             every { agents.agents } returns mapOf("h" to agent)
             coEvery { repo.findByWatchedProcessId(42) } returns listOf(pending().copy(fireAttempts = 7))
             coEvery { repo.claim(5) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } throws
+            coEvery { runStarter.start(any(), any(), any(), any()) } throws
                 CostCapExceededException("global", 1.0, 2.0)
 
             service().onProcessTerminal(42, ProcessStatus.FINISHED)
@@ -1241,7 +1155,7 @@ class ContinuationServiceTest {
             coEvery { repo.findDueRetries(1000L) } returns listOf(pending().copy(fireAttempts = 1))
             coEvery { repo.claim(5) } returns true
             coEvery { processManager.getProcessStatus(42) } returns ProcessStatus.FINISHED
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 99
+            coEvery { runStarter.start(any(), any(), any(), any()) } returns 99
 
             service().sweepRetries()
 
@@ -1273,7 +1187,7 @@ class ContinuationServiceTest {
             service().onProcessTerminal(42, ProcessStatus.FINISHED)
 
             coVerify { repo.markFailed(5, match { it.contains("no longer an allowed dispatch target") }, 1000L) }
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -1284,7 +1198,7 @@ class ContinuationServiceTest {
             coEvery { repo.claim(5) } returns true
             service().onProcessTerminal(42, ProcessStatus.FINISHED)
             coVerify { repo.markFailed(5, match { it.contains("h") }, 1000L) }
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -1296,7 +1210,7 @@ class ContinuationServiceTest {
             service().onProcessTerminal(42, ProcessStatus.FINISHED)
 
             coVerify { repo.markFailed(5, match { it.contains("not authorized") }, 1000L) }
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -1539,7 +1453,7 @@ class ContinuationServiceTest {
             coEvery { processManager.getProcessStatus(10) } returns ProcessStatus.FINISHED
             coEvery { processManager.getProcessStatus(11) } returns ProcessStatus.FINISHED
             coEvery { repo.claim(12) } returns true
-            coEvery { runStarter.start(any(), any(), eq("continuation"), any(), any(), any(), any(), any(), any(), any(), any()) } returns
+            coEvery { runStarter.start(match { it.source == "continuation" }, any(), any(), any()) } returns
                 99
 
             service().createJoin(7, watches, "h", emptyMap(), "HMR_LG_RESUME", null)
@@ -1568,7 +1482,7 @@ class ContinuationServiceTest {
         every { agents.agents } returns mapOf("h" to agent)
         coEvery { repo.findJoinsByWatchedProcessId(any()) } returns listOf(continuation)
         coEvery { repo.claim(continuation.id) } returns true
-        coEvery { runStarter.start(any(), any(), eq("continuation"), any(), any(), any(), any(), any(), any(), any(), any()) } returns 99
+        coEvery { runStarter.start(match { it.source == "continuation" }, any(), any(), any()) } returns 99
     }
 
     @Test
@@ -1599,7 +1513,17 @@ class ContinuationServiceTest {
 
             service().onProcessTerminal(10, ProcessStatus.FINISHED)
 
-            coVerify { runStarter.start(any(), any(), eq("continuation"), any(), any(), eq("ci"), any(), any(), any(), any(), any()) }
+            coVerify {
+                runStarter.start(
+                    match {
+                        it.source == "continuation" &&
+                            it.owner == "ci"
+                    },
+                    any(),
+                    any(),
+                    any(),
+                )
+            }
         }
 
     @Test
@@ -1627,15 +1551,11 @@ class ContinuationServiceTest {
 
             coVerify {
                 runStarter.start(
+                    match {
+                        it.parentProcessId == 7 &&
+                            it.rootProcessId == 3
+                    },
                     any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    parentProcessId = eq(7),
-                    rootProcessId = eq(3),
                     any(),
                     any(),
                 )
@@ -1668,15 +1588,11 @@ class ContinuationServiceTest {
 
             coVerify {
                 runStarter.start(
+                    match {
+                        it.parentProcessId == 7 &&
+                            it.rootProcessId == null
+                    },
                     any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    parentProcessId = eq(7),
-                    rootProcessId = null,
                     any(),
                     any(),
                 )
@@ -1698,15 +1614,11 @@ class ContinuationServiceTest {
 
             coVerify {
                 runStarter.start(
+                    match {
+                        it.parentProcessId == 7 &&
+                            it.rootProcessId == 7
+                    },
                     any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    parentProcessId = eq(7),
-                    rootProcessId = eq(7),
                     any(),
                     any(),
                 )
@@ -1727,15 +1639,11 @@ class ContinuationServiceTest {
 
             coVerify {
                 runStarter.start(
+                    match {
+                        it.parentProcessId == 7 &&
+                            it.rootProcessId == null
+                    },
                     any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    parentProcessId = eq(7),
-                    rootProcessId = null,
                     any(),
                     any(),
                 )
@@ -1755,7 +1663,7 @@ class ContinuationServiceTest {
 
             service().onProcessTerminal(10, ProcessStatus.FINISHED)
 
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -1769,7 +1677,7 @@ class ContinuationServiceTest {
             service().onProcessTerminal(10, ProcessStatus.FINISHED)
 
             coVerify { repo.markFailed(5, match { it.contains("not authorized") }, 1000L) }
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -1786,7 +1694,7 @@ class ContinuationServiceTest {
             service().onProcessTerminal(10, ProcessStatus.FINISHED)
 
             coVerify { repo.markFailed(5, match { it.contains("no longer an allowed dispatch target") }, 1000L) }
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -1814,28 +1722,17 @@ class ContinuationServiceTest {
         coEvery { processManager.getProcessExecutions(11) } returns
             listOf(ExecutionInfo("c", 0, 1, 0, Path.of("b.out"), Path.of("b.err"), null))
         coEvery { processManager.getProcessInfo(any()) } returns mockk(relaxed = true) { every { artifactsDir } returns dir }
-        val resolve = slot<suspend () -> Map<String, String>>()
+        val resolve = slot<RunStartRequest>()
         coEvery {
-            runStarter.start(
-                any(),
-                any(),
-                eq("continuation"),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                capture(resolve),
-            )
+            runStarter.start(capture(resolve), any(), any(), any())
         } returns
             99
         val captured = slot<Map<String, String>>()
         every { inputResolver.resolveFromParams(capture(captured), any(), any(), any()) } returns emptyMap()
 
         service().onProcessTerminal(11, ProcessStatus.FINISHED)
-        resolve.captured.invoke()
+        assertEquals("continuation", resolve.captured.source)
+        resolve.captured.resolveInputs.invoke()
 
         // Outer map: one entry per interrupt id; each value is the single-fanout JSON string.
         val outer = Json.parseToJsonElement(captured.captured["HMR_LG_RESUME"]!!).jsonObject
@@ -1863,28 +1760,17 @@ class ContinuationServiceTest {
             listOf(ExecutionInfo("c", 0, 1, 0, Path.of("big.out"), Path.of("big.err"), null))
         coEvery { processManager.getProcessInfo(10) } returns mockk(relaxed = true) { every { artifactsDir } returns dir }
         coEvery { resultTokenService.mint(10, "big.out", tf, size.toLong(), "h") } returns "tok-xyz"
-        val resolve = slot<suspend () -> Map<String, String>>()
+        val resolve = slot<RunStartRequest>()
         coEvery {
-            runStarter.start(
-                any(),
-                any(),
-                eq("continuation"),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                capture(resolve),
-            )
+            runStarter.start(capture(resolve), any(), any(), any())
         } returns
             99
         val captured = slot<Map<String, String>>()
         every { inputResolver.resolveFromParams(capture(captured), any(), any(), any()) } returns emptyMap()
 
         service().onProcessTerminal(10, ProcessStatus.FINISHED)
-        resolve.captured.invoke()
+        assertEquals("continuation", resolve.captured.source)
+        resolve.captured.resolveInputs.invoke()
 
         coVerify { resultTokenService.mint(10, "big.out", tf, size.toLong(), "h") }
         val outer = Json.parseToJsonElement(captured.captured["HMR_LG_RESUME"]!!).jsonObject
@@ -1901,27 +1787,16 @@ class ContinuationServiceTest {
             coEvery { processManager.getProcessStatus(10) } returns ProcessStatus.FINISHED
             coEvery { processManager.getProcessStatus(11) } returns ProcessStatus.FAILED
             val captured = slot<Map<String, String>>()
-            val resolve = slot<suspend () -> Map<String, String>>()
+            val resolve = slot<RunStartRequest>()
             coEvery {
-                runStarter.start(
-                    any(),
-                    any(),
-                    eq("continuation"),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    capture(resolve),
-                )
+                runStarter.start(capture(resolve), any(), any(), any())
             } returns
                 99
             every { inputResolver.resolveFromParams(capture(captured), any(), any(), any()) } returns emptyMap()
 
             service().onProcessTerminal(11, ProcessStatus.FAILED)
-            resolve.captured.invoke()
+            assertEquals("continuation", resolve.captured.source)
+            resolve.captured.resolveInputs.invoke()
 
             coVerify { repo.markDispatched(5, 99, 1000L) }
             val outer = Json.parseToJsonElement(captured.captured["HMR_LG_RESUME"]!!).jsonObject
@@ -1942,7 +1817,7 @@ class ContinuationServiceTest {
             coEvery { processManager.getProcessStatus(11) } returns ProcessStatus.WORKING
             coEvery { processManager.getProcessStatus(20) } returns ProcessStatus.FINISHED
             coEvery { repo.claim(2) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 99
+            coEvery { runStarter.start(any(), any(), any(), any()) } returns 99
 
             service().refirePendingTerminal()
 
@@ -2007,7 +1882,7 @@ class ContinuationServiceTest {
             coEvery { processManager.getProcessStatus(20) } returns ProcessStatus.FINISHED
             coEvery { repo.claim(1) } returns true
             coEvery { repo.claim(2) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 99
+            coEvery { runStarter.start(any(), any(), any(), any()) } returns 99
 
             service().refirePendingTerminal()
 
@@ -2020,28 +1895,17 @@ class ContinuationServiceTest {
     fun `resume payload is well-formed JSON with status, processId, and null result`() =
         runTest {
             stubFireable(pending())
-            val resolve = slot<suspend () -> Map<String, String>>()
+            val resolve = slot<RunStartRequest>()
             coEvery {
-                runStarter.start(
-                    any(),
-                    any(),
-                    eq("continuation"),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    capture(resolve),
-                )
+                runStarter.start(capture(resolve), any(), any(), any())
             } returns
                 99
             val captured = slot<Map<String, String>>()
             every { inputResolver.resolveFromParams(capture(captured), any(), any(), any()) } returns emptyMap()
 
             service().onProcessTerminal(42, ProcessStatus.KILLED)
-            resolve.captured.invoke()
+            assertEquals("continuation", resolve.captured.source)
+            resolve.captured.resolveInputs.invoke()
 
             val payload = Json.parseToJsonElement(captured.captured["HMR_LG_RESUME"]!!).jsonObject
             assertEquals("KILLED", payload["status"]!!.jsonPrimitive.content)

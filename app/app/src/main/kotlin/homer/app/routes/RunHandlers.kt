@@ -17,6 +17,7 @@ import homer.app.models.DebugAgentRequest
 import homer.app.models.ErrorResponse
 import homer.app.models.ExecuteResponse
 import homer.app.models.ProcessInfo
+import homer.app.models.RunStartRequest
 import homer.app.services.AgentRunStarter
 import homer.app.services.Authorizer
 import homer.app.services.CostMeter
@@ -58,13 +59,16 @@ internal suspend fun handleAgentExecution(
     // longer trusts any chain/lock headers. See ADR-0030.
     val processId =
         agentRunStarter.start(
-            agent = agent,
-            invocationChain = emptyList(),
-            source = "http",
-            owner = call.principalName(),
-            parentProcessId = parentProcessId,
-            rootProcessId = rootProcessId,
-        ) { agentInputResolver.resolve(call, agent) }
+            RunStartRequest(
+                agent = agent,
+                invocationChain = emptyList(),
+                source = "http",
+                owner = call.principalName(),
+                parentProcessId = parentProcessId,
+                rootProcessId = rootProcessId,
+                resolveInputs = { agentInputResolver.resolve(call, agent) },
+            ),
+        )
 
     call.respond(ExecuteResponse(processId = processId))
 }

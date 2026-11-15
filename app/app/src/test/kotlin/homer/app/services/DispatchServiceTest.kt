@@ -21,6 +21,7 @@ import homer.app.models.ParamType
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
 import homer.app.models.QuestionsConfig
+import homer.app.models.RunStartRequest
 import homer.app.models.Transformer
 import homer.app.services.persistence.DispatchRepository
 import io.mockk.coEvery
@@ -37,6 +38,7 @@ import org.slf4j.LoggerFactory
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class DispatchServiceTest {
     private val repo = mockk<DispatchRepository>(relaxed = true)
@@ -392,12 +394,12 @@ class DispatchServiceTest {
                     agentName = "h",
                     inputParams = mapOf("TICKET_ID" to "123", "REGION" to "eu"),
                 )
-            val resolve = slot<suspend () -> Map<String, String>>()
+            val resolve = slot<RunStartRequest>()
             coEvery {
-                runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), capture(resolve))
+                runStarter.start(capture(resolve), any(), any(), any())
             } coAnswers
                 {
-                    resolve.captured.invoke()
+                    resolve.captured.resolveInputs.invoke()
                     99
                 }
             val params = slot<Map<String, String>>()
@@ -434,7 +436,7 @@ class DispatchServiceTest {
                 )
             val secretKeys = slot<Set<String>>()
             coEvery {
-                runStarter.start(any(), any(), any(), any(), any(), any(), capture(secretKeys), any(), any(), any(), any())
+                runStarter.start(any(), extraAttributes = any(), extraSecretInputKeys = capture(secretKeys), serverDerivedParent = any())
             } returns 99
 
             service().fire(questionId = "q1", answer = "us-east")
@@ -494,12 +496,12 @@ class DispatchServiceTest {
                 ) { 1000L }
             // The mocked starter invokes the fire's input resolution, so the real resolver
             // really rejects the inherited value.
-            val resolve = slot<suspend () -> Map<String, String>>()
+            val resolve = slot<RunStartRequest>()
             coEvery {
-                runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), capture(resolve))
+                runStarter.start(capture(resolve), any(), any(), any())
             } coAnswers
                 {
-                    resolve.captured.invoke()
+                    resolve.captured.resolveInputs.invoke()
                     99
                 }
 
@@ -560,12 +562,12 @@ class DispatchServiceTest {
                     groupService,
                     LoggerFactory.getLogger("t"),
                 ) { 1000L }
-            val resolve = slot<suspend () -> Map<String, String>>()
+            val resolve = slot<RunStartRequest>()
             coEvery {
-                runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), capture(resolve))
+                runStarter.start(capture(resolve), any(), any(), any())
             } coAnswers
                 {
-                    resolve.captured.invoke()
+                    resolve.captured.resolveInputs.invoke()
                     99
                 }
 
@@ -635,13 +637,13 @@ class DispatchServiceTest {
                     groupService,
                     LoggerFactory.getLogger("t"),
                 ) { 1000L }
-            val resolve = slot<suspend () -> Map<String, String>>()
+            val resolve = slot<RunStartRequest>()
             var resolved: Map<String, String>? = null
             coEvery {
-                runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), capture(resolve))
+                runStarter.start(capture(resolve), any(), any(), any())
             } coAnswers
                 {
-                    resolved = resolve.captured.invoke()
+                    resolved = resolve.captured.resolveInputs.invoke()
                     99
                 }
 
@@ -698,14 +700,11 @@ class DispatchServiceTest {
             coEvery { repo.claim(5) } returns true
             coEvery {
                 runStarter.start(
-                    eq(agent),
-                    eq(emptyList()),
-                    eq("dispatch"),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
+                    match {
+                        it.agent == agent &&
+                            it.invocationChain.isEmpty() &&
+                            it.source == "dispatch"
+                    },
                     any(),
                     any(),
                     any(),
@@ -731,11 +730,21 @@ class DispatchServiceTest {
             coEvery { repo.findByQuestionId("q1") } returns
                 Dispatch(5, "q1", DispatchStatus.PENDING, "h", "reply", mapOf("p1" to "v1"), 7, "asker", null, 1)
             coEvery { repo.claim(5) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 99
+            coEvery { runStarter.start(any(), any(), any(), any()) } returns 99
 
             service().fire(questionId = "q1", answer = "us-east")
 
-            coVerify { runStarter.start(any(), any(), eq("dispatch"), any(), any(), any(), any(), eq(7), any(), any(), any()) }
+            coVerify {
+                runStarter.start(
+                    match {
+                        it.source == "dispatch" &&
+                            it.parentProcessId == 7
+                    },
+                    any(),
+                    any(),
+                    any(),
+                )
+            }
         }
 
     @Test
@@ -749,12 +758,20 @@ class DispatchServiceTest {
             coEvery { repo.findByQuestionId("q1") } returns
                 Dispatch(5, "q1", DispatchStatus.PENDING, "h", "reply", mapOf("p1" to "v1"), 7, "asker", null, 1)
             coEvery { repo.claim(5) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 99
+            coEvery { runStarter.start(any(), any(), any(), any()) } returns 99
 
             service().fire(questionId = "q1", answer = "us-east")
 
             coVerify {
-                runStarter.start(any(), any(), eq("dispatch"), any(), any(), any(), any(), eq(7), any(), serverDerivedParent = true, any())
+                runStarter.start(
+                    match {
+                        it.source == "dispatch" &&
+                            it.parentProcessId == 7
+                    },
+                    extraAttributes = any(),
+                    extraSecretInputKeys = any(),
+                    serverDerivedParent = true,
+                )
             }
         }
 
@@ -764,12 +781,20 @@ class DispatchServiceTest {
             val agent = mockk<Agent>(relaxed = true)
             every { agent.dispatch } returns AgentDispatchConfig(enabled = true)
             every { agents.agents } returns mapOf("h" to agent)
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 99
+            coEvery { runStarter.start(any(), any(), any(), any()) } returns 99
 
             service().dispatchNow(originProcessId = 7, agent = "h", params = emptyMap())
 
             coVerify {
-                runStarter.start(any(), any(), eq("dispatch"), any(), any(), any(), any(), eq(7), any(), serverDerivedParent = true, any())
+                runStarter.start(
+                    match {
+                        it.source == "dispatch" &&
+                            it.parentProcessId == 7
+                    },
+                    extraAttributes = any(),
+                    extraSecretInputKeys = any(),
+                    serverDerivedParent = true,
+                )
             }
         }
 
@@ -782,7 +807,7 @@ class DispatchServiceTest {
             coEvery { repo.findByQuestionId("q1") } returns
                 Dispatch(5, "q1", DispatchStatus.PENDING, "h", "reply", mapOf("p1" to "v1"), 7, "asker", null, 1)
             coEvery { repo.claim(5) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 99
+            coEvery { runStarter.start(any(), any(), any(), any()) } returns 99
             // The asking run is itself a segment of the flow rooted at 3 — the fired run
             // joins that flow rather than rooting a new one at the asker. The gate reads
             // the root row to check the owner's visibility, so it must resolve too.
@@ -799,7 +824,7 @@ class DispatchServiceTest {
 
             service().fire(questionId = "q1", answer = "us-east")
 
-            coVerify { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), eq(3), any(), any()) }
+            coVerify { runStarter.start(match { it.rootProcessId == 3 }, any(), any(), any()) }
         }
 
     @Test
@@ -815,7 +840,7 @@ class DispatchServiceTest {
             coEvery { repo.findByQuestionId("q1") } returns
                 Dispatch(5, "q1", DispatchStatus.PENDING, "h", "reply", mapOf("p1" to "v1"), 7, "asker", null, 1, owner = "ci")
             coEvery { repo.claim(5) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 99
+            coEvery { runStarter.start(any(), any(), any(), any()) } returns 99
             // The flow root runs an agent the dispatch owner holds no grant on — the
             // derived id is dropped.
             coEvery { processManager.getProcessInfo(3) } returns
@@ -832,7 +857,7 @@ class DispatchServiceTest {
 
             service().fire(questionId = "q1", answer = "us-east")
 
-            coVerify { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), isNull(), any(), any()) }
+            coVerify { runStarter.start(match { it.rootProcessId == null }, any(), any(), any()) }
         }
 
     @Test
@@ -842,11 +867,22 @@ class DispatchServiceTest {
             val agent = mockk<Agent>(relaxed = true)
             every { agent.dispatch } returns AgentDispatchConfig(enabled = true)
             every { agents.agents } returns mapOf("h" to agent)
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 99
+            coEvery { runStarter.start(any(), any(), any(), any()) } returns 99
 
             service().dispatchNow(7, "h", emptyMap())
 
-            coVerify { runStarter.start(eq(agent), any(), eq("dispatch"), any(), any(), any(), any(), eq(7), any(), any(), any()) }
+            coVerify {
+                runStarter.start(
+                    match {
+                        it.agent == agent &&
+                            it.source == "dispatch" &&
+                            it.parentProcessId == 7
+                    },
+                    any(),
+                    any(),
+                    any(),
+                )
+            }
         }
 
     @Test
@@ -856,7 +892,7 @@ class DispatchServiceTest {
             val agent = mockk<Agent>(relaxed = true)
             every { agent.dispatch } returns AgentDispatchConfig(enabled = true)
             every { agents.agents } returns mapOf("h" to agent)
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 99
+            coEvery { runStarter.start(any(), any(), any(), any()) } returns 99
             // A rootless origin row: the origin itself is the flow's root, so the fired
             // run is rooted at the origin rather than at a fresh flow of its own.
             coEvery { processManager.getProcessInfo(7) } returns
@@ -868,7 +904,17 @@ class DispatchServiceTest {
 
             service().dispatchNow(7, "h", emptyMap())
 
-            coVerify { runStarter.start(eq(agent), any(), any(), any(), any(), any(), any(), any(), eq(7), any(), any()) }
+            coVerify {
+                runStarter.start(
+                    match {
+                        it.agent == agent &&
+                            it.rootProcessId == 7
+                    },
+                    any(),
+                    any(),
+                    any(),
+                )
+            }
         }
 
     @Test
@@ -880,7 +926,7 @@ class DispatchServiceTest {
             val agent = mockk<Agent>(relaxed = true)
             every { agent.dispatch } returns AgentDispatchConfig(enabled = true)
             every { agents.agents } returns mapOf("h" to agent)
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 99
+            coEvery { runStarter.start(any(), any(), any(), any()) } returns 99
             coEvery { processManager.getProcessInfo(3) } returns
                 ProcessInfo(id = 3, status = ProcessStatus.WORKING, agentName = "asker", owner = "alice")
             coEvery { processManager.getProcessInfo(7) } returns
@@ -896,7 +942,17 @@ class DispatchServiceTest {
 
             service().dispatchNow(7, "h", emptyMap())
 
-            coVerify { runStarter.start(eq(agent), any(), any(), any(), any(), any(), any(), any(), isNull(), any(), any()) }
+            coVerify {
+                runStarter.start(
+                    match {
+                        it.agent == agent &&
+                            it.rootProcessId == null
+                    },
+                    any(),
+                    any(),
+                    any(),
+                )
+            }
         }
 
     @Test
@@ -908,20 +964,18 @@ class DispatchServiceTest {
             coEvery { repo.findByQuestionId("q1") } returns
                 Dispatch(5, "q1", DispatchStatus.PENDING, "h", "reply", mapOf("p1" to "v1"), 7, "asker", null, 1, owner = "ci")
             coEvery { repo.claim(5) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 99
+            coEvery { runStarter.start(any(), any(), any(), any()) } returns 99
 
             service().fire(questionId = "q1", answer = "us-east")
 
             coVerify {
                 runStarter.start(
-                    eq(agent),
-                    eq(emptyList()),
-                    eq("dispatch"),
-                    any(),
-                    any(),
-                    eq("ci"),
-                    any(),
-                    any(),
+                    match {
+                        it.agent == agent &&
+                            it.invocationChain.isEmpty() &&
+                            it.source == "dispatch" &&
+                            it.owner == "ci"
+                    },
                     any(),
                     any(),
                     any(),
@@ -942,7 +996,7 @@ class DispatchServiceTest {
             val result = service().fire(questionId = "q1", answer = "ans")
 
             assertEquals(DispatchStatus.FAILED, result?.status)
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
             coVerify { repo.markFailed(5, match { it.contains("not authorized") }, 1000L) }
         }
 
@@ -956,7 +1010,7 @@ class DispatchServiceTest {
                 Dispatch(5, "q1", DispatchStatus.PENDING, "b", "reply", emptyMap(), 7, "a", null, 1, owner = "alice")
             coEvery { repo.claim(5) } returns true
             every { authorizer.canDispatchHop("alice", "a", "b") } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 99
+            coEvery { runStarter.start(any(), any(), any(), any()) } returns 99
 
             val result = service().fire(questionId = "q1", answer = "ans")
 
@@ -983,26 +1037,22 @@ class DispatchServiceTest {
                     1,
                 )
             coEvery { repo.claim(5) } returns true
-            val resolve = slot<suspend () -> Map<String, String>>()
+            val resolve = slot<RunStartRequest>()
             coEvery {
                 runStarter.start(
-                    eq(agent),
-                    eq(emptyList()),
-                    eq("dispatch"),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
                     capture(resolve),
+                    any(),
+                    any(),
+                    any(),
                 )
             } returns 99
 
             service().fire("q1", "the-answer")
 
-            val env = resolve.captured.invoke()
+            assertEquals(agent, resolve.captured.agent)
+            assertTrue(resolve.captured.invocationChain.isEmpty())
+            assertEquals("dispatch", resolve.captured.source)
+            val env = resolve.captured.resolveInputs.invoke()
             assertNull(env["PATH"])
             assertNull(env["LD_PRELOAD"])
             // The legitimate control marker still rides through.
@@ -1030,20 +1080,13 @@ class DispatchServiceTest {
                     1,
                 )
             coEvery { repo.claim(5) } returns true
-            val resolve = slot<suspend () -> Map<String, String>>()
+            val resolve = slot<RunStartRequest>()
             coEvery {
                 runStarter.start(
-                    eq(agent),
-                    eq(emptyList()),
-                    eq("dispatch"),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
                     capture(resolve),
+                    any(),
+                    any(),
+                    any(),
                 )
             } returns 99
 
@@ -1051,7 +1094,10 @@ class DispatchServiceTest {
 
             // The resolved declared inputs (relaxed mock → empty) PLUS the reserved control params
             // must both reach the run env; the reserved ones are otherwise dropped by resolveDebug.
-            val env = resolve.captured.invoke()
+            assertEquals(agent, resolve.captured.agent)
+            assertTrue(resolve.captured.invocationChain.isEmpty())
+            assertEquals("dispatch", resolve.captured.source)
+            val env = resolve.captured.resolveInputs.invoke()
             assertEquals("t-1", env["HMR_LG_THREAD"])
             assertEquals("int-1", env["HMR_LG_INTERRUPT"])
             assertEquals("the-answer", env["HMR_LG_RESUME"])
@@ -1066,7 +1112,7 @@ class DispatchServiceTest {
             coEvery { repo.findByQuestionId("q1") } returns
                 Dispatch(5, "q1", DispatchStatus.PENDING, "h", "answer", emptyMap(), 7, "asker", null, 1)
             coEvery { repo.claim(5) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } throws
+            coEvery { runStarter.start(any(), any(), any(), any()) } throws
                 CostCapExceededException("global", 1.0, 2.0)
 
             val result = service().fire("q1", "yes")
@@ -1089,7 +1135,7 @@ class DispatchServiceTest {
             coEvery { repo.findByQuestionId("q1") } returns
                 Dispatch(5, "q1", DispatchStatus.PENDING, "h", "answer", emptyMap(), 7, "asker", null, 1)
             coEvery { repo.claim(5) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } throws
+            coEvery { runStarter.start(any(), any(), any(), any()) } throws
                 ServerDrainingException()
 
             val result = service().fire("q1", "yes")
@@ -1108,7 +1154,7 @@ class DispatchServiceTest {
             coEvery { repo.findByQuestionId("q1") } returns
                 Dispatch(5, "q1", DispatchStatus.PENDING, "h", "answer", emptyMap(), 7, "asker", null, 1)
             coEvery { repo.claim(5) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } throws
+            coEvery { runStarter.start(any(), any(), any(), any()) } throws
                 RuntimeException("unexpected")
 
             val result = service().fire("q1", "yes")
@@ -1132,7 +1178,7 @@ class DispatchServiceTest {
             // the concrete permitted subclass the catch clause sees.
             val messageLess = mockk<ValidationException>()
             every { messageLess.message } returns null
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } throws
+            coEvery { runStarter.start(any(), any(), any(), any()) } throws
                 messageLess
 
             val result = service().fire("q1", "yes")
@@ -1153,7 +1199,7 @@ class DispatchServiceTest {
             coEvery { repo.findByQuestionId("q1") } returns
                 Dispatch(5, "q1", DispatchStatus.PENDING, "h", "answer", emptyMap(), 7, "asker", null, 1)
             coEvery { repo.claim(5) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } throws
+            coEvery { runStarter.start(any(), any(), any(), any()) } throws
                 RuntimeException()
 
             val result = service().fire("q1", "yes")
@@ -1167,7 +1213,7 @@ class DispatchServiceTest {
         runTest {
             coEvery { repo.findByQuestionId("q1") } returns null
             assertNull(service().fire("q1", "yes"))
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -1179,7 +1225,7 @@ class DispatchServiceTest {
             coEvery { repo.claim(5) } returns false
 
             assertNull(service().fire("q1", "yes"))
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -1191,7 +1237,7 @@ class DispatchServiceTest {
             coEvery { repo.claim(5) } returns true
             val result = service().fire("q1", "yes")
             coVerify { repo.markFailed(5, match { it.contains("gone") }, 1000L) }
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
             assertEquals(DispatchStatus.FAILED, result?.status)
         }
 
@@ -1211,7 +1257,7 @@ class DispatchServiceTest {
 
             assertEquals(DispatchStatus.FAILED, result?.status)
             coVerify { repo.markFailed(5, match { it.contains("no longer an allowed dispatch target") }, 1000L) }
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -1262,7 +1308,7 @@ class DispatchServiceTest {
             service().validateDispatchNow(7, "h", emptyMap())
             assertFailsWith<ValidationException> { service().validateDispatchNow(7, "h", mapOf("BAD" to "x")) }
             assertFailsWith<DispatchAgentNotFoundException> { service().validateDispatchNow(7, "missing", emptyMap()) }
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -1274,20 +1320,13 @@ class DispatchServiceTest {
             every { agent.dispatch } returns AgentDispatchConfig(enabled = true)
             every { agents.agents } returns mapOf("h" to agent)
             val attrs = slot<Attributes>()
-            val resolveInputs = slot<suspend () -> Map<String, String>>()
+            val resolveInputs = slot<RunStartRequest>()
             coEvery {
                 runStarter.start(
-                    eq(agent),
-                    eq(emptyList()),
-                    eq("dispatch"),
-                    capture(attrs),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
                     capture(resolveInputs),
+                    extraAttributes = capture(attrs),
+                    extraSecretInputKeys = any(),
+                    serverDerivedParent = any(),
                 )
             } returns 99
 
@@ -1298,7 +1337,10 @@ class DispatchServiceTest {
             coVerify(exactly = 0) { repo.create(any(), any(), any()) }
             // The params must reach the run: invoking the captured resolver feeds them to
             // resolveFromParams against the target agent, with required enforcement.
-            resolveInputs.captured.invoke()
+            assertEquals(agent, resolveInputs.captured.agent)
+            assertTrue(resolveInputs.captured.invocationChain.isEmpty())
+            assertEquals("dispatch", resolveInputs.captured.source)
+            resolveInputs.captured.resolveInputs.invoke()
             verify {
                 inputResolver.resolveFromParams(
                     match<Map<String, String>> { it["foo"] == "bar" },
@@ -1347,27 +1389,23 @@ class DispatchServiceTest {
                     groupService,
                     LoggerFactory.getLogger("t"),
                 ) { 1000L }
-            val resolveInputs = slot<suspend () -> Map<String, String>>()
+            val resolveInputs = slot<RunStartRequest>()
             coEvery {
                 runStarter.start(
-                    eq(agent),
-                    eq(emptyList()),
-                    eq("dispatch"),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
                     capture(resolveInputs),
+                    any(),
+                    any(),
+                    any(),
                 )
             } returns 99
 
             val pid = service.dispatchNow(7, "h", mapOf("payload" to "hello"))
 
             assertEquals(99, pid)
-            assertEquals(mapOf("PAYLOAD" to "hello"), resolveInputs.captured.invoke())
+            assertEquals(agent, resolveInputs.captured.agent)
+            assertTrue(resolveInputs.captured.invocationChain.isEmpty())
+            assertEquals("dispatch", resolveInputs.captured.source)
+            assertEquals(mapOf("PAYLOAD" to "hello"), resolveInputs.captured.resolveInputs.invoke())
         }
 
     @Test
@@ -1377,7 +1415,7 @@ class DispatchServiceTest {
             assertFailsWith<QuestionsClosedForProcessException> {
                 service().dispatchNow(7, "h", emptyMap())
             }
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -1418,7 +1456,7 @@ class DispatchServiceTest {
             assertFailsWith<DispatchAgentNotFoundException> {
                 service().dispatchNow(7, "b", emptyMap())
             }
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
         }
 
     // ADR-0047 rule 3: an unauthorized hop must not learn that the target exists, nor whether it
@@ -1451,14 +1489,12 @@ class DispatchServiceTest {
             coEvery { processManager.getProcessInfo(7) } returns
                 mockk(relaxed = true) { every { owner } returns "alice" }
             every { authorizer.canDispatchHop("alice", "a", "b") } returns true
-            val ownerSlot = slot<String?>()
-            coEvery {
-                runStarter.start(any(), any(), any(), any(), any(), captureNullable(ownerSlot), any(), any(), any(), any(), any())
-            } returns 99
+            val request = slot<RunStartRequest>()
+            coEvery { runStarter.start(capture(request), any(), any(), any()) } returns 99
 
             service().dispatchNow(7, "b", emptyMap())
 
-            assertEquals("alice", ownerSlot.captured)
+            assertEquals("alice", request.captured.owner)
         }
 
     @Test
@@ -1486,12 +1522,12 @@ class DispatchServiceTest {
                     secretInputKeys = setOf("TOKEN"),
                 )
             coEvery { repo.claim(5) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 99
+            coEvery { runStarter.start(any(), any(), any(), any()) } returns 99
 
             service().fire(questionId = "q1", answer = "us-east")
 
             coVerify {
-                runStarter.start(any(), any(), any(), any(), any(), any(), eq(setOf("TOKEN")), any(), any(), any(), any())
+                runStarter.start(any(), extraAttributes = any(), extraSecretInputKeys = eq(setOf("TOKEN")), serverDerivedParent = any())
             }
         }
 
@@ -1532,7 +1568,7 @@ class DispatchServiceTest {
             assertNull(service().fire("m1", "one"))
 
             coVerify(exactly = 0) { repo.claim(any()) }
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -1542,12 +1578,12 @@ class DispatchServiceTest {
             coEvery { repo.findByQuestionId("m2") } returns groupDispatch()
             coEvery { groupService.aggregateAnswers(5) } returns """["one","two"]"""
             coEvery { repo.claim(5) } returns true
-            val resolve = slot<suspend () -> Map<String, String>>()
+            val resolve = slot<RunStartRequest>()
             coEvery {
-                runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), capture(resolve))
+                runStarter.start(capture(resolve), any(), any(), any())
             } coAnswers
                 {
-                    resolve.captured.invoke()
+                    resolve.captured.resolveInputs.invoke()
                     99
                 }
             val params = slot<Map<String, String>>()
@@ -1571,11 +1607,11 @@ class DispatchServiceTest {
             coEvery { repo.findByQuestionId("m2") } returns groupDispatch()
             coEvery { groupService.aggregateAnswers(5) } returns """["one","two"]"""
             coEvery { repo.claim(5) } returnsMany listOf(true, false)
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 99
+            coEvery { runStarter.start(any(), any(), any(), any()) } returns 99
 
             assertEquals(DispatchStatus.DISPATCHED, service().fire("m2", "two")?.status)
             assertNull(service().fire("m2", "two"))
-            coVerify(exactly = 1) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 1) { runStarter.start(any(), any(), any(), any()) }
         }
 
     // The group arm runs the same hop gate as a single dispatch: an agent reloaded to
@@ -1594,7 +1630,7 @@ class DispatchServiceTest {
 
             assertEquals(DispatchStatus.FAILED, result?.status)
             coVerify { repo.markFailed(5, match { it.contains("no longer an allowed dispatch target") }, 1000L) }
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
         }
 
     // An aggregate that can never be delivered settles the group FAILED rather than leaving it
@@ -1613,7 +1649,7 @@ class DispatchServiceTest {
 
             assertEquals(DispatchStatus.FAILED, result?.status)
             coVerify { repo.markFailed(5, match { it.contains("exceed") }, 1000L) }
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
         }
 
     @Test

@@ -1,6 +1,7 @@
 package homer.app.executors
 
 import homer.app.models.Agent
+import homer.app.models.RunStartRequest
 
 /**
  * What [RunAgentExecutor] needs from the services to start a `!<agent>` sub-run under its caller's
@@ -29,17 +30,8 @@ internal interface SubRunStarter {
     ): Int?
 
     /**
-     * Starts [agent]'s run behind the invocation-chain cycle and depth checks, the cost cap and the
+     * Starts [request]'s agent behind the invocation-chain cycle and depth checks, the cost cap and the
      * cooldown, and returns its process id; a refusal throws its HomerException.
      */
-    suspend fun start(
-        agent: Agent,
-        invocationChain: List<String>,
-        source: String,
-        ancestorLockKeys: List<String>,
-        owner: String?,
-        parentProcessId: Int?,
-        rootProcessId: Int?,
-        resolveInputs: suspend () -> Map<String, String>,
-    ): Int
+    suspend fun start(request: RunStartRequest): Int
 }

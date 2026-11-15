@@ -10,6 +10,7 @@ import homer.app.models.Param
 import homer.app.models.ParamSource
 import homer.app.models.ParamType
 import homer.app.models.ProcessStatus
+import homer.app.models.RunStartRequest
 import io.ktor.http.Parameters
 import io.ktor.http.ParametersBuilder
 import io.modelcontextprotocol.kotlin.sdk.server.RegisteredTool
@@ -248,19 +249,22 @@ internal class McpToolFactory(
 
             val processId =
                 agentRunStarter.start(
-                    agent = agent,
-                    invocationChain = emptyList(),
-                    source = "mcp",
-                    owner = principal,
-                ) {
-                    agentInputResolver.resolveDebug(
-                        queryParams = classified.queryParams,
-                        bodyJson = classified.bodyJson,
-                        headers = emptyMap(),
+                    RunStartRequest(
                         agent = agent,
-                        enforceRequired = true,
-                    )
-                }
+                        invocationChain = emptyList(),
+                        source = "mcp",
+                        owner = principal,
+                        resolveInputs = {
+                            agentInputResolver.resolveDebug(
+                                queryParams = classified.queryParams,
+                                bodyJson = classified.bodyJson,
+                                headers = emptyMap(),
+                                agent = agent,
+                                enforceRequired = true,
+                            )
+                        },
+                    ),
+                )
 
             if (waitSec == 0L) return@runTool startedResult(agent, processId)
             finishedResult(agent, processId, waitSec)

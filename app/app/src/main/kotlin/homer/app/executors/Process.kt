@@ -23,38 +23,59 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 
-class Process(
-    private val workspaceConfigFactory: WorkspaceConfigFactory,
-    private val executorFactory: CommandExecutorFactory,
-    private val telemetryService: TelemetryService,
-    private val config: ExecutionConfig,
-    private val lockManager: LockManager,
-    private val parallelRunsManager: ParallelRunsManager,
-    private val processManager: RunWorkRecords,
-    private val runnerRegistry: RunnerRegistry,
-    private val activeSessions: ActiveSessionsRegistry,
-    private val questionsService: QuestionRegistration,
-    private val questionsWorkspaceSetup: QuestionsWorkspaceSetup,
-    private val agent: Agent,
+/** The collaborators every [Process] shares, built once and handed whole to each run. */
+data class ProcessDeps(
+    val workspaceConfigFactory: WorkspaceConfigFactory,
+    val executorFactory: CommandExecutorFactory,
+    val telemetryService: TelemetryService,
+    val config: ExecutionConfig,
+    val lockManager: LockManager,
+    val parallelRunsManager: ParallelRunsManager,
+    val processManager: RunWorkRecords,
+    val runnerRegistry: RunnerRegistry,
+    val activeSessions: ActiveSessionsRegistry,
+    val questionsService: QuestionRegistration,
+    val questionsWorkspaceSetup: QuestionsWorkspaceSetup,
+    val workspaceFactory: (WorkspaceConfig, Span, suspend () -> Boolean) -> Workspace =
+        { config, span, isSharedWithLiveSibling -> Workspace(config, span, isSharedWithLiveSibling) },
+)
+
+/** What one [Process] runs: the agent, its inputs and its place in the flow. */
+data class RunSpec(
+    val agent: Agent,
     val queryParams: Map<String, String>,
+    val parentContext: Context,
     val owner: String? = null,
-    private val extraSecretInputKeys: Set<String> = emptySet(),
-    private val parentContext: Context,
-    private val commandIndices: List<Int>? = null,
-    private val invocationChain: List<String> = emptyList(),
-    private val ancestorLockKeys: List<String> = emptyList(),
+    val extraSecretInputKeys: Set<String> = emptySet(),
+    val commandIndices: List<Int>? = null,
+    val invocationChain: List<String> = emptyList(),
+    val ancestorLockKeys: List<String> = emptyList(),
     // Read by ProcessExecutor and stored with the row at INSERT. See ADR-0058.
     val parentProcessId: Int? = null,
     // The flow's first run, read by ProcessExecutor and stored with the row at
     // INSERT, exported as HMR_ROOT_PROCESS_ID. Null at the root. See ADR-0058.
     val rootProcessId: Int? = null,
-    private val workspaceFactory: (WorkspaceConfig, Span, suspend () -> Boolean) -> Workspace =
-        { config, span, isSharedWithLiveSibling -> Workspace(config, span, isSharedWithLiveSibling) },
     // The run's already-rendered `cooldown.key`, or null when the agent sets none. Read by
     // ProcessExecutor, stored with the row at INSERT and used to scope the cooldown reads
     // in the same transaction. Rendered by the caller, never re-derived here. ADR-0106.
     val cooldownKey: String? = null,
 ) {
+    // Input values and the agent's env can be secret: names only. Root CLAUDE.md §12 rule 7.
+    override fun toString() =
+        "RunSpec(agent=${agent.name}, inputKeys=${queryParams.keys}, parentProcessId=$parentProcessId, rootProcessId=$rootProcessId)"
+}
+
+class Process(
+    private val deps: ProcessDeps,
+    private val run: RunSpec,
+) {
+    private val agent: Agent = run.agent
+    val queryParams: Map<String, String> = run.queryParams
+    val owner: String? = run.owner
+    val parentProcessId: Int? = run.parentProcessId
+    val rootProcessId: Int? = run.rootProcessId
+    val cooldownKey: String? = run.cooldownKey
+
     val name = agent.name
 
     // Read by ProcessExecutor and handed to obtainProcessId, which enforces it in
@@ -65,7 +86,7 @@ class Process(
     // row so API redaction never depends on the agent's current flags. A replay
     // (retry/resume) adds the SOURCE run's snapshot via extraSecretInputKeys: it is
     // replaying that run's values, so it inherits that run's secrecy. ADR-0052.
-    val secretInputKeys: Set<String> = agent.secretEnvNames + extraSecretInputKeys
+    val secretInputKeys: Set<String> = agent.secretEnvNames + run.extraSecretInputKeys
     private val purgeSchedule = PurgeSchedule.of(agent.workspace)
     val purgeAfterSeconds: Long = purgeSchedule.purgeAfterSeconds
     val purgeRecordAfterSeconds: Long = purgeSchedule.purgeRecordAfterSeconds
@@ -95,7 +116,7 @@ class Process(
         // Resolved before createWorkspaceConfig: the runner declares whether it is
         // remote (so allowlisted host env stays off a remote machine) and supplies
         // its own per-runner env layer. See ADR-0003.
-        val runner = runnerRegistry.forAgent(agent)
+        val runner = deps.runnerRegistry.forAgent(agent)
         // No reorder: this renders the lock key and denies a run whose placeholder has no value,
         // so it stays above the workspace, the slot and the lock — a denied run takes none of
         // them (it also covers the acceptParentLock pass-through below). See ADR-0047.
@@ -111,26 +132,26 @@ class Process(
         // Pass-through: a flow cannot self-collide on a shared lock key. When the
         // agent opts in and its resolved key is already held by an ancestor in
         // this invocation chain, skip acquire AND release entirely.
-        val inheritLock = agent.lockStrategy.acceptParentLock && workspaceConfig.lockKey in ancestorLockKeys
+        val inheritLock = agent.lockStrategy.acceptParentLock && workspaceConfig.lockKey in run.ancestorLockKeys
 
         // Cleanup guard probe: live rows on this run's artifacts dir, excluding itself.
         val workspace =
-            workspaceFactory(workspaceConfig, processSpan) {
-                processManager.isWorkspaceSharedWithActiveRun(workspaceConfig.artifacts, processId)
+            deps.workspaceFactory(workspaceConfig, processSpan) {
+                deps.processManager.isWorkspaceSharedWithActiveRun(workspaceConfig.artifacts, processId)
             }
         val agentExecutor =
             AgentExecutor(
                 agent = agent,
                 workspace = workspace,
-                executorFactory = executorFactory,
-                telemetryService = telemetryService,
-                config = config,
-                parentContext = parentContext,
-                stepRecords = processManager,
+                executorFactory = deps.executorFactory,
+                telemetryService = deps.telemetryService,
+                config = deps.config,
+                parentContext = run.parentContext,
+                stepRecords = deps.processManager,
                 processId = processId,
                 runner = runner,
-                activeSessions = activeSessions,
-                commandIndices = commandIndices,
+                activeSessions = deps.activeSessions,
+                commandIndices = run.commandIndices,
                 owner = owner,
                 rootProcessId = rootProcessId,
             )
@@ -170,12 +191,12 @@ class Process(
         var grant: LockGrant? = null
         if (!inheritLock) {
             grant =
-                lockManager.acquireLock(
+                deps.lockManager.acquireLock(
                     lockKey,
                     agent.lockStrategy.onCollision,
                     processId,
                     LockWaitGate {
-                        parallelRunsManager.enterLockWait(
+                        deps.parallelRunsManager.enterLockWait(
                             agent.name,
                             agent.maxParallelRuns,
                             agent.onMaxParallelRuns,
@@ -186,8 +207,8 @@ class Process(
             admission.lockKey = lockKey
         }
         admission.slot =
-            parallelRunsManager.acquireSlot(agent.name, agent.maxParallelRuns, agent.onMaxParallelRuns, agent.maxQueuedRuns)
-        grant?.let { lockManager.killDisplaced(it, processId) }
+            deps.parallelRunsManager.acquireSlot(agent.name, agent.maxParallelRuns, agent.onMaxParallelRuns, agent.maxQueuedRuns)
+        grant?.let { deps.lockManager.killDisplaced(it, processId) }
     }
 
     /** This run's workspace config, over the env layer and secret names its runner contributes. */
@@ -198,14 +219,14 @@ class Process(
         runnerIsRemote: Boolean,
         runnerAlias: String,
     ): WorkspaceConfig =
-        workspaceConfigFactory.createWorkspaceConfig(
+        deps.workspaceConfigFactory.createWorkspaceConfig(
             processId = processId,
             agentEnv = agent.env,
             lockKeyTemplate = agent.lockStrategy.key,
             queryParams = queryParams,
             workspaceAgentConfig = agent.workspace,
-            invocationChain = invocationChain,
-            ancestorLockKeys = ancestorLockKeys,
+            invocationChain = run.invocationChain,
+            ancestorLockKeys = run.ancestorLockKeys,
             parentProcessId = parentProcessId,
             rootProcessId = rootProcessId,
             // secretInputKeys, NOT a fresh read of the current flags: on a replay it
@@ -232,19 +253,19 @@ class Process(
     ) {
         // Guarded like ProcessExecutor's CREATED write: a kill that landed after the slot and
         // lock were taken must win, so the run stops here instead of running as WORKING.
-        if (!processManager.compareAndSetStatus(processId, setOf(ProcessStatus.CREATED), ProcessStatus.WORKING)) {
+        if (!deps.processManager.compareAndSetStatus(processId, setOf(ProcessStatus.CREATED), ProcessStatus.WORKING)) {
             throw CancellationException("Process $processId was killed before it started")
         }
         processSpan.setAttribute(SpanAttributes.PROCESS_STATUS, ProcessStatus.CREATED.name)
         // Register the artifacts dir before creating it: the purge sweep's shared-dir
         // check must be able to see this run as an owner of the directory.
-        processManager.setArtifactsDir(processId, workspace.config.artifacts)
+        deps.processManager.setArtifactsDir(processId, workspace.config.artifacts)
         workspace.create()
         // The redactor screens runtime tag values against every secret this run holds
         // (secret inputs under the ADR-0052 union, @SYSENV globals, and the token
         // itself — appended to env only below, hence the explicit entry). See ADR-0060.
         val callbackToken =
-            questionsService.registerProcess(processId, agent.name) { token ->
+            deps.questionsService.registerProcess(processId, agent.name) { token ->
                 SecretRedactor.from(
                     workspace.config.env + (EnvConstants.CALLBACK_TOKEN to token),
                     workspace.config.secretEnvNames,
@@ -252,7 +273,7 @@ class Process(
                 )
             }
         workspace.appendToEnv(mapOf(EnvConstants.CALLBACK_TOKEN to callbackToken))
-        questionsWorkspaceSetup.materialize(workspace)
+        deps.questionsWorkspaceSetup.materialize(workspace)
     }
 
     @Suppress("SuspendFunSwallowedCancellation") // runs under NonCancellable (execute's finally)
@@ -270,28 +291,18 @@ class Process(
         runCatching { workspace.cleanup() }
             .onFailure { processSpan.recordException(it) }
         heldLockKey?.let { lockKey ->
-            runCatching { lockManager.releaseLock(lockKey, processId) }
+            runCatching { deps.lockManager.releaseLock(lockKey, processId) }
                 .onFailure { processSpan.recordException(it) }
         }
         acquiredSlot?.let { slot ->
-            runCatching { parallelRunsManager.releaseSlot(slot) }
+            runCatching { deps.parallelRunsManager.releaseSlot(slot) }
                 .onFailure { processSpan.recordException(it) }
         }
     }
 }
 
 internal class ProcessFactory(
-    private val workspaceConfigFactory: WorkspaceConfigFactory,
-    private val executorFactory: CommandExecutorFactory,
-    private val telemetryService: TelemetryService,
-    private val lockManager: LockManager,
-    private val parallelRunsManager: ParallelRunsManager,
-    private val config: ExecutionConfig,
-    private val processManager: RunWorkRecords,
-    private val runnerRegistry: RunnerRegistry,
-    private val activeSessions: ActiveSessionsRegistry,
-    private val questionsService: QuestionRegistration,
-    private val questionsWorkspaceSetup: QuestionsWorkspaceSetup,
+    private val deps: ProcessDeps,
 ) {
     fun create(
         agent: Agent,
@@ -311,27 +322,19 @@ internal class ProcessFactory(
         cooldownKey: String? = null,
     ): Process =
         Process(
-            workspaceConfigFactory = workspaceConfigFactory,
-            executorFactory = executorFactory,
-            telemetryService = telemetryService,
-            config = config,
-            agent = agent,
-            queryParams = queryParams,
-            owner = owner,
-            extraSecretInputKeys = extraSecretInputKeys,
-            parentContext = parentContext,
-            lockManager = lockManager,
-            parallelRunsManager = parallelRunsManager,
-            processManager = processManager,
-            runnerRegistry = runnerRegistry,
-            activeSessions = activeSessions,
-            questionsService = questionsService,
-            questionsWorkspaceSetup = questionsWorkspaceSetup,
-            commandIndices = commandIndices,
-            invocationChain = invocationChain,
-            ancestorLockKeys = ancestorLockKeys,
-            parentProcessId = parentProcessId,
-            rootProcessId = rootProcessId,
-            cooldownKey = cooldownKey,
+            deps,
+            RunSpec(
+                agent = agent,
+                queryParams = queryParams,
+                parentContext = parentContext,
+                owner = owner,
+                extraSecretInputKeys = extraSecretInputKeys,
+                commandIndices = commandIndices,
+                invocationChain = invocationChain,
+                ancestorLockKeys = ancestorLockKeys,
+                parentProcessId = parentProcessId,
+                rootProcessId = rootProcessId,
+                cooldownKey = cooldownKey,
+            ),
         )
 }

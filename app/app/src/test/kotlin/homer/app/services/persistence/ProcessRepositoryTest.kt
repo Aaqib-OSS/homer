@@ -13,8 +13,10 @@ import homer.app.models.ExecutionInfo
 import homer.app.models.FALLBACK_REASON_SESSION_FIGURE_PENDING
 import homer.app.models.LlmAccounting
 import homer.app.models.MAX_FAILURE_REASON_LENGTH
+import homer.app.models.NewRunRecord
 import homer.app.models.PodPhase
 import homer.app.models.ProcessInfo
+import homer.app.models.ProcessListQuery
 import homer.app.models.ProcessStatus
 import homer.app.models.RunnerState
 import homer.app.models.SubRunProgress
@@ -58,8 +60,8 @@ class ProcessRepositoryTest {
     fun `obtainProcessId returns increasing AUTOINCREMENT ids starting at 1`() =
         runTest {
             val repo = repo()
-            assertEquals(1, repo.obtainProcessId("a", emptyMap(), 100).processId)
-            assertEquals(2, repo.obtainProcessId("a", emptyMap(), 100).processId)
+            assertEquals(1, repo.obtainProcessId(NewRunRecord("a"), 100).processId)
+            assertEquals(2, repo.obtainProcessId(NewRunRecord("a"), 100).processId)
             assertEquals(2, repo.lastProcessId())
         }
 
@@ -67,7 +69,7 @@ class ProcessRepositoryTest {
     fun `obtainProcessId owner round-trips via getInfo`() =
         runTest {
             val repo = repo()
-            val id = repo.obtainProcessId("a", emptyMap(), 100, owner = "ci").processId
+            val id = repo.obtainProcessId(NewRunRecord("a", owner = "ci"), 100).processId
 
             assertEquals("ci", repo.getInfo(id)?.owner)
         }
@@ -76,8 +78,8 @@ class ProcessRepositoryTest {
     fun `obtainProcessId parentProcessId round-trips via getInfo and defaults to null`() =
         runTest {
             val repo = repo()
-            val root = repo.obtainProcessId("a", emptyMap(), 100).processId
-            val child = repo.obtainProcessId("b", emptyMap(), 100, parentProcessId = root).processId
+            val root = repo.obtainProcessId(NewRunRecord("a"), 100).processId
+            val child = repo.obtainProcessId(NewRunRecord("b", parentProcessId = root), 100).processId
 
             assertEquals(null, repo.getInfo(root)?.parentProcessId)
             assertEquals(root, repo.getInfo(child)?.parentProcessId)
@@ -87,19 +89,28 @@ class ProcessRepositoryTest {
     fun `getAll parentProcessId filter returns only that parent's children`() =
         runTest {
             val repo = repo()
-            val root = repo.obtainProcessId("a", emptyMap(), 100).processId
-            val other = repo.obtainProcessId("a", emptyMap(), 100).processId
-            val child1 = repo.obtainProcessId("b", emptyMap(), 100, parentProcessId = root).processId
-            val child2 = repo.obtainProcessId("b", emptyMap(), 100, parentProcessId = root).processId
-            repo.obtainProcessId("b", emptyMap(), 100, parentProcessId = other).processId
+            val root = repo.obtainProcessId(NewRunRecord("a"), 100).processId
+            val other = repo.obtainProcessId(NewRunRecord("a"), 100).processId
+            val child1 = repo.obtainProcessId(NewRunRecord("b", parentProcessId = root), 100).processId
+            val child2 = repo.obtainProcessId(NewRunRecord("b", parentProcessId = root), 100).processId
+            repo.obtainProcessId(NewRunRecord("b", parentProcessId = other), 100).processId
 
-            val page = repo.getAll(null, orderAsc = true, offset = 0, limit = 10, agentName = null, parentProcessId = root)
+            val page = repo.getAll(ProcessListQuery(orderAsc = true, limit = 10, parentProcessId = root))
 
             assertEquals(listOf(child1, child2), page.processes.map { it.id })
             assertEquals(2, page.total)
             // The filter composes with the visibility union: a caller who cannot see
             // agent `b` gets an empty page, not the children.
-            val hidden = repo.getAll(null, true, 0, 10, null, visibleOwner = "nobody", visibleAgents = emptySet(), parentProcessId = root)
+            val hidden =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        visibleOwner = "nobody",
+                        visibleAgents = emptySet(),
+                        parentProcessId = root,
+                    ),
+                )
             assertEquals(0, hidden.total)
         }
 
@@ -107,10 +118,10 @@ class ProcessRepositoryTest {
     fun `obtainProcessId rootProcessId round-trips via getInfo and defaults to null`() =
         runTest {
             val repo = repo()
-            val root = repo.obtainProcessId("a", emptyMap(), 100).processId
-            val child = repo.obtainProcessId("b", emptyMap(), 100, parentProcessId = root, rootProcessId = root).processId
+            val root = repo.obtainProcessId(NewRunRecord("a"), 100).processId
+            val child = repo.obtainProcessId(NewRunRecord("b", parentProcessId = root, rootProcessId = root), 100).processId
             val grandchild =
-                repo.obtainProcessId("c", emptyMap(), 100, parentProcessId = child, rootProcessId = root).processId
+                repo.obtainProcessId(NewRunRecord("c", parentProcessId = child, rootProcessId = root), 100).processId
 
             // NULL at the root, and the same id all the way down — the column is written
             // as-is, never derived at read time.
@@ -123,21 +134,20 @@ class ProcessRepositoryTest {
     fun `getAll rootProcessId filter returns only that flow's runs at any depth`() =
         runTest {
             val repo = repo()
-            val root = repo.obtainProcessId("a", emptyMap(), 100).processId
-            val other = repo.obtainProcessId("a", emptyMap(), 100).processId
-            val child = repo.obtainProcessId("b", emptyMap(), 100, parentProcessId = root, rootProcessId = root).processId
-            val grandchild = repo.obtainProcessId("c", emptyMap(), 100, parentProcessId = child, rootProcessId = root).processId
-            repo.obtainProcessId("b", emptyMap(), 100, parentProcessId = other, rootProcessId = other).processId
+            val root = repo.obtainProcessId(NewRunRecord("a"), 100).processId
+            val other = repo.obtainProcessId(NewRunRecord("a"), 100).processId
+            val child = repo.obtainProcessId(NewRunRecord("b", parentProcessId = root, rootProcessId = root), 100).processId
+            val grandchild = repo.obtainProcessId(NewRunRecord("c", parentProcessId = child, rootProcessId = root), 100).processId
+            repo.obtainProcessId(NewRunRecord("b", parentProcessId = other, rootProcessId = other), 100).processId
 
             val page =
                 repo.getAll(
-                    null,
-                    orderAsc = true,
-                    offset = 0,
-                    limit = 10,
-                    agentName = null,
-                    rootProcessId = root,
-                    canSeeRoot = seeAll,
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        rootProcessId = root,
+                        canSeeRoot = seeAll,
+                    ),
                 )
 
             // The root row itself is not a descendant of itself: `?rootProcessId=N` answers
@@ -148,15 +158,14 @@ class ProcessRepositoryTest {
             // Composes with the visibility union like every other predicate.
             val hidden =
                 repo.getAll(
-                    null,
-                    true,
-                    0,
-                    10,
-                    null,
-                    visibleOwner = "nobody",
-                    visibleAgents = emptySet(),
-                    rootProcessId = root,
-                    canSeeRoot = seeAll,
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        visibleOwner = "nobody",
+                        visibleAgents = emptySet(),
+                        rootProcessId = root,
+                        canSeeRoot = seeAll,
+                    ),
                 )
             assertEquals(0, hidden.total)
         }
@@ -165,11 +174,19 @@ class ProcessRepositoryTest {
     fun `getAll rootProcessId filter of an id no run carries returns an empty page`() =
         runTest {
             val repo = repo()
-            repo.obtainProcessId("a", emptyMap(), 100).processId
+            repo.obtainProcessId(NewRunRecord("a"), 100).processId
 
             // An invisible or evicted root id must read as "nothing you can see", never as
             // an error and never as the whole list (§12: hide existence).
-            val page = repo.getAll(null, true, 0, 10, null, rootProcessId = 9999, canSeeRoot = seeAll)
+            val page =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        rootProcessId = 9999,
+                        canSeeRoot = seeAll,
+                    ),
+                )
 
             assertEquals(emptyList(), page.processes.map { it.id })
             assertEquals(0, page.total)
@@ -181,9 +198,9 @@ class ProcessRepositoryTest {
             val db = PersistenceTestSupport.tempDatabase()
             val repo = repo(db)
             val questions = QuestionsRepository(db)
-            val asker = repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("mr:1")).processId
-            val quiet = repo.obtainProcessId("a", emptyMap(), 100).processId
-            val offPage = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val asker = repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:1")), 100).processId
+            val quiet = repo.obtainProcessId(NewRunRecord("a"), 100).processId
+            val offPage = repo.obtainProcessId(NewRunRecord("a"), 100).processId
 
             fun question(
                 id: String,
@@ -198,7 +215,7 @@ class ProcessRepositoryTest {
             questions.tryInsert(question("q5", offPage), 10)
 
             SqlStatementRecorder.reset()
-            val page = repo.getAll(null, orderAsc = true, offset = 0, limit = 2, agentName = null)
+            val page = repo.getAll(ProcessListQuery(orderAsc = true, limit = 2))
 
             assertEquals(listOf(asker, quiet), page.processes.map { it.id })
             // Answered and dispatch-bound questions are not open; an id off the page is not counted.
@@ -210,7 +227,15 @@ class ProcessRepositoryTest {
             assertTrue("questions.process_id IN (" in countReads.single(), countReads.single())
             assertEquals(1, SqlStatementRecorder.transactionCount())
             // The tag-screened path carries the counts too.
-            val tagged = repo.getAll(null, true, 0, 10, null, tags = listOf("mr:1"), screenTags = identityScreen)
+            val tagged =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        tags = listOf("mr:1"),
+                        screenTags = identityScreen,
+                    ),
+                )
             assertEquals(mapOf(asker to 2), tagged.openQuestions)
         }
 
@@ -218,16 +243,16 @@ class ProcessRepositoryTest {
     fun `getAll names only the page's root ids the caller may see, and none without canSeeRoot`() =
         runTest {
             val repo = repo()
-            val mine = repo.obtainProcessId("a", emptyMap(), 100, owner = "me").processId
-            val foreign = repo.obtainProcessId("x", emptyMap(), 100, owner = "alice").processId
-            repo.obtainProcessId("b", emptyMap(), 100, owner = "me", parentProcessId = mine, rootProcessId = mine)
-            repo.obtainProcessId("b", emptyMap(), 100, owner = "me", parentProcessId = foreign, rootProcessId = foreign)
+            val mine = repo.obtainProcessId(NewRunRecord("a", owner = "me"), 100).processId
+            val foreign = repo.obtainProcessId(NewRunRecord("x", owner = "alice"), 100).processId
+            repo.obtainProcessId(NewRunRecord("b", owner = "me", parentProcessId = mine, rootProcessId = mine), 100)
+            repo.obtainProcessId(NewRunRecord("b", owner = "me", parentProcessId = foreign, rootProcessId = foreign), 100)
             // A root row that is gone fails closed, like an invisible one (ADR-0058).
-            repo.obtainProcessId("b", emptyMap(), 100, owner = "me", parentProcessId = 9999, rootProcessId = 9999)
+            repo.obtainProcessId(NewRunRecord("b", owner = "me", parentProcessId = 9999, rootProcessId = 9999), 100)
             val canSeeRoot = { owner: String?, _: String -> owner == "me" }
 
             SqlStatementRecorder.reset()
-            val page = repo.getAll(null, true, 0, 10, null, canSeeRoot = canSeeRoot)
+            val page = repo.getAll(ProcessListQuery(orderAsc = true, limit = 10, canSeeRoot = canSeeRoot))
 
             assertEquals(setOf(mine), page.visibleRootIds)
             // All roots of the page in one IN read by primary key, in the list's transaction.
@@ -235,30 +260,54 @@ class ProcessRepositoryTest {
             assertEquals(1, rootReads.size, "${SqlStatementRecorder.statements()}")
             assertEquals(1, SqlStatementRecorder.transactionCount())
             // Without a visibility callback no root is named visible: fail closed.
-            assertEquals(emptySet(), repo.getAll(null, true, 0, 10, null).visibleRootIds)
+            assertEquals(emptySet(), repo.getAll(ProcessListQuery(orderAsc = true, limit = 10)).visibleRootIds)
         }
 
     @Test
     fun `information_disclosure CWE-200 - getAll root filter reads as an empty page when the root is hidden or gone`() =
         runTest {
             val repo = repo()
-            val foreign = repo.obtainProcessId("x", emptyMap(), 100, owner = "alice").processId
+            val foreign = repo.obtainProcessId(NewRunRecord("x", owner = "alice"), 100).processId
             // A descendant the caller could see on its own: the gate is the root row, not the rows.
-            repo.obtainProcessId("b", emptyMap(), 100, owner = "me", parentProcessId = foreign, rootProcessId = foreign)
-            repo.obtainProcessId("b", emptyMap(), 100, owner = "me", parentProcessId = 9999, rootProcessId = 9999)
-            val mine = repo.obtainProcessId("a", emptyMap(), 100, owner = "me").processId
-            val child = repo.obtainProcessId("b", emptyMap(), 100, owner = "me", parentProcessId = mine, rootProcessId = mine).processId
+            repo.obtainProcessId(NewRunRecord("b", owner = "me", parentProcessId = foreign, rootProcessId = foreign), 100)
+            repo.obtainProcessId(NewRunRecord("b", owner = "me", parentProcessId = 9999, rootProcessId = 9999), 100)
+            val mine = repo.obtainProcessId(NewRunRecord("a", owner = "me"), 100).processId
+            val child = repo.obtainProcessId(NewRunRecord("b", owner = "me", parentProcessId = mine, rootProcessId = mine), 100).processId
             val canSeeRoot = { owner: String?, _: String -> owner == "me" }
 
-            val hidden = repo.getAll(null, true, 0, 10, null, rootProcessId = foreign, canSeeRoot = canSeeRoot)
+            val hidden =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        rootProcessId = foreign,
+                        canSeeRoot = canSeeRoot,
+                    ),
+                )
             assertEquals(0, hidden.total)
             assertTrue(hidden.processes.isEmpty())
             // A missing root row reads the same even when every row is visible.
-            val gone = repo.getAll(null, true, 0, 10, null, rootProcessId = 9999, canSeeRoot = { _, _ -> true })
+            val gone =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        rootProcessId = 9999,
+                        canSeeRoot = { _, _ -> true },
+                    ),
+                )
             assertEquals(0, gone.total)
             assertTrue(gone.processes.isEmpty())
             // A visible root's filter is honoured.
-            val flow = repo.getAll(null, true, 0, 10, null, rootProcessId = mine, canSeeRoot = canSeeRoot)
+            val flow =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        rootProcessId = mine,
+                        canSeeRoot = canSeeRoot,
+                    ),
+                )
             assertEquals(listOf(child), flow.processes.map { it.id })
             assertEquals(setOf(mine), flow.visibleRootIds)
         }
@@ -267,13 +316,18 @@ class ProcessRepositoryTest {
     fun `information_disclosure CWE-200 - getAll refuses a root filter without a canSeeRoot check`() =
         runTest {
             val repo = repo()
-            val root = repo.obtainProcessId("x", emptyMap(), 100, owner = "alice").processId
-            repo.obtainProcessId("b", emptyMap(), 100, owner = "me", parentProcessId = root, rootProcessId = root)
+            val root = repo.obtainProcessId(NewRunRecord("x", owner = "alice"), 100).processId
+            repo.obtainProcessId(NewRunRecord("b", owner = "me", parentProcessId = root, rootProcessId = root), 100)
 
             // Fail closed like the unscreened tag filter: an ungated root filter would list the
             // visible rows of a hidden flow, so the read never runs.
             SqlStatementRecorder.reset()
-            val refused = assertFailsWith<IllegalArgumentException> { repo.getAll(null, true, 0, 10, null, rootProcessId = root) }
+            val refused =
+                assertFailsWith<IllegalArgumentException> {
+                    repo.getAll(
+                        ProcessListQuery(orderAsc = true, limit = 10, rootProcessId = root),
+                    )
+                }
             assertEquals("canSeeRoot is required whenever rootProcessId is set", refused.message)
             assertTrue(SqlStatementRecorder.statements().isEmpty(), "${SqlStatementRecorder.statements()}")
         }
@@ -282,12 +336,12 @@ class ProcessRepositoryTest {
     fun `getAll rootsOnly returns the first run of every flow`() =
         runTest {
             val repo = repo()
-            val rootA = repo.obtainProcessId("a", emptyMap(), 100).processId
-            val rootB = repo.obtainProcessId("b", emptyMap(), 100).processId
-            repo.obtainProcessId("b", emptyMap(), 100, parentProcessId = rootA, rootProcessId = rootA).processId
-            repo.obtainProcessId("c", emptyMap(), 100, parentProcessId = rootB, rootProcessId = rootB).processId
+            val rootA = repo.obtainProcessId(NewRunRecord("a"), 100).processId
+            val rootB = repo.obtainProcessId(NewRunRecord("b"), 100).processId
+            repo.obtainProcessId(NewRunRecord("b", parentProcessId = rootA, rootProcessId = rootA), 100).processId
+            repo.obtainProcessId(NewRunRecord("c", parentProcessId = rootB, rootProcessId = rootB), 100).processId
 
-            val page = repo.getAll(null, orderAsc = true, offset = 0, limit = 10, agentName = null, rootsOnly = true)
+            val page = repo.getAll(ProcessListQuery(orderAsc = true, limit = 10, rootsOnly = true))
 
             assertEquals(listOf(rootA, rootB), page.processes.map { it.id })
             assertEquals(2, page.total)
@@ -297,34 +351,49 @@ class ProcessRepositoryTest {
     fun `getAll rootsOnly composes with the status, agent and tag filters`() =
         runTest {
             val repo = repo()
-            val rootA = repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("mr:15")).processId
-            val rootB = repo.obtainProcessId("b", emptyMap(), 100).processId
-            repo.obtainProcessId("a", emptyMap(), 100, parentProcessId = rootA, rootProcessId = rootA, tags = listOf("mr:15")).processId
+            val rootA = repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 100).processId
+            val rootB = repo.obtainProcessId(NewRunRecord("b"), 100).processId
+            repo.obtainProcessId(NewRunRecord("a", parentProcessId = rootA, rootProcessId = rootA, tags = listOf("mr:15")), 100).processId
 
             val byAgent =
-                repo.getAll(null, true, 0, 10, agentName = "a", rootsOnly = true).processes.map { it.id }
+                repo.getAll(ProcessListQuery(orderAsc = true, limit = 10, agentName = "a", rootsOnly = true)).processes.map { it.id }
             assertEquals(listOf(rootA), byAgent)
 
             val byTag =
                 repo
                     .getAll(
-                        null,
-                        true,
-                        0,
-                        10,
-                        null,
-                        rootsOnly = true,
-                        tags = listOf("mr:15"),
-                        screenTags = identityScreen,
+                        ProcessListQuery(
+                            orderAsc = true,
+                            limit = 10,
+                            rootsOnly = true,
+                            tags = listOf("mr:15"),
+                            screenTags = identityScreen,
+                        ),
                     ).processes
                     .map { it.id }
             assertEquals(listOf(rootA), byTag)
 
-            val byStatus = repo.getAll(setOf(ProcessStatus.CREATED), true, 0, 10, null, rootsOnly = true)
+            val byStatus =
+                repo.getAll(
+                    ProcessListQuery(
+                        filterStatuses = setOf(ProcessStatus.CREATED),
+                        orderAsc = true,
+                        limit = 10,
+                        rootsOnly = true,
+                    ),
+                )
             assertEquals(listOf(rootA, rootB), byStatus.processes.map { it.id })
 
             // No root matches a status they are not in: the predicates AND, never OR.
-            val none = repo.getAll(setOf(ProcessStatus.FINISHED), true, 0, 10, null, rootsOnly = true)
+            val none =
+                repo.getAll(
+                    ProcessListQuery(
+                        filterStatuses = setOf(ProcessStatus.FINISHED),
+                        orderAsc = true,
+                        limit = 10,
+                        rootsOnly = true,
+                    ),
+                )
             assertEquals(emptyList(), none.processes.map { it.id })
         }
 
@@ -332,12 +401,19 @@ class ProcessRepositoryTest {
     fun `getAll rootsOnly still refuses a tag filter without a screen`() =
         runTest {
             val repo = repo()
-            repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("mr:15")).processId
+            repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 100).processId
 
             // The roots-only predicate must not open a path around the fail-closed
             // screenTags contract (ADR-0060).
             assertFailsWith<IllegalArgumentException> {
-                repo.getAll(null, true, 0, 10, null, rootsOnly = true, tags = listOf("mr:15"))
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        rootsOnly = true,
+                        tags = listOf("mr:15"),
+                    ),
+                )
             }
         }
 
@@ -345,7 +421,7 @@ class ProcessRepositoryTest {
     fun `obtainProcessId stores fromInputs tags co-transactionally and surfaces them`() =
         runTest {
             val repo = repo()
-            val id = repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("mr:15", "projectId:4711")).processId
+            val id = repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15", "projectId:4711")), 100).processId
 
             assertEquals(listOf("mr:15", "projectId:4711"), repo.getTags(id))
             assertEquals(listOf("mr:15", "projectId:4711"), repo.getInfo(id)?.tags)
@@ -358,7 +434,7 @@ class ProcessRepositoryTest {
     fun `getTags returns a run's tags in tag order, not insertion order`() =
         runTest {
             val repo = repo()
-            val id = repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("zeta:1", "alpha:1", "mid:1")).processId
+            val id = repo.obtainProcessId(NewRunRecord("a", tags = listOf("zeta:1", "alpha:1", "mid:1")), 100).processId
 
             assertEquals(listOf("alpha:1", "mid:1", "zeta:1"), repo.getTags(id))
         }
@@ -367,11 +443,11 @@ class ProcessRepositoryTest {
     fun `getAll surfaces each run's tags in tag order via the batched read`() =
         runTest {
             val repo = repo()
-            val first = repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("zeta:1", "alpha:1")).processId
+            val first = repo.obtainProcessId(NewRunRecord("a", tags = listOf("zeta:1", "alpha:1")), 100).processId
             val second =
-                repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("yankee:1", "bravo:1", "kilo:1")).processId
+                repo.obtainProcessId(NewRunRecord("a", tags = listOf("yankee:1", "bravo:1", "kilo:1")), 100).processId
 
-            val page = repo.getAll(null, orderAsc = true, offset = 0, limit = 10, agentName = "a")
+            val page = repo.getAll(ProcessListQuery(orderAsc = true, limit = 10, agentName = "a"))
 
             val tagsById = page.processes.associate { it.id to it.tags }
             assertEquals(listOf("alpha:1", "zeta:1"), tagsById[first])
@@ -382,10 +458,10 @@ class ProcessRepositoryTest {
     fun `getAll with no tag filter returns every run`() =
         runTest {
             val repo = repo()
-            repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("mr:15")).processId
-            repo.obtainProcessId("a", emptyMap(), 100).processId
+            repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 100).processId
+            repo.obtainProcessId(NewRunRecord("a"), 100).processId
 
-            val page = repo.getAll(null, orderAsc = true, offset = 0, limit = 10, agentName = null)
+            val page = repo.getAll(ProcessListQuery(orderAsc = true, limit = 10))
 
             assertEquals(2, page.total)
         }
@@ -394,10 +470,18 @@ class ProcessRepositoryTest {
     fun `getAll single tag filter returns only runs carrying it and surfaces their tags`() =
         runTest {
             val repo = repo()
-            val tagged = repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("mr:15")).processId
-            repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("mr:99")).processId
+            val tagged = repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 100).processId
+            repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:99")), 100).processId
 
-            val page = repo.getAll(null, true, 0, 10, null, tags = listOf("mr:15"), screenTags = identityScreen)
+            val page =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        tags = listOf("mr:15"),
+                        screenTags = identityScreen,
+                    ),
+                )
 
             assertEquals(listOf(tagged), page.processes.map { it.id })
             assertEquals(1, page.total)
@@ -408,11 +492,18 @@ class ProcessRepositoryTest {
     fun `getAll multiple tags AND — a run must carry every tag`() =
         runTest {
             val repo = repo()
-            val both = repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("mr:15", "project:x")).processId
-            repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("mr:15")).processId
+            val both = repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15", "project:x")), 100).processId
+            repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 100).processId
 
             val page =
-                repo.getAll(null, true, 0, 10, null, tags = listOf("mr:15", "project:x"), screenTags = identityScreen)
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        tags = listOf("mr:15", "project:x"),
+                        screenTags = identityScreen,
+                    ),
+                )
 
             assertEquals(listOf(both), page.processes.map { it.id })
             assertEquals(1, page.total)
@@ -422,11 +513,19 @@ class ProcessRepositoryTest {
     fun `getAll tag filter collapses duplicate params`() =
         runTest {
             val repo = repo()
-            val tagged = repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("mr:15")).processId
+            val tagged = repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 100).processId
 
             // A repeated identical ?tag= must not turn the HAVING COUNT into "needs
             // two rows" — the de-dup is what keeps a doubled filter matching.
-            val page = repo.getAll(null, true, 0, 10, null, tags = listOf("mr:15", "mr:15"), screenTags = identityScreen)
+            val page =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        tags = listOf("mr:15", "mr:15"),
+                        screenTags = identityScreen,
+                    ),
+                )
 
             assertEquals(listOf(tagged), page.processes.map { it.id })
             assertEquals(1, page.total)
@@ -436,9 +535,17 @@ class ProcessRepositoryTest {
     fun `getAll tag filter with no match returns an empty page, not an error`() =
         runTest {
             val repo = repo()
-            repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("mr:15")).processId
+            repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 100).processId
 
-            val page = repo.getAll(null, true, 0, 10, null, tags = listOf("mr:does-not-exist"), screenTags = identityScreen)
+            val page =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        tags = listOf("mr:does-not-exist"),
+                        screenTags = identityScreen,
+                    ),
+                )
 
             assertEquals(emptyList(), page.processes.map { it.id })
             assertEquals(0, page.total)
@@ -448,22 +555,21 @@ class ProcessRepositoryTest {
     fun `getAll tag filter composes with visibility and total counts the filtered set`() =
         runTest {
             val repo = repo()
-            repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("mr:15"), owner = "ci").processId
-            val mineHidden = repo.obtainProcessId("b", emptyMap(), 100, tags = listOf("mr:15"), owner = "me").processId
+            repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15"), owner = "ci"), 100).processId
+            val mineHidden = repo.obtainProcessId(NewRunRecord("b", tags = listOf("mr:15"), owner = "me"), 100).processId
 
             // Caller sees only agent `b` via owner; the mr:15 run on agent `a` is
             // filtered out by visibility, never returned as a 403 — it is simply absent.
             val page =
                 repo.getAll(
-                    null,
-                    true,
-                    0,
-                    10,
-                    null,
-                    visibleOwner = "me",
-                    visibleAgents = emptySet(),
-                    tags = listOf("mr:15"),
-                    screenTags = identityScreen,
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        visibleOwner = "me",
+                        visibleAgents = emptySet(),
+                        tags = listOf("mr:15"),
+                        screenTags = identityScreen,
+                    ),
                 )
 
             assertEquals(listOf(mineHidden), page.processes.map { it.id })
@@ -478,19 +584,18 @@ class ProcessRepositoryTest {
             // caller holds no grant on. Resolving the id set must be scoped to the caller's
             // visibility, so the tag matches nothing — never leaking the invisible run's
             // existence, and never materializing its id. See ADR-0060 (CWE-400).
-            repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("secret:x"), owner = "other").processId
+            repo.obtainProcessId(NewRunRecord("a", tags = listOf("secret:x"), owner = "other"), 100).processId
 
             val page =
                 repo.getAll(
-                    null,
-                    true,
-                    0,
-                    10,
-                    null,
-                    visibleOwner = "me",
-                    visibleAgents = emptySet(),
-                    tags = listOf("secret:x"),
-                    screenTags = identityScreen,
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        visibleOwner = "me",
+                        visibleAgents = emptySet(),
+                        tags = listOf("secret:x"),
+                        screenTags = identityScreen,
+                    ),
                 )
 
             assertEquals(emptyList(), page.processes.map { it.id })
@@ -501,11 +606,19 @@ class ProcessRepositoryTest {
     fun `denial_of_service - screened tag filter is row-capped and batched, not an unbounded N+1`() =
         runTest {
             val repo = repo()
-            repeat(3) { repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("mr:15")) }
+            repeat(3) { repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 100) }
             val screen: (ProcessInfo) -> List<String> = { info -> info.tags }
 
             SqlStatementRecorder.reset()
-            val page = repo.getAll(null, true, 0, 1, null, tags = listOf("mr:15"), screenTags = screen)
+            val page =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 1,
+                        tags = listOf("mr:15"),
+                        screenTags = screen,
+                    ),
+                )
 
             assertEquals(1, page.processes.size)
             assertEquals(3, page.total)
@@ -532,11 +645,19 @@ class ProcessRepositoryTest {
             // A visible candidate set wider than SQLITE_LIMIT_VARIABLE_NUMBER (999,
             // default) must degrade to repeated chunked reads, not throw on a single
             // oversized IN-list. 513 ids force two 512-id chunks.
-            repeat(513) { repo.obtainProcessId("a", emptyMap(), 1000, tags = listOf("mr:15")) }
+            repeat(513) { repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 1000) }
             val screen: (ProcessInfo) -> List<String> = { info -> info.tags }
 
             SqlStatementRecorder.reset()
-            val page = repo.getAll(null, true, 0, 10, null, tags = listOf("mr:15"), screenTags = screen)
+            val page =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        tags = listOf("mr:15"),
+                        screenTags = screen,
+                    ),
+                )
 
             assertEquals(513, page.total)
             assertEquals(10, page.processes.size)
@@ -557,12 +678,20 @@ class ProcessRepositoryTest {
             // secret; the display screen would drop it. Probing by that value must return
             // an empty page / total=0 even though the row exists — otherwise `total`
             // discloses that the guessed secret is stored (CWE-203).
-            repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("mr:supersecret")).processId
+            repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:supersecret")), 100).processId
             val screen: (ProcessInfo) -> List<String> = { info ->
                 info.tags.filterNot { it.contains("supersecret") }
             }
 
-            val page = repo.getAll(null, true, 0, 10, null, tags = listOf("mr:supersecret"), screenTags = screen)
+            val page =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        tags = listOf("mr:supersecret"),
+                        screenTags = screen,
+                    ),
+                )
 
             assertEquals(emptyList(), page.processes.map { it.id })
             assertEquals(0, page.total)
@@ -574,13 +703,21 @@ class ProcessRepositoryTest {
             val repo = repo()
             // A non-secret tag still matches and the total is accurate: the screen only
             // drops screened values, it must not over-hide legitimate tags (AC #3).
-            val visible = repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("mr:15")).processId
-            repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("mr:99")).processId
+            val visible = repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 100).processId
+            repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:99")), 100).processId
             val screen: (ProcessInfo) -> List<String> = { info ->
                 info.tags.filterNot { it.contains("supersecret") }
             }
 
-            val page = repo.getAll(null, true, 0, 10, null, tags = listOf("mr:15"), screenTags = screen)
+            val page =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        tags = listOf("mr:15"),
+                        screenTags = screen,
+                    ),
+                )
 
             assertEquals(listOf(visible), page.processes.map { it.id })
             assertEquals(1, page.total)
@@ -596,19 +733,29 @@ class ProcessRepositoryTest {
             // a global reject of the value would over-hide the legitimate one (AC #3).
             repo
                 .obtainProcessId(
-                    "a",
-                    mapOf("token" to "supersecret"),
+                    NewRunRecord(
+                        "a",
+                        mapOf("token" to "supersecret"),
+                        secretInputKeys = setOf("token"),
+                        tags = listOf("token:supersecret"),
+                    ),
                     100,
-                    secretInputKeys = setOf("token"),
-                    tags = listOf("token:supersecret"),
                 ).processId
-            val legit = repo.obtainProcessId("b", emptyMap(), 100, tags = listOf("token:supersecret")).processId
+            val legit = repo.obtainProcessId(NewRunRecord("b", tags = listOf("token:supersecret")), 100).processId
             val screen: (ProcessInfo) -> List<String> = { info ->
                 val needles = info.secretInputKeys.orEmpty().mapNotNull { info.inputParams[it] }
                 info.tags.filterNot { tag -> needles.any { tag.contains(it) } }
             }
 
-            val page = repo.getAll(null, true, 0, 10, null, tags = listOf("token:supersecret"), screenTags = screen)
+            val page =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        tags = listOf("token:supersecret"),
+                        screenTags = screen,
+                    ),
+                )
 
             assertEquals(listOf(legit), page.processes.map { it.id })
             assertEquals(1, page.total)
@@ -618,14 +765,14 @@ class ProcessRepositoryTest {
     fun `a tag filter without a screen function is refused, never executed`() =
         runTest {
             val repo = repo()
-            repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("mr:15")).processId
+            repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 100).processId
 
             // The screen is what keeps the filter path from re-opening the CWE-203 oracle,
             // so a caller that filters by tag must not be able to skip it by leaving the
             // parameter unset — the read fails closed instead of counting unredacted rows.
             val error =
                 assertFailsWith<IllegalArgumentException> {
-                    repo.getAll(null, true, 0, 10, null, tags = listOf("mr:15"))
+                    repo.getAll(ProcessListQuery(orderAsc = true, limit = 10, tags = listOf("mr:15")))
                 }
             assertTrue(error.message!!.contains("screenTags"), error.message)
         }
@@ -648,7 +795,7 @@ class ProcessRepositoryTest {
     fun `insertRuntimeTag appends, is idempotent, and enforces the per-run ceiling`() =
         runTest {
             val repo = repo()
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
 
             val first = repo.insertRuntimeTag(id, "decision:approved", maxTags = 2)
             assertTrue(first.written)
@@ -678,10 +825,18 @@ class ProcessRepositoryTest {
             // match, the filter must not first pull every matching id into the application
             // and feed it back as `id IN (?, ?, ...)` — that list grows with the match set
             // and hits SQLite's bound-parameter cap. See ADR-0060 (CWE-400).
-            repeat(25) { repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("mr:15")) }
+            repeat(25) { repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 100) }
 
             SqlStatementRecorder.reset()
-            val page = repo.getAll(null, true, 0, 1, null, tags = listOf("mr:15"), screenTags = identityScreen)
+            val page =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 1,
+                        tags = listOf("mr:15"),
+                        screenTags = identityScreen,
+                    ),
+                )
 
             assertEquals(1, page.processes.size)
             assertEquals(25, page.total)
@@ -703,21 +858,20 @@ class ProcessRepositoryTest {
     fun `a scoped caller's tag filter only probes the runs it can see`() =
         runTest {
             val repo = repo()
-            repeat(3) { repo.obtainProcessId("a", emptyMap(), 100, owner = "alice", tags = listOf("mr:15")) }
-            repeat(3) { repo.obtainProcessId("b", emptyMap(), 100, owner = "bob", tags = listOf("mr:15")) }
+            repeat(3) { repo.obtainProcessId(NewRunRecord("a", owner = "alice", tags = listOf("mr:15")), 100) }
+            repeat(3) { repo.obtainProcessId(NewRunRecord("b", owner = "bob", tags = listOf("mr:15")), 100) }
 
             SqlStatementRecorder.reset()
             val page =
                 repo.getAll(
-                    null,
-                    true,
-                    0,
-                    10,
-                    null,
-                    visibleOwner = "alice",
-                    visibleAgents = emptySet(),
-                    tags = listOf("mr:15"),
-                    screenTags = identityScreen,
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        visibleOwner = "alice",
+                        visibleAgents = emptySet(),
+                        tags = listOf("mr:15"),
+                        screenTags = identityScreen,
+                    ),
                 )
 
             assertEquals(3, page.total)
@@ -739,7 +893,7 @@ class ProcessRepositoryTest {
         runTest {
             val repo = repo()
             // Two fromInputs tags already on the run (keys mr, projectId), written at start.
-            val id = repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("mr:15", "projectId:4711")).processId
+            val id = repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15", "projectId:4711")), 100).processId
             val fromInputsKeys = setOf("mr", "projectId")
 
             // The ceiling is 2 runtime tags; the two fromInputs tags must not consume it.
@@ -766,7 +920,7 @@ class ProcessRepositoryTest {
     fun `remove deletes the run's tag rows`() =
         runTest {
             val repo = repo()
-            val id = repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("mr:15")).processId
+            val id = repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 100).processId
 
             repo.remove(id)
 
@@ -777,11 +931,11 @@ class ProcessRepositoryTest {
     fun `eviction deletes the evicted run's tag rows`() =
         runTest {
             val repo = repo()
-            val id1 = repo.obtainProcessId("a", emptyMap(), 2, tags = listOf("mr:15")).processId
-            repo.obtainProcessId("a", emptyMap(), 2).processId
+            val id1 = repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 2).processId
+            repo.obtainProcessId(NewRunRecord("a"), 2).processId
             repo.transitionStatus(id1, ProcessStatus.FINISHED, 1, null)
 
-            val result = repo.obtainProcessId("a", emptyMap(), 2)
+            val result = repo.obtainProcessId(NewRunRecord("a"), 2)
 
             assertEquals(id1, result.evicted?.id)
             assertEquals(emptyList(), repo.getTags(id1))
@@ -791,9 +945,9 @@ class ProcessRepositoryTest {
     fun `costByTag sums cost across runs sharing a tag value`() =
         runTest {
             val repo = repo()
-            val a = repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("ticket_id:T-123")).processId
-            val b = repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("ticket_id:T-123")).processId
-            repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("ticket_id:T-999")).processId
+            val a = repo.obtainProcessId(NewRunRecord("a", tags = listOf("ticket_id:T-123")), 100).processId
+            val b = repo.obtainProcessId(NewRunRecord("a", tags = listOf("ticket_id:T-123")), 100).processId
+            repo.obtainProcessId(NewRunRecord("a", tags = listOf("ticket_id:T-999")), 100).processId
             repo.addCost(a, 1.0, CostSource.CLI)
             repo.addCost(b, 0.5, CostSource.CLI)
 
@@ -807,7 +961,7 @@ class ProcessRepositoryTest {
     fun `costByTag reads the candidates without their history, executions or runner state`() =
         runTest {
             val repo = repo()
-            val id = repo.obtainProcessId("a", mapOf("IN" to "v"), 100, tags = listOf("ticket_id:T-1")).processId
+            val id = repo.obtainProcessId(NewRunRecord("a", mapOf("IN" to "v"), tags = listOf("ticket_id:T-1")), 100).processId
             repo.addCost(id, 2.0, CostSource.CLI)
 
             val seen = mutableListOf<ProcessInfo>()
@@ -837,7 +991,7 @@ class ProcessRepositoryTest {
         runTest {
             val repo = repo()
             repeat(3) { i ->
-                val id = repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("ticket_id:v$i")).processId
+                val id = repo.obtainProcessId(NewRunRecord("a", tags = listOf("ticket_id:v$i")), 100).processId
                 repo.addCost(id, 1.0, CostSource.CLI)
             }
 
@@ -852,10 +1006,10 @@ class ProcessRepositoryTest {
         runTest {
             val repo = repo()
             // Oldest run first, so it is the one dropped when only the newest maxRows are kept.
-            val oldest = repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("ticket_id:oldest")).processId
+            val oldest = repo.obtainProcessId(NewRunRecord("a", tags = listOf("ticket_id:oldest")), 100).processId
             repo.addCost(oldest, 10.0, CostSource.CLI)
             repeat(3) { i ->
-                val id = repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("ticket_id:v$i")).processId
+                val id = repo.obtainProcessId(NewRunRecord("a", tags = listOf("ticket_id:v$i")), 100).processId
                 repo.addCost(id, 1.0, CostSource.CLI)
             }
 
@@ -874,11 +1028,13 @@ class ProcessRepositoryTest {
             val secretRun =
                 repo
                     .obtainProcessId(
-                        "a",
-                        mapOf("ticketId" to "T-SECRET"),
+                        NewRunRecord(
+                            "a",
+                            mapOf("ticketId" to "T-SECRET"),
+                            secretInputKeys = setOf("ticketId"),
+                            tags = listOf("ticket_id:T-SECRET"),
+                        ),
                         100,
-                        secretInputKeys = setOf("ticketId"),
-                        tags = listOf("ticket_id:T-SECRET"),
                     ).processId
             repo.addCost(secretRun, 5.0, CostSource.CLI)
             val screen: (ProcessInfo) -> List<String> = { info ->
@@ -895,7 +1051,7 @@ class ProcessRepositoryTest {
     fun `costByTag returns an empty map for a key with no matching tags`() =
         runTest {
             val repo = repo()
-            repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("mr:15")).processId
+            repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 100).processId
 
             val result = repo.costByTag("ticket_id", identityScreen)
 
@@ -909,7 +1065,7 @@ class ProcessRepositoryTest {
             val repo = repo()
             // '_' is a SQL single-character wildcard; a naive LIKE 'ticket_id:%' would
             // also match 'ticketXid:...'. The range-bound prefix test must not.
-            val lookalike = repo.obtainProcessId("a", emptyMap(), 100, tags = listOf("ticketXid:T-1")).processId
+            val lookalike = repo.obtainProcessId(NewRunRecord("a", tags = listOf("ticketXid:T-1")), 100).processId
             repo.addCost(lookalike, 3.0, CostSource.CLI)
 
             val result = repo.costByTag("ticket_id", identityScreen)
@@ -921,12 +1077,12 @@ class ProcessRepositoryTest {
     fun `eviction deletes oldest terminal row and new id never reuses it`() =
         runTest {
             val repo = repo()
-            val id1 = repo.obtainProcessId("a", emptyMap(), 2).processId
-            repo.obtainProcessId("a", emptyMap(), 2).processId
+            val id1 = repo.obtainProcessId(NewRunRecord("a"), 2).processId
+            repo.obtainProcessId(NewRunRecord("a"), 2).processId
             // id1 terminal so it can be evicted when capacity (2) is hit.
             repo.transitionStatus(id1, ProcessStatus.FINISHED, 1, null)
 
-            val result = repo.obtainProcessId("a", emptyMap(), 2)
+            val result = repo.obtainProcessId(NewRunRecord("a"), 2)
 
             assertEquals(id1, result.evicted?.id)
             assertEquals(ProcessStatus.FINISHED, result.evicted?.status)
@@ -941,36 +1097,36 @@ class ProcessRepositoryTest {
         runTest {
             val repo = repo()
 
-            val due = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val due = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(due, ProcessStatus.FINISHED, 1, null)
             repo.setArtifactsDir(due, "/tmp/ws/due/artifacts")
             repo.setPurgeAt(due, 500)
 
-            val notYetDue = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val notYetDue = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(notYetDue, ProcessStatus.FINISHED, 1, null)
             repo.setArtifactsDir(notYetDue, "/tmp/ws/not-yet/artifacts")
             repo.setPurgeAt(notYetDue, 5000)
 
-            val noPurgeAt = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val noPurgeAt = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(noPurgeAt, ProcessStatus.FINISHED, 1, null)
 
-            val stillWorking = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val stillWorking = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(stillWorking, ProcessStatus.WORKING, 1, null)
             repo.setArtifactsDir(stillWorking, "/tmp/ws/working/artifacts")
             repo.setPurgeAt(stillWorking, 500)
 
             // Due but already swept: artifacts_dir cleared, so it must not come round again.
-            val alreadySwept = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val alreadySwept = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(alreadySwept, ProcessStatus.FINISHED, 1, null)
             repo.setPurgeAt(alreadySwept, 500)
 
             // The expiry boundary itself: exactly at its purge second is due, one second later is not.
-            val exactlyDue = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val exactlyDue = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(exactlyDue, ProcessStatus.FINISHED, 1, null)
             repo.setArtifactsDir(exactlyDue, "/tmp/ws/exactly/artifacts")
             repo.setPurgeAt(exactlyDue, 1000)
 
-            val oneSecondShort = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val oneSecondShort = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(oneSecondShort, ProcessStatus.FINISHED, 1, null)
             repo.setArtifactsDir(oneSecondShort, "/tmp/ws/short/artifacts")
             repo.setPurgeAt(oneSecondShort, 1001)
@@ -985,16 +1141,16 @@ class ProcessRepositoryTest {
         runTest {
             val repo = repo()
 
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(id, ProcessStatus.FINISHED, 1, null)
             repo.setPurgeAt(id, purgeAt = 500, recordPurgeAt = 5000)
 
             // The record window's own boundary: exactly at record_purge_at is due, one second later is not.
-            val exactlyDue = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val exactlyDue = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(exactlyDue, ProcessStatus.FINISHED, 1, null)
             repo.setPurgeAt(exactlyDue, purgeAt = 500, recordPurgeAt = 6000)
 
-            val oneSecondLater = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val oneSecondLater = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(oneSecondLater, ProcessStatus.FINISHED, 1, null)
             repo.setPurgeAt(oneSecondLater, purgeAt = 500, recordPurgeAt = 6001)
 
@@ -1012,7 +1168,7 @@ class ProcessRepositoryTest {
             val db = PersistenceTestSupport.tempDatabase()
             val repo = repo(db)
 
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(id, ProcessStatus.FINISHED, 1, null)
             repo.setPurgeAt(id, purgeAt = 500, recordPurgeAt = 5000)
             // A row written before v12 carries no record window at all.
@@ -1029,7 +1185,7 @@ class ProcessRepositoryTest {
         runTest {
             val repo = repo()
 
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(id, ProcessStatus.FINISHED, 1, null)
             repo.setArtifactsDir(id, "/tmp/ws/stuck/artifacts")
             repo.setPurgeAt(id, 500)
@@ -1048,7 +1204,7 @@ class ProcessRepositoryTest {
         runTest {
             val repo = repo()
 
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(id, ProcessStatus.FINISHED, 1, null)
             repo.setArtifactsDir(id, "/tmp/ws/retain/artifacts")
             repo.setPurgeAt(id, purgeAt = 500, recordPurgeAt = 1500, retainArtifacts = listOf("decision.json"))
@@ -1063,7 +1219,7 @@ class ProcessRepositoryTest {
         runTest {
             val repo = repo()
 
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(id, ProcessStatus.FINISHED, 1, null)
             repo.setArtifactsDir(id, "/tmp/ws/retained/artifacts")
             repo.setPurgeAt(id, purgeAt = 500, recordPurgeAt = 500, retainArtifacts = listOf("decision.json"))
@@ -1085,7 +1241,7 @@ class ProcessRepositoryTest {
         runTest {
             val repo = repo()
 
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(id, ProcessStatus.FINISHED, 1, null)
             repo.setArtifactsDir(id, "/tmp/ws/overflow/artifacts")
             repo.setPurgeAt(id, purgeAt = 500, retainArtifacts = listOf("big.json"))
@@ -1101,9 +1257,9 @@ class ProcessRepositoryTest {
         runTest {
             val path = PersistenceTestSupport.tempDatabasePath()
             val repo = repo(PersistenceTestSupport.tempDatabase(path))
-            val truncated = repo.obtainProcessId("a", emptyMap(), 100).processId
-            val complete = repo.obtainProcessId("a", emptyMap(), 100).processId
-            val untouched = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val truncated = repo.obtainProcessId(NewRunRecord("a"), 100).processId
+            val complete = repo.obtainProcessId(NewRunRecord("a"), 100).processId
+            val untouched = repo.obtainProcessId(NewRunRecord("a"), 100).processId
 
             repo.markWorkspacePurged(truncated, retainedTruncated = true)
             repo.markWorkspacePurged(complete, retainedTruncated = false)
@@ -1134,7 +1290,7 @@ class ProcessRepositoryTest {
         runTest {
             val repo = repo()
 
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(id, ProcessStatus.FINISHED, 1, null)
             repo.setArtifactsDir(id, "/tmp/ws/unmarked/artifacts")
             repo.setPurgeAt(id, purgeAt = 500, recordPurgeAt = 500, retainArtifacts = listOf("decision.json"))
@@ -1148,7 +1304,7 @@ class ProcessRepositoryTest {
     fun `transitionStatus guard preserves KILLED over a late FINISHED (audit 9)`() =
         runTest {
             val repo = repo()
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(id, ProcessStatus.WORKING, 1, null)
             repo.transitionStatus(id, ProcessStatus.KILLED, 2, null)
 
@@ -1168,7 +1324,7 @@ class ProcessRepositoryTest {
     fun `addCost accumulates and completeStep appends`() =
         runTest {
             val repo = repo()
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.addCost(id, 0.1, CostSource.CLI)
             repo.addCost(id, 0.25, CostSource.CLI)
             repo.completeStep(id, execution("cmd-1"), null, null)
@@ -1184,7 +1340,7 @@ class ProcessRepositoryTest {
         runTest {
             val db = PersistenceTestSupport.tempDatabase()
             val repo = repo(db)
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
 
             SqlStatementRecorder.reset()
             val existed = repo.completeStep(id, execution("cmd-1"), nextLabel = "cmd-2", nextStart = 4242L)
@@ -1204,7 +1360,7 @@ class ProcessRepositoryTest {
     fun `completeStep clears the current command when the next label is null`() =
         runTest {
             val repo = repo()
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.setCurrentCommand(id, "cmd-1", 100L)
 
             assertTrue(repo.completeStep(id, execution("cmd-1"), nextLabel = null, nextStart = null))
@@ -1220,7 +1376,7 @@ class ProcessRepositoryTest {
         runTest {
             val db = PersistenceTestSupport.tempDatabase()
             val repo = repo(db)
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.remove(id)
 
             SqlStatementRecorder.reset()
@@ -1239,7 +1395,7 @@ class ProcessRepositoryTest {
     fun `completeStep on a killed row records the execution but keeps the command cleared`() =
         runTest {
             val repo = repo()
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(id, ProcessStatus.WORKING, 1, guard = null)
             repo.killTransition(id, 2)
 
@@ -1264,7 +1420,7 @@ class ProcessRepositoryTest {
             // narrowing the guard back to `status != KILLED` fails here.
             for (terminal in listOf(ProcessStatus.FINISHED, ProcessStatus.FAILED, ProcessStatus.UNKNOWN)) {
                 val repo = repo()
-                val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+                val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
                 repo.transitionStatus(id, ProcessStatus.WORKING, 1, guard = null)
                 repo.transitionStatus(id, terminal, 2, guard = null)
 
@@ -1286,7 +1442,7 @@ class ProcessRepositoryTest {
             // terminal row holding a running command.
             for (terminal in listOf(ProcessStatus.FINISHED, ProcessStatus.FAILED, ProcessStatus.KILLED, ProcessStatus.UNKNOWN)) {
                 val repo = repo()
-                val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+                val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
                 repo.transitionStatus(id, ProcessStatus.WORKING, 1, guard = null)
                 if (terminal == ProcessStatus.KILLED) {
                     repo.killTransition(id, 2)
@@ -1313,7 +1469,7 @@ class ProcessRepositoryTest {
         runTest {
             val db = PersistenceTestSupport.tempDatabase()
             val repo = repo(db)
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.remove(id)
 
             SqlStatementRecorder.reset()
@@ -1330,7 +1486,7 @@ class ProcessRepositoryTest {
     fun `execution llmAccounting round-trips through the executions JSON`() =
         runTest {
             val repo = repo()
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.completeStep(
                 id,
                 execution("claude").copy(
@@ -1350,7 +1506,7 @@ class ProcessRepositoryTest {
         runTest {
             val db = PersistenceTestSupport.tempDatabase()
             val repo = repo(db)
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.completeStep(
                 id,
                 ExecutionInfo(label = "l", start = 1, end = 2, resultCode = 0, stdOut = null, stdErr = null, errMsg = null, kind = "codex"),
@@ -1387,7 +1543,7 @@ class ProcessRepositoryTest {
         runTest {
             val db = PersistenceTestSupport.tempDatabase()
             val repo = repo(db)
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.completeStep(id, execution("interrupted").copy(stoppedBy = "step_timeout"), null, null)
             repo.completeStep(id, execution("save").copy(onStop = true), null, null)
 
@@ -1412,7 +1568,7 @@ class ProcessRepositoryTest {
     fun `cost_source starts as cli and stays cli for cli charges`() =
         runTest {
             val repo = repo()
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             assertEquals("cli", repo.getInfo(id)!!.costSource)
             repo.addCost(id, 0.1, CostSource.CLI)
             assertEquals("cli", repo.getInfo(id)!!.costSource)
@@ -1422,7 +1578,7 @@ class ProcessRepositoryTest {
     fun `first session charge sets cost_source to session`() =
         runTest {
             val repo = repo()
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.addCost(id, 0.1, CostSource.SESSION)
             assertEquals("session", repo.getInfo(id)!!.costSource)
             repo.addCost(id, 0.2, CostSource.SESSION)
@@ -1433,7 +1589,7 @@ class ProcessRepositoryTest {
     fun `a charge from a different source than the first makes cost_source mixed`() =
         runTest {
             val repo = repo()
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.addCost(id, 0.1, CostSource.SESSION)
             repo.addCost(id, 0.2, CostSource.CLI)
             val info = repo.getInfo(id)!!
@@ -1448,10 +1604,10 @@ class ProcessRepositoryTest {
     fun `markInterruptedAsUnknown flips CREATED and WORKING to UNKNOWN`() =
         runTest {
             val repo = repo()
-            val created = repo.obtainProcessId("a", emptyMap(), 100).processId
-            val working = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val created = repo.obtainProcessId(NewRunRecord("a"), 100).processId
+            val working = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(working, ProcessStatus.WORKING, 1, null)
-            val finished = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val finished = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(finished, ProcessStatus.FINISHED, 1, null)
 
             val reconciled = repo.markInterruptedAsUnknown(nowSec = 999)
@@ -1469,7 +1625,7 @@ class ProcessRepositoryTest {
         // serialization that replaced the Mutex: every append must survive.
         runBlocking {
             val repo = repo(PersistenceTestSupport.tempDatabase(dispatcher = Dispatchers.IO))
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             val writers = 50
 
             coroutineScope {
@@ -1490,7 +1646,7 @@ class ProcessRepositoryTest {
             val db1 = PersistenceTestSupport.tempDatabase(path = path)
             val repo1 = ProcessRepository(db1, ProcessJobRegistry())
 
-            val id = repo1.obtainProcessId("deploy", mapOf("TARGET" to "prod"), 100).processId
+            val id = repo1.obtainProcessId(NewRunRecord("deploy", mapOf("TARGET" to "prod")), 100).processId
             repo1.transitionStatus(id, ProcessStatus.WORKING, 10, null)
             repo1.completeStep(id, execution("build"), null, null)
             repo1.setRunnerState(id) { RunnerState(alias = "k8s", podPhase = PodPhase.READY) }
@@ -1516,15 +1672,15 @@ class ProcessRepositoryTest {
             val repo = repo()
             val shared = "/srv/runs/improver/artifacts"
 
-            val old = repo.obtainProcessId("improver", emptyMap(), 100).processId
+            val old = repo.obtainProcessId(NewRunRecord("improver"), 100).processId
             repo.setArtifactsDir(old, shared)
             repo.transitionStatus(old, ProcessStatus.FINISHED, 1, null)
 
-            val active = repo.obtainProcessId("improver", emptyMap(), 100).processId
+            val active = repo.obtainProcessId(NewRunRecord("improver"), 100).processId
             repo.setArtifactsDir(active, shared)
             repo.transitionStatus(active, ProcessStatus.WORKING, 1, null)
 
-            val unrelated = repo.obtainProcessId("other", emptyMap(), 100).processId
+            val unrelated = repo.obtainProcessId(NewRunRecord("other"), 100).processId
             repo.setArtifactsDir(unrelated, "/srv/runs/42/artifacts")
 
             assertTrue(repo.isArtifactsDirShared(shared, excludeProcessId = old))
@@ -1540,7 +1696,7 @@ class ProcessRepositoryTest {
 
             // Every terminal sibling must not block cleanup forever.
             for (terminal in listOf(ProcessStatus.FINISHED, ProcessStatus.FAILED, ProcessStatus.KILLED, ProcessStatus.UNKNOWN)) {
-                val id = repo.obtainProcessId("improver", emptyMap(), 100).processId
+                val id = repo.obtainProcessId(NewRunRecord("improver"), 100).processId
                 repo.setArtifactsDir(id, shared)
                 repo.transitionStatus(id, terminal, 1, null)
                 assertFalse(
@@ -1550,21 +1706,21 @@ class ProcessRepositoryTest {
             }
 
             // A CREATED and a WORKING sibling both count as live.
-            val created = repo.obtainProcessId("improver", emptyMap(), 100).processId
+            val created = repo.obtainProcessId(NewRunRecord("improver"), 100).processId
             repo.setArtifactsDir(created, shared)
-            val working = repo.obtainProcessId("improver", emptyMap(), 100).processId
+            val working = repo.obtainProcessId(NewRunRecord("improver"), 100).processId
             repo.setArtifactsDir(working, shared)
             repo.transitionStatus(working, ProcessStatus.WORKING, 1, null)
 
             assertTrue(repo.isArtifactsDirSharedWithActiveRun(shared, excludeProcessId = created))
             assertTrue(repo.isArtifactsDirSharedWithActiveRun(shared, excludeProcessId = working))
             // A lone live row never counts as its own sibling.
-            val lone = repo.obtainProcessId("improver", emptyMap(), 100).processId
+            val lone = repo.obtainProcessId(NewRunRecord("improver"), 100).processId
             repo.setArtifactsDir(lone, "/srv/runs/lone/artifacts")
             assertFalse(repo.isArtifactsDirSharedWithActiveRun("/srv/runs/lone/artifacts", excludeProcessId = lone))
 
             // An unrelated dir is never shared.
-            val unrelated = repo.obtainProcessId("other", emptyMap(), 100).processId
+            val unrelated = repo.obtainProcessId(NewRunRecord("other"), 100).processId
             repo.setArtifactsDir(unrelated, "/srv/runs/42/artifacts")
             repo.transitionStatus(unrelated, ProcessStatus.WORKING, 1, null)
             assertFalse(repo.isArtifactsDirSharedWithActiveRun("/srv/runs/42/artifacts", excludeProcessId = unrelated))
@@ -1574,11 +1730,11 @@ class ProcessRepositoryTest {
     fun `createdRunsOf returns only CREATED rows of the named agents`() =
         runTest {
             val repo = repo()
-            val createdA = repo.obtainProcessId("a", emptyMap(), 100).processId
-            val workingA = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val createdA = repo.obtainProcessId(NewRunRecord("a"), 100).processId
+            val workingA = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(workingA, ProcessStatus.WORKING, 1, null)
-            val createdB = repo.obtainProcessId("b", emptyMap(), 100).processId
-            repo.obtainProcessId("c", emptyMap(), 100)
+            val createdB = repo.obtainProcessId(NewRunRecord("b"), 100).processId
+            repo.obtainProcessId(NewRunRecord("c"), 100)
 
             val runs = repo.createdRunsOf(listOf("a", "b"))
 
@@ -1589,7 +1745,7 @@ class ProcessRepositoryTest {
     fun `createdRunsOf returns empty for an empty agent name collection without querying`() =
         runTest {
             val repo = repo()
-            repo.obtainProcessId("a", emptyMap(), 100)
+            repo.obtainProcessId(NewRunRecord("a"), 100)
 
             SqlStatementRecorder.reset()
             val runs = repo.createdRunsOf(emptyList())
@@ -1602,10 +1758,10 @@ class ProcessRepositoryTest {
     fun `getAll skips the page query when offset is past the total`() =
         runTest {
             val repo = repo()
-            repeat(3) { repo.obtainProcessId("a", emptyMap(), 100) }
+            repeat(3) { repo.obtainProcessId(NewRunRecord("a"), 100) }
 
             SqlStatementRecorder.reset()
-            val result = repo.getAll(filterStatuses = null, orderAsc = true, offset = 3, limit = 100, agentName = null)
+            val result = repo.getAll(ProcessListQuery(orderAsc = true, offset = 3))
 
             assertEquals(3, result.total)
             assertTrue(result.processes.isEmpty())
@@ -1617,10 +1773,10 @@ class ProcessRepositoryTest {
     fun `getAll runs the page query when offset is within the total`() =
         runTest {
             val repo = repo()
-            repeat(3) { repo.obtainProcessId("a", emptyMap(), 100) }
+            repeat(3) { repo.obtainProcessId(NewRunRecord("a"), 100) }
 
             SqlStatementRecorder.reset()
-            val result = repo.getAll(filterStatuses = null, orderAsc = true, offset = 2, limit = 100, agentName = null)
+            val result = repo.getAll(ProcessListQuery(orderAsc = true, offset = 2))
 
             assertEquals(1, result.processes.size)
             assertTrue(SqlStatementRecorder.statements().any { "OFFSET" in it })
@@ -1630,21 +1786,13 @@ class ProcessRepositoryTest {
     fun `getAll visibility filter unions owner match and visibleAgents membership`() =
         runTest {
             val repo = repo()
-            val ciA = repo.obtainProcessId("a", emptyMap(), 100, owner = "ci").processId
-            val bobB = repo.obtainProcessId("b", emptyMap(), 100, owner = "bob").processId
-            val ciB = repo.obtainProcessId("b", emptyMap(), 100, owner = "ci").processId
-            val bobA = repo.obtainProcessId("a", emptyMap(), 100, owner = "bob").processId
+            val ciA = repo.obtainProcessId(NewRunRecord("a", owner = "ci"), 100).processId
+            val bobB = repo.obtainProcessId(NewRunRecord("b", owner = "bob"), 100).processId
+            val ciB = repo.obtainProcessId(NewRunRecord("b", owner = "ci"), 100).processId
+            val bobA = repo.obtainProcessId(NewRunRecord("a", owner = "bob"), 100).processId
 
             val result =
-                repo.getAll(
-                    filterStatuses = null,
-                    orderAsc = true,
-                    offset = 0,
-                    limit = 100,
-                    agentName = null,
-                    visibleOwner = "ci",
-                    visibleAgents = setOf("a"),
-                )
+                repo.getAll(ProcessListQuery(orderAsc = true, visibleOwner = "ci", visibleAgents = setOf("a")))
 
             // owner=ci (ciA, ciB) OR agent=a (ciA, bobA) -- bobB is excluded either way.
             assertEquals(setOf(ciA, ciB, bobA), result.processes.map { it.id }.toSet())
@@ -1655,21 +1803,13 @@ class ProcessRepositoryTest {
     fun `getAll visibleAgents null (admin) returns every row unfiltered`() =
         runTest {
             val repo = repo()
-            val ciA = repo.obtainProcessId("a", emptyMap(), 100, owner = "ci").processId
-            val bobB = repo.obtainProcessId("b", emptyMap(), 100, owner = "bob").processId
-            val ciB = repo.obtainProcessId("b", emptyMap(), 100, owner = "ci").processId
-            val bobA = repo.obtainProcessId("a", emptyMap(), 100, owner = "bob").processId
+            val ciA = repo.obtainProcessId(NewRunRecord("a", owner = "ci"), 100).processId
+            val bobB = repo.obtainProcessId(NewRunRecord("b", owner = "bob"), 100).processId
+            val ciB = repo.obtainProcessId(NewRunRecord("b", owner = "ci"), 100).processId
+            val bobA = repo.obtainProcessId(NewRunRecord("a", owner = "bob"), 100).processId
 
             val result =
-                repo.getAll(
-                    filterStatuses = null,
-                    orderAsc = true,
-                    offset = 0,
-                    limit = 100,
-                    agentName = null,
-                    visibleOwner = "ci",
-                    visibleAgents = null,
-                )
+                repo.getAll(ProcessListQuery(orderAsc = true, visibleOwner = "ci", visibleAgents = null))
 
             assertEquals(setOf(ciA, bobB, ciB, bobA), result.processes.map { it.id }.toSet())
             assertEquals(4, result.total)
@@ -1679,21 +1819,13 @@ class ProcessRepositoryTest {
     fun `getAll empty visibleAgents reduces to owner-only`() =
         runTest {
             val repo = repo()
-            val ciA = repo.obtainProcessId("a", emptyMap(), 100, owner = "ci").processId
-            repo.obtainProcessId("b", emptyMap(), 100, owner = "bob").processId
-            val ciB = repo.obtainProcessId("b", emptyMap(), 100, owner = "ci").processId
-            repo.obtainProcessId("a", emptyMap(), 100, owner = "bob").processId
+            val ciA = repo.obtainProcessId(NewRunRecord("a", owner = "ci"), 100).processId
+            repo.obtainProcessId(NewRunRecord("b", owner = "bob"), 100).processId
+            val ciB = repo.obtainProcessId(NewRunRecord("b", owner = "ci"), 100).processId
+            repo.obtainProcessId(NewRunRecord("a", owner = "bob"), 100).processId
 
             val result =
-                repo.getAll(
-                    filterStatuses = null,
-                    orderAsc = true,
-                    offset = 0,
-                    limit = 100,
-                    agentName = null,
-                    visibleOwner = "ci",
-                    visibleAgents = emptySet(),
-                )
+                repo.getAll(ProcessListQuery(orderAsc = true, visibleOwner = "ci", visibleAgents = emptySet()))
 
             assertEquals(setOf(ciA, ciB), result.processes.map { it.id }.toSet())
             assertEquals(2, result.total)
@@ -1714,7 +1846,7 @@ class ProcessRepositoryTest {
     fun `settleAccounting distinguishes a gone row from a pending accounting not recorded yet`() =
         runTest {
             val repo = repo()
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             val pending = LlmAccounting("sess-1", 0.42, CostSource.CLI, FALLBACK_REASON_SESSION_FIGURE_PENDING)
             val settled = LlmAccounting("sess-1", 0.18, CostSource.SESSION)
 
@@ -1726,7 +1858,7 @@ class ProcessRepositoryTest {
             assertEquals(listOf(settled), repo.getExecutions(id).map { it.llmAccounting })
 
             // A removed row has nothing to merge the settlement into.
-            val gone = repo.obtainProcessId("b", emptyMap(), 100).processId
+            val gone = repo.obtainProcessId(NewRunRecord("b"), 100).processId
             repo.remove(gone)
             assertEquals(SettlementSwap.RowGone, repo.settleAccounting(gone, pending, settled))
         }
@@ -1735,7 +1867,7 @@ class ProcessRepositoryTest {
     fun `setTraceId round-trips via getInfo and stays null until stamped`() =
         runTest {
             val repo = repo()
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             assertEquals(null, repo.getInfo(id)?.traceId)
 
             repo.setTraceId(id, "0af7651916cd43dd8448eb211c80319c")
@@ -1748,9 +1880,9 @@ class ProcessRepositoryTest {
     fun `latestRunStartedAt returns the newest run's insert time`() =
         runTest {
             val repo = repo()
-            repo.obtainProcessId("watcher", emptyMap(), 100, nowSec = 100)
-            repo.obtainProcessId("watcher", emptyMap(), 100, nowSec = 500)
-            repo.obtainProcessId("other", emptyMap(), 100, nowSec = 900)
+            repo.obtainProcessId(NewRunRecord("watcher"), 100, nowSec = 100)
+            repo.obtainProcessId(NewRunRecord("watcher"), 100, nowSec = 500)
+            repo.obtainProcessId(NewRunRecord("other"), 100, nowSec = 900)
 
             // Newest row for THIS agent. The value is `created_at`, written in the
             // INSERT's transaction — history is written later and would read empty here.
@@ -1762,10 +1894,10 @@ class ProcessRepositoryTest {
     fun `latestFailureEndedAt returns the newest FAILED run's terminal time`() =
         runTest {
             val repo = repo()
-            val failed = repo.obtainProcessId("watcher", emptyMap(), 100).processId
+            val failed = repo.obtainProcessId(NewRunRecord("watcher"), 100).processId
             repo.transitionStatus(failed, ProcessStatus.WORKING, nowSec = 100, guard = null)
             repo.transitionStatus(failed, ProcessStatus.FAILED, nowSec = 200, guard = null)
-            val ok = repo.obtainProcessId("watcher", emptyMap(), 100).processId
+            val ok = repo.obtainProcessId(NewRunRecord("watcher"), 100).processId
             repo.transitionStatus(ok, ProcessStatus.FINISHED, nowSec = 800, guard = null)
 
             // The later successful run must not hide the failure window.
@@ -1784,7 +1916,7 @@ class ProcessRepositoryTest {
             // shadowed the real previous run — `latestRunStartedAt` returned null and
             // the whole `minInterval` check was skipped.
             val repo = repo()
-            repo.obtainProcessId("a", emptyMap(), 100, nowSec = 1_000)
+            repo.obtainProcessId(NewRunRecord("a"), 100, nowSec = 1_000)
 
             assertEquals(1_000, repo.latestRunStartedAt("a"))
         }
@@ -1794,11 +1926,11 @@ class ProcessRepositoryTest {
         runTest {
             val repo = repo()
             val cooldown = Cooldown(minInterval = "1m")
-            repo.obtainProcessId("a", emptyMap(), 100, cooldown = cooldown, nowSec = 1_000)
+            repo.obtainProcessId(NewRunRecord("a", cooldown = cooldown), 100, nowSec = 1_000)
 
             val e =
                 assertFailsWith<CooldownActiveException> {
-                    repo.obtainProcessId("a", emptyMap(), 100, cooldown = cooldown, nowSec = 1_030)
+                    repo.obtainProcessId(NewRunRecord("a", cooldown = cooldown), 100, nowSec = 1_030)
                 }
 
             assertEquals("a", e.agentName)
@@ -1811,9 +1943,9 @@ class ProcessRepositoryTest {
         runTest {
             val repo = repo()
             val cooldown = Cooldown(minInterval = "1m")
-            repo.obtainProcessId("a", emptyMap(), 100, cooldown = cooldown, nowSec = 1_000)
+            repo.obtainProcessId(NewRunRecord("a", cooldown = cooldown), 100, nowSec = 1_000)
 
-            assertEquals(2, repo.obtainProcessId("a", emptyMap(), 100, cooldown = cooldown, nowSec = 1_060).processId)
+            assertEquals(2, repo.obtainProcessId(NewRunRecord("a", cooldown = cooldown), 100, nowSec = 1_060).processId)
         }
 
     @Test
@@ -1821,9 +1953,9 @@ class ProcessRepositoryTest {
         runTest {
             val repo = repo()
             val cooldown = Cooldown(minInterval = "1m")
-            repo.obtainProcessId("a", emptyMap(), 100, cooldown = cooldown, nowSec = 1_000)
+            repo.obtainProcessId(NewRunRecord("a", cooldown = cooldown), 100, nowSec = 1_000)
 
-            assertEquals(2, repo.obtainProcessId("b", emptyMap(), 100, cooldown = cooldown, nowSec = 1_001).processId)
+            assertEquals(2, repo.obtainProcessId(NewRunRecord("b", cooldown = cooldown), 100, nowSec = 1_001).processId)
         }
 
     @Test
@@ -1844,7 +1976,7 @@ class ProcessRepositoryTest {
                 repeat(starters) {
                     launch(Dispatchers.IO) {
                         try {
-                            repo.obtainProcessId("a", emptyMap(), 100, cooldown = cooldown, nowSec = 1_000)
+                            repo.obtainProcessId(NewRunRecord("a", cooldown = cooldown), 100, nowSec = 1_000)
                             admitted.incrementAndGet()
                         } catch (e: CooldownActiveException) {
                             refused.incrementAndGet()
@@ -1863,22 +1995,22 @@ class ProcessRepositoryTest {
         runTest {
             val repo = repo()
             val cooldown = Cooldown(afterFailure = "1m")
-            val failed = repo.obtainProcessId("a", emptyMap(), 100, nowSec = 1_000).processId
+            val failed = repo.obtainProcessId(NewRunRecord("a"), 100, nowSec = 1_000).processId
             repo.transitionStatus(failed, ProcessStatus.FAILED, 1_000, guard = null)
 
             assertFailsWith<CooldownActiveException> {
-                repo.obtainProcessId("a", emptyMap(), 100, cooldown = cooldown, nowSec = 1_030)
+                repo.obtainProcessId(NewRunRecord("a", cooldown = cooldown), 100, nowSec = 1_030)
             }
-            assertEquals(2, repo.obtainProcessId("a", emptyMap(), 100, cooldown = cooldown, nowSec = 1_060).processId)
+            assertEquals(2, repo.obtainProcessId(NewRunRecord("a", cooldown = cooldown), 100, nowSec = 1_060).processId)
         }
 
     @Test
     fun `obtainProcessId without a cooldown is never refused`() =
         runTest {
             val repo = repo()
-            repo.obtainProcessId("a", emptyMap(), 100, nowSec = 1_000)
+            repo.obtainProcessId(NewRunRecord("a"), 100, nowSec = 1_000)
 
-            assertEquals(2, repo.obtainProcessId("a", emptyMap(), 100, nowSec = 1_000).processId)
+            assertEquals(2, repo.obtainProcessId(NewRunRecord("a"), 100, nowSec = 1_000).processId)
         }
 
     @Test
@@ -1889,8 +2021,8 @@ class ProcessRepositoryTest {
             // Ordering by id picked run B's EARLIER failure and let a start through
             // inside the afterFailure window.
             val repo = repo()
-            val a = repo.obtainProcessId("flaky", emptyMap(), 100, nowSec = 1).processId
-            val b = repo.obtainProcessId("flaky", emptyMap(), 100, nowSec = 2).processId
+            val a = repo.obtainProcessId(NewRunRecord("flaky"), 100, nowSec = 1).processId
+            val b = repo.obtainProcessId(NewRunRecord("flaky"), 100, nowSec = 2).processId
             repo.transitionStatus(b, ProcessStatus.FAILED, 100, guard = null)
             repo.transitionStatus(a, ProcessStatus.FAILED, 200, guard = null)
 
@@ -1902,16 +2034,16 @@ class ProcessRepositoryTest {
         runTest {
             val repo = repo()
             val cooldown = Cooldown(afterFailure = "1m")
-            val a = repo.obtainProcessId("flaky", emptyMap(), 100, nowSec = 1).processId
-            val b = repo.obtainProcessId("flaky", emptyMap(), 100, nowSec = 2).processId
+            val a = repo.obtainProcessId(NewRunRecord("flaky"), 100, nowSec = 1).processId
+            val b = repo.obtainProcessId(NewRunRecord("flaky"), 100, nowSec = 2).processId
             repo.transitionStatus(b, ProcessStatus.FAILED, 100, guard = null)
             repo.transitionStatus(a, ProcessStatus.FAILED, 200, guard = null)
 
             // t=250 is outside B's window (100+60) but inside A's (200+60).
             assertFailsWith<CooldownActiveException> {
-                repo.obtainProcessId("flaky", emptyMap(), 100, cooldown = cooldown, nowSec = 250)
+                repo.obtainProcessId(NewRunRecord("flaky", cooldown = cooldown), 100, nowSec = 250)
             }
-            repo.obtainProcessId("flaky", emptyMap(), 100, cooldown = cooldown, nowSec = 260)
+            repo.obtainProcessId(NewRunRecord("flaky", cooldown = cooldown), 100, nowSec = 260)
         }
 
     // ========== cooldown.key: the same windows, counted per subject (ADR-0106) ==========
@@ -1920,8 +2052,8 @@ class ProcessRepositoryTest {
     fun `obtainProcessId stores the rendered key on the row`() =
         runTest {
             val repo = repo()
-            val keyed = repo.obtainProcessId("a", emptyMap(), 100, cooldownKey = "mr-1").processId
-            val keyless = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val keyed = repo.obtainProcessId(NewRunRecord("a", cooldownKey = "mr-1"), 100).processId
+            val keyless = repo.obtainProcessId(NewRunRecord("a"), 100).processId
 
             assertEquals("mr-1", cooldownKeyOf(repo, keyed))
             assertEquals(null, cooldownKeyOf(repo, keyless), "an unkeyed start stores NULL, not an empty string")
@@ -1931,9 +2063,9 @@ class ProcessRepositoryTest {
     fun `a keyed lookup counts only that subject's rows`() =
         runTest {
             val repo = repo()
-            repo.obtainProcessId("watcher", emptyMap(), 100, cooldownKey = "mr-1", nowSec = 100)
-            repo.obtainProcessId("watcher", emptyMap(), 100, cooldownKey = "mr-2", nowSec = 500)
-            repo.obtainProcessId("watcher", emptyMap(), 100, nowSec = 900)
+            repo.obtainProcessId(NewRunRecord("watcher", cooldownKey = "mr-1"), 100, nowSec = 100)
+            repo.obtainProcessId(NewRunRecord("watcher", cooldownKey = "mr-2"), 100, nowSec = 500)
+            repo.obtainProcessId(NewRunRecord("watcher"), 100, nowSec = 900)
 
             assertEquals(100, repo.latestRunStartedAt("watcher", "mr-1"))
             assertEquals(500, repo.latestRunStartedAt("watcher", "mr-2"))
@@ -1946,8 +2078,8 @@ class ProcessRepositoryTest {
     fun `a keyed failure lookup counts only that subject's failures`() =
         runTest {
             val repo = repo()
-            val one = repo.obtainProcessId("watcher", emptyMap(), 100, cooldownKey = "mr-1").processId
-            val two = repo.obtainProcessId("watcher", emptyMap(), 100, cooldownKey = "mr-2").processId
+            val one = repo.obtainProcessId(NewRunRecord("watcher", cooldownKey = "mr-1"), 100).processId
+            val two = repo.obtainProcessId(NewRunRecord("watcher", cooldownKey = "mr-2"), 100).processId
             repo.transitionStatus(one, ProcessStatus.FAILED, 200, guard = null)
             repo.transitionStatus(two, ProcessStatus.FAILED, 400, guard = null)
 
@@ -1963,8 +2095,8 @@ class ProcessRepositoryTest {
             // The key comes from the run's inputs, so `%` and `_` are attacker-chosen
             // characters. A LIKE-shaped comparison would let `%` name every subject.
             val repo = repo()
-            repo.obtainProcessId("watcher", emptyMap(), 100, cooldownKey = "mr%1", nowSec = 100)
-            repo.obtainProcessId("watcher", emptyMap(), 100, cooldownKey = "mr_1", nowSec = 200)
+            repo.obtainProcessId(NewRunRecord("watcher", cooldownKey = "mr%1"), 100, nowSec = 100)
+            repo.obtainProcessId(NewRunRecord("watcher", cooldownKey = "mr_1"), 100, nowSec = 200)
 
             assertEquals(100, repo.latestRunStartedAt("watcher", "mr%1"))
             assertEquals(200, repo.latestRunStartedAt("watcher", "mr_1"))
@@ -1976,12 +2108,12 @@ class ProcessRepositoryTest {
         runTest {
             val repo = repo()
             val cooldown = Cooldown(afterFailure = "1m", key = "mr-{{MR}}")
-            val failed = repo.obtainProcessId("a", emptyMap(), 100, cooldownKey = "mr-1", nowSec = 1_000).processId
+            val failed = repo.obtainProcessId(NewRunRecord("a", cooldownKey = "mr-1"), 100, nowSec = 1_000).processId
             repo.transitionStatus(failed, ProcessStatus.FAILED, 1_000, guard = null)
 
             val e =
                 assertFailsWith<CooldownActiveException> {
-                    repo.obtainProcessId("a", emptyMap(), 100, cooldown = cooldown, cooldownKey = "mr-1", nowSec = 1_030)
+                    repo.obtainProcessId(NewRunRecord("a", cooldown = cooldown, cooldownKey = "mr-1"), 100, nowSec = 1_030)
                 }
 
             assertEquals("a", e.agentName)
@@ -1989,7 +2121,7 @@ class ProcessRepositoryTest {
             // Another subject's failure window is its own.
             assertEquals(
                 2,
-                repo.obtainProcessId("a", emptyMap(), 100, cooldown = cooldown, cooldownKey = "mr-2", nowSec = 1_030).processId,
+                repo.obtainProcessId(NewRunRecord("a", cooldown = cooldown, cooldownKey = "mr-2"), 100, nowSec = 1_030).processId,
             )
         }
 
@@ -1998,18 +2130,18 @@ class ProcessRepositoryTest {
         runTest {
             val repo = repo()
             val cooldown = Cooldown(minInterval = "1m", key = "mr-{{MR}}")
-            repo.obtainProcessId("a", emptyMap(), 100, cooldown = cooldown, cooldownKey = "mr-1", nowSec = 1_000)
+            repo.obtainProcessId(NewRunRecord("a", cooldown = cooldown, cooldownKey = "mr-1"), 100, nowSec = 1_000)
 
             assertFailsWith<CooldownActiveException> {
-                repo.obtainProcessId("a", emptyMap(), 100, cooldown = cooldown, cooldownKey = "mr-1", nowSec = 1_030)
+                repo.obtainProcessId(NewRunRecord("a", cooldown = cooldown, cooldownKey = "mr-1"), 100, nowSec = 1_030)
             }
             assertEquals(
                 2,
-                repo.obtainProcessId("a", emptyMap(), 100, cooldown = cooldown, cooldownKey = "mr-2", nowSec = 1_030).processId,
+                repo.obtainProcessId(NewRunRecord("a", cooldown = cooldown, cooldownKey = "mr-2"), 100, nowSec = 1_030).processId,
             )
             assertEquals(
                 3,
-                repo.obtainProcessId("a", emptyMap(), 100, cooldown = cooldown, cooldownKey = "mr-1", nowSec = 1_060).processId,
+                repo.obtainProcessId(NewRunRecord("a", cooldown = cooldown, cooldownKey = "mr-1"), 100, nowSec = 1_060).processId,
             )
         }
 
@@ -2019,10 +2151,10 @@ class ProcessRepositoryTest {
             // The key is a property of the START, not of the row: a definition that drops
             // its key goes back to counting every run of the agent, keyed rows included.
             val repo = repo()
-            repo.obtainProcessId("a", emptyMap(), 100, cooldownKey = "mr-1", nowSec = 1_000)
+            repo.obtainProcessId(NewRunRecord("a", cooldownKey = "mr-1"), 100, nowSec = 1_000)
 
             assertFailsWith<CooldownActiveException> {
-                repo.obtainProcessId("a", emptyMap(), 100, cooldown = Cooldown(minInterval = "1m"), nowSec = 1_030)
+                repo.obtainProcessId(NewRunRecord("a", cooldown = Cooldown(minInterval = "1m")), 100, nowSec = 1_030)
             }
         }
 
@@ -2041,7 +2173,7 @@ class ProcessRepositoryTest {
                 repeat(starters) {
                     launch(Dispatchers.IO) {
                         try {
-                            repo.obtainProcessId("a", emptyMap(), 100, cooldown = cooldown, cooldownKey = "mr-1", nowSec = 1_000)
+                            repo.obtainProcessId(NewRunRecord("a", cooldown = cooldown, cooldownKey = "mr-1"), 100, nowSec = 1_000)
                             admitted.incrementAndGet()
                         } catch (e: CooldownActiveException) {
                             refused.incrementAndGet()
@@ -2071,7 +2203,7 @@ class ProcessRepositoryTest {
     fun `ended_at is stamped on terminal transitions and stays null while active`() =
         runTest {
             val repo = repo()
-            val id = repo.obtainProcessId("a", emptyMap(), 100, nowSec = 10).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100, nowSec = 10).processId
             repo.transitionStatus(id, ProcessStatus.WORKING, 20, guard = null)
             assertEquals(null, repo.latestFailureEndedAt("a"), "an active run has no terminal time")
 
@@ -2083,11 +2215,11 @@ class ProcessRepositoryTest {
     fun `killTransition and the interrupted sweep stamp a terminal time too`() =
         runTest {
             val repo = repo()
-            val killed = repo.obtainProcessId("a", emptyMap(), 100, nowSec = 10).processId
+            val killed = repo.obtainProcessId(NewRunRecord("a"), 100, nowSec = 10).processId
             repo.transitionStatus(killed, ProcessStatus.WORKING, 11, guard = null)
             repo.killTransition(killed, nowSec = 40)
 
-            val interrupted = repo.obtainProcessId("a", emptyMap(), 100, nowSec = 12).processId
+            val interrupted = repo.obtainProcessId(NewRunRecord("a"), 100, nowSec = 12).processId
             repo.markInterruptedAsUnknown(nowSec = 50)
 
             // Neither is FAILED, so neither feeds afterFailure; the point is that every
@@ -2102,15 +2234,15 @@ class ProcessRepositoryTest {
         runTest {
             val repo = repo()
             val withKeys =
-                repo.obtainProcessId("a", mapOf("TOKEN" to "s"), 100, secretInputKeys = setOf("TOKEN")).processId
-            val withoutKeys = repo.obtainProcessId("a", mapOf("MR" to "1"), 100).processId
+                repo.obtainProcessId(NewRunRecord("a", mapOf("TOKEN" to "s"), secretInputKeys = setOf("TOKEN")), 100).processId
+            val withoutKeys = repo.obtainProcessId(NewRunRecord("a", mapOf("MR" to "1")), 100).processId
 
             assertEquals(setOf("TOKEN"), repo.getInfo(withKeys)?.secretInputKeys)
             // A caller that captured no snapshot stores null, which reads back as
             // "ask the current definition". An empty set is different and meaningful:
             // it says the agent had no secret inputs at run time.
             assertEquals(null, repo.getInfo(withoutKeys)?.secretInputKeys)
-            val noSecrets = repo.obtainProcessId("a", emptyMap(), 100, secretInputKeys = emptySet()).processId
+            val noSecrets = repo.obtainProcessId(NewRunRecord("a", secretInputKeys = emptySet()), 100).processId
             assertEquals(emptySet(), repo.getInfo(noSecrets)?.secretInputKeys)
         }
 
@@ -2122,10 +2254,10 @@ class ProcessRepositoryTest {
             // a null ended_at, so if that assumption were wrong one of them would win the
             // ordering and report "no recent failure" for an agent that just failed.
             val repo = repo()
-            val migrated = repo.obtainProcessId("flaky", emptyMap(), 100, nowSec = 1).processId
+            val migrated = repo.obtainProcessId(NewRunRecord("flaky"), 100, nowSec = 1).processId
             repo.transitionStatus(migrated, ProcessStatus.FAILED, 100, guard = null)
             repo.clearEndedAtForTest(migrated)
-            val recent = repo.obtainProcessId("flaky", emptyMap(), 100, nowSec = 2).processId
+            val recent = repo.obtainProcessId(NewRunRecord("flaky"), 100, nowSec = 2).processId
             repo.transitionStatus(recent, ProcessStatus.FAILED, 300, guard = null)
 
             assertEquals(300, repo.latestFailureEndedAt("flaky"))
@@ -2135,7 +2267,7 @@ class ProcessRepositoryTest {
     fun `only pre-v14 FAILED rows read as no recorded failure`() =
         runTest {
             val repo = repo()
-            val migrated = repo.obtainProcessId("flaky", emptyMap(), 100, nowSec = 1).processId
+            val migrated = repo.obtainProcessId(NewRunRecord("flaky"), 100, nowSec = 1).processId
             repo.transitionStatus(migrated, ProcessStatus.FAILED, 100, guard = null)
             repo.clearEndedAtForTest(migrated)
 
@@ -2151,7 +2283,7 @@ class ProcessRepositoryTest {
         reason: String,
         endedAt: Long,
     ): Int {
-        val id = repo.obtainProcessId(agentName, emptyMap(), 100, nowSec = endedAt).processId
+        val id = repo.obtainProcessId(NewRunRecord(agentName), 100, nowSec = endedAt).processId
         repo.transitionStatus(id, ProcessStatus.FAILED, endedAt, guard = null)
         assertTrue(repo.setFailureReason(id, reason, null))
         return id
@@ -2163,7 +2295,7 @@ class ProcessRepositoryTest {
         agentName: String,
         endedAt: Long,
     ): Int {
-        val id = repo.obtainProcessId(agentName, emptyMap(), 100, nowSec = endedAt).processId
+        val id = repo.obtainProcessId(NewRunRecord(agentName), 100, nowSec = endedAt).processId
         repo.transitionStatus(id, ProcessStatus.WORKING, endedAt, setOf(ProcessStatus.CREATED))
         repo.addExecution(
             id,
@@ -2197,7 +2329,7 @@ class ProcessRepositoryTest {
                 // The pre-flight gate's read sees no failure at all...
                 assertEquals(null, repo.latestFailureEndedAt(agent), "a refusal must not arm the window: $reason")
                 // ...and the authoritative read inside the INSERT transaction agrees.
-                val started = repo.obtainProcessId(agent, emptyMap(), 100, cooldown = cooldown, nowSec = 1_030).processId
+                val started = repo.obtainProcessId(NewRunRecord(agent, cooldown = cooldown), 100, nowSec = 1_030).processId
                 assertTrue(started > refused, "the start after a refusal must be admitted")
             }
         }
@@ -2216,9 +2348,9 @@ class ProcessRepositoryTest {
 
             assertEquals(1_000, repo.latestFailureEndedAt("a"))
             assertFailsWith<CooldownActiveException> {
-                repo.obtainProcessId("a", emptyMap(), 100, cooldown = cooldown, nowSec = 1_030)
+                repo.obtainProcessId(NewRunRecord("a", cooldown = cooldown), 100, nowSec = 1_030)
             }
-            assertEquals(2, repo.obtainProcessId("a", emptyMap(), 100, cooldown = cooldown, nowSec = 1_060).processId)
+            assertEquals(2, repo.obtainProcessId(NewRunRecord("a", cooldown = cooldown), 100, nowSec = 1_060).processId)
         }
 
     @Test
@@ -2235,9 +2367,9 @@ class ProcessRepositoryTest {
             assertEquals(200, repo.latestFailureEndedAt("flaky"))
             // t=255 is inside the executed failure's window (200+60) and past the refusal's.
             assertFailsWith<CooldownActiveException> {
-                repo.obtainProcessId("flaky", emptyMap(), 100, cooldown = cooldown, nowSec = 255)
+                repo.obtainProcessId(NewRunRecord("flaky", cooldown = cooldown), 100, nowSec = 255)
             }
-            repo.obtainProcessId("flaky", emptyMap(), 100, cooldown = cooldown, nowSec = 261)
+            repo.obtainProcessId(NewRunRecord("flaky", cooldown = cooldown), 100, nowSec = 261)
         }
 
     @Test
@@ -2248,16 +2380,16 @@ class ProcessRepositoryTest {
             // failure. Fail-closed: the gap arms the window, it never opens a hole in it.
             val repo = repo()
             val cooldown = Cooldown(afterFailure = "1m")
-            val id = repo.obtainProcessId("a", emptyMap(), 100, nowSec = 1_000).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100, nowSec = 1_000).processId
             repo.transitionStatus(id, ProcessStatus.FAILED, 1_000, guard = null)
 
             assertFailsWith<CooldownActiveException> {
-                repo.obtainProcessId("a", emptyMap(), 100, cooldown = cooldown, nowSec = 1_030)
+                repo.obtainProcessId(NewRunRecord("a", cooldown = cooldown), 100, nowSec = 1_030)
             }
 
             assertTrue(repo.setFailureReason(id, "Lock skip (SKIP_CURRENT)", null))
             assertEquals(null, repo.latestFailureEndedAt("a"))
-            assertEquals(2, repo.obtainProcessId("a", emptyMap(), 100, cooldown = cooldown, nowSec = 1_030).processId)
+            assertEquals(2, repo.obtainProcessId(NewRunRecord("a", cooldown = cooldown), 100, nowSec = 1_030).processId)
         }
 
     @Test
@@ -2265,24 +2397,23 @@ class ProcessRepositoryTest {
         runTest {
             val repo = repo()
             val params = mapOf("TICKET" to "PROJ-77", "TARGET" to "prod")
-            val a = repo.obtainProcessId("a", params, 100, tags = listOf("mr:1")).processId
-            val b = repo.obtainProcessId("b", emptyMap(), 100).processId
+            val a = repo.obtainProcessId(NewRunRecord("a", params, tags = listOf("mr:1")), 100).processId
+            val b = repo.obtainProcessId(NewRunRecord("b"), 100).processId
 
             assertEquals(params, repo.getInfo(a)?.inputParams)
             // The page path reads inputs in one batched query, not per row.
-            val page = repo.getAll(null, orderAsc = true, offset = 0, limit = 10, agentName = null)
+            val page = repo.getAll(ProcessListQuery(orderAsc = true, limit = 10))
             assertEquals(params, page.processes.single { it.id == a }.inputParams)
             assertEquals(emptyMap(), page.processes.single { it.id == b }.inputParams)
             // The tag-screened path maps inputs too — a screen may read them.
             val screened =
                 repo.getAll(
-                    null,
-                    orderAsc = true,
-                    offset = 0,
-                    limit = 10,
-                    agentName = null,
-                    tags = listOf("mr:1"),
-                    screenTags = identityScreen,
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        tags = listOf("mr:1"),
+                        screenTags = identityScreen,
+                    ),
                 )
             assertEquals(params, screened.processes.single().inputParams)
         }
@@ -2292,7 +2423,7 @@ class ProcessRepositoryTest {
         runTest {
             val repo = repo()
             val params = mapOf("TICKET" to "PROJ-77")
-            val id = repo.obtainProcessId("a", params, 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a", params), 100).processId
 
             // The two hot per-step writes: neither may disturb the side row.
             repo.setCurrentCommand(id, "cmd-1", 1)
@@ -2306,7 +2437,7 @@ class ProcessRepositoryTest {
         runTest {
             val db = PersistenceTestSupport.tempDatabase()
             val repo = repo(db)
-            val id = repo.obtainProcessId("a", mapOf("T" to "1"), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a", mapOf("T" to "1")), 100).processId
             assertEquals(1, inputRowCount(db, id))
 
             repo.remove(id)
@@ -2320,11 +2451,11 @@ class ProcessRepositoryTest {
         runTest {
             val db = PersistenceTestSupport.tempDatabase()
             val repo = repo(db)
-            val id1 = repo.obtainProcessId("a", mapOf("T" to "1"), 2).processId
-            repo.obtainProcessId("a", emptyMap(), 2).processId
+            val id1 = repo.obtainProcessId(NewRunRecord("a", mapOf("T" to "1")), 2).processId
+            repo.obtainProcessId(NewRunRecord("a"), 2).processId
             repo.transitionStatus(id1, ProcessStatus.FINISHED, 1, null)
 
-            val result = repo.obtainProcessId("a", emptyMap(), 2)
+            val result = repo.obtainProcessId(NewRunRecord("a"), 2)
 
             assertEquals(id1, result.evicted?.id)
             assertEquals(0, inputRowCount(db, id1))
@@ -2335,7 +2466,7 @@ class ProcessRepositoryTest {
         runTest {
             val repo = repo()
             // The directory is still recorded, so this row is the workspace sweep's.
-            val due = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val due = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(due, ProcessStatus.FINISHED, 1, null)
             repo.addExecution(
                 due,
@@ -2345,7 +2476,7 @@ class ProcessRepositoryTest {
             repo.setArtifactsDir(due, "/tmp/ws/projected/artifacts")
             repo.setPurgeAt(due, 500)
             // Nothing retained: no directory, so this row is the record sweep's.
-            val swept = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val swept = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(swept, ProcessStatus.FINISHED, 1, null)
             repo.setPurgeAt(swept, 500)
 
@@ -2385,7 +2516,7 @@ class ProcessRepositoryTest {
     fun `transitionStatus and killTransition select only the columns they use`() =
         runTest {
             val repo = repo()
-            val id = repo.obtainProcessId("a", mapOf("BIG" to "x".repeat(4096)), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a", mapOf("BIG" to "x".repeat(4096))), 100).processId
             repo.transitionStatus(id, ProcessStatus.WORKING, 1, null)
 
             SqlStatementRecorder.reset()
@@ -2441,11 +2572,11 @@ class ProcessRepositoryTest {
         val failing = ProcessRepository(failingDb(path), ProcessJobRegistry())
 
         assertFailsWith<SQLException> {
-            failing.obtainProcessId("a", emptyMap(), 100, tags = listOf("mr:15"))
+            failing.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 100)
         }
 
         val probe = repo(PersistenceTestSupport.tempDatabase(path))
-        val ids = probe.getAll(null, orderAsc = true, offset = 0, limit = 10, agentName = null).processes.map { it.id }
+        val ids = probe.getAll(ProcessListQuery(orderAsc = true, limit = 10)).processes.map { it.id }
         assertEquals(listOf(1), ids, "a replay must not create a second AUTOINCREMENT row")
         assertEquals(listOf("mr:15"), probe.getTags(1), "the tag set must not be written twice")
     }
@@ -2456,7 +2587,7 @@ class ProcessRepositoryTest {
     ) = runTest {
         val path = dir.resolve("d.db").toString()
         val setup = repo(PersistenceTestSupport.tempDatabase(path))
-        val id = setup.obtainProcessId("a", emptyMap(), 100).processId
+        val id = setup.obtainProcessId(NewRunRecord("a"), 100).processId
         val failing = ProcessRepository(failingDb(path), ProcessJobRegistry())
         val entry = ExecutionInfo(label = "step", start = 1, end = 2, resultCode = 0, stdOut = null, stdErr = null, errMsg = null)
 
@@ -2471,7 +2602,7 @@ class ProcessRepositoryTest {
     ) = runTest {
         val path = dir.resolve("d.db").toString()
         val setup = repo(PersistenceTestSupport.tempDatabase(path))
-        val id = setup.obtainProcessId("a", emptyMap(), 100).processId
+        val id = setup.obtainProcessId(NewRunRecord("a"), 100).processId
         val failing = ProcessRepository(failingDb(path), ProcessJobRegistry())
 
         assertFailsWith<SQLException> { failing.addCost(id, 2.5, CostSource.CLI) }
@@ -2486,10 +2617,10 @@ class ProcessRepositoryTest {
         runTest {
             val repo = repo()
             val step = ExecutionInfo(label = "setup", start = 0L, end = 1L, resultCode = 0, stdOut = null, stdErr = null, errMsg = null)
-            val working = repo.obtainProcessId("worker-a", emptyMap(), 100).processId
+            val working = repo.obtainProcessId(NewRunRecord("worker-a"), 100).processId
             repo.transitionStatus(working, ProcessStatus.WORKING, 1, null)
             repo.completeStep(working, step, "lint", 2L)
-            val finished = repo.obtainProcessId("worker-b", emptyMap(), 100).processId
+            val finished = repo.obtainProcessId(NewRunRecord("worker-b"), 100).processId
             repo.transitionStatus(finished, ProcessStatus.FINISHED, 1, null)
             SqlStatementRecorder.reset()
 
@@ -2515,7 +2646,7 @@ class ProcessRepositoryTest {
             val repo = repo()
             // 513 ids force two chunks (512 + 1); a collapsed chunk loop would either throw on
             // the parameter cap or drop the rows past the first chunk.
-            val ids = (1..513).map { repo.obtainProcessId("worker", emptyMap(), 1000).processId }
+            val ids = (1..513).map { repo.obtainProcessId(NewRunRecord("worker"), 1000).processId }
             SqlStatementRecorder.reset()
 
             val progress = repo.subRunProgress(ids)
@@ -2537,7 +2668,7 @@ class ProcessRepositoryTest {
     // ========== Pre-start failure reason (ADR-0020) ==========
 
     private suspend fun failedRun(repo: ProcessRepository): Int {
-        val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+        val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
         repo.transitionStatus(id, ProcessStatus.WORKING, 10, setOf(ProcessStatus.CREATED))
         repo.transitionStatus(id, ProcessStatus.FAILED, 20, setOf(ProcessStatus.WORKING))
         return id
@@ -2586,7 +2717,7 @@ class ProcessRepositoryTest {
     fun `setFailureReason refuses a run that still shows a current command`() =
         runTest {
             val repo = repo()
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(id, ProcessStatus.WORKING, 10, setOf(ProcessStatus.CREATED))
             repo.setCurrentCommand(id, "cmd-running", 15)
             repo.transitionStatus(id, ProcessStatus.FAILED, 20, setOf(ProcessStatus.WORKING))
@@ -2600,7 +2731,7 @@ class ProcessRepositoryTest {
     fun `setFailureReason refuses a run a kill won`() =
         runTest {
             val repo = repo()
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
             repo.transitionStatus(id, ProcessStatus.WORKING, 10, setOf(ProcessStatus.CREATED))
             repo.killTransition(id, 20)
 
@@ -2613,7 +2744,7 @@ class ProcessRepositoryTest {
     fun `setFailureReason refuses a live run and a missing row`() =
         runTest {
             val repo = repo()
-            val id = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
 
             assertFalse(repo.setFailureReason(id, "Lock skip (SKIP_CURRENT)", 999))
             assertFalse(repo.setFailureReason(id + 100, "Lock skip (SKIP_CURRENT)", 999))
@@ -2634,7 +2765,7 @@ class ProcessRepositoryTest {
     fun `getRunVisibility reads the gate's two columns by key, or null for a missing row`() =
         runTest {
             val repo = repo()
-            val id = repo.obtainProcessId("a", emptyMap(), 100, owner = "alice").processId
+            val id = repo.obtainProcessId(NewRunRecord("a", owner = "alice"), 100).processId
 
             assertEquals("alice" to "a", repo.getRunVisibility(id))
             assertNull(repo.getRunVisibility(id + 100))
@@ -2662,10 +2793,11 @@ class ProcessRepositoryTest {
 
             val result =
                 repo.obtainProcessId(
-                    "declarer",
-                    emptyMap(),
+                    NewRunRecord(
+                        "declarer",
+                        owner = "alice",
+                    ),
                     100,
-                    owner = "alice",
                     hookRecording = recording(mapOf(ProcessStatus.CREATED to listOf("notifier"))),
                 )
 
@@ -2692,8 +2824,9 @@ class ProcessRepositoryTest {
 
             val created =
                 repo.obtainProcessId(
-                    "declarer",
-                    emptyMap(),
+                    NewRunRecord(
+                        "declarer",
+                    ),
                     100,
                     hookRecording = recording(mapOf(ProcessStatus.CREATED to listOf("notifier"))),
                 )
@@ -2716,7 +2849,7 @@ class ProcessRepositoryTest {
             val db = PersistenceTestSupport.tempDatabase()
             val repo = repo(db)
             val hooks = HookRepository(db)
-            val id = repo.obtainProcessId("declarer", emptyMap(), 100, owner = "alice").processId
+            val id = repo.obtainProcessId(NewRunRecord("declarer", owner = "alice"), 100).processId
 
             val result =
                 repo.transitionStatus(
@@ -2744,7 +2877,7 @@ class ProcessRepositoryTest {
         runTest {
             val db = PersistenceTestSupport.tempDatabase()
             val repo = repo(db)
-            val id = repo.obtainProcessId("declarer", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("declarer"), 100).processId
 
             val result =
                 repo.transitionStatus(
@@ -2769,8 +2902,9 @@ class ProcessRepositoryTest {
             val repo = repo(db)
             val created =
                 repo.obtainProcessId(
-                    "declarer",
-                    emptyMap(),
+                    NewRunRecord(
+                        "declarer",
+                    ),
                     100,
                     hookRecording = recording(mapOf(ProcessStatus.CREATED to listOf("notifier"))),
                 )
@@ -2795,7 +2929,7 @@ class ProcessRepositoryTest {
             val db = PersistenceTestSupport.tempDatabase()
             val repo = repo(db)
             val hooks = HookRepository(db)
-            val id = repo.obtainProcessId("declarer", emptyMap(), 100, owner = "alice").processId
+            val id = repo.obtainProcessId(NewRunRecord("declarer", owner = "alice"), 100).processId
 
             val result =
                 repo.killTransition(
@@ -2822,7 +2956,7 @@ class ProcessRepositoryTest {
         runTest {
             val db = PersistenceTestSupport.tempDatabase()
             val repo = repo(db)
-            val id = repo.obtainProcessId("declarer", emptyMap(), 100).processId
+            val id = repo.obtainProcessId(NewRunRecord("declarer"), 100).processId
             repo.transitionStatus(id, ProcessStatus.FINISHED, 900, null)
 
             val result =
@@ -2842,8 +2976,8 @@ class ProcessRepositoryTest {
             val db = PersistenceTestSupport.tempDatabase()
             val repo = repo(db)
             val hooks = HookRepository(db)
-            val first = repo.obtainProcessId("declarer", emptyMap(), 100, owner = "alice").processId
-            val second = repo.obtainProcessId("other", emptyMap(), 100).processId
+            val first = repo.obtainProcessId(NewRunRecord("declarer", owner = "alice"), 100).processId
+            val second = repo.obtainProcessId(NewRunRecord("other"), 100).processId
             repo.transitionStatus(second, ProcessStatus.FINISHED, 900, null)
 
             val result =
@@ -2882,8 +3016,9 @@ class ProcessRepositoryTest {
 
             val result =
                 repo.obtainProcessId(
-                    "declarer",
-                    emptyMap(),
+                    NewRunRecord(
+                        "declarer",
+                    ),
                     100,
                     hookRecording =
                         recording(
@@ -2913,7 +3048,7 @@ class ProcessRepositoryTest {
             val db = PersistenceTestSupport.tempDatabase()
             val repo = repo(db)
 
-            val result = repo.obtainProcessId("declarer", emptyMap(), 100)
+            val result = repo.obtainProcessId(NewRunRecord("declarer"), 100)
 
             assertEquals(emptyList(), result.hooks.rows.map { it.id })
             assertEquals(emptyList(), HookRepository(db).list(HookStatus.PENDING))

@@ -15,6 +15,7 @@ import homer.app.infra.reservedControlParams
 import homer.app.infra.validatePayloadParam
 import homer.app.models.Agent
 import homer.app.models.DispatchConfig
+import homer.app.models.RunStartRequest
 import homer.app.services.persistence.DispatchRepository
 import homer.app.services.persistence.RecordPage
 import io.opentelemetry.api.common.Attributes
@@ -276,33 +277,36 @@ internal class DispatchService(
             )
         val inputParams = inherited.params + dispatch.params + (dispatch.answerParam to answer)
         return agentRunStarter.start(
-            agent,
-            emptyList(),
-            "dispatch",
-            owner = dispatch.owner,
+            RunStartRequest(
+                agent = agent,
+                invocationChain = emptyList(),
+                source = "dispatch",
+                owner = dispatch.owner,
+                parentProcessId = dispatch.originProcessId,
+                // [information_disclosure / CWE-200] The fired run is attributed to the
+                // dispatch's owner, so the root it inherits is gated on that owner's
+                // visibility — a foreign flow-root id reaches no row, env or span. §12.
+                rootProcessId =
+                    processManager.visibleOriginRootProcessId(
+                        dispatch.originProcessId,
+                        dispatch.owner,
+                        authorizer,
+                    ),
+                resolveInputs = {
+                    // Stored inherited values are already transformed — validate, never re-transform.
+                    agentInputResolver.resolveFromParams(
+                        inputParams,
+                        agent,
+                        skipTransformFor = inherited.storedParamNames(dispatch.params.keys + dispatch.answerParam),
+                    ) + reservedControlParams(inputParams)
+                },
+            ),
             extraSecretInputKeys = dispatch.secretInputKeys.orEmpty() + inherited.secretInputKeys,
-            parentProcessId = dispatch.originProcessId,
-            // [information_disclosure / CWE-200] The fired run is attributed to the
-            // dispatch's owner, so the root it inherits is gated on that owner's
-            // visibility — a foreign flow-root id reaches no row, env or span. §12.
-            rootProcessId =
-                processManager.visibleOriginRootProcessId(
-                    dispatch.originProcessId,
-                    dispatch.owner,
-                    authorizer,
-                ),
             // The origin is the run that asked for this dispatch; while it is still
             // `WORKING` this start is part of admitted work and does not park at the
             // maintenance gate. An origin that ended parks as before. ADR-0092.
             serverDerivedParent = true,
-        ) {
-            // Stored inherited values are already transformed — validate, never re-transform.
-            agentInputResolver.resolveFromParams(
-                inputParams,
-                agent,
-                skipTransformFor = inherited.storedParamNames(dispatch.params.keys + dispatch.answerParam),
-            ) + reservedControlParams(inputParams)
-        }
+        )
     }
 
     /**
@@ -330,22 +334,23 @@ internal class DispatchService(
                 .build()
         val processId =
             agentRunStarter.start(
-                target,
-                emptyList(),
-                "dispatch",
-                refererAttributes,
-                owner = owner,
-                parentProcessId = originProcessId,
-                // Same root-visibility gate as fire: the fired run carries the dispatch
-                // owner's grant, not the origin process's. §12.
-                rootProcessId = processManager.visibleOriginRootProcessId(originProcessId, owner, authorizer),
+                RunStartRequest(
+                    agent = target,
+                    invocationChain = emptyList(),
+                    source = "dispatch",
+                    owner = owner,
+                    parentProcessId = originProcessId,
+                    // Same root-visibility gate as fire: the fired run carries the dispatch
+                    // owner's grant, not the origin process's. §12.
+                    rootProcessId = processManager.visibleOriginRootProcessId(originProcessId, owner, authorizer),
+                    resolveInputs = { agentInputResolver.resolveFromParams(params, target) },
+                ),
+                extraAttributes = refererAttributes,
                 // [liveRegistration] above proved the origin is live, and it is the run making
                 // this dispatch: while its row still reads `WORKING` the start is admitted and
                 // does not park at the maintenance gate. ADR-0092.
                 serverDerivedParent = true,
-            ) {
-                agentInputResolver.resolveFromParams(params, target)
-            }
+            )
         logger.info(
             "Process {} ('{}') dispatched run {} -> agent '{}'",
             originProcessId,

@@ -19,8 +19,7 @@ import kotlin.test.assertEquals
 
 /**
  * Characterization tests for the query-parameter validation of
- * GET /api/v1/status/all. Unlike the inline-reimplemented cases in
- * ApplicationTest.kt, these mount the *real* [apiV1Routes] handler so a
+ * GET /api/v1/status/all. These mount the *real* [apiV1Routes] handler so a
  * regression in the production validation is actually caught. They pin the
  * exact 400 status, the exact ErrorResponse body, and the early-return order
  * (which error wins when two params are invalid).
@@ -33,7 +32,7 @@ class StatusAllValidationTest {
         processManager = mockk(relaxed = true)
         // Default happy-path result for the cases that reach the handler body.
         coEvery {
-            processManager.getAllProcesses(any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+            processManager.getAllProcesses(any())
         } returns ProcessManager.ProcessListResult(processes = emptyList(), total = 0)
     }
 

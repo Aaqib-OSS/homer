@@ -47,7 +47,9 @@ app/src/main/kotlin/homer/app/   Application.kt (main, configureServer, configur
                                  resource, mounted in order by apiV1Routes in SecuredRoutes.kt;
                                  run-start handlers in RunHandlers.kt; ApiDeps); auth/ (session auth,
                                  CSRF); models/ (Agent · AppConfig · Command · *Response DTOs; the
-                                 run's domain types ProcessInfo · ExecutionInfo · ProcessStatus);
+                                 run's domain types ProcessInfo · ExecutionInfo · ProcessStatus;
+                                 the parameter objects several layers pass — NewRunRecord ·
+                                 RunStartRequest · ProcessListQuery, callbacks included);
                                  services/ (the Services layer: one file per service above, the
                                  support code that calls one, persistence/); infra/ (the Infra layer:
                                  its implementations and the support code below it); runners/ (runner
@@ -55,8 +57,8 @@ app/src/main/kotlin/homer/app/   Application.kt (main, configureServer, configur
                                  executors/ (orchestration: Process, ProcessExecutor, AgentExecutor,
                                  the lock and slot gates, the ports Execution declares; + one
                                  executor per command type); di/ · config/ · exceptions/
-app/src/test/kotlin/homer/app/   Mirrors the production packages (root §6); ApplicationTest.kt is the
-                                 HTTP integration suite, fixtures/ the reusable builders
+app/src/test/kotlin/homer/app/   Mirrors the production packages (root §6); routes/ holds one
+                                 <File>Test per route file, fixtures/ the reusable builders
 app/src/test/resources/          logback-test.xml (console-only, so tests never create api.log);
                                  claude/ and llm/<id>/ hold captured or documented CLI streams
 ```
@@ -178,7 +180,7 @@ Streams, `HOMER_LOG_LEVEL` and `HOMER_LOG_DIR` are documented in [`SERVER.md`](S
 1. Add the route in the matching per-resource `routes/` file (e.g. `ProcessRoutes.kt` for a secured `/api/v1` process endpoint; a new resource gets its own `Route.xxxRoutes(deps)` file, mounted from `apiV1Routes` in `SecuredRoutes.kt`), in the handleXxx pattern used by existing endpoints.
 2. Throw a `ValidationException` (or a sibling such as `QueryParamValidationException`) for validation failures — don't `call.respond(400, ...)` inline; `configureStatusPages` maps it.
 3. Call the `Authorizer` explicitly at the top of the handler (no implicit gate) and return `404` rather than `403` for a single-resource denial. If the handler can multiply a host resource — a subprocess, an unbounded read, a growing collection — bound it here, and bound the wait it creates. Root §12.
-4. Add a `Test` in `ApplicationTest.kt` exercising success + a failure case, **including the denial path** for the gate added in step 3, then document the endpoint in [`README.md`](README.md) and add a [`../CHANGELOG.md`](../CHANGELOG.md) entry (root §8).
+4. Add a `Test` in the route file's `routes/<File>Test.kt` (e.g. `ProcessRoutesTest`; the shared mount helpers are in `fixtures/`) exercising success + a failure case, **including the denial path** for the gate added in step 3, then document the endpoint in [`README.md`](README.md) and add a [`../CHANGELOG.md`](../CHANGELOG.md) entry (root §8).
 5. Add the route's row (credential domain, rule, denial statuses) to `ROUTE_AUTHZ` in `routes/RouteAuthorizationMatrix.kt` (test sources); `RouteAuthorizationMatrixTest` fails on an unlisted route and drives each row's denials. A new MCP tool goes into its tool table there. A denial that diverges goes into `KNOWN_GAPS` only with an open issue ([ADR-0112](../docs/adr/0112-runtime-route-authorization-matrix.md)).
 
 ## Build commands
@@ -268,6 +270,8 @@ A new rule whose code still has findings is tagged `@Tag(REPORT_ONLY)` and is *p
 | Tests mock with MockK, not Mockito | root §6 |
 | Every handler under `apiV1Routes` makes a denying call — `authorizer.<method>(`, `deniedUnlessAdmin(`, or a `routes/` function every overload of which makes one; a bare `authorizer` argument does not count. A builder mounted under two prefixes is checked under both, an expression-body builder like a block one; a `::fn` handler is checked through `fn` when that name is unambiguous; a route shape the walk cannot read, or a registration-named call on an explicit receiver outside handlers and route-free helpers, is a finding; `GET /heartbeat` and `GET /schemas/agent` are open to any authenticated caller ([`README.md`](README.md)) | root §12 rule 3, "Adding a new HTTP endpoint" |
 | Main code: a source file ≤ 600 lines, a top-level class or object ≤ 400 (KDoc and annotations excluded), a function body ≤ 60 (from the line opening it) — one rule each | root §2 |
+| Main code: a function (overrides excluded) or a constructor of a non-`data` class takes ≤ 13 parameters; group more into a `data` class parameter object | root §2 |
+| Test files: a test source file ≤ 3,300 lines (the cap may only be lowered) | root §2 |
 | Each layer imports only itself, the layers below it and the kernel; the kernel only itself | "Layered architecture", "Directory layout" |
 | No import cycle between the top-level packages `homer.app.(*)` (the root package is no slice) | "Layered architecture" |
 

@@ -6,6 +6,7 @@ import homer.app.configureStatusPages
 import homer.app.executors.CommandExecutorFactory
 import homer.app.executors.LockManager
 import homer.app.executors.ParallelRunsManager
+import homer.app.executors.ProcessDeps
 import homer.app.executors.ProcessExecutor
 import homer.app.executors.ProcessFactory
 import homer.app.executors.RunMessageExpiry
@@ -17,6 +18,7 @@ import homer.app.infra.QuestionsWorkspaceSetup
 import homer.app.infra.WorkspaceConfigFactory
 import homer.app.models.Agent
 import homer.app.models.Cooldown
+import homer.app.models.NewRunRecord
 import homer.app.models.Param
 import homer.app.models.ParamType
 import homer.app.models.ProcessInfo
@@ -101,17 +103,19 @@ class CooldownEndpointTest {
 
         val processFactory: ProcessFactory =
             ProcessFactory(
-                workspaceConfigFactory = mockk<WorkspaceConfigFactory>(relaxed = true),
-                executorFactory = mockk<CommandExecutorFactory>(relaxed = true),
-                telemetryService = TestFixtures.mockTelemetryService(),
-                lockManager = mockk<LockManager>(relaxed = true),
-                parallelRunsManager = mockk<ParallelRunsManager>(relaxed = true),
-                config = ExecutionConfig(),
-                processManager = processManager,
-                runnerRegistry = mockk<RunnerRegistry>(relaxed = true),
-                activeSessions = mockk<ActiveSessionsRegistry>(relaxed = true),
-                questionsService = mockk<QuestionsService>(relaxed = true),
-                questionsWorkspaceSetup = mockk<QuestionsWorkspaceSetup>(relaxed = true),
+                ProcessDeps(
+                    workspaceConfigFactory = mockk<WorkspaceConfigFactory>(relaxed = true),
+                    executorFactory = mockk<CommandExecutorFactory>(relaxed = true),
+                    telemetryService = TestFixtures.mockTelemetryService(),
+                    lockManager = mockk<LockManager>(relaxed = true),
+                    parallelRunsManager = mockk<ParallelRunsManager>(relaxed = true),
+                    config = ExecutionConfig(),
+                    processManager = processManager,
+                    runnerRegistry = mockk<RunnerRegistry>(relaxed = true),
+                    activeSessions = mockk<ActiveSessionsRegistry>(relaxed = true),
+                    questionsService = mockk<QuestionsService>(relaxed = true),
+                    questionsWorkspaceSetup = mockk<QuestionsWorkspaceSetup>(relaxed = true),
+                ),
             )
 
         /**
@@ -128,7 +132,7 @@ class CooldownEndpointTest {
          * cases would pass whether or not the fix is present.
          */
         suspend fun seedFailedRun(cooldownKey: String? = null) {
-            val id = processManager.obtainProcessId(agent.name, emptyMap(), cooldownKey = cooldownKey)
+            val id = processManager.obtainProcessId(NewRunRecord(agent.name, emptyMap(), cooldownKey = cooldownKey))
             processManager.setProcessStatus(id, ProcessStatus.WORKING)
             processManager.setProcessStatus(id, ProcessStatus.FAILED)
         }

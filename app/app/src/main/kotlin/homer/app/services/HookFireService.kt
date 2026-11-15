@@ -6,6 +6,7 @@ import homer.app.infra.AgentInputResolver
 import homer.app.infra.hookControlParams
 import homer.app.models.Agent
 import homer.app.models.ProcessInfo
+import homer.app.models.RunStartRequest
 import homer.app.services.persistence.HookRepository
 import kotlinx.coroutines.CancellationException
 import org.slf4j.Logger
@@ -101,36 +102,37 @@ internal class HookFireService(
         try {
             val processId =
                 agentRunStarter.start(
-                    target,
-                    // The declaring agent is the chain this fire extends, so the start
-                    // preflight's cycle check refuses a hook that would re-enter it. See ADR-0008.
-                    invocationChain = listOf(hook.declaringAgent),
-                    source = "hook",
-                    owner = hook.owner,
-                    parentProcessId = hook.processId,
-                    // [information_disclosure / CWE-200] The fired run is attributed to the
-                    // triggering run's owner, so the flow root it inherits is gated on that
-                    // owner's visibility — a foreign root id reaches no row, env or span. §12.
-                    // The root derives from the row already read (`run`): a run with no root of
-                    // its own is the flow root, an invisible derived root is dropped — never
-                    // replaced by the run's id (ADR-0058). No second read of the triggering row.
-                    rootProcessId =
-                        run?.let { info ->
-                            if (info.rootProcessId == null) {
-                                info.id
-                            } else {
-                                processManager.visibleRootProcessId(hook.owner, authorizer, info.rootProcessId)
-                            }
-                        },
+                    RunStartRequest(
+                        agent = target,
+                        // The declaring agent is the chain this fire extends, so the start
+                        // preflight's cycle check refuses a hook that would re-enter it. See ADR-0008.
+                        invocationChain = listOf(hook.declaringAgent),
+                        source = "hook",
+                        owner = hook.owner,
+                        parentProcessId = hook.processId,
+                        // [information_disclosure / CWE-200] The fired run is attributed to the
+                        // triggering run's owner, so the flow root it inherits is gated on that
+                        // owner's visibility — a foreign root id reaches no row, env or span. §12.
+                        // The root derives from the row already read (`run`): a run with no root of
+                        // its own is the flow root, an invisible derived root is dropped — never
+                        // replaced by the run's id (ADR-0058). No second read of the triggering row.
+                        rootProcessId =
+                            run?.let { info ->
+                                if (info.rootProcessId == null) {
+                                    info.id
+                                } else {
+                                    processManager.visibleRootProcessId(hook.owner, authorizer, info.rootProcessId)
+                                }
+                            },
+                        // The target's own declared defaults, plus the server-minted hook metadata
+                        // merged back over them: AgentInputResolver emits only declared inputs, and
+                        // these names are reserved. See ADR-0107.
+                        resolveInputs = { agentInputResolver.resolveFromParams(emptyMap(), target) + hookControlParams(params) },
+                    ),
                     // The origin link is server-derived, so a hook fired while its run is still
                     // CREATED/WORKING is admitted rather than parked. ADR-0092.
                     serverDerivedParent = true,
-                ) {
-                    // The target's own declared defaults, plus the server-minted hook metadata
-                    // merged back over them: AgentInputResolver emits only declared inputs, and
-                    // these names are reserved. See ADR-0107.
-                    agentInputResolver.resolveFromParams(emptyMap(), target) + hookControlParams(params)
-                }
+                )
             repository.markDispatched(hook.id, processId, now)
             logger.info(
                 "Hook {} fired ({} of run {}) -> run {}",

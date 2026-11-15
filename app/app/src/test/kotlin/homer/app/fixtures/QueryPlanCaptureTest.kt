@@ -2,6 +2,7 @@ package homer.app.fixtures
 
 import homer.app.infra.ProcessJobRegistry
 import homer.app.infra.PurgeSchedule
+import homer.app.models.NewRunRecord
 import homer.app.services.persistence.DatabaseService
 import homer.app.services.persistence.ProcessRepository
 import homer.app.services.persistence.QuestionsRepository
@@ -98,7 +99,7 @@ class QueryPlanCaptureTest {
             val db = PersistenceTestSupport.tempDatabase()
             val repo = ProcessRepository(db, ProcessJobRegistry())
             val agents = listOf("a", "b", "c")
-            for (agent in agents) repo.obtainProcessId(agent, emptyMap(), maxProcesses = 10)
+            for (agent in agents) repo.obtainProcessId(NewRunRecord(agent), maxProcesses = 10)
             repo.markInterruptedAsUnknown(nowSec = 100)
             // Three agents, three schedules: one UPDATE per schedule in the one boot transaction.
             repo.stampUnknownPurgeTimes(nowSec = 100) { PurgeSchedule(60L * (agents.indexOf(it) + 1), 60, emptyList()) }
@@ -130,7 +131,7 @@ class QueryPlanCaptureTest {
             val dir = System.getProperty(QueryPlanCapture.DIR_PROPERTY)
             assumeTrue(dir != null, "only the Gradle test task sets ${QueryPlanCapture.DIR_PROPERTY}")
             val db = PersistenceTestSupport.tempDatabase()
-            ProcessRepository(db, ProcessJobRegistry()).obtainProcessId("a", emptyMap(), maxProcesses = 10, tags = listOf("x", "y", "z"))
+            ProcessRepository(db, ProcessJobRegistry()).obtainProcessId(NewRunRecord("a", tags = listOf("x", "y", "z")), maxProcesses = 10)
             db.close()
 
             val repeats = File(dir, QueryPlanCapture.REPEATS_FILE).takeIf { it.isFile }?.readLines().orEmpty()

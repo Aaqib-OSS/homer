@@ -4,6 +4,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import homer.app.fixtures.PersistenceTestSupport
 import homer.app.models.KubernetesWorkload
+import homer.app.models.NewRunRecord
 import homer.app.models.ResourceSpec
 import homer.app.models.RunnerConfig
 import homer.app.runners.RunnerRegistry
@@ -44,7 +45,7 @@ class KubernetesRunnerStartupSweepTest {
         runTest {
             val api = mockk<CoreV1Api>(relaxed = true)
             val pm = PersistenceTestSupport.processManager(logger = LoggerFactory.getLogger("pm-test"))
-            val activePid = pm.obtainProcessId("demo") // CREATED → counts as active
+            val activePid = pm.obtainProcessId(NewRunRecord("demo")) // CREATED → counts as active
             stubList(
                 api,
                 listOf(
@@ -210,7 +211,7 @@ class KubernetesRunnerStartupSweepTest {
             val api = mockk<CoreV1Api>(relaxed = true)
             stubList(api, emptyList())
             val pm = PersistenceTestSupport.processManager(logger = LoggerFactory.getLogger("pm-test"))
-            val activePid = pm.obtainProcessId("demo")
+            val activePid = pm.obtainProcessId(NewRunRecord("demo"))
             val seen = mutableListOf<Request>()
             val jobs =
                 jobList(

@@ -2,6 +2,7 @@ package homer.app.services
 
 import homer.app.fixtures.PersistenceTestSupport
 import homer.app.models.ExecutionInfo
+import homer.app.models.NewRunRecord
 import homer.app.models.ProcessStatus
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.take
@@ -31,7 +32,7 @@ class ProcessManagerEventsTest {
         runTest {
             val broadcaster = ProcessEventBroadcaster()
             val pm = PersistenceTestSupport.processManager(broadcaster = broadcaster)
-            val id = pm.obtainProcessId("agent-a")
+            val id = pm.obtainProcessId(NewRunRecord("agent-a"))
 
             val received =
                 async {
@@ -53,7 +54,7 @@ class ProcessManagerEventsTest {
         runTest {
             val broadcaster = ProcessEventBroadcaster()
             val pm = PersistenceTestSupport.processManager(broadcaster = broadcaster)
-            val id = pm.obtainProcessId("agent-a")
+            val id = pm.obtainProcessId(NewRunRecord("agent-a"))
 
             val received =
                 async {
@@ -73,7 +74,7 @@ class ProcessManagerEventsTest {
         runTest {
             val broadcaster = ProcessEventBroadcaster()
             val pm = PersistenceTestSupport.processManager(broadcaster = broadcaster)
-            val id = pm.obtainProcessId("agent-a")
+            val id = pm.obtainProcessId(NewRunRecord("agent-a"))
 
             val received =
                 async {
@@ -97,7 +98,7 @@ class ProcessManagerEventsTest {
         runTest {
             val broadcaster = ProcessEventBroadcaster()
             val pm = PersistenceTestSupport.processManager(broadcaster = broadcaster)
-            val id = pm.obtainProcessId("agent-a")
+            val id = pm.obtainProcessId(NewRunRecord("agent-a"))
             pm.setCurrentCommand(id, "step-1", 1L)
 
             val received =
@@ -118,7 +119,7 @@ class ProcessManagerEventsTest {
         runTest {
             val broadcaster = ProcessEventBroadcaster()
             val pm = PersistenceTestSupport.processManager(broadcaster = broadcaster)
-            val id = pm.obtainProcessId("agent-a")
+            val id = pm.obtainProcessId(NewRunRecord("agent-a"))
             pm.removeProcess(id)
 
             val received =
@@ -139,7 +140,7 @@ class ProcessManagerEventsTest {
         runTest {
             val broadcaster = ProcessEventBroadcaster()
             val pm = PersistenceTestSupport.processManager(broadcaster = broadcaster)
-            val id = pm.obtainProcessId("agent-a")
+            val id = pm.obtainProcessId(NewRunRecord("agent-a"))
             pm.setProcessStatus(id, ProcessStatus.WORKING)
             pm.killProcess(id)
 
@@ -162,7 +163,7 @@ class ProcessManagerEventsTest {
         runTest {
             val broadcaster = ProcessEventBroadcaster()
             val pm = PersistenceTestSupport.processManager(broadcaster = broadcaster)
-            val id = pm.obtainProcessId("agent-a")
+            val id = pm.obtainProcessId(NewRunRecord("agent-a"))
             pm.setProcessStatus(id, ProcessStatus.WORKING)
             pm.killProcess(id, "test-kill")
             // Drain the kill's own events before the step-start write is attempted.
@@ -188,7 +189,7 @@ class ProcessManagerEventsTest {
         runTest {
             val broadcaster = ProcessEventBroadcaster()
             val pm = PersistenceTestSupport.processManager(broadcaster = broadcaster)
-            val id = pm.obtainProcessId("agent-a")
+            val id = pm.obtainProcessId(NewRunRecord("agent-a"))
             pm.setProcessStatus(id, ProcessStatus.WORKING)
 
             val received =

@@ -11,6 +11,7 @@ import homer.app.infra.jsonPathText
 import homer.app.models.Command
 import homer.app.models.CommandResult
 import homer.app.models.ResultTransformer
+import homer.app.models.RunStartRequest
 import io.opentelemetry.api.trace.Span
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
@@ -57,19 +58,20 @@ internal class RunAgentExecutor(
         return try {
             val processId =
                 subRuns.start(
-                    agent = target,
-                    invocationChain = invocationChain,
-                    source = "agent",
-                    ancestorLockKeys = ancestorLockKeys,
-                    owner = context.owner,
-                    parentProcessId = context.processId.takeIf { it > 0 },
-                    // [information_disclosure / CWE-200] The child is attributed to this
-                    // run's owner, so the root it inherits is gated on that owner's
-                    // visibility — a foreign flow-root id reaches no row, env or span. §12.
-                    rootProcessId = subRuns.visibleOriginRootProcessId(context.processId, context.owner),
-                ) {
-                    agentInputResolver.resolveFromParams(params, target)
-                }
+                    RunStartRequest(
+                        agent = target,
+                        invocationChain = invocationChain,
+                        source = "agent",
+                        ancestorLockKeys = ancestorLockKeys,
+                        owner = context.owner,
+                        parentProcessId = context.processId.takeIf { it > 0 },
+                        // [information_disclosure / CWE-200] The child is attributed to this
+                        // run's owner, so the root it inherits is gated on that owner's
+                        // visibility — a foreign flow-root id reaches no row, env or span. §12.
+                        rootProcessId = subRuns.visibleOriginRootProcessId(context.processId, context.owner),
+                        resolveInputs = { agentInputResolver.resolveFromParams(params, target) },
+                    ),
+                )
             context.stdOut.writeText("processId: $processId")
             span.setAttribute("agent.processId", processId.toString())
             CommandResult(exitCode = 0, stdOut = context.stdOut, stdErr = context.stdErr)

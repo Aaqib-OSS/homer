@@ -8,6 +8,7 @@ import homer.app.models.Action
 import homer.app.models.ErrorResponse
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
+import homer.app.models.RunStartRequest
 import homer.app.services.AgentRunStarter
 import homer.app.services.AgentsService
 import homer.app.services.Authorizer
@@ -66,25 +67,11 @@ class ParentProcessLinkageRoutesTest {
         coEvery { processManager.getProcessInfo(9) } returns segment
         coEvery { processManager.getProcessInfo(404) } returns null
         coEvery {
-            processManager.getAllProcesses(
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-            )
+            processManager.getAllProcesses(any())
         } returns
             ProcessManager.ProcessListResult(processes = emptyList(), total = 0)
         agentRunStarter = mockk()
-        coEvery { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 42
+        coEvery { agentRunStarter.start(any(), any(), any(), any()) } returns 42
         agentsService = mockk(relaxed = true)
         every { agentsService.agents } returns mapOf("echo" to agent)
     }
@@ -118,7 +105,17 @@ class ParentProcessLinkageRoutesTest {
             val response = client.post("/api/v1/agent/echo")
 
             assertEquals(HttpStatusCode.OK, response.status)
-            coVerify { agentRunStarter.start(any(), any(), eq("http"), any(), any(), any(), any(), isNull(), any(), any(), any()) }
+            coVerify {
+                agentRunStarter.start(
+                    match {
+                        it.source == "http" &&
+                            it.parentProcessId == null
+                    },
+                    any(),
+                    any(),
+                    any(),
+                )
+            }
         }
 
     @Test
@@ -129,7 +126,17 @@ class ParentProcessLinkageRoutesTest {
             val response = client.post("/api/v1/agent/echo") { header(EnvConstants.PARENT_PROCESS_HEADER, " 7 ") }
 
             assertEquals(HttpStatusCode.OK, response.status)
-            coVerify { agentRunStarter.start(any(), any(), eq("http"), any(), any(), any(), any(), eq(7), any(), any(), any()) }
+            coVerify {
+                agentRunStarter.start(
+                    match {
+                        it.source == "http" &&
+                            it.parentProcessId == 7
+                    },
+                    any(),
+                    any(),
+                    any(),
+                )
+            }
         }
 
     @Test
@@ -141,7 +148,7 @@ class ParentProcessLinkageRoutesTest {
 
             assertEquals(HttpStatusCode.UnprocessableEntity, response.status)
             assertEquals(expectedBody("Parent process 404 not found"), response.bodyAsText())
-            coVerify(exactly = 0) { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { agentRunStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -159,7 +166,7 @@ class ParentProcessLinkageRoutesTest {
 
             assertEquals(HttpStatusCode.UnprocessableEntity, response.status)
             assertEquals(expectedBody("Parent process 7 not found"), response.bodyAsText())
-            coVerify(exactly = 0) { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { agentRunStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -177,7 +184,16 @@ class ParentProcessLinkageRoutesTest {
                 coVerify(exactly = 0) { processManager.getProcessInfo(any()) }
             }
             coVerify(exactly = 2) {
-                agentRunStarter.start(any(), any(), eq("http"), any(), any(), any(), any(), isNull(), isNull(), any(), any())
+                agentRunStarter.start(
+                    match {
+                        it.source == "http" &&
+                            it.parentProcessId == null &&
+                            it.rootProcessId == null
+                    },
+                    any(),
+                    any(),
+                    any(),
+                )
             }
         }
 
@@ -194,7 +210,7 @@ class ParentProcessLinkageRoutesTest {
                     response.bodyAsText(),
                 )
             }
-            coVerify(exactly = 0) { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { agentRunStarter.start(any(), any(), any(), any()) }
         }
 
     // --- GET /api/v1/status/all?parentProcessId= ---
@@ -208,19 +224,7 @@ class ParentProcessLinkageRoutesTest {
 
             assertEquals(HttpStatusCode.OK, response.status)
             coVerify {
-                processManager.getAllProcesses(
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    parentProcessId = 7,
-                    tags = any(),
-                    screenTags = any(),
-                    canSeeRoot = any(),
-                )
+                processManager.getAllProcesses(match { it.parentProcessId == 7 })
             }
         }
 
@@ -238,7 +242,7 @@ class ParentProcessLinkageRoutesTest {
                 )
             }
             coVerify(exactly = 0) {
-                processManager.getAllProcesses(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                processManager.getAllProcesses(any())
             }
         }
 
@@ -269,15 +273,12 @@ class ParentProcessLinkageRoutesTest {
             assertEquals(HttpStatusCode.OK, response.status)
             coVerify {
                 agentRunStarter.start(
+                    match {
+                        it.source == "http" &&
+                            it.parentProcessId == 9 &&
+                            it.rootProcessId == 7
+                    },
                     any(),
-                    any(),
-                    eq("http"),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    eq(9),
-                    eq(7),
                     any(),
                     any(),
                 )
@@ -296,7 +297,7 @@ class ParentProcessLinkageRoutesTest {
 
             assertEquals(HttpStatusCode.OK, client.post("/api/v1/agent/echo") { header(EnvConstants.PARENT_PROCESS_HEADER, "404") }.status)
 
-            coVerify { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), eq(7), any(), any()) }
+            coVerify { agentRunStarter.start(match { it.rootProcessId == 7 }, any(), any(), any()) }
         }
 
     @Test
@@ -307,7 +308,7 @@ class ParentProcessLinkageRoutesTest {
             assertEquals(HttpStatusCode.OK, client.post("/api/v1/agent/echo") { header(EnvConstants.PARENT_PROCESS_HEADER, "7") }.status)
 
             // A parent with no root of its own IS the root, so the child's root is the parent.
-            coVerify { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), eq(7), any(), any()) }
+            coVerify { agentRunStarter.start(match { it.rootProcessId == 7 }, any(), any(), any()) }
         }
 
     @Test
@@ -337,7 +338,7 @@ class ParentProcessLinkageRoutesTest {
             assertEquals(HttpStatusCode.OK, client.post("/api/v1/agent/echo") { header(EnvConstants.PARENT_PROCESS_HEADER, "9") }.status)
 
             coVerify {
-                agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), isNull(), any(), any())
+                agentRunStarter.start(match { it.rootProcessId == null }, any(), any(), any())
             }
         }
 
@@ -352,21 +353,7 @@ class ParentProcessLinkageRoutesTest {
 
             assertEquals(HttpStatusCode.OK, response.status)
             coVerify {
-                processManager.getAllProcesses(
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    rootProcessId = 7,
-                    rootsOnly = false,
-                    tags = any(),
-                    screenTags = any(),
-                    canSeeRoot = any(),
-                )
+                processManager.getAllProcesses(match { it.rootProcessId == 7 && it.rootsOnly == false })
             }
         }
 
@@ -384,7 +371,7 @@ class ParentProcessLinkageRoutesTest {
                 )
             }
             coVerify(exactly = 0) {
-                processManager.getAllProcesses(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                processManager.getAllProcesses(any())
             }
         }
 
@@ -397,21 +384,7 @@ class ParentProcessLinkageRoutesTest {
 
             assertEquals(HttpStatusCode.OK, response.status)
             coVerify {
-                processManager.getAllProcesses(
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    rootProcessId = null,
-                    rootsOnly = true,
-                    tags = any(),
-                    screenTags = any(),
-                    canSeeRoot = any(),
-                )
+                processManager.getAllProcesses(match { it.rootProcessId == null && it.rootsOnly == true })
             }
         }
 
