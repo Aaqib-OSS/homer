@@ -9,7 +9,7 @@ renames nothing.
   retired "skill" as a synonym.
 - **run = process** — one execution of one agent, identified by `processId` and stored as a process
   row. Both words name the same object, so both stay in the API: `GET /api/v1/status/{processId}`,
-  `GET /api/v1/processes/{id}`, `POST /api/v1/callback/runs`.
+  `POST /api/v1/processes/{id}/retry`, `POST /api/v1/callback/runs`.
 - **execution** — one command of a run as it ran: an `ExecutionInfo` row (label, `kind`, timing,
   `resultCode`, `stdOut` / `stdErr`, `llmAccounting`), listed under `executions` in the status
   response. The Execution layer — `ProcessExecutor`, `AgentExecutor`, the runners — produces them.
