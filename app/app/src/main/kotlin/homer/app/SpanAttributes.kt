@@ -37,7 +37,7 @@ object SpanAttributes {
     /** Name of the agent a run executes; on a `!<agent>` step, the hop's target. */
     const val AGENT_NAME = "agent.name"
 
-    /** How the run was started (`api`, `cron`, `debug`, `retry`, `resume`, …). */
+    /** How the run was started (`http`, `mcp`, `hook`, `agent`, `cron`, `debug`, `retry`, `resume`, …). */
     const val REQUEST_SOURCE = "request.source"
 
     /** The redacted command line, script or prompt a command executor sends to its harness. */

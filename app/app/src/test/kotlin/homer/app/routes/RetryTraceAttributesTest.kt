@@ -291,6 +291,7 @@ class RetryTraceAttributesTest {
             verify { span.setAllAttributes(capture(attributes)) }
             assertEquals(7L, attributes.captured.get(AttributeKey.longKey("parent.process.id")))
             assertEquals(42L, attributes.captured.get(AttributeKey.longKey("retry.of_process_id")))
+            assertRunIdentity(attributes.captured, "retry")
         }
 
     @Test
@@ -338,6 +339,7 @@ class RetryTraceAttributesTest {
             val attributes = slot<Attributes>()
             verify { span.setAllAttributes(capture(attributes)) }
             assertEquals(7L, attributes.captured.get(AttributeKey.longKey("parent.process.id")))
+            assertRunIdentity(attributes.captured, "resume")
         }
 
     @Test
@@ -379,6 +381,7 @@ class RetryTraceAttributesTest {
             val attributes = slot<Attributes>()
             verify { span.setAllAttributes(capture(attributes)) }
             assertEquals(null, attributes.captured.get(AttributeKey.longKey("parent.process.id")))
+            assertRunIdentity(attributes.captured, "retry")
         }
 
     @Test
@@ -439,6 +442,7 @@ class RetryTraceAttributesTest {
             val attributes = slot<Attributes>()
             verify { span.setAllAttributes(capture(attributes)) }
             assertEquals(7L, attributes.captured.get(AttributeKey.longKey("root.process.id")))
+            assertRunIdentity(attributes.captured, "retry")
         }
 
     @Test
@@ -496,6 +500,7 @@ class RetryTraceAttributesTest {
             val attributes = slot<Attributes>()
             verify { span.setAllAttributes(capture(attributes)) }
             assertEquals(7L, attributes.captured.get(AttributeKey.longKey("root.process.id")))
+            assertRunIdentity(attributes.captured, "resume")
         }
 
     @Test
@@ -556,6 +561,7 @@ class RetryTraceAttributesTest {
             val attributes = slot<Attributes>()
             verify { span.setAllAttributes(capture(attributes)) }
             assertEquals(null, attributes.captured.get(AttributeKey.longKey("root.process.id")))
+            assertRunIdentity(attributes.captured, "retry")
         }
 
     @Test
@@ -612,6 +618,7 @@ class RetryTraceAttributesTest {
             val attributes = slot<Attributes>()
             verify { span.setAllAttributes(capture(attributes)) }
             assertEquals(null, attributes.captured.get(AttributeKey.longKey("root.process.id")))
+            assertRunIdentity(attributes.captured, "resume")
         }
 
     @Test
@@ -667,6 +674,7 @@ class RetryTraceAttributesTest {
             val attributes = slot<Attributes>()
             verify { span.setAllAttributes(capture(attributes)) }
             assertEquals(null, attributes.captured.get(AttributeKey.longKey("root.process.id")))
+            assertRunIdentity(attributes.captured, "retry")
         }
 
     // ========== the stamp lands before the run starts, on all three paths (ADR-0050) ==========
@@ -724,6 +732,21 @@ class RetryTraceAttributesTest {
                 inputs = listOf(Param(paramName = "mr", envName = "MR_IID")),
                 tags = Tags(fromInputs = listOf("mr")),
             )
+
+    /**
+     * The identity attributes every `startedRunAttributes` map carries, whichever of the three
+     * paths built it: a refactor slip — dropping one, swapping one path's source for another's —
+     * would otherwise pass the whole suite silently.
+     */
+    private fun assertRunIdentity(
+        attributes: Attributes,
+        source: String,
+    ) {
+        assertEquals(99L, attributes.get(AttributeKey.longKey("process.id")))
+        assertEquals("test-server", attributes.get(AttributeKey.stringKey("server.id")))
+        assertEquals("triage-decision", attributes.get(AttributeKey.stringKey("agent.name")))
+        assertEquals(source, attributes.get(AttributeKey.stringKey("request.source")))
+    }
 
     @Test
     fun `retry stamps the trace name and tags before the run starts`() =
@@ -854,6 +877,45 @@ class RetryTraceAttributesTest {
                 span.setAttribute(AttributeKey.stringArrayKey("langfuse.trace.tags"), listOf("debug", "mr:4211"))
                 mockProcessExecutor.execute(any(), any())
             }
+        }
+
+    @Test
+    fun `debug root span carries the run's identity attributes`() =
+        testApplication {
+            val span = TestFixtures.mockSpan()
+            val mockProcessExecutor = mockk<ProcessExecutor>(relaxed = true)
+            coEvery { mockProcessExecutor.execute(any(), any()) } returns ProcessCreationResult(processId = 99)
+
+            application {
+                install(ContentNegotiation) { json(apiJson) }
+                routing {
+                    post("/api/v1/agents/{name}/debug") {
+                        handleAgentDebug(
+                            serverId = "test-server",
+                            call = call,
+                            agent = retryAgent(),
+                            agentInputResolver = AgentInputResolver(),
+                            processExecutor = mockProcessExecutor,
+                            processFactory = mockk<ProcessFactory>(relaxed = true),
+                            telemetryService = TestFixtures.mockTelemetryService(span),
+                            maintenanceGate = mockk(relaxed = true),
+                        )
+                    }
+                }
+            }
+
+            val response =
+                client.post("/api/v1/agents/triage-decision/debug") {
+                    contentType(ContentType.Application.Json)
+                    // Debug inputs are keyed by paramName, not envName (`AgentInputResolver`).
+                    setBody("""{"commandIndex":0,"queryParams":{"mr":"4211"}}""")
+                }
+            assertEquals(HttpStatusCode.OK, response.status)
+
+            val attributes = slot<Attributes>()
+            verify { span.setAllAttributes(capture(attributes)) }
+            assertRunIdentity(attributes.captured, "debug")
+            assertEquals(0L, attributes.captured.get(AttributeKey.longKey("debug.command_index")))
         }
 
     @Test

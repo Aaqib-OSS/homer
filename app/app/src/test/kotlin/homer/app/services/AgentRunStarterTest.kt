@@ -257,6 +257,7 @@ class AgentRunStarterTest {
         val attributes = slot<Attributes>()
         verify { span.setAllAttributes(capture(attributes)) }
         assertEquals(7L, attributes.captured.get(AttributeKey.longKey("parent.process.id")))
+        assertRunIdentity(attributes.captured)
     }
 
     @Test
@@ -299,6 +300,7 @@ class AgentRunStarterTest {
         val attributes = slot<Attributes>()
         verify { span.setAllAttributes(capture(attributes)) }
         assertEquals(3L, attributes.captured.get(AttributeKey.longKey("root.process.id")))
+        assertRunIdentity(attributes.captured)
     }
 
     @Test
@@ -325,6 +327,15 @@ class AgentRunStarterTest {
         verify { span.setAllAttributes(capture(attributes)) }
         assertEquals(null, attributes.captured.get(AttributeKey.longKey("root.process.id")))
         assertEquals(null, attributes.captured.get(AttributeKey.longKey("parent.process.id")))
+        assertRunIdentity(attributes.captured)
+    }
+
+    /** The identity attributes every `agent_request` root span carries, whatever the start path. */
+    private fun assertRunIdentity(attributes: Attributes) {
+        assertEquals(8L, attributes.get(AttributeKey.longKey("process.id")))
+        assertEquals("test-server", attributes.get(AttributeKey.stringKey("server.id")))
+        assertEquals("child", attributes.get(AttributeKey.stringKey("agent.name")))
+        assertEquals("agent", attributes.get(AttributeKey.stringKey("request.source")))
     }
 
     // --- the maintenance gate (ADR-0092) ---
