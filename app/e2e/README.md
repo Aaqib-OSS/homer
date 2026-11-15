@@ -20,6 +20,14 @@ always-on "does the production Dockerfile still build" gate.
 - **No sleep-and-assert.** Async state is always polled (`Awaits.awaitStatus`,
   30 s timeout / 250 ms interval); SSE assertions subscribe **before**
   triggering (`SseCollector`).
+- **The auth boundary is swept end to end.** `AuthBoundaryTest` drives every
+  operator resource family (process, question, dispatch, continuation,
+  artifacts, agent run) through the live server twice: with no credential at
+  all, which must be `401`, and with a bearer token granted on another agent,
+  which must get the same `404` as not-found — never `403`. The callback-domain
+  `401` is `WhoamiTest`'s. Password, HMAC and session/CSRF coverage stays
+  excluded: exercising those schemes needs a compose profile that configures
+  them, which the suite deliberately does not add.
 - **Excluded on purpose:** Claude, Codex, opencode and LangGraph commands — the
   runner image ships all four toolchains (Claude CLI, Codex CLI, opencode CLI,
   `homer_langgraph`), but running them needs LLM credentials at run time, which
