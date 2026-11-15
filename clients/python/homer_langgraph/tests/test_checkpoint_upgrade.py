@@ -12,7 +12,9 @@ Its threads, one per park shape the runner resumes:
 - ``recover``: ``flaky_graph``, its ``flaky`` task failed.
 
 Regenerate it by running this module as a script under those versions:
-``python -m homer_langgraph.tests.test_checkpoint_upgrade <out.sqlite>``.
+``python -m homer_langgraph.tests.test_checkpoint_upgrade <out.sqlite>``. The
+script refuses any other versions and records the ones it ran under in the
+store's ``fixture_meta`` table, which every test checks.
 """
 
 from __future__ import annotations
@@ -20,8 +22,11 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sqlite3
 import sys
 import tempfile
+from contextlib import closing
+from importlib.metadata import version
 from pathlib import Path
 
 from homer_langgraph import introspection, runner
@@ -32,9 +37,12 @@ TWO_HUMAN = "homer_langgraph.tests.graph_fixtures:two_human_graph"
 FANOUT = "homer_langgraph.tests.graph_fixtures:fanout_graph"
 JOIN = "homer_langgraph.tests.graph_fixtures:three_parallel_fanout_graph"
 FLAKY = "homer_langgraph.tests.graph_fixtures:flaky_graph"
+OLD_LINE = {"langgraph": "1.1.10", "langgraph-checkpoint": "2.1.2", "langgraph-checkpoint-sqlite": "2.0.7"}
 
 
 def _store(tmp_path: Path) -> None:
+    with closing(sqlite3.connect(FIXTURE)) as conn:
+        assert dict(conn.execute("SELECT package, version FROM fixture_meta")) == OLD_LINE
     shutil.copyfile(FIXTURE, tmp_path / runner.CHECKPOINT_FILENAME)
 
 
@@ -143,7 +151,10 @@ def test_failed_thread_reads_and_recovers(env, tmp_path, monkeypatch, captured_r
 
 
 def _generate(out: Path) -> None:
-    """Park every thread in a fresh store with the installed langgraph and copy it to ``out``."""
+    """Park every thread in a fresh store under the old line and copy it to ``out``."""
+    installed = {package: version(package) for package in OLD_LINE}
+    if installed != OLD_LINE:
+        sys.exit(f"refusing to generate: installed {installed}, the fixture needs {OLD_LINE}")
     calls: list[list[str]] = []
     runner.subprocess.run = lambda argv, **kw: calls.append(argv)
     state_dir = Path(tempfile.mkdtemp())
@@ -170,6 +181,10 @@ def _generate(out: Path) -> None:
     except RuntimeError:
         pass
     shutil.copyfile(state_dir / runner.CHECKPOINT_FILENAME, out)
+    with sqlite3.connect(out) as conn:
+        conn.execute("CREATE TABLE fixture_meta (package TEXT PRIMARY KEY, version TEXT NOT NULL)")
+        conn.executemany("INSERT INTO fixture_meta VALUES (?, ?)", installed.items())
+    conn.close()
 
 
 if __name__ == "__main__":
