@@ -110,5 +110,5 @@ structure.
    `src/test/resources/llm/<id>/` and a `MyHarnessTest`.
 3. Register it in `CommandExecutorFactory` (`LlmHarnessExecutor(MyHarness(), …)`).
 4. Register the adapter in the harness map passed to `LlmEventStreamService`
-   in `AppModule`, so `/llm-events` serves the new kind.
+   in `di/ServicesWiring.kt`, so `/llm-events` serves the new kind.
 5. Add the kind to the console's `LLM_KINDS`.
