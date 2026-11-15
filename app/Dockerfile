@@ -75,13 +75,17 @@ RUN apk add --no-cache \
     py3-pip
 
 # Install the homer_langgraph Python runtime that backs the !<langgraph>
-# command type. --break-system-packages installs into the system site-packages
-# (PEP 668 refuses a system-wide install otherwise on Alpine); that location is
-# importable by the unprivileged homer user at runtime. pydantic-core et al.
-# ship musllinux wheels, so no Rust/gcc build toolchain is needed. py3-pip stays:
-# its apk dependencies (packaging) satisfy langchain-core's, so removing it breaks the import.
+# command type: its dependencies exactly as hash-pinned in requirements.lock,
+# then the package itself, built with py3-pip's apk setuptools (the lock's
+# packaging replaces py3-pip's apk copy). Never resolve here: on musl a resolve
+# backtracks to old langgraph releases (ADR-0114).
+# --break-system-packages installs into the system site-packages (PEP 668
+# refuses a system-wide install otherwise on Alpine), which the homer user can
+# import. Every native dependency in the lock ships musllinux wheels, so no
+# Rust/gcc build toolchain is needed.
 COPY clients/python /tmp/homer_langgraph_src
-RUN pip install --no-cache-dir --break-system-packages /tmp/homer_langgraph_src && \
+RUN pip install --no-cache-dir --break-system-packages --require-hashes --no-deps -r /tmp/homer_langgraph_src/requirements.lock && \
+    pip install --no-cache-dir --break-system-packages --no-deps --no-build-isolation /tmp/homer_langgraph_src && \
     rm -rf /tmp/homer_langgraph_src
 
 # Create homer group and user (GID/UID 1000, home at /home/homer)

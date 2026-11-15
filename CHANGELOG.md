@@ -5,6 +5,7 @@
 ### Homer
 
 - **Fixed: image entrypoint passes `CONFIG_PATH` as one argument** — A config path with spaces or glob characters is no longer split or expanded; an unset or empty `CONFIG_PATH` still passes none.
+- **Security: the image's LangGraph runtime installs from a hash-pinned lock** — The server images now ship the current `langgraph` and `langgraph-checkpoint*` releases instead of older ones with known advisories; threads parked under the old versions still resume. See [ADR-0114](docs/adr/0114-python-runtime-installs-from-a-hash-pinned-lock.md).
 
 ### Console
 
