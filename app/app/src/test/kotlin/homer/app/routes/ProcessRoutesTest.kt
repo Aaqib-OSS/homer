@@ -19,6 +19,7 @@ import homer.app.models.ProcessInfoResponse
 import homer.app.models.ProcessListResponse
 import homer.app.models.ProcessStatus
 import homer.app.models.ProcessStatusResponse
+import homer.app.models.RunStartRequest
 import homer.app.services.AgentRunStarter
 import homer.app.services.AgentsService
 import homer.app.services.ArtifactService
@@ -368,11 +369,16 @@ class ProcessRoutesTest : ApiRouteTestBase() {
             // Each fire INSERTs the segment's row with the parent and root the fire path
             // derived, exactly as ProcessExecutor would.
             coEvery {
-                runStarter.start(any(), any(), eq("continuation"), any(), any(), any(), any(), any(), any(), any(), any())
+                runStarter.start(match { it.source == "continuation" }, any(), any(), any())
             } coAnswers {
                 pm
-                    .obtainProcessId(NewRunRecord("continuer", parentProcessId = arg<Int?>(7), rootProcessId = arg<Int?>(8)))
-                    .also { lastFired = it }
+                    .obtainProcessId(
+                        NewRunRecord(
+                            "continuer",
+                            parentProcessId = firstArg<RunStartRequest>().parentProcessId,
+                            rootProcessId = firstArg<RunStartRequest>().rootProcessId,
+                        ),
+                    ).also { lastFired = it }
             }
             val continuations =
                 PersistenceTestSupport.continuationService(

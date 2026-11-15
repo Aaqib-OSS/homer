@@ -6,6 +6,7 @@ import homer.app.fixtures.TestFixtures
 import homer.app.infra.AgentInputResolver
 import homer.app.models.CronConfig
 import homer.app.models.Param
+import homer.app.models.RunStartRequest
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -124,12 +125,12 @@ class CronSchedulerServiceTest {
                     cron = CronConfig(expression = "* * * * *"),
                 )
             every { agentsService.agents } returns mapOf("scheduled_agent" to agent)
-            coEvery { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 42
+            coEvery { agentRunStarter.start(any(), any(), any(), any()) } returns 42
 
             val now = ZonedDateTime.now(ZoneId.of("UTC"))
             service.tick(now)
 
-            coVerify(exactly = 1) { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 1) { agentRunStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -146,13 +147,13 @@ class CronSchedulerServiceTest {
                     cron = CronConfig(expression = "* * * * *"),
                 )
             every { agentsService.agents } returns mapOf("bad_cron" to bad, "good_cron" to good)
-            coEvery { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 7
+            coEvery { agentRunStarter.start(any(), any(), any(), any()) } returns 7
 
             val now = ZonedDateTime.now(ZoneId.of("UTC"))
             service.tick(now) // must not throw
 
             // The valid agent still fires; the invalid one is skipped, not fatal.
-            coVerify(exactly = 1) { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 1) { agentRunStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -176,12 +177,12 @@ class CronSchedulerServiceTest {
                     inputs = listOf(Param(paramName = "id", envName = "ID", required = false, default = "42")),
                 )
             every { agentsService.agents } returns mapOf("defaulted_input_agent" to agent)
-            coEvery { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 42
+            coEvery { agentRunStarter.start(any(), any(), any(), any()) } returns 42
 
             val now = ZonedDateTime.now(ZoneId.of("UTC"))
             service.tick(now)
 
-            coVerify(exactly = 1) { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 1) { agentRunStarter.start(any(), any(), any(), any()) }
             assertEquals(42, service.getScheduleStatus(agent)?.lastRunProcessId)
         }
 
@@ -194,7 +195,7 @@ class CronSchedulerServiceTest {
             val now = ZonedDateTime.now(ZoneId.of("UTC"))
             service.tick(now)
 
-            coVerify(exactly = 0) { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { agentRunStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -210,7 +211,7 @@ class CronSchedulerServiceTest {
             val now = ZonedDateTime.of(2025, 1, 1, 12, 30, 0, 0, ZoneId.of("UTC"))
             service.tick(now)
 
-            coVerify(exactly = 0) { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { agentRunStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -231,12 +232,12 @@ class CronSchedulerServiceTest {
                     "agent_b" to agent2,
                     "agent_c" to agent3,
                 )
-            coEvery { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 10
+            coEvery { agentRunStarter.start(any(), any(), any(), any()) } returns 10
 
             val now = ZonedDateTime.now(ZoneId.of("UTC"))
             service.tick(now)
 
-            coVerify(exactly = 2) { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 2) { agentRunStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -245,12 +246,12 @@ class CronSchedulerServiceTest {
             val agent1 = AgentFixtures.simpleAgent(name = "agent_a").copy(cron = CronConfig(expression = "* * * * *"))
             val agent2 = AgentFixtures.simpleAgent(name = "agent_b").copy(cron = CronConfig(expression = "* * * * *"))
             every { agentsService.agents } returns mapOf("agent_a" to agent1, "agent_b" to agent2)
-            coEvery { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } throws
+            coEvery { agentRunStarter.start(any(), any(), any(), any()) } throws
                 CancellationException("scheduler stopped")
 
             assertFailsWith<CancellationException> { service.tick(ZonedDateTime.now(ZoneId.of("UTC"))) }
 
-            coVerify(exactly = 1) { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 1) { agentRunStarter.start(any(), any(), any(), any()) }
         }
 
     // --- fireAgent ---
@@ -262,20 +263,17 @@ class CronSchedulerServiceTest {
                 AgentFixtures.simpleAgent(name = "tracked_agent").copy(
                     cron = CronConfig(expression = "* * * * *"),
                 )
-            coEvery { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 42
+            coEvery { agentRunStarter.start(any(), any(), any(), any()) } returns 42
 
             service.fireAgent(agentWithoutInputs, ZonedDateTime.now(ZoneOffset.UTC))
 
             coVerify {
                 agentRunStarter.start(
-                    agentWithoutInputs,
-                    emptyList(),
-                    "cron",
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
+                    match {
+                        it.agent == agentWithoutInputs &&
+                            it.invocationChain.isEmpty() &&
+                            it.source == "cron"
+                    },
                     any(),
                     any(),
                     any(),
@@ -291,11 +289,23 @@ class CronSchedulerServiceTest {
                 AgentFixtures.simpleAgent(name = "owner_tracked_agent").copy(
                     cron = CronConfig(expression = "* * * * *"),
                 )
-            coEvery { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 42
+            coEvery { agentRunStarter.start(any(), any(), any(), any()) } returns 42
 
             service.fireAgent(agent, ZonedDateTime.now(ZoneOffset.UTC))
 
-            coVerify { agentRunStarter.start(agent, emptyList(), "cron", any(), any(), "system:cron", any(), any(), any(), any(), any()) }
+            coVerify {
+                agentRunStarter.start(
+                    match {
+                        it.agent == agent &&
+                            it.invocationChain.isEmpty() &&
+                            it.source == "cron" &&
+                            it.owner == "system:cron"
+                    },
+                    any(),
+                    any(),
+                    any(),
+                )
+            }
         }
 
     @Test
@@ -311,22 +321,10 @@ class CronSchedulerServiceTest {
             // the resolveInputs lambda throws inside start; simulate by making start
             // invoke its lambda like the real implementation does.
             coEvery {
-                agentRunStarter.start(
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    captureLambda(),
-                )
+                agentRunStarter.start(any(), any(), any(), any())
             } coAnswers
                 {
-                    lambda<suspend () -> Map<String, String>>().captured.invoke()
+                    firstArg<RunStartRequest>().resolveInputs.invoke()
                     42
                 }
 
@@ -342,7 +340,7 @@ class CronSchedulerServiceTest {
                 AgentFixtures.simpleAgent(name = "tracked_agent").copy(
                     cron = CronConfig(expression = "* * * * *"),
                 )
-            coEvery { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 99
+            coEvery { agentRunStarter.start(any(), any(), any(), any()) } returns 99
 
             val now = ZonedDateTime.now(ZoneId.of("UTC"))
             service.fireAgent(agent, now)
@@ -360,7 +358,7 @@ class CronSchedulerServiceTest {
                 AgentFixtures.simpleAgent(name = "error_agent").copy(
                     cron = CronConfig(expression = "* * * * *"),
                 )
-            coEvery { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } throws
+            coEvery { agentRunStarter.start(any(), any(), any(), any()) } throws
                 RuntimeException("boom")
 
             val now = ZonedDateTime.now(ZoneId.of("UTC"))
@@ -381,7 +379,7 @@ class CronSchedulerServiceTest {
                 AgentFixtures.simpleAgent(name = "fire_now_agent").copy(
                     cron = CronConfig(expression = "* * * * *"),
                 )
-            coEvery { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 77
+            coEvery { agentRunStarter.start(any(), any(), any(), any()) } returns 77
             val fixedNow = ZonedDateTime.of(2025, 1, 1, 12, 0, 0, 0, ZoneOffset.UTC)
             val scheduled =
                 CronSchedulerService(
@@ -395,7 +393,19 @@ class CronSchedulerServiceTest {
 
             scheduled.fireNow(agent)
 
-            coVerify { agentRunStarter.start(agent, emptyList(), "cron", any(), any(), "system:cron", any(), any(), any(), any(), any()) }
+            coVerify {
+                agentRunStarter.start(
+                    match {
+                        it.agent == agent &&
+                            it.invocationChain.isEmpty() &&
+                            it.source == "cron" &&
+                            it.owner == "system:cron"
+                    },
+                    any(),
+                    any(),
+                    any(),
+                )
+            }
             val status = scheduled.getScheduleStatus(agent)
             assertNotNull(status)
             assertEquals(77, status.lastRunProcessId)
@@ -413,22 +423,10 @@ class CronSchedulerServiceTest {
             every { agentInputResolver.resolveFromParams(any(), any(), any()) } throws
                 QueryParamValidationException("Parameter 'id' is missing", paramName = "id")
             coEvery {
-                agentRunStarter.start(
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    captureLambda(),
-                )
+                agentRunStarter.start(any(), any(), any(), any())
             } coAnswers
                 {
-                    lambda<suspend () -> Map<String, String>>().captured.invoke()
+                    firstArg<RunStartRequest>().resolveInputs.invoke()
                     42
                 }
             val scheduled =
@@ -461,7 +459,7 @@ class CronSchedulerServiceTest {
 
             service.tick(ZonedDateTime.now(ZoneId.of("UTC")))
 
-            coVerify(exactly = 0) { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { agentRunStarter.start(any(), any(), any(), any()) }
             assertNull(service.getScheduleStatus(agent)?.lastRunProcessId)
         }
 
@@ -473,7 +471,7 @@ class CronSchedulerServiceTest {
                     cron = CronConfig(expression = "30 12 * * *"),
                 )
             every { agentsService.agents } returns mapOf("paused_agent" to agent)
-            coEvery { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 42
+            coEvery { agentRunStarter.start(any(), any(), any(), any()) } returns 42
 
             // The scheduled minute passes while the mode is on...
             every { maintenanceMode.isEnabled() } returns true
@@ -482,7 +480,7 @@ class CronSchedulerServiceTest {
             every { maintenanceMode.isEnabled() } returns false
             service.tick(ZonedDateTime.of(2025, 1, 1, 12, 31, 0, 0, ZoneId.of("UTC")))
 
-            coVerify(exactly = 0) { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { agentRunStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -493,14 +491,26 @@ class CronSchedulerServiceTest {
                     cron = CronConfig(expression = "* * * * *"),
                 )
             every { maintenanceMode.isEnabled() } returns true
-            coEvery { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 77
+            coEvery { agentRunStarter.start(any(), any(), any(), any()) } returns 77
 
             service.fireNow(agent)
 
             // The operator's explicit Run queues at the gate rather than being skipped.
             coVerify(
                 exactly = 1,
-            ) { agentRunStarter.start(agent, emptyList(), "cron", any(), any(), "system:cron", any(), any(), any(), any(), any()) }
+            ) {
+                agentRunStarter.start(
+                    match {
+                        it.agent == agent &&
+                            it.invocationChain.isEmpty() &&
+                            it.source == "cron" &&
+                            it.owner == "system:cron"
+                    },
+                    any(),
+                    any(),
+                    any(),
+                )
+            }
         }
 
     // --- getScheduleStatus ---
@@ -531,7 +541,7 @@ class CronSchedulerServiceTest {
                 AgentFixtures.simpleAgent(name = "fired_agent").copy(
                     cron = CronConfig(expression = "* * * * *"),
                 )
-            coEvery { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 77
+            coEvery { agentRunStarter.start(any(), any(), any(), any()) } returns 77
 
             val now = ZonedDateTime.now(ZoneId.of("UTC"))
             service.fireAgent(agent, now)
@@ -572,7 +582,7 @@ class CronSchedulerServiceTest {
                 cron = CronConfig(expression = "* * * * *", timezone = "UTC"),
             )
         every { agentsService.agents } returns mapOf("every_minute" to agent)
-        coEvery { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } coAnswers {
+        coEvery { agentRunStarter.start(any(), any(), any(), any()) } coAnswers {
             fires += virtualNow()
             if (tickWorkMs > 0) delay(tickWorkMs)
             1

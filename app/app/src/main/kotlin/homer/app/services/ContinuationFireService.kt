@@ -16,6 +16,7 @@ import homer.app.models.ExecutionInfo
 import homer.app.models.ProcessStatus
 import homer.app.models.ResultEnvParam
 import homer.app.models.ResultRef
+import homer.app.models.RunStartRequest
 import homer.app.services.persistence.ContinuationRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
@@ -115,36 +116,35 @@ internal class ContinuationFireService(
                     logger,
                 )
             val inputParams = inherited.params + continuation.params + (continuation.resumeParam to payload())
+            // [information_disclosure / CWE-200] The fired run is attributed to the
+            // continuation's owner, so the root it inherits is gated on that owner's
+            // visibility — a foreign flow-root id reaches no row, env or span. §12.
+            val rootProcessId = processManager.visibleOriginRootProcessId(continuation.originProcessId, continuation.owner, authorizer)
             val processId =
                 agentRunStarter.start(
-                    agent,
-                    emptyList(),
-                    "continuation",
-                    owner = continuation.owner,
+                    RunStartRequest(
+                        agent = agent,
+                        invocationChain = emptyList(),
+                        source = "continuation",
+                        owner = continuation.owner,
+                        parentProcessId = continuation.originProcessId,
+                        rootProcessId = rootProcessId,
+                        resolveInputs = {
+                            // The inherited values are the origin run's stored, already-transformed
+                            // ones — validate them, but never run the transformer a second time.
+                            agentInputResolver.resolveFromParams(
+                                inputParams,
+                                agent,
+                                skipTransformFor = inherited.storedParamNames(continuation.params.keys + continuation.resumeParam),
+                            ) + reservedControlParams(inputParams)
+                        },
+                    ),
                     extraSecretInputKeys = continuation.secretInputKeys.orEmpty() + inherited.secretInputKeys,
-                    parentProcessId = continuation.originProcessId,
-                    // [information_disclosure / CWE-200] The fired run is attributed to the
-                    // continuation's owner, so the root it inherits is gated on that owner's
-                    // visibility — a foreign flow-root id reaches no row, env or span. §12.
-                    rootProcessId =
-                        processManager.visibleOriginRootProcessId(
-                            continuation.originProcessId,
-                            continuation.owner,
-                            authorizer,
-                        ),
                     // The origin link is server-derived, so a continuation whose origin is still
                     // `WORKING` (a fan-out parent waiting on its subs) is admitted rather than
                     // parked. A fire for an origin that already ended parks as before. ADR-0092.
                     serverDerivedParent = true,
-                ) {
-                    // The inherited values are the origin run's stored, already-transformed
-                    // ones — validate them, but never run the transformer a second time.
-                    agentInputResolver.resolveFromParams(
-                        inputParams,
-                        agent,
-                        skipTransformFor = inherited.storedParamNames(continuation.params.keys + continuation.resumeParam),
-                    ) + reservedControlParams(inputParams)
-                }
+                )
             repository.markDispatched(continuation.id, processId, now)
             logger.info("$label {} fired -> run {}", continuation.id, processId)
         } catch (e: CancellationException) {

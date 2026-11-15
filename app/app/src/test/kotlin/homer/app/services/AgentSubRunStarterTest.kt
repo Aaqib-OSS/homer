@@ -3,6 +3,7 @@ package homer.app.services
 import homer.app.fixtures.AgentFixtures
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
+import homer.app.models.RunStartRequest
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -21,6 +22,17 @@ class AgentSubRunStarterTest {
     private val processManager = mockk<ProcessManager>()
     private val agentRunStarter = mockk<AgentRunStarter>()
     private var providerCalls = 0
+    private val request =
+        RunStartRequest(
+            agent = target,
+            invocationChain = listOf("caller"),
+            source = "agent",
+            ancestorLockKeys = listOf("lock"),
+            owner = "alice",
+            parentProcessId = 7,
+            rootProcessId = 3,
+            resolveInputs = { emptyMap() },
+        )
     private val subRuns =
         AgentSubRunStarter(
             agentRunStarter = {
@@ -60,16 +72,14 @@ class AgentSubRunStarterTest {
     @Test
     fun `starts through the run starter resolved at call time`() =
         runTest {
-            coEvery {
-                agentRunStarter.start(target, listOf("caller"), "agent", any(), listOf("lock"), "alice", any(), 7, 3, any(), any())
-            } returns 42
+            coEvery { agentRunStarter.start(request, any(), any(), any()) } returns 42
             assertEquals(0, providerCalls)
 
-            val processId = subRuns.start(target, listOf("caller"), "agent", listOf("lock"), "alice", 7, 3) { emptyMap() }
+            val processId = subRuns.start(request)
 
             assertEquals(42, processId)
             assertEquals(1, providerCalls)
-            coVerify(exactly = 1) { agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 1) { agentRunStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -77,14 +87,10 @@ class AgentSubRunStarterTest {
         runTest {
             // The hop's parent is the executing run, never a caller-supplied id: the start may
             // bypass the maintenance gate while that run is still WORKING. See ADR-0092.
-            coEvery {
-                agentRunStarter.start(target, listOf("caller"), "agent", any(), listOf("lock"), "alice", any(), 7, 3, true, any())
-            } returns 42
+            coEvery { agentRunStarter.start(request, any(), any(), serverDerivedParent = true) } returns 42
 
-            assertEquals(42, subRuns.start(target, listOf("caller"), "agent", listOf("lock"), "alice", 7, 3) { emptyMap() })
+            assertEquals(42, subRuns.start(request))
 
-            coVerify(exactly = 1) {
-                agentRunStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), serverDerivedParent = true, any())
-            }
+            coVerify(exactly = 1) { agentRunStarter.start(any(), any(), any(), serverDerivedParent = true) }
         }
 }

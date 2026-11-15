@@ -13,6 +13,7 @@ import homer.app.models.NewRunRecord
 import homer.app.models.ProcessStatus
 import homer.app.models.Retain
 import homer.app.models.RunMessagesConfig
+import homer.app.models.RunStartRequest
 import homer.app.services.QuestionsService.QuestionStatus
 import homer.app.services.persistence.DatabaseService
 import homer.app.services.persistence.DispatchRepository
@@ -247,7 +248,7 @@ class StartupReconciliationTest {
         val agent = AgentFixtures.simpleAgent(name = "handler").copy(dispatch = AgentDispatchConfig(enabled = true))
         val agentsService = mockk<AgentsService> { every { agents } returns mapOf("handler" to agent) }
         val runStarter = mockk<AgentRunStarter>()
-        coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 99
+        coEvery { runStarter.start(any(), any(), any(), any()) } returns 99
         val questionsService = QuestionsService(QuestionsRepository(db), TestFixtures.mockLogger(), ProcessEventBroadcaster())
         val dispatchService =
             PersistenceTestSupport.dispatchService(
@@ -305,7 +306,7 @@ class StartupReconciliationTest {
             // A second boot must not fire the same group again.
             h.reconciliation.reconcile()
 
-            coVerify(exactly = 1) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 1) { runStarter.start(any(), any(), any(), any()) }
             assertEquals(DispatchStatus.DISPATCHED, DispatchRepository(db).get(id)!!.status)
         }
 
@@ -319,7 +320,7 @@ class StartupReconciliationTest {
 
             h.reconciliation.reconcile()
 
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
             assertEquals(DispatchStatus.PENDING, DispatchRepository(db).get(id)!!.status)
         }
 
@@ -338,7 +339,7 @@ class StartupReconciliationTest {
             h.reconciliation.reconcile()
 
             assertEquals(DispatchStatus.FAILED, repo.get(id)!!.status)
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
         }
 
     @Test

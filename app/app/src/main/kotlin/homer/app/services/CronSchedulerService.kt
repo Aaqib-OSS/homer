@@ -5,6 +5,7 @@ import homer.app.infra.AgentInputResolver
 import homer.app.infra.CronSupport
 import homer.app.models.Agent
 import homer.app.models.CronConfig
+import homer.app.models.RunStartRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -121,16 +122,17 @@ internal class CronSchedulerService(
         try {
             val processId =
                 agentRunStarter.start(
-                    agent = agent,
-                    invocationChain = emptyList(),
-                    source = "cron",
-                    owner = "system:cron",
-                ) {
-                    // Cron has no caller-supplied inputs. enforceRequired makes a
-                    // schedule on an inputs-requiring agent fail loudly here
-                    // instead of running with missing env vars.
-                    agentInputResolver.resolveFromParams(emptyMap(), agent)
-                }
+                    RunStartRequest(
+                        agent = agent,
+                        invocationChain = emptyList(),
+                        source = "cron",
+                        owner = "system:cron",
+                        // Cron has no caller-supplied inputs. enforceRequired makes a
+                        // schedule on an inputs-requiring agent fail loudly here
+                        // instead of running with missing env vars.
+                        resolveInputs = { agentInputResolver.resolveFromParams(emptyMap(), agent) },
+                    ),
+                )
             lastRunMap[agent.name] = RunInfo(processId, now.toEpochSecond())
             logger.info("Cron triggered agent '{}', processId={}", agent.name, processId)
         } catch (e: CancellationException) {

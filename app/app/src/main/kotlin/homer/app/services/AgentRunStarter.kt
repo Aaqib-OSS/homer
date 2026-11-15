@@ -11,6 +11,7 @@ import homer.app.infra.startAgentRootSpan
 import homer.app.models.Agent
 import homer.app.models.Command
 import homer.app.models.ProcessStatus
+import homer.app.models.RunStartRequest
 import homer.app.services.persistence.ProcessRecordReads
 import io.opentelemetry.api.common.Attributes
 import io.opentelemetry.api.trace.Span
@@ -44,7 +45,7 @@ internal class AgentRunStarter(
     /**
      * Starts an agent run and returns the new process id.
      *
-     * [resolveInputs] is invoked inside the span, after the cycle/depth/cost
+     * [RunStartRequest.resolveInputs] is invoked inside the span, after the cycle/depth/cost
      * checks — preserving the HTTP handler's original exception ordering
      * (cycle → depth → cost cap → input validation). Throws the same
      * HomerExceptions the HTTP handler always did; callers map them to their
@@ -52,56 +53,36 @@ internal class AgentRunStarter(
      */
     @Suppress("SuspendFunSwallowedCancellation") // records the span error and rethrows
     suspend fun start(
-        agent: Agent,
-        invocationChain: List<String>,
-        source: String,
+        request: RunStartRequest,
         extraAttributes: Attributes = Attributes.empty(),
-        ancestorLockKeys: List<String> = emptyList(),
-        owner: String? = null,
         // Non-empty only for a path replaying STORED inputs (dispatch and continuation
         // fires): the target's `secret` flags may have changed since those values were
         // collected, and the run must honour the flags in force then. See ADR-0052.
         extraSecretInputKeys: Set<String> = emptySet(),
-        // The run that caused this one, already validated by the caller (a live
-        // RunAgent/dispatch/continuation origin, or an external caller's visible
-        // parent). Stored with the row and exported as HMR_PARENT_PROCESS_ID. ADR-0058.
-        parentProcessId: Int? = null,
-        // The flow's first run: `parent.rootProcessId ?: parent.id`, derived from
-        // the same already-validated parent. Stored with the row and exported as
-        // HMR_ROOT_PROCESS_ID. Null for a run with no parent. ADR-0058.
-        rootProcessId: Int? = null,
-        // True only for a path whose [parentProcessId] the server derived from a run it knows
-        // is live (a `!<agent>` hop, a dispatch, a continuation fire): it may admit this start
-        // without queueing when that parent row still reads `WORKING`. A caller-supplied or
+        // True only for a path whose [RunStartRequest.parentProcessId] the server derived from a run
+        // it knows is live (a `!<agent>` hop, a dispatch, a continuation fire): it may admit this
+        // start without queueing when that parent row still reads `WORKING`. A caller-supplied or
         // inherited parent link (HTTP parent header, retry, resume) leaves this false, so it
         // never bypasses. ADR-0092.
         serverDerivedParent: Boolean = false,
-        resolveInputs: suspend () -> Map<String, String>,
     ): Int {
-        val span = telemetryService.tracer.startAgentRootSpan(agent, "agent_request")
+        val span = telemetryService.tracer.startAgentRootSpan(request.agent, "agent_request")
 
         try {
             val context = Context.current().with(span)
-            val admitted = admittedByLiveParent(serverDerivedParent, parentProcessId)
+            val admitted = admittedByLiveParent(serverDerivedParent, request.parentProcessId)
             // Parks this start while maintenance mode is on, before any preflight: a released
             // start re-runs the checks and resolves its inputs at dequeue, not at enqueue.
             // See ADR-0092.
             val processId =
-                maintenanceGate.gated(owner, admitted) {
+                maintenanceGate.gated(request.owner, admitted) {
                     startGated(
-                        agent = agent,
+                        request = request,
                         span = span,
                         context = context,
                         admitted = admitted,
-                        source = source,
-                        invocationChain = invocationChain,
-                        ancestorLockKeys = ancestorLockKeys,
-                        owner = owner,
                         extraSecretInputKeys = extraSecretInputKeys,
-                        parentProcessId = parentProcessId,
-                        rootProcessId = rootProcessId,
                         extraAttributes = extraAttributes,
-                        resolveInputs = resolveInputs,
                     )
                 }
             span.setStatus(StatusCode.OK)
@@ -122,27 +103,22 @@ internal class AgentRunStarter(
      * keep [start]'s body inside the size rule (ADR-0083).
      */
     private suspend fun startGated(
-        agent: Agent,
+        request: RunStartRequest,
         span: Span,
         context: Context,
         admitted: Boolean,
-        source: String,
-        invocationChain: List<String>,
-        ancestorLockKeys: List<String>,
-        owner: String?,
         extraSecretInputKeys: Set<String>,
-        parentProcessId: Int?,
-        rootProcessId: Int?,
         extraAttributes: Attributes,
-        resolveInputs: suspend () -> Map<String, String>,
     ): Int {
+        val agent = request.agent
+        val source = request.source
         // A keyed cooldown is checked after the inputs are resolved, because its key is a
         // template over them; a keyless one is refused by `checkPreflight`, before anything
         // is resolved. Both keep cycle → depth → cost cap → cooldown. See ADR-0106.
         val keyedCooldown = agent.cooldown?.key != null
-        checkPreflight(agent, invocationChain, withCooldown = !keyedCooldown)
-        val newChain = invocationChain + agent.name
-        val queryParamsEnv = resolveInputs()
+        checkPreflight(agent, request.invocationChain, withCooldown = !keyedCooldown)
+        val newChain = request.invocationChain + agent.name
+        val queryParamsEnv = request.resolveInputs()
         // Rendered here, before `create`: an unusable key fails the start with no process row
         // to clean up, and the same value goes to the pre-flight gate and to the row, so the
         // two cannot scope differently. A replay's stored-secret snapshot rides along, so a
@@ -162,11 +138,11 @@ internal class AgentRunStarter(
                     queryParams = queryParamsEnv,
                     parentContext = context,
                     invocationChain = newChain,
-                    ancestorLockKeys = ancestorLockKeys,
-                    owner = owner,
+                    ancestorLockKeys = request.ancestorLockKeys,
+                    owner = request.owner,
                     extraSecretInputKeys = secretEnvNames,
-                    parentProcessId = parentProcessId,
-                    rootProcessId = rootProcessId,
+                    parentProcessId = request.parentProcessId,
+                    rootProcessId = request.rootProcessId,
                     cooldownKey = cooldownKey,
                 ),
                 context,
@@ -177,8 +153,8 @@ internal class AgentRunStarter(
                 result.processId,
                 agent,
                 source,
-                parentProcessId,
-                rootProcessId,
+                request.parentProcessId,
+                request.rootProcessId,
                 admitted,
                 extraAttributes,
             ),

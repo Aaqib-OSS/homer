@@ -19,6 +19,7 @@ import homer.app.models.Cooldown
 import homer.app.models.Param
 import homer.app.models.ProcessCreationResult
 import homer.app.models.ProcessStatus
+import homer.app.models.RunStartRequest
 import homer.app.services.persistence.ProcessRecordReads
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -80,7 +81,16 @@ class AgentRunStarterTest {
                     telemetry = AgentTelemetry(traceTags = traceTags),
                 )
 
-        runBlocking { starter.start(agent, emptyList(), "dispatch") { resolved } }
+        runBlocking {
+            starter.start(
+                RunStartRequest(
+                    agent = agent,
+                    invocationChain = emptyList(),
+                    source = "dispatch",
+                    resolveInputs = { resolved },
+                ),
+            )
+        }
 
         // The tags are stamped on the root before `execute`, not folded into the attributes set
         // after it, so a child span started inside the run inherits them. See ADR-0050.
@@ -240,7 +250,17 @@ class AgentRunStarterTest {
             )
         val agent = AgentFixtures.simpleAgent(name = "child")
 
-        runBlocking { starter.start(agent, emptyList(), "agent", parentProcessId = 7) { emptyMap() } }
+        runBlocking {
+            starter.start(
+                RunStartRequest(
+                    agent = agent,
+                    invocationChain = emptyList(),
+                    source = "agent",
+                    parentProcessId = 7,
+                    resolveInputs = { emptyMap() },
+                ),
+            )
+        }
 
         verify {
             processFactory.create(
@@ -280,7 +300,16 @@ class AgentRunStarterTest {
         val agent = AgentFixtures.simpleAgent(name = "child")
 
         runBlocking {
-            starter.start(agent, emptyList(), "agent", parentProcessId = 7, rootProcessId = 3) { emptyMap() }
+            starter.start(
+                RunStartRequest(
+                    agent = agent,
+                    invocationChain = emptyList(),
+                    source = "agent",
+                    parentProcessId = 7,
+                    rootProcessId = 3,
+                    resolveInputs = { emptyMap() },
+                ),
+            )
         }
 
         verify {
@@ -319,7 +348,16 @@ class AgentRunStarterTest {
                 processReads = mockk(relaxed = true),
             )
 
-        runBlocking { starter.start(AgentFixtures.simpleAgent(name = "child"), emptyList(), "agent") { emptyMap() } }
+        runBlocking {
+            starter.start(
+                RunStartRequest(
+                    agent = AgentFixtures.simpleAgent(name = "child"),
+                    invocationChain = emptyList(),
+                    source = "agent",
+                    resolveInputs = { emptyMap() },
+                ),
+            )
+        }
 
         val attributes = slot<Attributes>()
         verify { span.setAllAttributes(capture(attributes)) }
@@ -392,7 +430,17 @@ class AgentRunStarterTest {
             }
             val starter = starterWithGate(gate, processExecutor)
 
-            val start = async { starter.start(AgentFixtures.simpleAgent(name = "child"), emptyList(), "http") { emptyMap() } }
+            val start =
+                async {
+                    starter.start(
+                        RunStartRequest(
+                            agent = AgentFixtures.simpleAgent(name = "child"),
+                            invocationChain = emptyList(),
+                            source = "http",
+                            resolveInputs = { emptyMap() },
+                        ),
+                    )
+                }
             yield()
             coVerify(exactly = 0) { processExecutor.execute(any(), any()) }
 
@@ -419,7 +467,17 @@ class AgentRunStarterTest {
                 }
                 val starter = starterWithGate(gate, processExecutor, cooldownGate = cooldownGate)
 
-                val start = async { starter.start(AgentFixtures.simpleAgent(name = "child"), emptyList(), "http") { emptyMap() } }
+                val start =
+                    async {
+                        starter.start(
+                            RunStartRequest(
+                                agent = AgentFixtures.simpleAgent(name = "child"),
+                                invocationChain = emptyList(),
+                                source = "http",
+                                resolveInputs = { emptyMap() },
+                            ),
+                        )
+                    }
                 yield()
                 // Parked, so nothing has been refused yet: the checks run against the state at dequeue.
                 coVerify(exactly = 0) { cooldownGate.check(any()) }
@@ -466,10 +524,17 @@ class AgentRunStarterTest {
 
             assertEquals(
                 7,
-                starter.start(keyedAgent(), emptyList(), "http") {
-                    order += "inputs"
-                    mapOf("MR" to "1")
-                },
+                starter.start(
+                    RunStartRequest(
+                        agent = keyedAgent(),
+                        invocationChain = emptyList(),
+                        source = "http",
+                        resolveInputs = {
+                            order += "inputs"
+                            mapOf("MR" to "1")
+                        },
+                    ),
+                ),
             )
 
             assertEquals(listOf("inputs", "cooldown"), order)
@@ -507,10 +572,17 @@ class AgentRunStarterTest {
             }
             val starter = starterWithGate(mockk(relaxed = true), processExecutor, cooldownGate = cooldownGate)
 
-            starter.start(keyedAgent(cooldown = Cooldown(minInterval = "1m")), emptyList(), "http") {
-                order += "inputs"
-                mapOf("MR" to "1")
-            }
+            starter.start(
+                RunStartRequest(
+                    agent = keyedAgent(cooldown = Cooldown(minInterval = "1m")),
+                    invocationChain = emptyList(),
+                    source = "http",
+                    resolveInputs = {
+                        order += "inputs"
+                        mapOf("MR" to "1")
+                    },
+                ),
+            )
 
             assertEquals(listOf("cooldown", "inputs"), order)
             coVerify(exactly = 1) { cooldownGate.check(any(), null) }
@@ -529,7 +601,14 @@ class AgentRunStarterTest {
                 )
 
             assertFailsWith<CooldownKeyInvalidException> {
-                starter.start(keyedAgent(), emptyList(), "http") { emptyMap() }
+                starter.start(
+                    RunStartRequest(
+                        agent = keyedAgent(),
+                        invocationChain = emptyList(),
+                        source = "http",
+                        resolveInputs = { emptyMap() },
+                    ),
+                )
             }
             verify(exactly = 0) {
                 processFactory.create(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
@@ -554,9 +633,17 @@ class AgentRunStarterTest {
 
             val e =
                 assertFailsWith<CooldownKeyInvalidException> {
-                    starter.start(keyedAgent(), emptyList(), "http", extraSecretInputKeys = setOf("MR")) {
-                        mapOf("MR" to "s3cr3t-value")
-                    }
+                    starter.start(
+                        RunStartRequest(
+                            agent = keyedAgent(),
+                            invocationChain = emptyList(),
+                            source = "http",
+                            resolveInputs = {
+                                mapOf("MR" to "s3cr3t-value")
+                            },
+                        ),
+                        extraSecretInputKeys = setOf("MR"),
+                    )
                 }
 
             assertTrue(e.message!!.contains("{{MR}}"), e.message!!)
@@ -577,7 +664,14 @@ class AgentRunStarterTest {
             val starter = starterWithGate(gate, processExecutor)
 
             assertFailsWith<MaintenanceQueueFullException> {
-                starter.start(AgentFixtures.simpleAgent(name = "child"), emptyList(), "http") { emptyMap() }
+                starter.start(
+                    RunStartRequest(
+                        agent = AgentFixtures.simpleAgent(name = "child"),
+                        invocationChain = emptyList(),
+                        source = "http",
+                        resolveInputs = { emptyMap() },
+                    ),
+                )
             }
             coVerify(exactly = 0) { processExecutor.execute(any(), any()) }
         }
@@ -595,7 +689,14 @@ class AgentRunStarterTest {
 
                 val thrown =
                     assertFailsWith<HomerException> {
-                        starter.start(agent, emptyList(), "http") { mapOf("TOKEN" to secret) }
+                        starter.start(
+                            RunStartRequest(
+                                agent = agent,
+                                invocationChain = emptyList(),
+                                source = "http",
+                                resolveInputs = { mapOf("TOKEN" to secret) },
+                            ),
+                        )
                     }
                 assertFalse(thrown.message!!.contains(secret), "the refusal must not echo an input value")
             }
@@ -613,12 +714,15 @@ class AgentRunStarterTest {
 
             val processId =
                 starter.start(
-                    AgentFixtures.simpleAgent(name = "child"),
-                    emptyList(),
-                    "agent",
-                    parentProcessId = 42,
+                    RunStartRequest(
+                        agent = AgentFixtures.simpleAgent(name = "child"),
+                        invocationChain = emptyList(),
+                        source = "agent",
+                        parentProcessId = 42,
+                        resolveInputs = { emptyMap() },
+                    ),
                     serverDerivedParent = true,
-                ) { emptyMap() }
+                )
 
             assertEquals(7, processId)
             coVerify(exactly = 0) { gate.awaitRelease(any()) }
@@ -645,12 +749,15 @@ class AgentRunStarterTest {
                 )
 
             starter.start(
-                AgentFixtures.simpleAgent(name = "child"),
-                emptyList(),
-                "agent",
-                parentProcessId = 42,
+                RunStartRequest(
+                    agent = AgentFixtures.simpleAgent(name = "child"),
+                    invocationChain = emptyList(),
+                    source = "agent",
+                    parentProcessId = 42,
+                    resolveInputs = { emptyMap() },
+                ),
                 serverDerivedParent = true,
-            ) { emptyMap() }
+            )
 
             val attributes = slot<Attributes>()
             verify { span.setAllAttributes(capture(attributes)) }
@@ -690,12 +797,15 @@ class AgentRunStarterTest {
 
             val processId =
                 starter.start(
-                    AgentFixtures.simpleAgent(name = "child"),
-                    emptyList(),
-                    "agent",
-                    parentProcessId = 42,
+                    RunStartRequest(
+                        agent = AgentFixtures.simpleAgent(name = "child"),
+                        invocationChain = emptyList(),
+                        source = "agent",
+                        parentProcessId = 42,
+                        resolveInputs = { emptyMap() },
+                    ),
                     serverDerivedParent = true,
-                ) { emptyMap() }
+                )
 
             assertEquals(7, processId)
             coVerify(exactly = 0) { processReads.getProcessStatus(any()) }
@@ -714,12 +824,15 @@ class AgentRunStarterTest {
 
                 assertFailsWith<MaintenanceQueueFullException> {
                     starter.start(
-                        AgentFixtures.simpleAgent(name = "child"),
-                        emptyList(),
-                        "agent",
-                        parentProcessId = 42,
+                        RunStartRequest(
+                            agent = AgentFixtures.simpleAgent(name = "child"),
+                            invocationChain = emptyList(),
+                            source = "agent",
+                            parentProcessId = 42,
+                            resolveInputs = { emptyMap() },
+                        ),
                         serverDerivedParent = true,
-                    ) { emptyMap() }
+                    )
                 }
                 coVerify(exactly = 1) { gate.awaitRelease(any()) }
                 coVerify(exactly = 0) { processExecutor.execute(any(), any()) }
@@ -735,11 +848,14 @@ class AgentRunStarterTest {
 
             assertFailsWith<MaintenanceQueueFullException> {
                 starter.start(
-                    AgentFixtures.simpleAgent(name = "child"),
-                    emptyList(),
-                    "agent",
+                    RunStartRequest(
+                        agent = AgentFixtures.simpleAgent(name = "child"),
+                        invocationChain = emptyList(),
+                        source = "agent",
+                        resolveInputs = { emptyMap() },
+                    ),
                     serverDerivedParent = true,
-                ) { emptyMap() }
+                )
             }
             coVerify(exactly = 1) { gate.awaitRelease(any()) }
             coVerify(exactly = 0) { processExecutor.execute(any(), any()) }
@@ -754,11 +870,14 @@ class AgentRunStarterTest {
 
             assertFailsWith<MaintenanceQueueFullException> {
                 starter.start(
-                    AgentFixtures.simpleAgent(name = "child"),
-                    emptyList(),
-                    "http",
-                    parentProcessId = 42,
-                ) { emptyMap() }
+                    RunStartRequest(
+                        agent = AgentFixtures.simpleAgent(name = "child"),
+                        invocationChain = emptyList(),
+                        source = "http",
+                        parentProcessId = 42,
+                        resolveInputs = { emptyMap() },
+                    ),
+                )
             }
             coVerify(exactly = 1) { gate.awaitRelease(any()) }
             coVerify(exactly = 0) { processExecutor.execute(any(), any()) }
@@ -783,7 +902,16 @@ class AgentRunStarterTest {
                         cooldownGate = cooldownGate,
                         costMeter = costMeter,
                         parentStatus = ProcessStatus.WORKING,
-                    ).start(target, chain, "agent", parentProcessId = 42, serverDerivedParent = true) { emptyMap() }
+                    ).start(
+                        RunStartRequest(
+                            agent = target,
+                            invocationChain = chain,
+                            source = "agent",
+                            parentProcessId = 42,
+                            resolveInputs = { emptyMap() },
+                        ),
+                        serverDerivedParent = true,
+                    )
 
                 // The admitted start skips the gate, not the request-boundary refusals.
                 assertFailsWith<InvocationCycleDetectedException> { start(listOf("child")) }
@@ -814,12 +942,15 @@ class AgentRunStarterTest {
 
             val processId =
                 starter.start(
-                    AgentFixtures.simpleAgent(name = "child"),
-                    emptyList(),
-                    "agent",
-                    parentProcessId = 42,
+                    RunStartRequest(
+                        agent = AgentFixtures.simpleAgent(name = "child"),
+                        invocationChain = emptyList(),
+                        source = "agent",
+                        parentProcessId = 42,
+                        resolveInputs = { emptyMap() },
+                    ),
                     serverDerivedParent = true,
-                ) { emptyMap() }
+                )
 
             assertEquals(7, processId)
             coVerify(exactly = 0) { gate.awaitRelease(any()) }
@@ -838,12 +969,15 @@ class AgentRunStarterTest {
 
                 assertFailsWith<ServerDrainingException> {
                     starter.start(
-                        AgentFixtures.simpleAgent(name = "child"),
-                        emptyList(),
-                        "agent",
-                        parentProcessId = 42,
+                        RunStartRequest(
+                            agent = AgentFixtures.simpleAgent(name = "child"),
+                            invocationChain = emptyList(),
+                            source = "agent",
+                            parentProcessId = 42,
+                            resolveInputs = { emptyMap() },
+                        ),
                         serverDerivedParent = true,
-                    ) { emptyMap() }
+                    )
                 }
                 coVerify(exactly = 0) { gate.awaitRelease(any()) }
                 coVerify(exactly = 0) { processExecutor.execute(any(), any()) }
@@ -865,11 +999,14 @@ class AgentRunStarterTest {
 
             assertFailsWith<ServerDrainingException> {
                 starter.start(
-                    AgentFixtures.simpleAgent(name = "child"),
-                    emptyList(),
-                    "http",
-                    parentProcessId = 42,
-                ) { emptyMap() }
+                    RunStartRequest(
+                        agent = AgentFixtures.simpleAgent(name = "child"),
+                        invocationChain = emptyList(),
+                        source = "http",
+                        parentProcessId = 42,
+                        resolveInputs = { emptyMap() },
+                    ),
+                )
             }
 
             coVerify(exactly = 0) { processReads.getProcessStatus(any()) }
@@ -885,7 +1022,14 @@ class AgentRunStarterTest {
             val starter = starterWithGate(gate, processExecutor, parentStatus = ProcessStatus.WORKING)
 
             assertFailsWith<ServerDrainingException> {
-                starter.start(AgentFixtures.simpleAgent(name = "child"), emptyList(), "http") { emptyMap() }
+                starter.start(
+                    RunStartRequest(
+                        agent = AgentFixtures.simpleAgent(name = "child"),
+                        invocationChain = emptyList(),
+                        source = "http",
+                        resolveInputs = { emptyMap() },
+                    ),
+                )
             }
 
             coVerify(exactly = 0) { gate.awaitRelease(any()) }

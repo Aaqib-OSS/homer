@@ -41,6 +41,7 @@ import homer.app.models.ProcessInfoResponse
 import homer.app.models.ProcessListResponse
 import homer.app.models.ProcessStatus
 import homer.app.models.QuestionsListResponse
+import homer.app.models.RunStartRequest
 import homer.app.models.RunnerConfig
 import homer.app.models.RunnerState
 import homer.app.models.Server
@@ -1997,12 +1998,14 @@ class ProcessVisibilityTest {
             // The starter is mocked, but the run it "starts" is a real row holding the env the
             // fire resolved — so the status route serves exactly what the fired run would receive.
             val runStarter = mockk<AgentRunStarter>()
-            val resolve = slot<suspend () -> Map<String, String>>()
+            val resolve = slot<RunStartRequest>()
             coEvery {
-                runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), capture(resolve))
+                runStarter.start(capture(resolve), any(), any(), any())
             } coAnswers
                 {
-                    processManager.obtainProcessId(NewRunRecord("deploy", inputParams = resolve.captured.invoke(), owner = "alice"))
+                    processManager.obtainProcessId(
+                        NewRunRecord("deploy", inputParams = resolve.captured.resolveInputs.invoke(), owner = "alice"),
+                    )
                 }
             val agentsService = mockk<AgentsService>(relaxed = true)
             every { agentsService.agents } returns mapOf("deploy" to inheritAgent)

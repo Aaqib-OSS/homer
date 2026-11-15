@@ -12,6 +12,7 @@ import homer.app.models.DispatchListResponse
 import homer.app.models.DispatchResponse
 import homer.app.models.ErrorResponse
 import homer.app.models.QuestionsListResponse
+import homer.app.models.RunStartRequest
 import homer.app.services.AgentRunStarter
 import homer.app.services.AgentsService
 import homer.app.services.Authorizer
@@ -93,7 +94,7 @@ class DispatchRoutesTest {
     fun `callback dispatch is created, fired on answer, and exposed via GET`() =
         testApplication {
             val h = Harness()
-            coEvery { h.runStarter.start(any(), any(), eq("dispatch"), any(), any(), any(), any(), any(), any(), any(), any()) } returns 42
+            coEvery { h.runStarter.start(match { it.source == "dispatch" }, any(), any(), any()) } returns 42
 
             // Asker registers the dispatch with its callback token.
             val token = runBlocking { h.questions.registerProcess(7, "asker") }
@@ -191,7 +192,7 @@ class DispatchRoutesTest {
     fun `answer returns 200 and dispatch is FAILED when dispatch fire throws a non-HomerException`() =
         testApplication {
             val h = Harness()
-            coEvery { h.runStarter.start(any(), any(), eq("dispatch"), any(), any(), any(), any(), any(), any(), any(), any()) } throws
+            coEvery { h.runStarter.start(match { it.source == "dispatch" }, any(), any(), any()) } throws
                 RuntimeException("db exploded")
 
             runBlocking { h.questions.registerProcess(7, "asker") }

@@ -16,6 +16,7 @@ import homer.app.models.ProcessListResponse
 import homer.app.models.ProcessStatus
 import homer.app.models.QuestionResponse
 import homer.app.models.QuestionsListResponse
+import homer.app.models.RunStartRequest
 import homer.app.models.TokenConfig
 import homer.app.services.AgentRunStarter
 import homer.app.services.AgentsService
@@ -146,7 +147,7 @@ class QuestionsRoutesTest {
     fun `each member question of a group answers independently and carries the group annotation`() =
         testApplication {
             val f = groupFixture()
-            coEvery { f.runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns 42
+            coEvery { f.runStarter.start(any(), any(), any(), any()) } returns 42
             mountApiV1Routes {
                 every { questionsService } returns f.questions
                 every { agentsService } returns f.agents
@@ -164,12 +165,12 @@ class QuestionsRoutesTest {
 
             // One member answered: the group is still short of its gate, so nothing fires.
             assertEquals(HttpStatusCode.OK, client.answerWith(f.created.questionIds[0], "one").status)
-            coVerify(exactly = 0) { f.runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { f.runStarter.start(any(), any(), any(), any()) }
             assertEquals(DispatchStatus.PENDING, runBlocking { f.dispatches.get(f.created.dispatchId) }?.status)
 
             // The last one fires the target exactly once.
             assertEquals(HttpStatusCode.OK, client.answerWith(f.created.questionIds[1], "two").status)
-            coVerify(exactly = 1) { f.runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 1) { f.runStarter.start(any(), any(), any(), any()) }
             assertEquals(DispatchStatus.DISPATCHED, runBlocking { f.dispatches.get(f.created.dispatchId) }?.status)
         }
 
@@ -185,7 +186,7 @@ class QuestionsRoutesTest {
 
             // The member questions went with the group, so there is nothing left to answer.
             assertEquals(HttpStatusCode.NotFound, client.answerWith(f.created.questionIds.first(), "one").status)
-            coVerify(exactly = 0) { f.runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { f.runStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -199,7 +200,7 @@ class QuestionsRoutesTest {
             runBlocking { f.dispatches.sweepExpired() }
 
             assertEquals(HttpStatusCode.NotFound, client.answerWith(f.created.questionIds.first(), "one").status)
-            coVerify(exactly = 0) { f.runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { f.runStarter.start(any(), any(), any(), any()) }
         }
 
     @Test

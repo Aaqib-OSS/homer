@@ -11,6 +11,7 @@ import homer.app.models.AgentHook
 import homer.app.models.AppConfig
 import homer.app.models.NewRunRecord
 import homer.app.models.ProcessStatus
+import homer.app.models.RunStartRequest
 import homer.app.services.AgentRunStarter
 import homer.app.services.AgentsService
 import homer.app.services.Authorizer
@@ -67,13 +68,13 @@ class ProcessWiringTest {
         val agentsService = mockk<AgentsService>()
         every { agentsService.agents } returns agents
         coEvery {
-            runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+            runStarter.start(any(), any(), any(), any())
         } coAnswers
             {
                 // Park before recording, so `started` is also the marker that a fire reached and
                 // survived its start: while the gate is shut, nothing is recorded yet.
                 runStartGate.await()
-                started += firstArg<Agent>().name
+                started += firstArg<RunStartRequest>().agent.name
                 99
             }
         return koinApplication {

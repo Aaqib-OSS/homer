@@ -9,6 +9,7 @@ import homer.app.infra.AgentInputResolver
 import homer.app.models.Agent
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
+import homer.app.models.RunStartRequest
 import homer.app.services.persistence.HookRepository
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.element
@@ -110,18 +111,18 @@ class HookFireServiceTest {
     private fun startSucceeds(
         run: ProcessInfo? = run(),
         canSeeRoot: Boolean = true,
-    ): CapturingSlot<suspend () -> Map<String, String>> {
+    ): CapturingSlot<RunStartRequest> {
         every { agents.agents } returns mapOf("notifier" to target)
         coEvery { repo.claim(any()) } returns true
         coEvery { processManager.getProcessInfo(42) } returns run
         coEvery { processManager.getProcessInfo(ROOT_ID) } returns root()
         every { authorizer.canSee(any(), any(), any()) } returns canSeeRoot
-        val resolve = slot<suspend () -> Map<String, String>>()
+        val resolve = slot<RunStartRequest>()
         coEvery {
-            runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), capture(resolve))
+            runStarter.start(capture(resolve), any(), any(), any())
         } coAnswers
             {
-                resolve.captured.invoke()
+                resolve.captured.resolveInputs.invoke()
                 99
             }
         return resolve
@@ -129,7 +130,7 @@ class HookFireServiceTest {
 
     private fun noStart() =
         coVerify(exactly = 0) {
-            runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+            runStarter.start(any(), any(), any(), any())
         }
 
     @Test
@@ -141,17 +142,17 @@ class HookFireServiceTest {
 
             coVerify {
                 runStarter.start(
-                    eq(target),
-                    eq(listOf("declarer")),
-                    eq("hook"),
-                    any(),
-                    any(),
-                    owner = "alice",
-                    any(),
-                    parentProcessId = 42,
-                    rootProcessId = ROOT_ID,
+                    match {
+                        it.agent == target &&
+                            it.invocationChain == listOf("declarer") &&
+                            it.source == "hook" &&
+                            it.owner == "alice" &&
+                            it.parentProcessId == 42 &&
+                            it.rootProcessId == ROOT_ID
+                    },
+                    extraAttributes = any(),
+                    extraSecretInputKeys = any(),
                     serverDerivedParent = true,
-                    resolveInputs = any(),
                 )
             }
             coVerify { repo.markDispatched(5, 99, 1000L) }
@@ -179,7 +180,7 @@ class HookFireServiceTest {
             // A root the owner may not see is no root at all: the fire passes null, never the
             // foreign id. §12 rule 3, ADR-0058.
             coVerify {
-                runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), isNull(), any(), any())
+                runStarter.start(match { it.rootProcessId == null }, any(), any(), any())
             }
         }
 
@@ -249,19 +250,7 @@ class HookFireServiceTest {
             fires.fire(hook())
 
             coVerify {
-                runStarter.start(
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    eq(42),
-                    any(),
-                    any(),
-                )
+                runStarter.start(match { it.rootProcessId == 42 }, any(), any(), any())
             }
         }
 
@@ -323,7 +312,7 @@ class HookFireServiceTest {
             // by a cancelled fire.
             startSucceeds()
             coEvery {
-                runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                runStarter.start(any(), any(), any(), any())
             } throws CancellationException("shutting down")
 
             assertThrows<CancellationException> { fires.fire(hook()) }
@@ -340,10 +329,10 @@ class HookFireServiceTest {
 
             fires.fire(hook(triggeringStatus = ProcessStatus.KILLED))
 
-            assertEquals("42", resolve.captured.invoke()[EnvConstants.HOOK_PROCESS_ID])
-            assertEquals("declarer", resolve.captured.invoke()[EnvConstants.HOOK_AGENT_NAME])
-            assertEquals("KILLED", resolve.captured.invoke()[EnvConstants.HOOK_STATUS])
-            assertEquals("2", resolve.captured.invoke()[EnvConstants.HOOK_DEPTH])
+            assertEquals("42", resolve.captured.resolveInputs.invoke()[EnvConstants.HOOK_PROCESS_ID])
+            assertEquals("declarer", resolve.captured.resolveInputs.invoke()[EnvConstants.HOOK_AGENT_NAME])
+            assertEquals("KILLED", resolve.captured.resolveInputs.invoke()[EnvConstants.HOOK_STATUS])
+            assertEquals("2", resolve.captured.resolveInputs.invoke()[EnvConstants.HOOK_DEPTH])
         }
 
     @Test
@@ -356,8 +345,8 @@ class HookFireServiceTest {
 
             fires.fire(hook(triggeringStatus = ProcessStatus.FAILED))
 
-            assertEquals("Lock 'db' is held by run 7", resolve.captured.invoke()[EnvConstants.HOOK_FAILURE_REASON])
-            assertEquals("env:prod,team:core", resolve.captured.invoke()[EnvConstants.HOOK_TAGS])
+            assertEquals("Lock 'db' is held by run 7", resolve.captured.resolveInputs.invoke()[EnvConstants.HOOK_FAILURE_REASON])
+            assertEquals("env:prod,team:core", resolve.captured.resolveInputs.invoke()[EnvConstants.HOOK_TAGS])
         }
 
     @Test
@@ -367,8 +356,8 @@ class HookFireServiceTest {
 
             fires.fire(hook())
 
-            assertNull(resolve.captured.invoke()[EnvConstants.HOOK_FAILURE_REASON])
-            assertNull(resolve.captured.invoke()[EnvConstants.HOOK_TAGS])
+            assertNull(resolve.captured.resolveInputs.invoke()[EnvConstants.HOOK_FAILURE_REASON])
+            assertNull(resolve.captured.resolveInputs.invoke()[EnvConstants.HOOK_TAGS])
         }
 
     @Test
@@ -391,7 +380,7 @@ class HookFireServiceTest {
 
             fires.fire(hook())
 
-            val resolved = resolve.captured.invoke()
+            val resolved = resolve.captured.resolveInputs.invoke()
             assertEquals(
                 setOf(
                     EnvConstants.HOOK_PROCESS_ID,
@@ -409,7 +398,7 @@ class HookFireServiceTest {
         runTest {
             every { agents.agents } returns mapOf("notifier" to target)
             coEvery { repo.claim(any()) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } throws
+            coEvery { runStarter.start(any(), any(), any(), any()) } throws
                 CostCapExceededException("global", 1.0, 2.0)
 
             fires.fire(hook())
@@ -425,7 +414,7 @@ class HookFireServiceTest {
             // draining server parks it for the next sweep rather than dropping it. ADR-0102.
             every { agents.agents } returns mapOf("notifier" to target)
             coEvery { repo.claim(any()) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } throws
+            coEvery { runStarter.start(any(), any(), any(), any()) } throws
                 ServerDrainingException()
 
             fires.fire(hook())
@@ -438,7 +427,7 @@ class HookFireServiceTest {
         runTest {
             every { agents.agents } returns mapOf("notifier" to target)
             coEvery { repo.claim(any()) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } throws
+            coEvery { runStarter.start(any(), any(), any(), any()) } throws
                 CooldownActiveException("notifier", 30, "hook")
 
             fires.fire(hook(fireAttempts = 3))
@@ -451,7 +440,7 @@ class HookFireServiceTest {
         runTest {
             every { agents.agents } returns mapOf("notifier" to target)
             coEvery { repo.claim(any()) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } throws
+            coEvery { runStarter.start(any(), any(), any(), any()) } throws
                 InvocationCycleDetectedException("notifier", listOf("declarer", "notifier"))
 
             fires.fire(hook())
@@ -465,7 +454,7 @@ class HookFireServiceTest {
         runTest {
             every { agents.agents } returns mapOf("notifier" to target)
             coEvery { repo.claim(any()) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } throws
+            coEvery { runStarter.start(any(), any(), any(), any()) } throws
                 CostCapExceededException("global", 1.0, 2.0)
 
             fires.fire(hook(fireAttempts = ContinuationFireService.MAX_FIRE_ATTEMPTS - 1))
@@ -479,7 +468,7 @@ class HookFireServiceTest {
         runTest {
             every { agents.agents } returns mapOf("notifier" to target)
             coEvery { repo.claim(any()) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } throws
+            coEvery { runStarter.start(any(), any(), any(), any()) } throws
                 IllegalStateException("boom")
 
             fires.fire(hook())

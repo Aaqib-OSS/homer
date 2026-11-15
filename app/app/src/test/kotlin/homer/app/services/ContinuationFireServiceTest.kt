@@ -13,6 +13,7 @@ import homer.app.models.ParamSource
 import homer.app.models.ParamType
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
+import homer.app.models.RunStartRequest
 import homer.app.models.Transformer
 import homer.app.services.persistence.ContinuationRepository
 import io.mockk.CapturingSlot
@@ -79,26 +80,20 @@ class ContinuationFireServiceTest {
     private fun resolvedParams(target: Agent = agent): CapturingSlot<Map<String, String>> {
         every { agents.agents } returns mapOf("h" to target)
         coEvery { repo.claim(5) } returns true
-        val resolve = slot<suspend () -> Map<String, String>>()
+        val resolve = slot<RunStartRequest>()
         coEvery {
             runStarter.start(
-                any(),
-                any(),
-                eq("continuation"),
-                any(),
-                any(),
-                any(),
-                capture(secretKeys),
-                any(),
-                any(),
+                capture(resolve),
+                extraAttributes = any(),
+                extraSecretInputKeys = capture(secretKeys),
                 // The origin link is server-derived: a fire whose origin is still WORKING is
                 // admitted by the maintenance gate. See ADR-0092.
                 serverDerivedParent = true,
-                capture(resolve),
             )
         } coAnswers
             {
-                resolve.captured.invoke()
+                assertEquals("continuation", resolve.captured.source)
+                resolve.captured.resolveInputs.invoke()
                 99
             }
         val params = slot<Map<String, String>>()
@@ -162,17 +157,14 @@ class ContinuationFireServiceTest {
 
             coVerify {
                 runStarter.start(
-                    eq(target),
-                    eq(emptyList()),
-                    eq("continuation"),
-                    any(),
-                    any(),
-                    any(),
-                    eq(setOf("API_TOKEN")),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
+                    match {
+                        it.agent == target &&
+                            it.invocationChain.isEmpty() &&
+                            it.source == "continuation"
+                    },
+                    extraAttributes = any(),
+                    extraSecretInputKeys = eq(setOf("API_TOKEN")),
+                    serverDerivedParent = any(),
                 )
             }
             coVerify { repo.markDispatched(5, 99, 1000L) }
@@ -207,17 +199,13 @@ class ContinuationFireServiceTest {
             // server-derived flag set, so an origin that is no longer `WORKING` parks as before.
             coVerify {
                 runStarter.start(
-                    any(),
-                    any(),
-                    eq("continuation"),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    parentProcessId = 7,
-                    rootProcessId = any(),
+                    match {
+                        it.source == "continuation" &&
+                            it.parentProcessId == 7
+                    },
+                    extraAttributes = any(),
+                    extraSecretInputKeys = any(),
                     serverDerivedParent = true,
-                    resolveInputs = any(),
                 )
             }
         }
@@ -229,7 +217,7 @@ class ContinuationFireServiceTest {
 
             fires.fire(pending(), ProcessStatus.FINISHED)
 
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -241,7 +229,7 @@ class ContinuationFireServiceTest {
             fires.fire(pending(), ProcessStatus.FINISHED)
 
             coVerify { repo.markFailed(5, "Target agent 'h' not found", 1000L) }
-            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
         }
 
     @Test
@@ -249,7 +237,7 @@ class ContinuationFireServiceTest {
         runTest {
             every { agents.agents } returns mapOf("h" to agent)
             coEvery { repo.claim(5) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } throws
+            coEvery { runStarter.start(any(), any(), any(), any()) } throws
                 CostCapExceededException("global", 1.0, 2.0)
 
             fires.fire(pending(), ProcessStatus.FINISHED)
@@ -264,7 +252,7 @@ class ContinuationFireServiceTest {
             // resume must not be consumed by it. See ADR-0104, ADR-0023.
             every { agents.agents } returns mapOf("h" to agent)
             coEvery { repo.claim(5) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } throws
+            coEvery { runStarter.start(any(), any(), any(), any()) } throws
                 MaxLockWaitersExceededException("h", 5)
 
             fires.fire(pending(), ProcessStatus.FINISHED)
@@ -281,7 +269,7 @@ class ContinuationFireServiceTest {
             // attempt counted rather than to FAILED. See ADR-0023, ADR-0102.
             every { agents.agents } returns mapOf("h" to agent)
             coEvery { repo.claim(5) } returns true
-            coEvery { runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } throws
+            coEvery { runStarter.start(any(), any(), any(), any()) } throws
                 ServerDrainingException()
 
             fires.fire(pending(), ProcessStatus.FINISHED)
@@ -483,25 +471,19 @@ class ContinuationFireServiceTest {
                     mockk(relaxed = true),
                     LoggerFactory.getLogger("t"),
                 ) { 1000L }
-            val resolve = slot<suspend () -> Map<String, String>>()
+            val resolve = slot<RunStartRequest>()
             var resolved: Map<String, String>? = null
             coEvery {
                 runStarter.start(
-                    any(),
-                    any(),
-                    eq("continuation"),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    serverDerivedParent = true,
                     capture(resolve),
+                    extraAttributes = any(),
+                    extraSecretInputKeys = any(),
+                    serverDerivedParent = true,
                 )
             } coAnswers
                 {
-                    resolved = resolve.captured.invoke()
+                    assertEquals("continuation", resolve.captured.source)
+                    resolved = resolve.captured.resolveInputs.invoke()
                     99
                 }
 
