@@ -34,10 +34,13 @@ if [ ! -d node_modules ]; then
     echo ""
 fi
 
-# Load environment variables
+# Load environment variables: source with auto-export so shell quoting,
+# comments and '=' inside values are honoured (quote values with spaces)
 if [ -f .env.local ]; then
-    # shellcheck disable=SC2046 # word splitting turns each KEY=value line into its own export argument
-    export $(cat .env.local | grep -v '^#' | xargs)
+    set -a
+    # shellcheck source=/dev/null # the developer's own file, not in the repo
+    . ./.env.local
+    set +a
 fi
 
 # Display configuration
