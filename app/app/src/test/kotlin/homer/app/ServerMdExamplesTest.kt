@@ -4,15 +4,8 @@ import com.charleskorn.kaml.Yaml
 import com.networknt.schema.InputFormat
 import homer.app.fixtures.repoRoot
 import homer.app.models.AppConfig
-import homer.app.models.AuthConfig
-import homer.app.models.TokenConfigObject
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Test
 import java.io.File
 import kotlin.test.assertEquals
@@ -58,42 +51,11 @@ class ServerMdExamplesTest {
             } catch (e: Exception) {
                 return "Deserialization failed at SERVER.md:${block.line} (${block.lang}):\n    ${e.message}"
             }
-        val errors = schema.validate(toJson(config).toString(), InputFormat.JSON)
+        val errors = schema.validate(encoder.encodeToString(AppConfig.serializer(), config), InputFormat.JSON)
         if (errors.isEmpty()) return null
         return "Schema validation failed at SERVER.md:${block.line} (${block.lang}):\n" +
             errors.joinToString("\n") { "    - ${it.instanceLocation}: ${it.message}" }
     }
-
-    /** [config] as JSON, with its `apiAuth` written by [authJson]. */
-    private fun toJson(config: AppConfig): JsonObject {
-        val auth = config.server.apiAuth ?: return encoder.encodeToJsonElement(AppConfig.serializer(), config).jsonObject
-        val json = encoder.encodeToJsonElement(AppConfig.serializer(), config.copy(server = config.server.copy(apiAuth = null))).jsonObject
-        val server = JsonObject(json.getValue("server").jsonObject + ("apiAuth" to authJson(auth)))
-        return JsonObject(json + ("server" to server))
-    }
-
-    /** Bearer tokens go through their object form by hand: `TokenConfig`'s own serializer cannot encode (#238). */
-    private fun authJson(auth: AuthConfig): JsonElement =
-        when (auth) {
-            is AuthConfig.Bearer -> {
-                val tokens =
-                    auth.tokens.mapValues { (_, t) ->
-                        encoder.encodeToJsonElement(
-                            TokenConfigObject.serializer(),
-                            TokenConfigObject(t.token, t.role, t.grants, t.endpoints),
-                        )
-                    }
-                JsonObject(mapOf("type" to JsonPrimitive("bearer"), "tokens" to JsonObject(tokens)))
-            }
-
-            is AuthConfig.Combined -> {
-                JsonObject(mapOf("type" to JsonPrimitive("combined"), "schemes" to JsonArray(auth.schemes.map(::authJson))))
-            }
-
-            else -> {
-                encoder.encodeToJsonElement(AuthConfig.serializer(), auth)
-            }
-        }
 
     @OptIn(ExperimentalSerializationApi::class)
     private val requiredKeys: List<String> =
