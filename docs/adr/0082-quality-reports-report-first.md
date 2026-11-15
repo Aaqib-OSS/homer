@@ -327,3 +327,24 @@ would make a pull request's result depend on the network and on advisories publi
 written. A finding whose fix would change behaviour is not fixed in the code. It is marked inline with
 the tool's own comment and its reason, or, for a hadolint rule that holds for the whole repository,
 ignored in `.hadolint.yaml` with its reason. A baseline file would hide the reason.
+
+*Amended (2026-11-15):* the architecture module's internals, cut from `app/CLAUDE.md` so the guide
+keeps the rule table and this ADR the reasoning behind it. **Why source text and not bytecode.**
+ArchUnit was the first candidate for the layering and cycle rules and was rejected: compiled Kotlin
+inlines `const val`s and inline functions, so a bytecode graph hides edges that exist and invents
+edges that do not, and a finding has to point at the import line that added the dependency. The rules
+therefore read source text and imports. **The route rule's walk.** It reads the routes with a small
+Kotlin text lexer and walk (`KotlinText`, `SecuredRoutes`) rather than a PSI parser, and its safety
+net is a fail-closed guard: any handler-shaped call (`get`, `post`, …, `connect`, `route`, `method`,
+`webSocket`, `sse`, `static*`) inside a `Route`/`Routing` extension, block or expression body, outside
+the handler bodies, that the walk did not attribute is a finding. A handler given as `::fn` is
+followed into `fn` when exactly one function in `routes/` has that name, else it stays unattributed;
+all overloads of a builder are walked. A registration-named call on an explicit receiver
+(`routing.get("/x", ::h)`, `x.staticResources(…)`), with or without a lambda, is a finding anywhere in
+`routes/` except inside handler bodies and inside route-free top-level functions — ones whose
+signature and body name no `Route`, `Routing` or `Application` type, no import alias or typealias of
+one, and no `route`, `routing` or `application` identifier. **The cycle rule's report.** It reports,
+per cycle, the edges cheapest to cut: a kernel package's import of another package first, then the
+edge with the fewest imports. **Where the size limits came from.** They complement the CRAP check
+(ADR-0081), which misses long code that branches little; they were set where the outliers showed — 9
+files, 16 classes and 67 functions at introduction — and became `required` once those were split.

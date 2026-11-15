@@ -29,19 +29,8 @@ commit message or ADR is a door closed to every one of them, and unlike
 code it is never revisited and fixed later.
 
 When working inside a package, the nearer CLAUDE.md auto-loads and
-augments this file:
-
-- [`app/CLAUDE.md`](app/CLAUDE.md) — backend architecture (Kotlin/Ktor).
-- [`console/CLAUDE.md`](console/CLAUDE.md) — frontend architecture
-  (Next.js).
-- [`clients/python/homer_langgraph/CLAUDE.md`](clients/python/homer_langgraph/CLAUDE.md)
-  — the Python LangGraph runtime.
-- [`app/app/src/main/kotlin/homer/app/runners/CLAUDE.md`](app/app/src/main/kotlin/homer/app/runners/CLAUDE.md)
-  — the runner contract, claim queue and external pull runners.
-- [`app/app/src/main/kotlin/homer/app/services/persistence/CLAUDE.md`](app/app/src/main/kotlin/homer/app/services/persistence/CLAUDE.md)
-  — the persistence model and the schema-version history.
-- [`app/app/src/main/kotlin/homer/app/executors/llm/CLAUDE.md`](app/app/src/main/kotlin/homer/app/executors/llm/CLAUDE.md)
-  — the LLM harness recipe and its cost accounting.
+augments this file. The §9 doc map lists every guide and the surface it
+is canonical for.
 
 ## 1. Think Before Coding
 
