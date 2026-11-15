@@ -1,6 +1,7 @@
 package homer.app.services.persistence
 
 import homer.app.models.ProcessInfo
+import homer.app.models.ProcessListQuery
 import homer.app.models.ProcessStatus
 import homer.app.models.SubRunProgress
 import homer.app.services.ProcessManager.CostByTagResult
@@ -26,57 +27,27 @@ import org.jetbrains.exposed.v1.jdbc.selectAll
 // The read-only queries over many process rows: the paged, filtered list behind `GET /status/all`,
 // the cost-by-tag fold, and the batched id reads. Every one runs on the reader handle (`db.read`).
 
-suspend fun ProcessRepository.getAll(
-    filterStatuses: Set<ProcessStatus>?,
-    orderAsc: Boolean,
-    offset: Int,
-    limit: Int,
-    agentName: String?,
-    visibleOwner: String? = null,
-    /**
-     * Null means an admin: no visibility filter, and the index-driven `?tag=` subquery,
-     * whose cost follows every run with the tag. Never null for a principal-scoped caller.
-     * See ADR-0060 (2026-09-29 amendment).
-     */
-    visibleAgents: Set<String>? = null,
-    parentProcessId: Int? = null,
-    rootProcessId: Int? = null,
-    /**
-     * Roots-only: `parent_process_id IS NULL`, i.e. the first run of each
-     * flow. Composes with every other predicate here (AND). See ADR-0058.
-     */
-    rootsOnly: Boolean = false,
-    tags: List<String> = emptyList(),
-    /**
-     * Read-time tag screen for the filtered path: given a matched row's
-     * [ProcessInfo], returns the tags that survive display redaction. Required
-     * whenever [tags] is non-empty, with no default-null escape — a defaulted
-     * screen is how a future caller silently re-opens the CWE-203 oracle (ADR-0052
-     * applies the same rule to `langfuseTraceTags`). [getAll] fails closed when
-     * [tags] is non-empty and this is null.
-     */
-    screenTags: ((ProcessInfo) -> List<String>)? = null,
-    /**
-     * The caller's visibility check for a flow-root row, run in this read's transaction.
-     * Required whenever [rootProcessId] is set ([getAll] throws otherwise): the filter is
-     * honoured only when that root row exists and passes it (otherwise an empty page).
-     * [ProcessListResult.visibleRootIds] names the page's roots that pass; when null, no
-     * root is named visible. See ADR-0058.
-     */
-    canSeeRoot: ((owner: String?, agentName: String) -> Boolean)? = null,
-): ProcessListResult {
-    requireListGuards(tags, screenTags, rootProcessId, canSeeRoot)
+/**
+ * One page of [listQuery]'s rows. Fails closed on a tag filter without `screenTags` and on a
+ * `rootProcessId` without `canSeeRoot` (see [ProcessListQuery]).
+ */
+suspend fun ProcessRepository.getAll(listQuery: ProcessListQuery): ProcessListResult {
+    requireListGuards(listQuery)
     // AND semantics for repeated ?tag=: a row must carry ALL de-duplicated
     // tags, matched in SQL by carriesAllTags (GROUP BY ... HAVING COUNT = n):
     // a correlated EXISTS for a scoped caller, an index-driven id IN (SELECT ...)
     // for an admin. Nothing is materialized in the application. No match → empty
     // page, never an error, so "no such tag" and "no such tag you can see" are
     // one answer. See ADR-0058 and ADR-0060.
-    val dedupedTags = tags.distinct()
-    val order = Processes.id to if (orderAsc) SortOrder.ASC else SortOrder.DESC
+    val dedupedTags = listQuery.tags.distinct()
+    val order = Processes.id to if (listQuery.orderAsc) SortOrder.ASC else SortOrder.DESC
+    val offset = listQuery.offset
+    val limit = listQuery.limit
+    val canSeeRoot = listQuery.canSeeRoot
     return db.read {
         // [information_disclosure / CWE-200] An invisible or missing root reads exactly
         // like an empty flow, never like "no filter". §12.
+        val rootProcessId = listQuery.rootProcessId
         if (rootProcessId != null) {
             val canSee = checkNotNull(canSeeRoot) { "requireListGuards admits no rootProcessId without canSeeRoot" }
             if (rootProcessId !in visibleRootIdsTx(listOf(rootProcessId), canSee)) {
@@ -85,16 +56,12 @@ suspend fun ProcessRepository.getAll(
         }
         val query =
             Processes.selectAll().where {
-                withAccessFilter(
-                    rowFilter(filterStatuses, agentName, parentProcessId, rootProcessId, rootsOnly),
-                    dedupedTags,
-                    visibleOwner,
-                    visibleAgents,
-                )
+                withAccessFilter(rowFilter(listQuery), dedupedTags, listQuery.visibleOwner, listQuery.visibleAgents)
             }
         // [CWE-203] Apply the display-redaction screen per row before
         // accepting a tag match: the SQL predicate above matches unredacted values.
         // See ADR-0060 for why the screen cannot live in the SQL predicate.
+        val screenTags = listQuery.screenTags
         if (dedupedTags.isNotEmpty() && screenTags != null) {
             return@read screenedPageTx(query, order, dedupedTags, screenTags, offset, limit, canSeeRoot)
         }
@@ -120,28 +87,21 @@ suspend fun ProcessRepository.getAll(
  * ungated `?rootProcessId=` lists the visible rows of a hidden flow, an existence oracle for its
  * root (CWE-200, ADR-0058).
  */
-private fun requireListGuards(
-    tags: List<String>,
-    screenTags: ((ProcessInfo) -> List<String>)?,
-    rootProcessId: Int?,
-    canSeeRoot: ((owner: String?, agentName: String) -> Boolean)?,
-) {
-    if (tags.distinct().isNotEmpty() && screenTags == null) {
+private fun requireListGuards(listQuery: ProcessListQuery) {
+    if (listQuery.tags.distinct().isNotEmpty() && listQuery.screenTags == null) {
         throw IllegalArgumentException("screenTags is required whenever tags is non-empty")
     }
-    if (rootProcessId != null && canSeeRoot == null) {
+    if (listQuery.rootProcessId != null && listQuery.canSeeRoot == null) {
         throw IllegalArgumentException("canSeeRoot is required whenever rootProcessId is set")
     }
 }
 
 /** [getAll]'s column predicates, ANDed onto `TRUE` in this order. */
-private fun rowFilter(
-    filterStatuses: Set<ProcessStatus>?,
-    agentName: String?,
-    parentProcessId: Int?,
-    rootProcessId: Int?,
-    rootsOnly: Boolean,
-): Op<Boolean> {
+private fun rowFilter(listQuery: ProcessListQuery): Op<Boolean> {
+    val filterStatuses = listQuery.filterStatuses
+    val agentName = listQuery.agentName
+    val parentProcessId = listQuery.parentProcessId
+    val rootProcessId = listQuery.rootProcessId
     var cond: Op<Boolean> = Op.TRUE
     if (filterStatuses != null) {
         cond = cond and (Processes.status inList filterStatuses.map { it.name })
@@ -155,7 +115,7 @@ private fun rowFilter(
     if (rootProcessId != null) {
         cond = cond and (Processes.rootProcessId eq rootProcessId)
     }
-    if (rootsOnly) {
+    if (listQuery.rootsOnly) {
         cond = cond and Processes.parentProcessId.isNull()
     }
     return cond

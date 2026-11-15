@@ -32,7 +32,7 @@ class StatusAllValidationTest {
         processManager = mockk(relaxed = true)
         // Default happy-path result for the cases that reach the handler body.
         coEvery {
-            processManager.getAllProcesses(any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+            processManager.getAllProcesses(any())
         } returns ProcessManager.ProcessListResult(processes = emptyList(), total = 0)
     }
 

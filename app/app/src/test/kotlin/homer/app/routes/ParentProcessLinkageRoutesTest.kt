@@ -67,21 +67,7 @@ class ParentProcessLinkageRoutesTest {
         coEvery { processManager.getProcessInfo(9) } returns segment
         coEvery { processManager.getProcessInfo(404) } returns null
         coEvery {
-            processManager.getAllProcesses(
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-            )
+            processManager.getAllProcesses(any())
         } returns
             ProcessManager.ProcessListResult(processes = emptyList(), total = 0)
         agentRunStarter = mockk()
@@ -238,19 +224,7 @@ class ParentProcessLinkageRoutesTest {
 
             assertEquals(HttpStatusCode.OK, response.status)
             coVerify {
-                processManager.getAllProcesses(
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    parentProcessId = 7,
-                    tags = any(),
-                    screenTags = any(),
-                    canSeeRoot = any(),
-                )
+                processManager.getAllProcesses(match { it.parentProcessId == 7 })
             }
         }
 
@@ -268,7 +242,7 @@ class ParentProcessLinkageRoutesTest {
                 )
             }
             coVerify(exactly = 0) {
-                processManager.getAllProcesses(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                processManager.getAllProcesses(any())
             }
         }
 
@@ -379,21 +353,7 @@ class ParentProcessLinkageRoutesTest {
 
             assertEquals(HttpStatusCode.OK, response.status)
             coVerify {
-                processManager.getAllProcesses(
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    rootProcessId = 7,
-                    rootsOnly = false,
-                    tags = any(),
-                    screenTags = any(),
-                    canSeeRoot = any(),
-                )
+                processManager.getAllProcesses(match { it.rootProcessId == 7 && it.rootsOnly == false })
             }
         }
 
@@ -411,7 +371,7 @@ class ParentProcessLinkageRoutesTest {
                 )
             }
             coVerify(exactly = 0) {
-                processManager.getAllProcesses(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                processManager.getAllProcesses(any())
             }
         }
 
@@ -424,21 +384,7 @@ class ParentProcessLinkageRoutesTest {
 
             assertEquals(HttpStatusCode.OK, response.status)
             coVerify {
-                processManager.getAllProcesses(
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    rootProcessId = null,
-                    rootsOnly = true,
-                    tags = any(),
-                    screenTags = any(),
-                    canSeeRoot = any(),
-                )
+                processManager.getAllProcesses(match { it.rootProcessId == null && it.rootsOnly == true })
             }
         }
 

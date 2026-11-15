@@ -38,6 +38,7 @@ import homer.app.models.PodPhase
 import homer.app.models.ProcessCreationResult
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessInfoResponse
+import homer.app.models.ProcessListQuery
 import homer.app.models.ProcessListResponse
 import homer.app.models.ProcessStatus
 import homer.app.models.QuestionsListResponse
@@ -425,7 +426,7 @@ class ProcessVisibilityTest {
             val tokens = mapOf("reader" to readToken)
             val pm = mockk<ProcessManager>(relaxed = true)
             coEvery {
-                pm.getAllProcesses(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                pm.getAllProcesses(any())
             } returns
                 ProcessManager.ProcessListResult(processes = listOf(processWithRunner()), total = 1)
             val questionsService = mockk<QuestionsService>(relaxed = true)
@@ -481,7 +482,7 @@ class ProcessVisibilityTest {
             val tokens = mapOf("root" to adminToken)
             val pm = mockk<ProcessManager>(relaxed = true)
             coEvery {
-                pm.getAllProcesses(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                pm.getAllProcesses(any())
             } returns
                 ProcessManager.ProcessListResult(processes = listOf(processWithRunner()), total = 1)
             val questionsService = mockk<QuestionsService>(relaxed = true)
@@ -1057,21 +1058,7 @@ class ProcessVisibilityTest {
             val tokens = mapOf("reader" to readToken)
             val pm = mockk<ProcessManager>(relaxed = true)
             coEvery {
-                pm.getAllProcesses(
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                )
+                pm.getAllProcesses(any())
             } returns
                 ProcessManager.ProcessListResult(processes = emptyList(), total = 0)
             val questionsService = mockk<QuestionsService>(relaxed = true)
@@ -1088,19 +1075,12 @@ class ProcessVisibilityTest {
             assertEquals(HttpStatusCode.OK, res.status)
             coVerify {
                 pm.getAllProcesses(
-                    filterStatuses = null,
-                    orderAsc = false,
-                    offset = 0,
-                    limit = 100,
-                    agentName = null,
-                    visibleOwner = "reader",
-                    visibleAgents = setOf("deploy"),
-                    parentProcessId = null,
-                    rootProcessId = null,
-                    rootsOnly = false,
-                    tags = emptyList(),
-                    screenTags = any(),
-                    canSeeRoot = any(),
+                    match {
+                        it.copy(screenTags = null, canSeeRoot = null) ==
+                            ProcessListQuery(visibleOwner = "reader", visibleAgents = setOf("deploy")) &&
+                            it.screenTags != null &&
+                            it.canSeeRoot != null
+                    },
                 )
             }
         }
@@ -1111,21 +1091,7 @@ class ProcessVisibilityTest {
             val tokens = mapOf("root" to adminToken)
             val pm = mockk<ProcessManager>(relaxed = true)
             coEvery {
-                pm.getAllProcesses(
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                )
+                pm.getAllProcesses(any())
             } returns
                 ProcessManager.ProcessListResult(processes = emptyList(), total = 0)
             val questionsService = mockk<QuestionsService>(relaxed = true)
@@ -1142,19 +1108,12 @@ class ProcessVisibilityTest {
             assertEquals(HttpStatusCode.OK, res.status)
             coVerify {
                 pm.getAllProcesses(
-                    filterStatuses = null,
-                    orderAsc = false,
-                    offset = 0,
-                    limit = 100,
-                    agentName = null,
-                    visibleOwner = "root",
-                    visibleAgents = null,
-                    parentProcessId = null,
-                    rootProcessId = null,
-                    rootsOnly = false,
-                    tags = emptyList(),
-                    screenTags = any(),
-                    canSeeRoot = any(),
+                    match {
+                        it.copy(screenTags = null, canSeeRoot = null) ==
+                            ProcessListQuery(visibleOwner = "root", visibleAgents = null) &&
+                            it.screenTags != null &&
+                            it.canSeeRoot != null
+                    },
                 )
             }
         }

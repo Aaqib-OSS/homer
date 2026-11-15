@@ -667,7 +667,7 @@ class GrantsEnforcementTest {
             val tokens = mapOf("status" to starReadToken)
             val pm = mockk<ProcessManager>(relaxed = true)
             coEvery {
-                pm.getAllProcesses(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                pm.getAllProcesses(any())
             } returns
                 ProcessManager.ProcessListResult(
                     processes =

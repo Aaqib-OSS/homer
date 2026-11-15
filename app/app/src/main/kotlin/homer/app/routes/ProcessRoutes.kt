@@ -3,6 +3,7 @@ package homer.app.routes
 import homer.app.exceptions.QueryParamValidationException
 import homer.app.models.ErrorResponse
 import homer.app.models.ProcessInfo
+import homer.app.models.ProcessListQuery
 import homer.app.models.ProcessListResponse
 import homer.app.models.ProcessStatus
 import homer.app.models.ProcessStatus.CREATED
@@ -35,33 +36,16 @@ internal fun Route.processRoutes(deps: ApiDeps) {
 private fun Route.processListRoute(deps: ApiDeps) {
     with(deps) {
         get("/status/all") {
-            // Each invalid param throws a 400; the order of checks inside
-            // parseStatusAllParams decides which error wins.
-            val params = parseStatusAllParams(call)
-
-            // Process-visibility union rule (ADR-0037): null visibleAgents
-            // (admin) means no filter.
             val principal = call.principalName()
-            val visibleAgents = visibleAgentNames(authorizer, agentsService, principal)
-            // Alias is admin-only (CWE-200, fail closed). Same admin gate as the
-            // single-process route. See ADR-0077.
-            val aliasVisible = authorizer.isAdmin(principal)
-
-            // One read transaction carries the page, its open-question counts
-            // and the root-visibility checks below.
-            val result =
-                processManager.getAllProcesses(
-                    filterStatuses = params.filterStatuses,
-                    orderAsc = (params.order == "asc"),
-                    offset = params.offset,
-                    limit = params.limit,
-                    agentName = params.agentName,
+            // Each invalid param throws a 400; the order of checks inside
+            // parseStatusAllParams decides which error wins. The parsed query is
+            // scoped to the caller here, before it is named.
+            val query =
+                parseStatusAllParams(call).copy(
                     visibleOwner = principal,
-                    visibleAgents = visibleAgents,
-                    parentProcessId = params.parentProcessId,
-                    rootProcessId = params.rootProcessId,
-                    rootsOnly = params.roots,
-                    tags = params.tags,
+                    // Process-visibility union rule (ADR-0037): null visibleAgents
+                    // (admin) means no filter.
+                    visibleAgents = visibleAgentNames(authorizer, agentsService, principal),
                     // [CWE-203] Same per-row secret redaction the display
                     // path uses. See ADR-0060.
                     screenTags = { info ->
@@ -76,8 +60,15 @@ private fun Route.processListRoute(deps: ApiDeps) {
                     // unknown"). §12, ADR-0058.
                     canSeeRoot = { owner, agentName -> authorizer.canSee(principal, owner, agentName) },
                 )
+            // Alias is admin-only (CWE-200, fail closed). Same admin gate as the
+            // single-process route. See ADR-0077.
+            val aliasVisible = authorizer.isAdmin(principal)
 
-            call.respond(processListResponse(result, params, aliasVisible))
+            // One read transaction carries the page, its open-question counts
+            // and the root-visibility checks below.
+            val result = processManager.getAllProcesses(query)
+
+            call.respond(processListResponse(result, query, aliasVisible))
         }
     }
 }
@@ -268,10 +259,10 @@ private fun Route.artifactListRoute(deps: ApiDeps) {
     }
 }
 
-/** The `GET /status/all` response for the page [result] of [params]; [aliasVisible] is the caller's admin gate. */
+/** The `GET /status/all` response for the page [result] of [query]; [aliasVisible] is the caller's admin gate. */
 private fun ApiDeps.processListResponse(
     result: ProcessManager.ProcessListResult,
-    params: StatusAllParams,
+    query: ProcessListQuery,
     aliasVisible: Boolean,
 ): ProcessListResponse =
     ProcessListResponse(
@@ -287,8 +278,8 @@ private fun ApiDeps.processListResponse(
                 )
             },
         total = result.total,
-        offset = params.offset,
-        limit = params.limit,
+        offset = query.offset,
+        limit = query.limit,
     )
 
 /**
@@ -318,19 +309,6 @@ private fun ApiDeps.artifactQuery(call: ApplicationCall): Pair<Int, String> {
     return processId to validatedPath
 }
 
-/** Validated query parameters for `GET /api/v1/status/all`. */
-private data class StatusAllParams(
-    val filterStatuses: Set<ProcessStatus>?,
-    val order: String,
-    val offset: Int,
-    val limit: Int,
-    val agentName: String?,
-    val parentProcessId: Int?,
-    val rootProcessId: Int?,
-    val roots: Boolean,
-    val tags: List<String>,
-)
-
 /**
  * Parses and validates the `GET /api/v1/status/all` query parameters. On the
  * first invalid parameter it throws a [QueryParamValidationException] that
@@ -338,7 +316,7 @@ private data class StatusAllParams(
  * (order → limit → offset → types) must be preserved — it determines which
  * error wins when several params are invalid.
  */
-private fun parseStatusAllParams(call: ApplicationCall): StatusAllParams {
+private fun parseStatusAllParams(call: ApplicationCall): ProcessListQuery {
     val orderParam = call.request.queryParameters["order"]?.lowercase() ?: "desc"
     val limitParam = call.request.queryParameters["limit"]?.toIntOrNull() ?: 100
     val offsetParam = call.request.queryParameters["offset"]?.toIntOrNull() ?: 0
@@ -358,15 +336,15 @@ private fun parseStatusAllParams(call: ApplicationCall): StatusAllParams {
 
     val tags = parseTagFilters(call)
 
-    return StatusAllParams(
+    return ProcessListQuery(
         filterStatuses = filterStatuses,
-        order = orderParam,
+        orderAsc = (orderParam == "asc"),
         offset = offsetParam,
         limit = limitParam,
         agentName = agentNameParam,
         parentProcessId = parentProcessId,
         rootProcessId = rootProcessId,
-        roots = roots,
+        rootsOnly = roots,
         tags = tags,
     )
 }

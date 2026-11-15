@@ -10,6 +10,7 @@ import homer.app.models.FALLBACK_REASON_SESSION_FIGURE_PENDING
 import homer.app.models.LlmAccounting
 import homer.app.models.NewRunRecord
 import homer.app.models.PodPhase
+import homer.app.models.ProcessListQuery
 import homer.app.models.ProcessStatus
 import homer.app.models.RunnerState
 import homer.app.services.persistence.HookRecording
@@ -1137,9 +1138,7 @@ class ProcessManagerTest {
             processManager.setProcessStatus(processId3, ProcessStatus.WORKING)
 
             val result =
-                processManager.getAllProcesses(
-                    filterStatuses = setOf(ProcessStatus.WORKING),
-                )
+                processManager.getAllProcesses(ProcessListQuery(filterStatuses = setOf(ProcessStatus.WORKING)))
 
             assertEquals(2, result.processes.size)
             assertEquals(2, result.total)
@@ -1153,7 +1152,7 @@ class ProcessManagerTest {
             val processId2 = processManager.obtainProcessId(NewRunRecord("test-agent"))
             val processId3 = processManager.obtainProcessId(NewRunRecord("test-agent"))
 
-            val result = processManager.getAllProcesses(orderAsc = true)
+            val result = processManager.getAllProcesses(ProcessListQuery(orderAsc = true))
 
             assertEquals(3, result.processes.size)
             assertEquals(3, result.total)
@@ -1192,10 +1191,7 @@ class ProcessManagerTest {
             processManager.setProcessStatus(processId4, ProcessStatus.FINISHED)
 
             val result =
-                processManager.getAllProcesses(
-                    filterStatuses = setOf(ProcessStatus.FINISHED),
-                    orderAsc = true,
-                )
+                processManager.getAllProcesses(ProcessListQuery(filterStatuses = setOf(ProcessStatus.FINISHED), orderAsc = true))
 
             assertEquals(2, result.processes.size)
             assertEquals(2, result.total)
@@ -1210,11 +1206,7 @@ class ProcessManagerTest {
             repeat(10) { processManager.obtainProcessId(NewRunRecord("test-agent")) }
 
             val result =
-                processManager.getAllProcesses(
-                    offset = 3,
-                    limit = 3,
-                    orderAsc = true,
-                )
+                processManager.getAllProcesses(ProcessListQuery(orderAsc = true, offset = 3, limit = 3))
 
             assertEquals(3, result.processes.size)
             assertEquals(10, result.total)
@@ -1230,11 +1222,7 @@ class ProcessManagerTest {
             repeat(10) { processManager.obtainProcessId(NewRunRecord("test-agent")) }
 
             val result =
-                processManager.getAllProcesses(
-                    offset = 0,
-                    limit = 5,
-                    orderAsc = true,
-                )
+                processManager.getAllProcesses(ProcessListQuery(orderAsc = true, limit = 5))
 
             assertEquals(5, result.processes.size)
             assertEquals(10, result.total)
@@ -1246,10 +1234,7 @@ class ProcessManagerTest {
             repeat(5) { processManager.obtainProcessId(NewRunRecord("test-agent")) }
 
             val result =
-                processManager.getAllProcesses(
-                    offset = 10,
-                    limit = 5,
-                )
+                processManager.getAllProcesses(ProcessListQuery(offset = 10, limit = 5))
 
             assertEquals(0, result.processes.size)
             assertEquals(5, result.total)
@@ -1272,10 +1257,12 @@ class ProcessManagerTest {
 
             val result =
                 processManager.getAllProcesses(
-                    filterStatuses = setOf(ProcessStatus.WORKING),
-                    orderAsc = true,
-                    offset = 1,
-                    limit = 2,
+                    ProcessListQuery(
+                        filterStatuses = setOf(ProcessStatus.WORKING),
+                        orderAsc = true,
+                        offset = 1,
+                        limit = 2,
+                    ),
                 )
 
             assertEquals(2, result.processes.size)

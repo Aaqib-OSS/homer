@@ -16,6 +16,7 @@ import homer.app.models.MAX_FAILURE_REASON_LENGTH
 import homer.app.models.NewRunRecord
 import homer.app.models.PodPhase
 import homer.app.models.ProcessInfo
+import homer.app.models.ProcessListQuery
 import homer.app.models.ProcessStatus
 import homer.app.models.RunnerState
 import homer.app.models.SubRunProgress
@@ -94,13 +95,22 @@ class ProcessRepositoryTest {
             val child2 = repo.obtainProcessId(NewRunRecord("b", parentProcessId = root), 100).processId
             repo.obtainProcessId(NewRunRecord("b", parentProcessId = other), 100).processId
 
-            val page = repo.getAll(null, orderAsc = true, offset = 0, limit = 10, agentName = null, parentProcessId = root)
+            val page = repo.getAll(ProcessListQuery(orderAsc = true, limit = 10, parentProcessId = root))
 
             assertEquals(listOf(child1, child2), page.processes.map { it.id })
             assertEquals(2, page.total)
             // The filter composes with the visibility union: a caller who cannot see
             // agent `b` gets an empty page, not the children.
-            val hidden = repo.getAll(null, true, 0, 10, null, visibleOwner = "nobody", visibleAgents = emptySet(), parentProcessId = root)
+            val hidden =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        visibleOwner = "nobody",
+                        visibleAgents = emptySet(),
+                        parentProcessId = root,
+                    ),
+                )
             assertEquals(0, hidden.total)
         }
 
@@ -132,13 +142,12 @@ class ProcessRepositoryTest {
 
             val page =
                 repo.getAll(
-                    null,
-                    orderAsc = true,
-                    offset = 0,
-                    limit = 10,
-                    agentName = null,
-                    rootProcessId = root,
-                    canSeeRoot = seeAll,
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        rootProcessId = root,
+                        canSeeRoot = seeAll,
+                    ),
                 )
 
             // The root row itself is not a descendant of itself: `?rootProcessId=N` answers
@@ -149,15 +158,14 @@ class ProcessRepositoryTest {
             // Composes with the visibility union like every other predicate.
             val hidden =
                 repo.getAll(
-                    null,
-                    true,
-                    0,
-                    10,
-                    null,
-                    visibleOwner = "nobody",
-                    visibleAgents = emptySet(),
-                    rootProcessId = root,
-                    canSeeRoot = seeAll,
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        visibleOwner = "nobody",
+                        visibleAgents = emptySet(),
+                        rootProcessId = root,
+                        canSeeRoot = seeAll,
+                    ),
                 )
             assertEquals(0, hidden.total)
         }
@@ -170,7 +178,15 @@ class ProcessRepositoryTest {
 
             // An invisible or evicted root id must read as "nothing you can see", never as
             // an error and never as the whole list (§12: hide existence).
-            val page = repo.getAll(null, true, 0, 10, null, rootProcessId = 9999, canSeeRoot = seeAll)
+            val page =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        rootProcessId = 9999,
+                        canSeeRoot = seeAll,
+                    ),
+                )
 
             assertEquals(emptyList(), page.processes.map { it.id })
             assertEquals(0, page.total)
@@ -199,7 +215,7 @@ class ProcessRepositoryTest {
             questions.tryInsert(question("q5", offPage), 10)
 
             SqlStatementRecorder.reset()
-            val page = repo.getAll(null, orderAsc = true, offset = 0, limit = 2, agentName = null)
+            val page = repo.getAll(ProcessListQuery(orderAsc = true, limit = 2))
 
             assertEquals(listOf(asker, quiet), page.processes.map { it.id })
             // Answered and dispatch-bound questions are not open; an id off the page is not counted.
@@ -211,7 +227,15 @@ class ProcessRepositoryTest {
             assertTrue("questions.process_id IN (" in countReads.single(), countReads.single())
             assertEquals(1, SqlStatementRecorder.transactionCount())
             // The tag-screened path carries the counts too.
-            val tagged = repo.getAll(null, true, 0, 10, null, tags = listOf("mr:1"), screenTags = identityScreen)
+            val tagged =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        tags = listOf("mr:1"),
+                        screenTags = identityScreen,
+                    ),
+                )
             assertEquals(mapOf(asker to 2), tagged.openQuestions)
         }
 
@@ -228,7 +252,7 @@ class ProcessRepositoryTest {
             val canSeeRoot = { owner: String?, _: String -> owner == "me" }
 
             SqlStatementRecorder.reset()
-            val page = repo.getAll(null, true, 0, 10, null, canSeeRoot = canSeeRoot)
+            val page = repo.getAll(ProcessListQuery(orderAsc = true, limit = 10, canSeeRoot = canSeeRoot))
 
             assertEquals(setOf(mine), page.visibleRootIds)
             // All roots of the page in one IN read by primary key, in the list's transaction.
@@ -236,7 +260,7 @@ class ProcessRepositoryTest {
             assertEquals(1, rootReads.size, "${SqlStatementRecorder.statements()}")
             assertEquals(1, SqlStatementRecorder.transactionCount())
             // Without a visibility callback no root is named visible: fail closed.
-            assertEquals(emptySet(), repo.getAll(null, true, 0, 10, null).visibleRootIds)
+            assertEquals(emptySet(), repo.getAll(ProcessListQuery(orderAsc = true, limit = 10)).visibleRootIds)
         }
 
     @Test
@@ -251,15 +275,39 @@ class ProcessRepositoryTest {
             val child = repo.obtainProcessId(NewRunRecord("b", owner = "me", parentProcessId = mine, rootProcessId = mine), 100).processId
             val canSeeRoot = { owner: String?, _: String -> owner == "me" }
 
-            val hidden = repo.getAll(null, true, 0, 10, null, rootProcessId = foreign, canSeeRoot = canSeeRoot)
+            val hidden =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        rootProcessId = foreign,
+                        canSeeRoot = canSeeRoot,
+                    ),
+                )
             assertEquals(0, hidden.total)
             assertTrue(hidden.processes.isEmpty())
             // A missing root row reads the same even when every row is visible.
-            val gone = repo.getAll(null, true, 0, 10, null, rootProcessId = 9999, canSeeRoot = { _, _ -> true })
+            val gone =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        rootProcessId = 9999,
+                        canSeeRoot = { _, _ -> true },
+                    ),
+                )
             assertEquals(0, gone.total)
             assertTrue(gone.processes.isEmpty())
             // A visible root's filter is honoured.
-            val flow = repo.getAll(null, true, 0, 10, null, rootProcessId = mine, canSeeRoot = canSeeRoot)
+            val flow =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        rootProcessId = mine,
+                        canSeeRoot = canSeeRoot,
+                    ),
+                )
             assertEquals(listOf(child), flow.processes.map { it.id })
             assertEquals(setOf(mine), flow.visibleRootIds)
         }
@@ -274,7 +322,12 @@ class ProcessRepositoryTest {
             // Fail closed like the unscreened tag filter: an ungated root filter would list the
             // visible rows of a hidden flow, so the read never runs.
             SqlStatementRecorder.reset()
-            val refused = assertFailsWith<IllegalArgumentException> { repo.getAll(null, true, 0, 10, null, rootProcessId = root) }
+            val refused =
+                assertFailsWith<IllegalArgumentException> {
+                    repo.getAll(
+                        ProcessListQuery(orderAsc = true, limit = 10, rootProcessId = root),
+                    )
+                }
             assertEquals("canSeeRoot is required whenever rootProcessId is set", refused.message)
             assertTrue(SqlStatementRecorder.statements().isEmpty(), "${SqlStatementRecorder.statements()}")
         }
@@ -288,7 +341,7 @@ class ProcessRepositoryTest {
             repo.obtainProcessId(NewRunRecord("b", parentProcessId = rootA, rootProcessId = rootA), 100).processId
             repo.obtainProcessId(NewRunRecord("c", parentProcessId = rootB, rootProcessId = rootB), 100).processId
 
-            val page = repo.getAll(null, orderAsc = true, offset = 0, limit = 10, agentName = null, rootsOnly = true)
+            val page = repo.getAll(ProcessListQuery(orderAsc = true, limit = 10, rootsOnly = true))
 
             assertEquals(listOf(rootA, rootB), page.processes.map { it.id })
             assertEquals(2, page.total)
@@ -303,29 +356,44 @@ class ProcessRepositoryTest {
             repo.obtainProcessId(NewRunRecord("a", parentProcessId = rootA, rootProcessId = rootA, tags = listOf("mr:15")), 100).processId
 
             val byAgent =
-                repo.getAll(null, true, 0, 10, agentName = "a", rootsOnly = true).processes.map { it.id }
+                repo.getAll(ProcessListQuery(orderAsc = true, limit = 10, agentName = "a", rootsOnly = true)).processes.map { it.id }
             assertEquals(listOf(rootA), byAgent)
 
             val byTag =
                 repo
                     .getAll(
-                        null,
-                        true,
-                        0,
-                        10,
-                        null,
-                        rootsOnly = true,
-                        tags = listOf("mr:15"),
-                        screenTags = identityScreen,
+                        ProcessListQuery(
+                            orderAsc = true,
+                            limit = 10,
+                            rootsOnly = true,
+                            tags = listOf("mr:15"),
+                            screenTags = identityScreen,
+                        ),
                     ).processes
                     .map { it.id }
             assertEquals(listOf(rootA), byTag)
 
-            val byStatus = repo.getAll(setOf(ProcessStatus.CREATED), true, 0, 10, null, rootsOnly = true)
+            val byStatus =
+                repo.getAll(
+                    ProcessListQuery(
+                        filterStatuses = setOf(ProcessStatus.CREATED),
+                        orderAsc = true,
+                        limit = 10,
+                        rootsOnly = true,
+                    ),
+                )
             assertEquals(listOf(rootA, rootB), byStatus.processes.map { it.id })
 
             // No root matches a status they are not in: the predicates AND, never OR.
-            val none = repo.getAll(setOf(ProcessStatus.FINISHED), true, 0, 10, null, rootsOnly = true)
+            val none =
+                repo.getAll(
+                    ProcessListQuery(
+                        filterStatuses = setOf(ProcessStatus.FINISHED),
+                        orderAsc = true,
+                        limit = 10,
+                        rootsOnly = true,
+                    ),
+                )
             assertEquals(emptyList(), none.processes.map { it.id })
         }
 
@@ -338,7 +406,14 @@ class ProcessRepositoryTest {
             // The roots-only predicate must not open a path around the fail-closed
             // screenTags contract (ADR-0060).
             assertFailsWith<IllegalArgumentException> {
-                repo.getAll(null, true, 0, 10, null, rootsOnly = true, tags = listOf("mr:15"))
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        rootsOnly = true,
+                        tags = listOf("mr:15"),
+                    ),
+                )
             }
         }
 
@@ -372,7 +447,7 @@ class ProcessRepositoryTest {
             val second =
                 repo.obtainProcessId(NewRunRecord("a", tags = listOf("yankee:1", "bravo:1", "kilo:1")), 100).processId
 
-            val page = repo.getAll(null, orderAsc = true, offset = 0, limit = 10, agentName = "a")
+            val page = repo.getAll(ProcessListQuery(orderAsc = true, limit = 10, agentName = "a"))
 
             val tagsById = page.processes.associate { it.id to it.tags }
             assertEquals(listOf("alpha:1", "zeta:1"), tagsById[first])
@@ -386,7 +461,7 @@ class ProcessRepositoryTest {
             repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 100).processId
             repo.obtainProcessId(NewRunRecord("a"), 100).processId
 
-            val page = repo.getAll(null, orderAsc = true, offset = 0, limit = 10, agentName = null)
+            val page = repo.getAll(ProcessListQuery(orderAsc = true, limit = 10))
 
             assertEquals(2, page.total)
         }
@@ -398,7 +473,15 @@ class ProcessRepositoryTest {
             val tagged = repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 100).processId
             repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:99")), 100).processId
 
-            val page = repo.getAll(null, true, 0, 10, null, tags = listOf("mr:15"), screenTags = identityScreen)
+            val page =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        tags = listOf("mr:15"),
+                        screenTags = identityScreen,
+                    ),
+                )
 
             assertEquals(listOf(tagged), page.processes.map { it.id })
             assertEquals(1, page.total)
@@ -413,7 +496,14 @@ class ProcessRepositoryTest {
             repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 100).processId
 
             val page =
-                repo.getAll(null, true, 0, 10, null, tags = listOf("mr:15", "project:x"), screenTags = identityScreen)
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        tags = listOf("mr:15", "project:x"),
+                        screenTags = identityScreen,
+                    ),
+                )
 
             assertEquals(listOf(both), page.processes.map { it.id })
             assertEquals(1, page.total)
@@ -427,7 +517,15 @@ class ProcessRepositoryTest {
 
             // A repeated identical ?tag= must not turn the HAVING COUNT into "needs
             // two rows" — the de-dup is what keeps a doubled filter matching.
-            val page = repo.getAll(null, true, 0, 10, null, tags = listOf("mr:15", "mr:15"), screenTags = identityScreen)
+            val page =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        tags = listOf("mr:15", "mr:15"),
+                        screenTags = identityScreen,
+                    ),
+                )
 
             assertEquals(listOf(tagged), page.processes.map { it.id })
             assertEquals(1, page.total)
@@ -439,7 +537,15 @@ class ProcessRepositoryTest {
             val repo = repo()
             repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 100).processId
 
-            val page = repo.getAll(null, true, 0, 10, null, tags = listOf("mr:does-not-exist"), screenTags = identityScreen)
+            val page =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        tags = listOf("mr:does-not-exist"),
+                        screenTags = identityScreen,
+                    ),
+                )
 
             assertEquals(emptyList(), page.processes.map { it.id })
             assertEquals(0, page.total)
@@ -456,15 +562,14 @@ class ProcessRepositoryTest {
             // filtered out by visibility, never returned as a 403 — it is simply absent.
             val page =
                 repo.getAll(
-                    null,
-                    true,
-                    0,
-                    10,
-                    null,
-                    visibleOwner = "me",
-                    visibleAgents = emptySet(),
-                    tags = listOf("mr:15"),
-                    screenTags = identityScreen,
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        visibleOwner = "me",
+                        visibleAgents = emptySet(),
+                        tags = listOf("mr:15"),
+                        screenTags = identityScreen,
+                    ),
                 )
 
             assertEquals(listOf(mineHidden), page.processes.map { it.id })
@@ -483,15 +588,14 @@ class ProcessRepositoryTest {
 
             val page =
                 repo.getAll(
-                    null,
-                    true,
-                    0,
-                    10,
-                    null,
-                    visibleOwner = "me",
-                    visibleAgents = emptySet(),
-                    tags = listOf("secret:x"),
-                    screenTags = identityScreen,
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        visibleOwner = "me",
+                        visibleAgents = emptySet(),
+                        tags = listOf("secret:x"),
+                        screenTags = identityScreen,
+                    ),
                 )
 
             assertEquals(emptyList(), page.processes.map { it.id })
@@ -506,7 +610,15 @@ class ProcessRepositoryTest {
             val screen: (ProcessInfo) -> List<String> = { info -> info.tags }
 
             SqlStatementRecorder.reset()
-            val page = repo.getAll(null, true, 0, 1, null, tags = listOf("mr:15"), screenTags = screen)
+            val page =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 1,
+                        tags = listOf("mr:15"),
+                        screenTags = screen,
+                    ),
+                )
 
             assertEquals(1, page.processes.size)
             assertEquals(3, page.total)
@@ -537,7 +649,15 @@ class ProcessRepositoryTest {
             val screen: (ProcessInfo) -> List<String> = { info -> info.tags }
 
             SqlStatementRecorder.reset()
-            val page = repo.getAll(null, true, 0, 10, null, tags = listOf("mr:15"), screenTags = screen)
+            val page =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        tags = listOf("mr:15"),
+                        screenTags = screen,
+                    ),
+                )
 
             assertEquals(513, page.total)
             assertEquals(10, page.processes.size)
@@ -563,7 +683,15 @@ class ProcessRepositoryTest {
                 info.tags.filterNot { it.contains("supersecret") }
             }
 
-            val page = repo.getAll(null, true, 0, 10, null, tags = listOf("mr:supersecret"), screenTags = screen)
+            val page =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        tags = listOf("mr:supersecret"),
+                        screenTags = screen,
+                    ),
+                )
 
             assertEquals(emptyList(), page.processes.map { it.id })
             assertEquals(0, page.total)
@@ -581,7 +709,15 @@ class ProcessRepositoryTest {
                 info.tags.filterNot { it.contains("supersecret") }
             }
 
-            val page = repo.getAll(null, true, 0, 10, null, tags = listOf("mr:15"), screenTags = screen)
+            val page =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        tags = listOf("mr:15"),
+                        screenTags = screen,
+                    ),
+                )
 
             assertEquals(listOf(visible), page.processes.map { it.id })
             assertEquals(1, page.total)
@@ -611,7 +747,15 @@ class ProcessRepositoryTest {
                 info.tags.filterNot { tag -> needles.any { tag.contains(it) } }
             }
 
-            val page = repo.getAll(null, true, 0, 10, null, tags = listOf("token:supersecret"), screenTags = screen)
+            val page =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        tags = listOf("token:supersecret"),
+                        screenTags = screen,
+                    ),
+                )
 
             assertEquals(listOf(legit), page.processes.map { it.id })
             assertEquals(1, page.total)
@@ -628,7 +772,7 @@ class ProcessRepositoryTest {
             // parameter unset — the read fails closed instead of counting unredacted rows.
             val error =
                 assertFailsWith<IllegalArgumentException> {
-                    repo.getAll(null, true, 0, 10, null, tags = listOf("mr:15"))
+                    repo.getAll(ProcessListQuery(orderAsc = true, limit = 10, tags = listOf("mr:15")))
                 }
             assertTrue(error.message!!.contains("screenTags"), error.message)
         }
@@ -684,7 +828,15 @@ class ProcessRepositoryTest {
             repeat(25) { repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 100) }
 
             SqlStatementRecorder.reset()
-            val page = repo.getAll(null, true, 0, 1, null, tags = listOf("mr:15"), screenTags = identityScreen)
+            val page =
+                repo.getAll(
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 1,
+                        tags = listOf("mr:15"),
+                        screenTags = identityScreen,
+                    ),
+                )
 
             assertEquals(1, page.processes.size)
             assertEquals(25, page.total)
@@ -712,15 +864,14 @@ class ProcessRepositoryTest {
             SqlStatementRecorder.reset()
             val page =
                 repo.getAll(
-                    null,
-                    true,
-                    0,
-                    10,
-                    null,
-                    visibleOwner = "alice",
-                    visibleAgents = emptySet(),
-                    tags = listOf("mr:15"),
-                    screenTags = identityScreen,
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        visibleOwner = "alice",
+                        visibleAgents = emptySet(),
+                        tags = listOf("mr:15"),
+                        screenTags = identityScreen,
+                    ),
                 )
 
             assertEquals(3, page.total)
@@ -1610,7 +1761,7 @@ class ProcessRepositoryTest {
             repeat(3) { repo.obtainProcessId(NewRunRecord("a"), 100) }
 
             SqlStatementRecorder.reset()
-            val result = repo.getAll(filterStatuses = null, orderAsc = true, offset = 3, limit = 100, agentName = null)
+            val result = repo.getAll(ProcessListQuery(orderAsc = true, offset = 3))
 
             assertEquals(3, result.total)
             assertTrue(result.processes.isEmpty())
@@ -1625,7 +1776,7 @@ class ProcessRepositoryTest {
             repeat(3) { repo.obtainProcessId(NewRunRecord("a"), 100) }
 
             SqlStatementRecorder.reset()
-            val result = repo.getAll(filterStatuses = null, orderAsc = true, offset = 2, limit = 100, agentName = null)
+            val result = repo.getAll(ProcessListQuery(orderAsc = true, offset = 2))
 
             assertEquals(1, result.processes.size)
             assertTrue(SqlStatementRecorder.statements().any { "OFFSET" in it })
@@ -1641,15 +1792,7 @@ class ProcessRepositoryTest {
             val bobA = repo.obtainProcessId(NewRunRecord("a", owner = "bob"), 100).processId
 
             val result =
-                repo.getAll(
-                    filterStatuses = null,
-                    orderAsc = true,
-                    offset = 0,
-                    limit = 100,
-                    agentName = null,
-                    visibleOwner = "ci",
-                    visibleAgents = setOf("a"),
-                )
+                repo.getAll(ProcessListQuery(orderAsc = true, visibleOwner = "ci", visibleAgents = setOf("a")))
 
             // owner=ci (ciA, ciB) OR agent=a (ciA, bobA) -- bobB is excluded either way.
             assertEquals(setOf(ciA, ciB, bobA), result.processes.map { it.id }.toSet())
@@ -1666,15 +1809,7 @@ class ProcessRepositoryTest {
             val bobA = repo.obtainProcessId(NewRunRecord("a", owner = "bob"), 100).processId
 
             val result =
-                repo.getAll(
-                    filterStatuses = null,
-                    orderAsc = true,
-                    offset = 0,
-                    limit = 100,
-                    agentName = null,
-                    visibleOwner = "ci",
-                    visibleAgents = null,
-                )
+                repo.getAll(ProcessListQuery(orderAsc = true, visibleOwner = "ci", visibleAgents = null))
 
             assertEquals(setOf(ciA, bobB, ciB, bobA), result.processes.map { it.id }.toSet())
             assertEquals(4, result.total)
@@ -1690,15 +1825,7 @@ class ProcessRepositoryTest {
             repo.obtainProcessId(NewRunRecord("a", owner = "bob"), 100).processId
 
             val result =
-                repo.getAll(
-                    filterStatuses = null,
-                    orderAsc = true,
-                    offset = 0,
-                    limit = 100,
-                    agentName = null,
-                    visibleOwner = "ci",
-                    visibleAgents = emptySet(),
-                )
+                repo.getAll(ProcessListQuery(orderAsc = true, visibleOwner = "ci", visibleAgents = emptySet()))
 
             assertEquals(setOf(ciA, ciB), result.processes.map { it.id }.toSet())
             assertEquals(2, result.total)
@@ -2275,19 +2402,18 @@ class ProcessRepositoryTest {
 
             assertEquals(params, repo.getInfo(a)?.inputParams)
             // The page path reads inputs in one batched query, not per row.
-            val page = repo.getAll(null, orderAsc = true, offset = 0, limit = 10, agentName = null)
+            val page = repo.getAll(ProcessListQuery(orderAsc = true, limit = 10))
             assertEquals(params, page.processes.single { it.id == a }.inputParams)
             assertEquals(emptyMap(), page.processes.single { it.id == b }.inputParams)
             // The tag-screened path maps inputs too — a screen may read them.
             val screened =
                 repo.getAll(
-                    null,
-                    orderAsc = true,
-                    offset = 0,
-                    limit = 10,
-                    agentName = null,
-                    tags = listOf("mr:1"),
-                    screenTags = identityScreen,
+                    ProcessListQuery(
+                        orderAsc = true,
+                        limit = 10,
+                        tags = listOf("mr:1"),
+                        screenTags = identityScreen,
+                    ),
                 )
             assertEquals(params, screened.processes.single().inputParams)
         }
@@ -2450,7 +2576,7 @@ class ProcessRepositoryTest {
         }
 
         val probe = repo(PersistenceTestSupport.tempDatabase(path))
-        val ids = probe.getAll(null, orderAsc = true, offset = 0, limit = 10, agentName = null).processes.map { it.id }
+        val ids = probe.getAll(ProcessListQuery(orderAsc = true, limit = 10)).processes.map { it.id }
         assertEquals(listOf(1), ids, "a replay must not create a second AUTOINCREMENT row")
         assertEquals(listOf("mr:15"), probe.getTags(1), "the tag set must not be written twice")
     }

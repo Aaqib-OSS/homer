@@ -2,6 +2,7 @@ package homer.app.services.persistence
 
 import homer.app.models.ExecutionInfo
 import homer.app.models.ProcessInfo
+import homer.app.models.ProcessListQuery
 import homer.app.models.ProcessStatus
 import homer.app.models.RunnerState
 import homer.app.models.SubRunProgress
@@ -39,23 +40,8 @@ interface ProcessRecordReads {
     /** [SubRunProgress] of each of [processIds] that still exists, in one batched read. */
     suspend fun getSubRunProgress(processIds: Collection<Int>): Map<Int, SubRunProgress>
 
-    suspend fun getAllProcesses(
-        filterStatuses: Set<ProcessStatus>? = null,
-        orderAsc: Boolean = false,
-        offset: Int = 0,
-        limit: Int = 100,
-        agentName: String? = null,
-        visibleOwner: String? = null,
-        visibleAgents: Set<String>? = null,
-        parentProcessId: Int? = null,
-        rootProcessId: Int? = null,
-        rootsOnly: Boolean = false,
-        tags: List<String> = emptyList(),
-        // Required (no-null-escape) whenever [tags] is non-empty; see ProcessRepository.getAll.
-        screenTags: ((ProcessInfo) -> List<String>)? = null,
-        // See ProcessRepository.getAll.
-        canSeeRoot: ((owner: String?, agentName: String) -> Boolean)? = null,
-    ): ProcessListResult
+    /** See [ProcessRepository.getAll]. */
+    suspend fun getAllProcesses(query: ProcessListQuery = ProcessListQuery()): ProcessListResult
 
     /** See [ProcessRepository.costByTag]. */
     suspend fun costByTag(
@@ -88,36 +74,7 @@ internal class DefaultProcessRecordReads(
 
     override suspend fun getSubRunProgress(processIds: Collection<Int>): Map<Int, SubRunProgress> = repository.subRunProgress(processIds)
 
-    override suspend fun getAllProcesses(
-        filterStatuses: Set<ProcessStatus>?,
-        orderAsc: Boolean,
-        offset: Int,
-        limit: Int,
-        agentName: String?,
-        visibleOwner: String?,
-        visibleAgents: Set<String>?,
-        parentProcessId: Int?,
-        rootProcessId: Int?,
-        rootsOnly: Boolean,
-        tags: List<String>,
-        screenTags: ((ProcessInfo) -> List<String>)?,
-        canSeeRoot: ((owner: String?, agentName: String) -> Boolean)?,
-    ): ProcessListResult =
-        repository.getAll(
-            filterStatuses,
-            orderAsc,
-            offset,
-            limit,
-            agentName,
-            visibleOwner,
-            visibleAgents,
-            parentProcessId,
-            rootProcessId,
-            rootsOnly,
-            tags,
-            screenTags,
-            canSeeRoot,
-        )
+    override suspend fun getAllProcesses(query: ProcessListQuery): ProcessListResult = repository.getAll(query)
 
     override suspend fun costByTag(
         key: String,
