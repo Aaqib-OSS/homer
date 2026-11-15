@@ -79,31 +79,9 @@ data class AppConfig(
         require("local" !in runners.keys) {
             "Runner alias 'local' is reserved for the built-in local runner and must not appear in AppConfig.runners."
         }
-        // Alias-aware so config-load violations name the runner (ADR-0042).
-        runners.forEach { (alias, runner) ->
-            when (runner) {
-                is RunnerConfig.Ssh -> {
-                    runner.validateExtraUploads(alias)
-                    runner.validateTransportTiming(alias)
-                    runner.validateEnv(alias)
-                    runner.validateQueueFacets(alias)
-                    runner.validateRemoteWorkspaceRoot(alias)
-                }
-
-                is RunnerConfig.Kubernetes -> {
-                    runner.validateWorkload(alias)
-                    runner.validateExtraUploads(alias)
-                    runner.validateEnv(alias)
-                    runner.validateQueueFacets(alias)
-                }
-
-                is RunnerConfig.External -> {
-                    runner.validateExtraUploads(alias)
-                    runner.validateEnv(alias)
-                    runner.validateFacets(alias)
-                }
-            }
-        }
+        // Alias-aware so config-load violations name the runner (ADR-0042); each
+        // variant runs its own rules, in its own order, through the base member.
+        runners.forEach { (alias, runner) -> runner.validate(alias) }
         val domainTokens = runners.values.filterIsInstance<RunnerConfig.External>().map { it.token }
         require(domainTokens.toSet().size == domainTokens.size) {
             "Two external runner domains share a token value; every domain needs its own token."

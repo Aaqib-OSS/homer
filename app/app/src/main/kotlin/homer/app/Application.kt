@@ -12,7 +12,6 @@ import homer.app.infra.PasswordVerifier
 import homer.app.infra.SysEnvResolver
 import homer.app.models.AppConfig
 import homer.app.models.AuthConfig
-import homer.app.models.RunnerConfig
 import homer.app.models.flattenAuthSchemes
 import homer.app.routes.ApiDeps
 import homer.app.routes.apiV1Routes
@@ -192,14 +191,7 @@ private fun resolveStartupConfig(
             // Same resolution + secrecy contract as globalEnv, per runner: a
             // runner-env value pulled from the host env is a credential too.
             runners = resolveRunnerEnvs(config.runners, sysEnvResolver),
-            sysEnvBackedRunnerEnvNames =
-                config.runners.mapValues { (_, runner) ->
-                    when (runner) {
-                        is RunnerConfig.Ssh -> sysEnvResolver.secretNamesFor(runner.env)
-                        is RunnerConfig.Kubernetes -> sysEnvResolver.secretNamesFor(runner.env)
-                        is RunnerConfig.External -> sysEnvResolver.secretNamesFor(runner.env)
-                    }
-                },
+            sysEnvBackedRunnerEnvNames = config.runners.mapValues { (_, runner) -> sysEnvResolver.secretNamesFor(runner.env) },
             server =
                 config.server.copy(
                     apiAuth = resolvedApiAuth,

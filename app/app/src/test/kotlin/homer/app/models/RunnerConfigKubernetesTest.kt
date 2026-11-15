@@ -129,6 +129,28 @@ gracefulStopSeconds: 300""",
     }
 
     @Test
+    fun `AppConfig init reports a workload violation before an extraUploads one`() {
+        // The kubernetes rules fire in the order they always have — the workload
+        // bounds first, then extraUploads — so a config breaking both keeps naming
+        // the workload one. See ADR-0108.
+        val ex =
+            assertFailsWith<IllegalArgumentException> {
+                AppConfig(
+                    agentsSearchPath = "a",
+                    workspaceRootPath = "w",
+                    databasePath = "d",
+                    runners =
+                        mapOf(
+                            "build-box" to
+                                k8s(extras = listOf(ExtraUploadSpec("/a", "workdir")))
+                                    .copy(gracefulStopSeconds = 60),
+                        ),
+                )
+            }
+        assertTrue(ex.message!!.contains("gracefulStopSeconds requires maxRunSeconds"), ex.message!!)
+    }
+
+    @Test
     fun `AppConfig init validates the graceful stop bound naming the alias`() {
         val ex =
             assertFailsWith<IllegalArgumentException> {
