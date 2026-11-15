@@ -55,8 +55,8 @@ app/src/main/kotlin/homer/app/   Application.kt (main, configureServer, configur
                                  executors/ (orchestration: Process, ProcessExecutor, AgentExecutor,
                                  the lock and slot gates, the ports Execution declares; + one
                                  executor per command type); di/ · config/ · exceptions/
-app/src/test/kotlin/homer/app/   Mirrors the production packages (root §6); ApplicationTest.kt is the
-                                 HTTP integration suite, fixtures/ the reusable builders
+app/src/test/kotlin/homer/app/   Mirrors the production packages (root §6); routes/ holds one
+                                 <File>Test per route file, fixtures/ the reusable builders
 app/src/test/resources/          logback-test.xml (console-only, so tests never create api.log);
                                  claude/ and llm/<id>/ hold captured or documented CLI streams
 ```
@@ -178,7 +178,7 @@ Streams, `HOMER_LOG_LEVEL` and `HOMER_LOG_DIR` are documented in [`SERVER.md`](S
 1. Add the route in the matching per-resource `routes/` file (e.g. `ProcessRoutes.kt` for a secured `/api/v1` process endpoint; a new resource gets its own `Route.xxxRoutes(deps)` file, mounted from `apiV1Routes` in `SecuredRoutes.kt`), in the handleXxx pattern used by existing endpoints.
 2. Throw a `ValidationException` (or a sibling such as `QueryParamValidationException`) for validation failures — don't `call.respond(400, ...)` inline; `configureStatusPages` maps it.
 3. Call the `Authorizer` explicitly at the top of the handler (no implicit gate) and return `404` rather than `403` for a single-resource denial. If the handler can multiply a host resource — a subprocess, an unbounded read, a growing collection — bound it here, and bound the wait it creates. Root §12.
-4. Add a `Test` in `ApplicationTest.kt` exercising success + a failure case, **including the denial path** for the gate added in step 3, then document the endpoint in [`README.md`](README.md) and add a [`../CHANGELOG.md`](../CHANGELOG.md) entry (root §8).
+4. Add a `Test` in the route file's `routes/<File>Test.kt` (e.g. `ProcessRoutesTest`; the shared mount helpers are in `fixtures/`) exercising success + a failure case, **including the denial path** for the gate added in step 3, then document the endpoint in [`README.md`](README.md) and add a [`../CHANGELOG.md`](../CHANGELOG.md) entry (root §8).
 5. Add the route's row (credential domain, rule, denial statuses) to `ROUTE_AUTHZ` in `routes/RouteAuthorizationMatrix.kt` (test sources); `RouteAuthorizationMatrixTest` fails on an unlisted route and drives each row's denials. A new MCP tool goes into its tool table there. A denial that diverges goes into `KNOWN_GAPS` only with an open issue ([ADR-0112](../docs/adr/0112-runtime-route-authorization-matrix.md)).
 
 ## Build commands

@@ -25,8 +25,8 @@ import kotlin.test.assertNull
  * The `installHttpPlugins` wiring: the hardening headers, the configured CORS policy and the
  * request body limit must reach a real response served by the booted module, so dropping
  * `configureSecurityHeaders`, `configureCors` or the `RequestBodyLimit` install from
- * `installHttpPlugins` fails a test. The plugins' own unit cases stay in `CorsConfigTest` /
- * `ApplicationTest`; these go through `configureServer`.
+ * `installHttpPlugins` fails a test. The plugins' own unit cases are in `CorsConfigTest`,
+ * `HttpPluginsTest` and (the body limit) `RunHandlersTest`; these go through `configureServer`.
  */
 @ExtendWith(ResetDrainingExtension::class)
 class HttpPluginsWiringTest {
