@@ -3,6 +3,7 @@ status: accepted
 date: 2026-10-15
 deciders: Lukáš Vlk
 consulted: ADR-0084, ADR-0085
+amended: 2026-10-24, 2026-10-25
 ---
 
 # ADR-0086: Sign release images with cosign and attest their SBOM and provenance

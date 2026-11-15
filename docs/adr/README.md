@@ -44,6 +44,27 @@ One of:
   the old one.
 - `deprecated` — no longer applies, and nothing replaced it (rare).
 
+### Amendments
+
+A decision that changes **in part** later — a mechanism it names is replaced, a bound moves, a
+detail reverses — is amended where it stands rather than rewritten: add a
+`## Amendment (YYYY-MM-DD): <what changed>` section, or a short
+`> **Amendment (YYYY-MM-DD) — <what changed>.**` blockquote at the top, and leave the original
+decision text unchanged, so the record still shows what was decided and when. A *full*
+replacement is not an amendment: write a new ADR and flip `status` instead.
+
+An amended ADR says so in its front matter:
+
+- `amended:` — the amendment dates, comma-separated `YYYY-MM-DD`, oldest first. Required as soon
+  as the ADR has an `## Amendment` section or an `> **Amendment` blockquote — a plural
+  `## Amendments` list of dated bullets is the same thing. An amendment written without a date
+  of its own takes the date of the ADR it names.
+- `superseded-by:` — comma-separated `ADR-NNNN`, one per ADR whose decision supersedes or
+  reverses part of this one. The ADR keeps `status: accepted`, because the rest of it still
+  holds.
+
+Neither key is a status: `status:` stays one of the four values above.
+
 ## Adding a new ADR
 
 1. Copy `0000-template.md` to `NNNN-your-title.md` (next unused number).
@@ -56,8 +77,11 @@ One of:
 5. Open a PR. Before it merges, set `status: accepted` in the front matter and the index: the
    merge is the acceptance, and nothing flips the status afterwards. A `site/` test fails while
    an ADR that code, a workflow or a `CLAUDE.md` cites still reads `proposed`, or while the
-   index and the front matter disagree. It also fails on a cited ADR with no parsable status, and
-   on any status outside the four above.
+   index and the front matter disagree. It also fails on a cited ADR with no parsable status, on
+   any status outside the four above, on an index row that links no ADR file or an ADR file with
+   no row, on a `# ADR-NNNN` heading whose number is not the filename's, on a hole in the
+   numbering, and on an `## Amendment`/`> **Amendment` note whose `amended:` is missing or is
+   not an ascending `YYYY-MM-DD` list, or whose `superseded-by:` names no existing ADR.
 
 ## Index
 

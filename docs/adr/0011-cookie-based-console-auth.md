@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-05-18
 deciders: Lukáš Vlk
+amended: 2026-10-25
 ---
 # ADR-0011: Cookie-based console authentication (username + password)
 

@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-24
 deciders: Martin Simon
+amended: 2026-09-30
 ---
 # ADR-0068: Agent discovery walks the search path recursively; directory identity is the root-relative path
 

@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-26
 deciders: Lukáš Vlk
+amended: 2026-10-08
 ---
 # ADR-0069: Console themes are same-origin stylesheets loaded at runtime
 

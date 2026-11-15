@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-04
 deciders: Lukáš Vlk
+amended: 2026-09-24
 ---
 # ADR-0058: Parent/child run linkage as a stored, caller-visible reference
 

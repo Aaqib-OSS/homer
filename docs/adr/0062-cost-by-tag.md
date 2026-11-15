@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-14
 deciders: Lukáš Vlk
+amended: 2026-09-29
 ---
 # ADR-0062: Cost by tag — aggregated at query time from live rows
 

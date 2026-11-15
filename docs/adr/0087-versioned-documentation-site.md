@@ -3,6 +3,7 @@ status: accepted
 date: 2026-10-15
 deciders: Lukáš Vlk
 consulted: ADR-0084, ADR-0086
+amended: 2026-11-15
 ---
 
 # ADR-0087: A versioned documentation site generated from the repository's Markdown

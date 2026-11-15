@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-06-16
 deciders: Lukáš Vlk
+amended: 2026-08-11, 2026-11-15
 ---
 # ADR-0025: Capability-token read-by-reference for large continuation results
 

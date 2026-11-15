@@ -3,6 +3,7 @@ status: accepted
 date: 2026-10-27
 deciders: Lukáš Vlk
 consulted: ADR-0020, ADR-0047, ADR-0052, ADR-0058, ADR-0066, ADR-0077, ADR-0101
+amended: 2026-11-12
 ---
 
 # ADR-0098: The stored pre-start failure reason is a fixed-vocabulary sentence

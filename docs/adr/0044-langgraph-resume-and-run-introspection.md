@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-08-19
 deciders: Lukáš Vlk
+amended: 2026-08-20, 2026-09-30
 ---
 # ADR-0044: LangGraph resume and run introspection
 

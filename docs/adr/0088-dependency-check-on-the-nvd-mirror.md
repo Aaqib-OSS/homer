@@ -3,6 +3,7 @@ status: accepted
 date: 2026-10-15
 deciders: Lukáš Vlk
 consulted: ADR-0056, ADR-0084
+amended: 2026-10-17
 ---
 
 # ADR-0088: Check runtime dependencies against the dependency-check project's NVD mirror

@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-06-05
 deciders: Lukáš Vlk
+amended: 2026-09-24, 2026-09-30
 ---
 # ADR-0014: Per-caller rate limiting on the secured API
 

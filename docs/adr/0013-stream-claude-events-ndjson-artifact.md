@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-06-01
 deciders: Lukáš Vlk
+amended: 2026-09-27
 ---
 # ADR-0013: Stream Claude Code events live and ship NDJSON as the canonical stdout artifact
 

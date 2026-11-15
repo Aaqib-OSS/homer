@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-08-21
 deciders: Lukáš Vlk
+amended: 2026-09-23, 2026-09-30, 2026-10-06, 2026-10-16, 2026-11-05
 ---
 # ADR-0047: Security is a design input, and these are the boundaries it defends
 

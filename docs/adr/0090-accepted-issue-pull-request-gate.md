@@ -3,6 +3,7 @@ status: accepted
 date: 2026-10-20
 deciders: Lukáš Vlk
 consulted: ADR-0084, ADR-0086
+amended: 2026-10-24
 ---
 
 # ADR-0090: A pull request merges only for an issue a maintainer accepted

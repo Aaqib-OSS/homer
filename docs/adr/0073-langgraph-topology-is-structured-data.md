@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-10-02
 deciders: Lukáš Vlk
+amended: 2026-10-08, 2026-10-09
 ---
 # ADR-0073: LangGraph topology is structured data, drawn by the console
 

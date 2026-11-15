@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-06-15
 deciders: Lukáš Vlk
+amended: 2026-09-30
 ---
 # ADR-0021: ask-and-dispatch — deferred dispatch from a question answer
 

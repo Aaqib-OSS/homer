@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-07-28
 deciders: Lukáš Vlk
+amended: 2026-09-10
 ---
 # ADR-0035: SQLite-backed cost ledger
 

@@ -2,6 +2,8 @@
 status: accepted
 date: 2026-08-24
 deciders: Lukáš Vlk
+amended: 2026-10-01, 2026-10-06, 2026-10-09, 2026-10-14
+superseded-by: ADR-0053
 ---
 # ADR-0048: A run's record outlives its workspace
 

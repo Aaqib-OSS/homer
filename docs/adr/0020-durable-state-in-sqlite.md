@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-06-14
 deciders: Lukáš Vlk
+amended: 2026-09-24, 2026-09-29, 2026-09-30, 2026-11-15
 ---
 # ADR-0020: Durable orchestrator state in SQLite (processes + questions)
 

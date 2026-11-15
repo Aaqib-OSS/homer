@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-06-16
 deciders: Lukáš Vlk
+amended: 2026-09-30
 ---
 # ADR-0023: Completion continuations — resume a parked workflow when a watched process ends
 

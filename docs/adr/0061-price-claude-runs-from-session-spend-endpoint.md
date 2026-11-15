@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-10
 deciders: Lukáš Vlk
+amended: 2026-10-06
 ---
 # ADR-0061: Price Claude runs from an external session-spend endpoint, CLI figure as marked fallback
 

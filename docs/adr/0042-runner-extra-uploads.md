@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-08-15
 deciders: Lukáš Vlk
+amended: 2026-09-24, 2026-09-30
 ---
 # ADR-0042: Runner-level `extraUploads` — materialize host folders into remote workspaces
 

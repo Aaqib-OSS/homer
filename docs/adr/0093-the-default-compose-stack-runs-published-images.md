@@ -3,6 +3,7 @@ status: accepted
 date: 2026-10-23
 deciders: Lukáš Vlk
 consulted: ADR-0084, ADR-0086
+amended: 2026-10-25, 2026-11-13
 ---
 
 # ADR-0093: The default compose stack runs published release images
