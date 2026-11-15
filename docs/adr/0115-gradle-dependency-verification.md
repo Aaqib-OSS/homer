@@ -103,5 +103,5 @@ a bump without regeneration looks like.
   with; the `<sha256>` entry records that list, it does not authenticate it.
 - Bad: an upstream key rotation fails the build until the new key is fetched and committed — the
   intended failure, but it lands on whoever bumps first.
-- Bad: the metadata is large — 620 artifacts and 186 public keys across the two files, ~2 900 lines
+- Bad: the metadata is large — 620 artifacts and 187 public keys across the two files, ~2 900 lines
   — and its diff is noise in a dependency PR.
