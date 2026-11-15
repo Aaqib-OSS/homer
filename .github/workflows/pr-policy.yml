@@ -23,6 +23,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: tools/pr-policy/check-test.sh
 
   # Free on public repositories only. A known-bad package fails here, before any review reads
@@ -47,6 +49,7 @@ jobs:
       # be able to rewrite the rule it is checked against.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ github.event.pull_request.base.sha }}
       - name: Accepted issue
         env:

@@ -115,6 +115,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
   | `console/**` | `cd console && npm run lint && npm test && npm run build && npm run licenses:check` |
   | `clients/python/**` | `cd clients/python && .venv/bin/python -m pytest` (venv setup: [`clients/python/homer_langgraph/CLAUDE.md`](clients/python/homer_langgraph/CLAUDE.md)) |
   | `tools/quality/**` | `cd tools/quality && npm ci && npm test` |
+  | a `*.sh` file, `.github/workflows/**`, a `Dockerfile` or `.hadolint.yaml` | `node tools/quality/infra-lint.mjs` (shellcheck, actionlint, zizmor and hadolint must be on the `PATH`; CI's versions are in [`docs/quality-checks.md`](docs/quality-checks.md)) |
   | `site/**`, or a file the site publishes (listed in `site/scripts/sources.mjs`, every ADR) | `cd site && npm ci && npm test && npm run docs:build` (fails on a link to a missing file) |
   | `app/schemas/**`, `app/AGENT.md`, `app/SERVER.md`, or `Agent.kt` / `AppConfig.kt` | backend verify (runs the §10 contract tests) |
   | `.github/ISSUE_TEMPLATE/**` or `.github/pull_request_template.md` | `JAVA_HOME=<path to a JDK 25> app/gradlew -p app :app:test --tests 'homer.app.CommunityTemplatesTest'` (the community-template guard; `node tools/quality/changed.mjs` selects no check for a template-only change) |
@@ -129,7 +130,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **Quality reports** ([`docs/quality-checks.md`](docs/quality-checks.md)
   lists every check). CI job `quality-gate` lists every check's findings
   (CRAP, compiler and lint warnings, architecture rules, unused and
-  duplicated code, diff coverage, mutation results) in its output; a
+  duplicated code, diff coverage, mutation results, shell/workflow/
+  Dockerfile lint) in its output; a
   warn-mode finding adds a warning annotation to the run, and the full
   report is uploaded as the job's `quality-gate` artifact. Checks in `warn` mode
   ([`tools/quality/checks.json`](tools/quality/checks.json)) do not block;

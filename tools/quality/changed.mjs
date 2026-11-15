@@ -26,6 +26,7 @@ import { coverageLookup, isConsoleSource, isKotlinSource, measure, toFindings as
 import { main as duplication } from './duplication.mjs';
 import { parseSarif } from './detekt.mjs';
 import { parseJUnit } from './architecture-backend.mjs';
+import { main as infraLint, reads as infraReads } from './infra-lint.mjs';
 import { exitCode, formatTable } from './gate.mjs';
 import { changedFiles, worktreeChanges } from './git-diff.mjs';
 import { diagnostic, parseLog } from './kotlin-warnings.mjs';
@@ -74,6 +75,7 @@ export function selectChecks(files, checks, only) {
     ...(files.some((f) => DTO_SOURCES.test(f)) ? ['dto-contract'] : []),
     ...(front ? ['mutation-console'] : []),
     ...(files.some((f) => APP_MAIN.test(f)) ? ['mutation-backend'] : []),
+    ...(files.some(infraReads) ? ['infra-lint'] : []),
   ]);
   return new Set(
     checks
@@ -422,7 +424,24 @@ function dtoContract(ctx) {
   report('dto-contract', compareDtos(readJson(backendFile), readJson(path.join(root, 'console', 'reports', 'dto-contract', 'console-dtos.json'))).findings);
 }
 
-function results(checks, found, errors, changed) {
+/**
+ * The changed lines of the whole tree, not only app/ and console/: infra-lint reads files outside them,
+ * and `scope` marks a finding outside the change when its file has no changed line here.
+ */
+export const changedLinesOf = (base, root) => worktreeChanges(base, ['.'], root);
+
+/** Runs infra-lint into `out` and reports its findings; a tool it cannot run is an error of the check, never a pass. */
+export function infraLintStep(report, run = infraLint, out = path.join(OUT, 'infra-lint')) {
+  try {
+    run([out]);
+    report('infra-lint', readCodeQuality(path.join(out, 'gl-code-quality-infra-lint.json')));
+  } catch (error) {
+    report('infra-lint', [], error.message);
+  }
+}
+
+/** One gate-style row per check: `not run`, `error`, `ok`, `failed` (required) or `warning` (warn mode). */
+export function results(checks, found, errors, changed) {
   const rows = [{ name: 'build', mode: 'required' }, ...checks].map((check) => {
     // A selected check the run skipped (no module compiled, no related test in :app) is not run, not ok.
     const ran = found.has(check.name) || errors.has(check.name);
@@ -448,7 +467,7 @@ export function main(argv) {
   if (files.length === 0) return `${head}\n`;
   const { checks } = readJson(path.join(import.meta.dirname, 'checks.json'));
   const selected = selectChecks(files, checks, options.only);
-  const changed = worktreeChanges(base, ['app', 'console'], root);
+  const changed = changedLinesOf(base, root);
   fs.mkdirSync(OUT, { recursive: true });
   const found = new Map();
   const errors = new Map();
@@ -477,6 +496,7 @@ export function main(argv) {
       report('duplication', readCodeQuality(path.join(OUT, 'duplication', 'gl-code-quality-duplication.json')));
     });
   }
+  if (selected.has('infra-lint')) infraLintStep(report);
   const rows = results(checks, found, errors, changed);
   const notes = [
     unmeasured.length ? `Not measured (no related test; CI's full run decides crap and diff-coverage):\n${unmeasured.map((f) => `  ${f}`).join('\n')}` : '',

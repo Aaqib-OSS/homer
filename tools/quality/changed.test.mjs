@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { test } from 'node:test';
 import {
+  changedLinesOf,
+  infraLintStep,
+  results,
   asPaths,
   buildFailures,
   consoleErrors,
@@ -14,6 +21,7 @@ import {
   scope,
   selectChecks,
 } from './changed.mjs';
+import { writeCheck } from './lib.mjs';
 
 const CHECKS = [
   'crap',
@@ -29,6 +37,7 @@ const CHECKS = [
   'detekt',
   'query-plans',
   'query-repeats',
+  'infra-lint',
 ].map((name) => ({ name, mode: 'required' }));
 const ALL = [...CHECKS, { name: 'mutation-console', mode: 'warn' }, { name: 'mutation-backend', mode: 'warn' }];
 const SRC = 'app/app/src/main/kotlin/homer/app';
@@ -58,6 +67,13 @@ test('a backend change selects the backend checks, dto-contract only for main so
 test('docs, build scripts, buildSrc and tooling select nothing', () => {
   const files = ['docs/x.md', 'app/app/build.gradle.kts', 'app/settings.gradle.kts', 'app/buildSrc/src/main/kotlin/CrapScore.kt', 'tools/quality/gate.mjs', 'console/README.md'];
   assert.equal(selectChecks(files, ALL).size, 0);
+});
+
+test('a shell script, a workflow, a Dockerfile or the hadolint config selects infra-lint alone', () => {
+  for (const file of ['app/entrypoint.sh', '.github/workflows/ci.yml', 'console/Dockerfile', 'app/e2e/Dockerfile', '.hadolint.yaml']) {
+    assert.deepEqual([...selectChecks([file], ALL)], ['infra-lint'], file);
+  }
+  assert.ok(!selectChecks(['.github/ISSUE_TEMPLATE/bug.yml', 'app/gradlew'], ALL).has('infra-lint'));
 });
 
 test('--only narrows the selection and alone selects a warn-mode check', () => {
@@ -244,4 +260,95 @@ test('formatFindings prints path:line, a bare path for line 0, the outside marke
       'detekt: error: detektMain exited 1',
     ].join('\n'),
   );
+});
+
+test('infraLintStep reports the findings infra-lint wrote into its directory', () => {
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'changed-infra-'));
+  const reported = [];
+  const finding = { path: '.github/workflows/ci.yml', line: 3, severity: 'major', message: 'zizmor artipacked: credential persistence' };
+  try {
+    infraLintStep((...args) => reported.push(args), ([dir]) => writeCheck(dir, 'infra-lint', 'lint', [finding]), out);
+    assert.equal(reported.length, 1);
+    const [check, findings, error] = reported[0];
+    assert.equal(check, 'infra-lint');
+    assert.equal(error, undefined);
+    assert.deepEqual(findings.map((f) => [f.path, f.line, f.message]), [[finding.path, 3, finding.message]]);
+  } finally {
+    fs.rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test('a tool infra-lint cannot run is an error of the check, and an error row fails the diff mode', () => {
+  const reported = [];
+  infraLintStep(
+    (...args) => reported.push(args),
+    () => {
+      throw new Error('hadolint did not run (ENOENT)');
+    },
+    path.join(os.tmpdir(), 'never-written'),
+  );
+  assert.deepEqual(reported, [['infra-lint', [], 'hadolint did not run (ENOENT)']]);
+  const rows = results([{ name: 'infra-lint', mode: 'required' }], new Map([['infra-lint', []]]), new Map([['infra-lint', 'hadolint did not run (ENOENT)']]), new Map());
+  assert.equal(rows.find((r) => r.name === 'infra-lint').status, 'error');
+});
+
+test('changedLinesOf covers the whole tree, so a finding outside app/ and console/ is inside the change when its file changed', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'changed-tree-'));
+  const git = (...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: root, encoding: 'utf8' }).trim();
+  const write = (file, text) => {
+    fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+    fs.writeFileSync(path.join(root, file), text);
+  };
+  try {
+    git('init', '-q');
+    write('.github/workflows/ci.yml', 'on: push\njobs: {}\n');
+    write('tools/x.sh', '#!/bin/sh\n');
+    write('console/lib/a.ts', 'a\n');
+    git('add', '.');
+    git('commit', '-q', '-m', 'base');
+    const base = git('rev-parse', 'HEAD');
+    write('.github/workflows/ci.yml', 'on: push\njobs: { a: {} }\n');
+    write('console/lib/a.ts', 'b\n');
+
+    const changed = changedLinesOf(base, root);
+    assert.deepEqual(changed, new Map([['.github/workflows/ci.yml', new Set([2])], ['console/lib/a.ts', new Set([1])]]));
+    const found = [
+      { path: '.github/workflows/ci.yml', line: 1, message: 'in a changed file' },
+      { path: 'tools/x.sh', line: 1, message: 'in an unchanged file' },
+    ];
+    assert.deepEqual(scope('infra-lint', found, changed).map((f) => [f.path, Boolean(f.outside)]), [
+      ['.github/workflows/ci.yml', false],
+      ['tools/x.sh', true],
+    ]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('results gives each selected check its status, and drops a build row that did not run', () => {
+  const finding = { path: 'tools/x.sh', line: 1, message: 'SC2086' };
+  const checks = [
+    { name: 'clean', mode: 'required' },
+    { name: 'strict', mode: 'required' },
+    { name: 'lenient', mode: 'warn' },
+    { name: 'skipped', mode: 'required' },
+  ];
+  const found = new Map([
+    ['clean', []],
+    ['strict', [finding]],
+    ['lenient', [finding]],
+  ]);
+  const rows = results(checks, found, new Map(), new Map());
+  assert.deepEqual(
+    rows.map((r) => [r.name, r.status, r.findings]),
+    [
+      ['clean', 'ok', 0],
+      ['strict', 'failed', 1],
+      ['lenient', 'warning', 1],
+      ['skipped', 'not run', 0],
+    ],
+  );
+
+  const withBuild = results(checks, new Map([...found, ['build', []]]), new Map(), new Map());
+  assert.deepEqual(withBuild[0], { name: 'build', mode: 'required', findings: 0, list: [], status: 'ok', error: undefined, missing: [] });
 });

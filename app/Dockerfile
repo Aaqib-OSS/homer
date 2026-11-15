@@ -30,6 +30,8 @@ RUN mkdir -p e2e architecture
 # Optional Artifactory credentials as BuildKit secrets -- never ARG/ENV, which
 # leak into image history/metadata; see DOCKER.md and root CLAUDE.md §12 rule 7.
 # Download dependencies (cached layer)
+# The $(…) ends in `|| true`, so the export masks no failure.
+# hadolint ignore=SC2155
 RUN --mount=type=secret,id=artifactory_url \
     --mount=type=secret,id=artifactory_user \
     --mount=type=secret,id=artifactory_token \
@@ -41,6 +43,8 @@ RUN --mount=type=secret,id=artifactory_url \
 # Build fat jar. The release tag is stamped into the runner jar (its name and the version it
 # registers with); declared after the dependency layer so a version change does not refetch them.
 ARG HOMER_VERSION=dev
+# The $(…) ends in `|| true`, so the export masks no failure.
+# hadolint ignore=SC2155
 RUN --mount=type=secret,id=artifactory_url \
     --mount=type=secret,id=artifactory_user \
     --mount=type=secret,id=artifactory_token \
@@ -109,6 +113,8 @@ RUN --mount=type=bind,from=builder,source=/build/agentdebug/build/libs,target=/t
     fi
 
 # agentdebug wrapper — always present, errors clearly if JAR absent
+# The single quotes keep ${CONFIG_PATH…} and $@ for the wrapper to expand.
+# hadolint ignore=SC2016
 RUN printf '#!/bin/sh\nset -e\nif [ ! -f /app/agentdebug.jar ]; then\n  echo "Error: agentdebug not available. Rebuild the container with HOMER_DEBUG=1." >&2\n  exit 1\nfi\nexec su-exec homer java --enable-native-access=ALL-UNNAMED \\\n  -jar /app/agentdebug.jar \\\n  --config "${CONFIG_PATH:-config/config.json}" "$@"\n' > /usr/local/bin/agentdebug && \
     chmod +x /usr/local/bin/agentdebug
 
@@ -164,6 +170,7 @@ RUN git lfs install
 
 # Switch back to root — entrypoint.sh starts as root to fix volume permissions,
 # then drops to homer via su-exec
+# hadolint ignore=DL3002
 USER root
 
 # Stage 4: the external runner instance (ADR-0066). Deliberately small: the

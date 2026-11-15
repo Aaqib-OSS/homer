@@ -24,7 +24,9 @@ permissions:
 jobs:
   ci:
     if: github.ref_protected
-    uses: ./.github/workflows/ci.yml
+    # zizmor's `$/` form is unknown to actionlint 1.7.12, and a job-level reusable workflow is read from the
+    # run's own commit before any step runs, so no step can swap it.
+    uses: ./.github/workflows/ci.yml # zizmor: ignore[self-repository]
 
   # The release's documentation, attached to its GitHub release, from which pages.yml assembles
   # the versioned site (ADR-0087). Tags only: a branch build is not a release.
@@ -51,11 +53,11 @@ jobs:
       # The release's notes; a tag whose version has no CHANGELOG.md section fails here.
       - name: Changelog section
         run: tools/release/notes.sh changelog "$TAG" >release-notes.md
+      # No dependency cache in a release job: a cache another run wrote must not feed a release.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
-          cache: npm
-          cache-dependency-path: site/package-lock.json
+          package-manager-cache: false
       - name: Build
         working-directory: site
         env:

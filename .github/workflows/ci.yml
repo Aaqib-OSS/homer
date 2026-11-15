@@ -29,6 +29,8 @@ jobs:
         working-directory: app
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
@@ -65,6 +67,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
@@ -90,6 +94,8 @@ jobs:
         working-directory: console
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
@@ -129,6 +135,8 @@ jobs:
         working-directory: site
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
@@ -149,6 +157,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 2
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -188,6 +197,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 2
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
@@ -223,6 +233,8 @@ jobs:
         working-directory: clients/python
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
@@ -242,13 +254,69 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: tools/release/notes-test.sh
+
+  # shellcheck, actionlint, zizmor and hadolint over the shell scripts, workflows and Dockerfiles
+  # (check `infra-lint`, ADR-0082). Each tool is the release binary of the version pinned here,
+  # refused unless it matches the pinned SHA-256; docs/quality-checks.md names the same versions.
+  homer-infra-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Install the linters
+        env:
+          SHELLCHECK_VERSION: 0.11.0
+          SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+          ZIZMOR_VERSION: 1.32.0
+          ZIZMOR_SHA256: bb110cc765eca9cd7efb2e284a956be5974c60027b0970f16397d86208a9957b
+          HADOLINT_VERSION: 2.15.1
+          HADOLINT_SHA256: c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/infra-lint/bin"
+          mkdir -p "$bin"
+          cd "$RUNNER_TEMP/infra-lint"
+          fetch() {
+            curl -fsSL --retry 3 -o "$2" "$1"
+            printf '%s  %s\n' "$3" "$2" | sha256sum -c -
+          }
+          fetch "https://github.com/koalaman/shellcheck/releases/download/v$SHELLCHECK_VERSION/shellcheck-v$SHELLCHECK_VERSION.linux.x86_64.tar.xz" shellcheck.tar.xz "$SHELLCHECK_SHA256"
+          tar -xJf shellcheck.tar.xz -C "$bin" --strip-components=1 "shellcheck-v$SHELLCHECK_VERSION/shellcheck"
+          fetch "https://github.com/rhysd/actionlint/releases/download/v$ACTIONLINT_VERSION/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" actionlint.tar.gz "$ACTIONLINT_SHA256"
+          tar -xzf actionlint.tar.gz -C "$bin" actionlint
+          fetch "https://github.com/zizmorcore/zizmor/releases/download/v$ZIZMOR_VERSION/zizmor-x86_64-unknown-linux-gnu.tar.gz" zizmor.tar.gz "$ZIZMOR_SHA256"
+          tar -xzf zizmor.tar.gz -C "$bin" zizmor
+          fetch "https://github.com/hadolint/hadolint/releases/download/v$HADOLINT_VERSION/hadolint-linux-x86_64" "$bin/hadolint" "$HADOLINT_SHA256"
+          chmod +x "$bin/hadolint"
+          # Ahead of the runner image's own shellcheck, which actionlint would otherwise run on `run:` blocks.
+          echo "$bin" >> "$GITHUB_PATH"
+      - run: node tools/quality/infra-lint.mjs
+      - name: Pack reports
+        if: always()
+        run: tar -czf reports.tgz --ignore-failed-read reports/quality/infra-lint/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: reports-homer-infra-lint
+          path: reports.tgz
+          retention-days: 7
 
   # Every quality report in one table (ADR-0082). A warn-mode check with findings
   # makes gate.mjs exit 3, which passes with a warning annotation; exit 1 fails.
   quality-gate:
-    needs: [homer-app-tests, homer-app-detekt, homer-console-tests, homer-console-mutation, homer-app-mutation]
-    # The mutation jobs are skipped outside pull requests; the gate still runs.
+    needs: [homer-app-tests, homer-app-detekt, homer-console-tests, homer-console-mutation, homer-app-mutation, homer-infra-lint]
+    # The mutation jobs are skipped outside pull requests; the gate still runs. A failed
+    # homer-infra-lint leaves its report missing, which fails the gate.
     if: >-
       !cancelled()
       && needs.homer-app-tests.result == 'success'
@@ -259,6 +327,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 2
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -319,6 +388,8 @@ jobs:
       COMPOSE_FILE: docker-compose.e2e.yml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: docker compose build
       # `run` returns the test JVM's exit code directly; `up --exit-code-from`
       # does not reliably abort with the one-shot fixtures-init in the stack.
