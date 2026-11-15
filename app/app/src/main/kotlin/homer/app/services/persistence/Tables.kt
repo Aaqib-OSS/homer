@@ -2,11 +2,30 @@ package homer.app.services.persistence
 
 import homer.app.services.ContinuationKind
 import homer.app.services.DispatchKind
+import org.jetbrains.exposed.v1.core.BooleanColumnType
+import org.jetbrains.exposed.v1.core.ColumnType
 import org.jetbrains.exposed.v1.core.Expression
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.isNotNull
 import org.jetbrains.exposed.v1.core.isNull
+
+/**
+ * A Boolean in a column declared `INTEGER`, the type the v18 migration added
+ * `processes.retained_truncated` with, so a fresh database matches an upgraded one;
+ * `bool()` declares `BOOLEAN` (NUMERIC affinity). Values map exactly as [BooleanColumnType]'s.
+ */
+internal class IntegerBooleanColumnType : ColumnType<Boolean>() {
+    private val bool = BooleanColumnType()
+
+    override fun sqlType(): String = "INTEGER"
+
+    override fun valueFromDB(value: Any): Boolean = bool.valueFromDB(value)
+
+    override fun notNullValueToDB(value: Boolean): Any = bool.notNullValueToDB(value)
+
+    override fun nonNullValueToString(value: Boolean): String = bool.nonNullValueToString(value)
+}
 
 /**
  * Durable schema for orchestrator state. See ADR-0020.
@@ -107,7 +126,7 @@ internal object Processes : Table("processes") {
     val workspacePurgedAt = long("workspace_purged_at").nullable()
 
     // Whether the retained set was cut short by server.maxRetainedArtifactBytes.
-    val retainedTruncated = bool("retained_truncated").nullable()
+    val retainedTruncated = registerColumn("retained_truncated", IntegerBooleanColumnType()).nullable()
 
     // Why the run ended FAILED before any of its commands started (a claim timeout, a
     // SKIP_CURRENT lock skip, a parallel-run cap or a full queue), as a fixed-vocabulary

@@ -34,6 +34,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.sql.DriverManager
 import java.sql.SQLException
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
@@ -1093,6 +1094,39 @@ class ProcessRepositoryTest {
 
             assertEquals(null, repo.getInfo(id)?.artifactsDir)
             assertEquals(true, repo.getInfo(id)?.retainedTruncated)
+        }
+
+    @Test
+    fun `retained_truncated is declared INTEGER on a fresh database and stores true and false as 1 and 0`() =
+        runTest {
+            val path = PersistenceTestSupport.tempDatabasePath()
+            val repo = repo(PersistenceTestSupport.tempDatabase(path))
+            val truncated = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val complete = repo.obtainProcessId("a", emptyMap(), 100).processId
+            val untouched = repo.obtainProcessId("a", emptyMap(), 100).processId
+
+            repo.markWorkspacePurged(truncated, retainedTruncated = true)
+            repo.markWorkspacePurged(complete, retainedTruncated = false)
+
+            assertEquals(true, repo.getInfo(truncated)?.retainedTruncated)
+            assertEquals(false, repo.getInfo(complete)?.retainedTruncated)
+            assertNull(repo.getInfo(untouched)?.retainedTruncated)
+            DriverManager.getConnection("jdbc:sqlite:$path").use { c ->
+                c.createStatement().use { st ->
+                    val stored =
+                        st.executeQuery("SELECT typeof(retained_truncated), retained_truncated FROM processes ORDER BY id").use { rs ->
+                            generateSequence { if (rs.next()) "${rs.getString(1)}:${rs.getString(2)}" else null }.toList()
+                        }
+                    assertEquals(listOf("integer:1", "integer:0", "null:null"), stored)
+                    val declared =
+                        st.executeQuery("SELECT type FROM pragma_table_info('processes') WHERE name = 'retained_truncated'").use { rs ->
+                            rs.next()
+                            rs.getString(1)
+                        }
+                    // The type the v18 migration adds the column with, so a fresh database matches an upgraded one (#232).
+                    assertEquals("INTEGER", declared)
+                }
+            }
         }
 
     @Test
