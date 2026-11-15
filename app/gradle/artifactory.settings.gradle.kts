@@ -1,8 +1,8 @@
-// Artifactory dependency proxy for CI. Applied from both settings scripts
+// Optional Artifactory dependency proxy. Applied from both settings scripts
 // (`settings.gradle.kts`, `buildSrc/settings.gradle.kts`); it only adds a
 // repository when ARTIFACTORY_URL, ARTIFACTORY_USER and ARTIFACTORY_TOKEN are
-// all set (CI/CD variables), so local builds are untouched and a
-// CI job without the variables falls back to Maven Central. ARTIFACTORY_URL is
+// all set, so local builds are untouched and a build without the
+// variables (GitHub CI sets none, ADR-0084) falls back to Maven Central. ARTIFACTORY_URL is
 // a bare https origin: a path or embedded credentials fail the build. Plugin repositories
 // cannot be configured from an applied script — each settings file repeats
 // the same gate inside its own `pluginManagement` block.

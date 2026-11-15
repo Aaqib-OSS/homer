@@ -380,7 +380,9 @@ with no `else`.
 
 The `HMR_*` variables every command receives are defined in `EnvConstants.kt` and documented for
 agent authors in [`AGENT.md`](AGENT.md) § Workspace Environment Variables — add a new one to both in
-the same commit. Implementation facts that doc does not carry:
+the same commit. `HmrEnvVarsDocumentedTest` fails on an `HMR_*` constant `AGENT.md` does not name,
+unless the test's internal-only list carries it with a reason (`HMR_LG_RECOVER`, which only the
+resume route sets for the LangGraph runtime). Implementation facts that doc does not carry:
 
 - `HMR_PARENT_PROCESS_ID` and `HMR_ROOT_PROCESS_ID` (the flow's first run id) are **removed**, not
   set empty, at the root run, so an agent `env:` entry or an allowlisted host variable cannot pose
@@ -493,12 +495,14 @@ A Kotlin compiler warning fails the build (`allWarningsAsErrors` in the conventi
 A cold or `--rerun-tasks` build that OOMs in codegen (`OutOfMemoryError: GC overhead limit exceeded`)
 means the Kotlin daemon heap: check the live daemon's `-Xmx` (`ps | grep KotlinCompileDaemon`) before
 blaming the test it names — a daemon already running with a **larger** heap gets reused
-([`gradle.properties`](gradle.properties), `kotlin.daemon.jvmargs`). CI resolves
-through the in-cluster Artifactory proxy and its remote build cache, on only when `ARTIFACTORY_URL`
+([`gradle.properties`](gradle.properties), `kotlin.daemon.jvmargs`). CI
+(`.github/workflows/`) resolves from Maven Central, with the Gradle cache in GitHub's Actions cache, and
+sets no Artifactory variable (ADR-0084). An Artifactory proxy and its remote build cache remain an
+optional path for other environments, on only when `ARTIFACTORY_URL`
 (a bare `https://` origin; a path or credentials in it fail the build), `ARTIFACTORY_USER` and `ARTIFACTORY_TOKEN`
 are set; inside a Docker build the three are BuildKit secrets, never an
 `ARG`/`ENV` (root §12, rule 7), and the e2e runner keeps them as run-time environment —
-`ArtifactorySecretExposureTest` guards both halves; the cache is pushed from protected refs only
+`ArtifactorySecretExposureTest` guards both halves; the cache is pushed only when `CI_COMMIT_REF_PROTECTED` is `true`
 ([`../DOCKER.md`](../DOCKER.md) § Artifactory build secrets).
 
 Two sibling modules: [`agentdebug/`](agentdebug/) is a Clikt CLI running agents locally without the

@@ -2,11 +2,11 @@
 /**
  * Mutation report (check `mutation-console`, ADR-0082): runs Stryker with `stryker.config.mjs` and
  * turns its JSON report into findings — every survived or uncovered mutant.
- * `--changed` mutates only the lines a merge request adds or changes in scored files — the diff
+ * `--changed` mutates only the lines a pull request adds or changes in scored files — the diff
  * against `MUTATE_BASE` (a commit), or with `MUTATE_WORKTREE=1` the working tree's, uncommitted and
  * untracked files included (the diff mode, tools/quality/changed.mjs) — and skips Stryker when there
  * are none. Whole files would make
- * an MR's run scale with the size of every file it touches (hours for a dozen components). Both
+ * a pull request's run scale with the size of every file it touches (hours for a dozen components). Both
  * modes ignore static mutants, each of which reruns the whole suite.
  * Accepted exceptions (tools/quality/mutation-exceptions/console.json) leave the score and the findings
  * and are listed in `mutation-console-accepted.txt`; a full run also reports the entries matching no mutant.

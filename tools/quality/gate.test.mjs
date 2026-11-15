@@ -36,7 +36,7 @@ test('a missing summary fails closed, unless an optional check did not run at al
 });
 
 test('a check whose every summary says skipped shows as skipped, not as clean', () => {
-  const read = files({ 'd/x-summary.txt': 'findings=0\nskipped=no merge-request base\n' });
+  const read = files({ 'd/x-summary.txt': 'findings=0\nskipped=no pull-request base\n' });
   const result = evaluate({ name: 'x', mode: 'required', dirs: ['d'] }, read);
   assert.equal(result.status, 'skipped');
   assert.equal(exitCode([result]), 0);

@@ -1,5 +1,4 @@
-# Per-commit checks on GitHub-hosted runners: the GitHub counterpart of the
-# every-pipeline jobs of the upstream pipeline, but on pull requests and main only (a
+# Per-commit checks on GitHub-hosted runners, on pull requests and main only (a
 # push trigger on every branch would run each PR twice). Fork pull requests run
 # it too, so no job here may need a secret: Gradle resolves from Maven Central
 # and caches through setup-gradle (ADR-0084).

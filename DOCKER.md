@@ -401,8 +401,9 @@ metadata, while a secret mount leaves nothing in any layer.
 
 Each Gradle `RUN` exports the three afresh from its own mounts (two per
 Dockerfile), never for the build as a whole. The suppliers are the
-`--secret id=…,env=…` flags on the CI pipeline's `docker build` lines and
-`build.secrets` in `docker-compose.e2e.yml`. `ArtifactorySecretExposureTest`
+`--secret id=…,env=…` flags on a `docker build` that sets them (GitHub CI sets
+none and builds against Maven Central, ADR-0084) and `build.secrets` in
+`docker-compose.e2e.yml`. `ArtifactorySecretExposureTest`
 fails if either Dockerfile gains an `ARG`/`ENV` Artifactory credential or a
 `./gradlew` build step without the mounts.
 

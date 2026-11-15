@@ -34,7 +34,8 @@ plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
 
-// CI: resolve dependencies through Artifactory when the CI/CD variables are set.
+// Optional: resolve dependencies through Artifactory when the ARTIFACTORY_* environment
+// variables are set. GitHub CI sets none of them and resolves from Maven Central (ADR-0084).
 apply(from = "gradle/artifactory.settings.gradle.kts")
 
 dependencyResolutionManagement {
@@ -45,9 +46,10 @@ dependencyResolutionManagement {
     }
 }
 
-// Remote build cache in Artifactory, enabled only when the CI/CD variables are
-// set. Entries are pushed from protected refs only (main, release tags): a
-// merge-request pipeline can read the cache but cannot seed entries that a
+// Remote build cache in Artifactory, enabled only when the ARTIFACTORY_* environment
+// variables are set (GitHub CI sets none of them, ADR-0084). Entries are pushed only
+// when CI_COMMIT_REF_PROTECTED is "true" (GitLab CI's protected-ref flag; GitHub Actions
+// does not set it): any other build can read the cache but cannot seed entries that a
 // protected build would later reuse. Remote-cache errors are non-fatal in
 // Gradle, so an unreachable cache degrades to a slower build, not a red one.
 buildCache {

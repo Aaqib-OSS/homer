@@ -17,7 +17,8 @@ import kotlin.test.fail
  * config and the pull request template. Each file must stay parseable and keep the fields, options
  * and links the repository promises — a form GitHub cannot parse silently disappears from "New
  * issue" — and every one of them must carry the public-content reminder, because a report or a pull
- * request description is published the moment it is submitted. See ADR-0047 and ADR-0085.
+ * request description is published the moment it is submitted. See ADR-0047; the rule that nothing
+ * internal reaches the public repository dates from the migration-era mirror (ADR-0085, deprecated).
  */
 class CommunityTemplatesTest {
     private val bugReport = ".github/ISSUE_TEMPLATE/bug_report.yml"
@@ -35,7 +36,7 @@ class CommunityTemplatesTest {
             assertTrue(
                 text(path).contains(reminder),
                 "$path dropped the public-content reminder. Anything posted there is public at once, so the " +
-                    "warning has to stay (ADR-0047, ADR-0085).",
+                    "warning has to stay (ADR-0047).",
             )
         }
     }
