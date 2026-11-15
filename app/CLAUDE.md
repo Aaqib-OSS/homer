@@ -47,7 +47,9 @@ app/src/main/kotlin/homer/app/   Application.kt (main, configureServer, configur
                                  resource, mounted in order by apiV1Routes in SecuredRoutes.kt;
                                  run-start handlers in RunHandlers.kt; ApiDeps); auth/ (session auth,
                                  CSRF); models/ (Agent · AppConfig · Command · *Response DTOs; the
-                                 run's domain types ProcessInfo · ExecutionInfo · ProcessStatus);
+                                 run's domain types ProcessInfo · ExecutionInfo · ProcessStatus;
+                                 the parameter objects several layers pass — NewRunRecord ·
+                                 RunStartRequest · ProcessListQuery, callbacks included);
                                  services/ (the Services layer: one file per service above, the
                                  support code that calls one, persistence/); infra/ (the Infra layer:
                                  its implementations and the support code below it); runners/ (runner
