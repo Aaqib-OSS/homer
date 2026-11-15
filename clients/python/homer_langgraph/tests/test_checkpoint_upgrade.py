@@ -23,6 +23,7 @@ import json
 import os
 import shutil
 import sqlite3
+import subprocess
 import sys
 import tempfile
 from contextlib import closing
@@ -148,6 +149,18 @@ def test_failed_thread_reads_and_recovers(env, tmp_path, monkeypatch, captured_r
 
     assert captured_runs == []
     assert json.loads(capsys.readouterr().out)["answer"] == "recovered"
+
+
+def test_generate_refuses_a_line_other_than_the_old_one(tmp_path):
+    out = tmp_path / "fixture.sqlite"
+    result = subprocess.run(
+        [sys.executable, "-m", "homer_langgraph.tests.test_checkpoint_upgrade", str(out)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "refusing to generate" in result.stderr
+    assert not out.exists()
 
 
 def _generate(out: Path) -> None:
