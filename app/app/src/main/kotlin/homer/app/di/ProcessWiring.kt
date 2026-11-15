@@ -13,9 +13,8 @@ import org.koin.dsl.module
 import kotlin.io.path.Path
 
 /**
- * The run-lifecycle core's Koin definition, beside [appModule] for the same reason
- * `RunnerWiring` is: that file is at its size limit (root CLAUDE.md §2). The hook rows it
- * records are fired by [HookService], whose own definition is in `HookWiring`.
+ * The run-lifecycle core's Koin definition, in a subject file of its own (root CLAUDE.md §2).
+ * The hook rows it records are fired by [HookService], whose own definition is in `HookWiring`.
  */
 internal val processModule =
     module {

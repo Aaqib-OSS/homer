@@ -63,7 +63,7 @@ Chosen option: **1**, in three merge requests. Each one leaves `main` green.
 The layering rule becomes `required`.
 
 - **The run's domain types move to the kernel.** `ProcessInfo`, `ExecutionInfo`, `ProcessStatus`, `ProcessCreationResult` and the other data classes nested in `ProcessManager` move to `models/`. They describe a run, and every layer reads them.
-- **A lower layer that needs a higher one declares a port.** The port is a narrow interface in the lower layer's own package that lists only the calls it makes. The higher layer implements the port, and `di/AppModule.kt` binds it. Two examples:
+- **A lower layer that needs a higher one declares a port.** The port is a narrow interface in the lower layer's own package that lists only the calls it makes. The higher layer implements the port, and the Koin wiring in `di/` binds it — the subject module owning the port's implementer (`AppModule` before it was split into subject wiring modules). Two examples:
   - `ProcessManager` implements the Execution-side record of a run's steps and status.
   - The services implement the sub-run start that `RunAgentExecutor` needs.
 - **The diagram is corrected only where a type's nature was misfiled.** A wrapper over an external system, such as the OpenTelemetry and Langfuse clients, is Infra. An in-memory execution gate is Execution. Each move between rows names its reason below, in the amendment that records the list. A type is never reclassified only to silence a finding.

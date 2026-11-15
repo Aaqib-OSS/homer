@@ -159,7 +159,7 @@ shared across every `ssh` runner alias. Implementation found that
 (`defaultConnect`), keyed off each alias's own
 `strictHostKeyChecking`/`knownHostsPath`. A shared client would race:
 two aliases with different host-key policies connecting concurrently
-could apply the wrong verifier to the wrong connection. `AppModule`
+could apply the wrong verifier to the wrong connection. `RunnerWiring`
 therefore builds one `SshClient.setUpDefaultClient()` per configured
 `ssh` alias instead.
 
