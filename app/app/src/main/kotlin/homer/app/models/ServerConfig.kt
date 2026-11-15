@@ -109,7 +109,7 @@ data class Server(
     /** Default seconds a run waits for a runner to claim it; agents may override. See ADR-0066. */
     val runnerClaimTimeoutSec: Int = 300,
     /** Local bound on pending claims; a run arriving at the bound fails at once. See ADR-0066. */
-    val maxPendingRunnerClaims: Int = 1000,
+    val maxPendingRunnerClaims: Int = DEFAULT_MAX_PENDING_RUNNER_CLAIMS,
     /**
      * Maximum size in bytes of a single command's stdout file
      * (`cmd_N.out`) and stderr file (`cmd_N.err`) — each stream is
@@ -165,6 +165,13 @@ data class Server(
 
     companion object {
         private val SYSTEM_SUBTYPE_PATTERN = Regex("^[a-zA-Z0-9_]+$")
+
+        /**
+         * Default [maxPendingRunnerClaims], and the bound a `RunnerRegistry` built without an
+         * explicit queue uses: the two must not drift, so the registry reads this rather than
+         * repeating the number. See ADR-0066.
+         */
+        const val DEFAULT_MAX_PENDING_RUNNER_CLAIMS = 1000
     }
 }
 

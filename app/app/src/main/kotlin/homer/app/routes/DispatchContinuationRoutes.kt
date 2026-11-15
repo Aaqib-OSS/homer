@@ -135,14 +135,12 @@ private fun <S : Enum<S>> ApplicationCall.recordListQuery(statuses: EnumEntries<
     return RecordListQuery(status, agentName, limit, offset)
 }
 
-/** `limit` (default 100, 1..1000) and `offset` (default 0) of the question, dispatch and continuation lists, as on `/status/all`. */
-internal fun ApplicationCall.recordPageParams(): Pair<Int, Int> {
-    val limit = request.queryParameters["limit"]?.toIntOrNull() ?: 100
-    val offset = request.queryParameters["offset"]?.toIntOrNull() ?: 0
-    if (limit < 1 || limit > 1000) throw ValidationException("Must be between 1 and 1000", "limit")
-    if (offset < 0) throw ValidationException("Must be >= 0", "offset")
-    return limit to offset
-}
+/**
+ * `limit` (default [DEFAULT_PAGE_LIMIT], 1..[MAX_PAGE_LIMIT]) and `offset` (default 0) of the
+ * question, dispatch and continuation lists, as on `/status/all`: the shared [pageParams] helper
+ * with this family's own `ValidationException` wording.
+ */
+internal fun ApplicationCall.recordPageParams(): Pair<Int, Int> = pageParams { field, message -> ValidationException(message, field) }
 
 /** The `{id}` path parameter of a [kind] (dispatch or continuation) request; a non-integer is a `400`. */
 private fun ApplicationCall.recordId(kind: String): Int =

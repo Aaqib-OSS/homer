@@ -1,5 +1,6 @@
 package homer.app.routes
 
+import homer.app.HomerHeaders
 import homer.app.exceptions.QueryParamValidationException
 import homer.app.models.ErrorResponse
 import homer.app.models.ProcessInfo
@@ -224,8 +225,8 @@ private fun Route.artifactRoute(deps: ApiDeps) {
 
             // Set response headers
             val isActive = processManager.getProcessStatus(processId) in listOf(WORKING, CREATED)
-            call.response.headers.append("X-Process-Status", processInfo.status.name)
-            call.response.headers.append("X-File-Complete", (!isActive).toString())
+            call.response.headers.append(HomerHeaders.PROCESS_STATUS, processInfo.status.name)
+            call.response.headers.append(HomerHeaders.FILE_COMPLETE, (!isActive).toString())
 
             // Stream file
             call.respondOutputStream(ContentType.Text.Plain, HttpStatusCode.OK) {
@@ -340,10 +341,8 @@ private data class StatusAllParams(
  */
 private fun parseStatusAllParams(call: ApplicationCall): StatusAllParams {
     val orderParam = call.request.queryParameters["order"]?.lowercase() ?: "desc"
-    val limitParam = call.request.queryParameters["limit"]?.toIntOrNull() ?: 100
-    val offsetParam = call.request.queryParameters["offset"]?.toIntOrNull() ?: 0
 
-    validatePaging(orderParam, limitParam, offsetParam)
+    val (limitParam, offsetParam) = call.validatePaging(orderParam)
 
     val filterStatuses = parseStatusTypes(call)
 
@@ -371,23 +370,17 @@ private fun parseStatusAllParams(call: ApplicationCall): StatusAllParams {
     )
 }
 
-/** Throws the `400` for the first invalid of [order], [limit] and [offset], checked in that order. */
-private fun validatePaging(
-    order: String,
-    limit: Int,
-    offset: Int,
-) {
+/**
+ * Throws the `400` for an invalid [order] first, then returns the validated `limit`/`offset` page
+ * from the shared [pageParams] helper, so the checks run in the order → limit → offset order the
+ * message selection depends on.
+ */
+private fun ApplicationCall.validatePaging(order: String): Pair<Int, Int> {
     if (order !in listOf("asc", "desc")) {
         throw QueryParamValidationException("Invalid order parameter. Must be 'asc' or 'desc'")
     }
 
-    if (limit < 1 || limit > 1000) {
-        throw QueryParamValidationException("Invalid limit parameter. Must be between 1 and 1000")
-    }
-
-    if (offset < 0) {
-        throw QueryParamValidationException("Invalid offset parameter. Must be >= 0")
-    }
+    return pageParams { field, message -> QueryParamValidationException("Invalid $field parameter. $message") }
 }
 
 /** The `types` filter (comma-separated, repeatable), or null when absent; an unknown status is a `400`. */

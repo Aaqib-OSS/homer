@@ -39,6 +39,14 @@ import kotlinx.serialization.json.buildJsonObject
 
 private const val HEARTBEAT_MS = 15_000L
 
+/**
+ * SSE event name of a status change on `/stream/processes`. Deliberately its own constant rather
+ * than `SpanAttributes.PROCESS_STATUS`: the two surfaces happen to spell the same string today, but
+ * the frame name is a client contract and the span key an exported attribute, and neither may drag
+ * the other along when it changes.
+ */
+private const val PROCESS_STATUS_SSE_EVENT = "process.status"
+
 fun Route.streamingRoute(
     broadcaster: ProcessEventBroadcaster,
     logTailService: LogTailService,
@@ -221,7 +229,7 @@ internal fun processEventFrame(event: ProcessEvent): SseFrame? =
     when (event) {
         is ProcessEvent.StatusChanged -> {
             SseFrame(
-                "process.status",
+                PROCESS_STATUS_SSE_EVENT,
                 buildJsonObject {
                     put("processId", JsonPrimitive(event.processId))
                     put("status", JsonPrimitive(event.status.name))

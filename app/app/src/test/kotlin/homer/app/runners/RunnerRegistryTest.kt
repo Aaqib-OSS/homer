@@ -1,10 +1,13 @@
 package homer.app.runners
 
+import homer.app.exceptions.ClaimQueueFullException
 import homer.app.exceptions.ConfigurationException
 import homer.app.fixtures.AgentFixtures
 import homer.app.fixtures.TestFixtures
 import homer.app.models.RunnerAffinity
 import homer.app.models.RunnerConfig
+import homer.app.models.RunnerFilter
+import homer.app.models.Server
 import homer.app.runners.external.ExternalRunnerDomain
 import homer.app.runners.external.RegisterInstanceRequest
 import homer.app.runners.queue.QueuedRunner
@@ -14,6 +17,7 @@ import homer.app.runners.queue.RunnerClaimQueue
 import io.mockk.every
 import io.mockk.mockk
 import io.opentelemetry.context.Context
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
@@ -23,6 +27,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 class RunnerRegistryTest {
     private fun stubRunner(a: String): Runner =
@@ -160,6 +165,27 @@ class RunnerRegistryTest {
             // reaches the queue but nothing is preferred and nothing is recorded.
             registry.forAlias("local").openSession(params(2, rootProcessId = 8))
             assertNull(memory.preferredFor(8, "gpu"))
+        }
+
+    @Test
+    fun `a registry without an explicit queue sheds the claim past the config default bound`() =
+        runTest {
+            // The default queue must take its bound from Server.maxPendingRunnerClaims' default:
+            // no consumer is started, so the requests stay pending until the bound is reached.
+            val registry = RunnerRegistry(listOf(stubRunner("local")))
+            repeat(Server.DEFAULT_MAX_PENDING_RUNNER_CLAIMS) { index ->
+                backgroundScope.async {
+                    runCatching { registry.queue.awaitClaim(params(index, 7), RunnerFilter.Alias("local"), 300.seconds) }
+                }
+            }
+            runCurrent()
+            assertEquals(1000, registry.queue.pendingCount())
+
+            val ex =
+                assertThrows<ClaimQueueFullException> {
+                    registry.queue.awaitClaim(params(0, 7), RunnerFilter.Alias("local"), 300.seconds)
+                }
+            assertEquals("Runner claim queue is full (1000 pending claims)", ex.message)
         }
 
     @Test

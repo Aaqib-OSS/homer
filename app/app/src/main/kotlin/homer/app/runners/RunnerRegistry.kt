@@ -4,6 +4,7 @@ import homer.app.exceptions.ConfigurationException
 import homer.app.models.Agent
 import homer.app.models.RunnerAffinity
 import homer.app.models.RunnerFilter
+import homer.app.models.Server
 import homer.app.runners.external.ExternalRunnerDomain
 import homer.app.runners.local.LocalRunner
 import homer.app.runners.queue.QueuedRunner
@@ -31,7 +32,7 @@ import kotlin.time.Duration.Companion.seconds
 class RunnerRegistry(
     private val entries: List<RegisteredRunner>,
     val externalDomains: List<ExternalRunnerDomain> = emptyList(),
-    val queue: RunnerClaimQueue = RunnerClaimQueue(maxPending = 1000),
+    val queue: RunnerClaimQueue = RunnerClaimQueue(maxPending = Server.DEFAULT_MAX_PENDING_RUNNER_CLAIMS),
     private val defaultClaimTimeout: Duration = 300.seconds,
     private val sweepInterval: Duration = 5.seconds,
     // server.localRunner.enabled: false, as RunnerWiring read it; see ADR-0095.
