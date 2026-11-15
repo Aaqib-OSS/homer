@@ -4,13 +4,7 @@ import com.charleskorn.kaml.Yaml
 import homer.app.auth.CsrfProtection
 import homer.app.config.logLevelSystemProps
 import homer.app.config.resolveLlmPrice
-import homer.app.di.appModule
-import homer.app.di.executionModule
-import homer.app.di.hookModule
-import homer.app.di.persistenceModule
-import homer.app.di.processModule
-import homer.app.di.servicesModule
-import homer.app.di.telemetryModule
+import homer.app.di.bootModules
 import homer.app.executors.ProcessExecutor
 import homer.app.infra.PasswordVerifier
 import homer.app.infra.SysEnvResolver
@@ -331,9 +325,9 @@ private fun validateStartupConfig(config: AppConfig) {
 }
 
 /**
- * Installs Koin with [config] as the `AppConfig` singleton next to [appModule] and the subject
- * modules beside it. The list is the whole graph: every module that owns definitions is named
- * here, so a new subject module has to be added in the same commit as the file.
+ * Installs Koin with [config] as the `AppConfig` singleton next to [bootModules]. That list is
+ * the whole graph: every module that owns definitions is named there once, and `KoinGraphTest`
+ * verifies the same list, so the test cannot be left behind when a module is added.
  */
 private fun Application.installKoin(config: AppConfig) {
     install(Koin) {
@@ -344,13 +338,7 @@ private fun Application.installKoin(config: AppConfig) {
                 single { config }
             },
             // Application modules
-            appModule,
-            persistenceModule,
-            telemetryModule,
-            executionModule,
-            servicesModule,
-            processModule,
-            hookModule,
+            *bootModules.toTypedArray(),
         )
     }
 }

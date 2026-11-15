@@ -13,9 +13,11 @@ import org.koin.core.parameter.parametersOf
 import org.koin.dsl.module
 
 /**
- * Tracing, the Langfuse client and the cost accounting built on them (ADR-0035, ADR-0061).
- * Split out of [appModule] so each subject's bindings stay in one file (root CLAUDE.md §2);
- * the boot loads it beside the other subject modules.
+ * Tracing, the Langfuse client and the cost accounting built on them (ADR-0035, ADR-0061). The
+ * module also owns the spend-cap and cooldown gates over the same durable cost ledger —
+ * [CostMeter] and [CooldownGate], Services-layer types per ADR-0083. They are wired here, beside
+ * the telemetry that prices the runs they gate, rather than in the services wiring; moving them
+ * there was considered and rejected when the module was split out of [appModule].
  */
 internal val telemetryModule =
     module {

@@ -33,24 +33,29 @@ import kotlin.test.assertEquals
 /**
  * The graph the boot installs, checked as one graph.
  *
- * `installKoin` is the only place the seven modules are named, and nothing outside a real server
- * boot builds them, so a binding that moves into the wrong subject module — or is lost between two
- * of them — would otherwise surface only as a startup crash in production. `verify()` reflects on
- * every definition's constructor and fails on a parameter type no definition provides, and
- * [EXPECTED_TYPES] catches what reflection cannot: a definition dropped whole, or registered twice.
+ * The boot's module list is declared once, in `di/BootModules.kt` — `installKoin` loads it and this
+ * test verifies it — so a module added to the boot cannot escape the pin. Nothing outside a real
+ * server boot builds the modules, so a binding that moves into the wrong subject module — or is
+ * lost between two of them — would otherwise surface only as a startup crash in production.
+ * `verify()` reflects on every definition's constructor and fails on a parameter type no definition
+ * provides, and [EXPECTED_TYPES] catches what reflection cannot: it is pinned per module, so a
+ * definition dropped whole, registered twice, or moved between two subject modules fails, and a
+ * module added to [bootModules] without its own list here fails on the count.
  */
 class KoinGraphTest {
     @OptIn(KoinInternalApi::class, KoinExperimentalAPI::class)
     @Test
     fun `every definition of the boot's graph resolves, exactly once`() {
-        val modules = listOf(appModule, persistenceModule, telemetryModule, executionModule, servicesModule, processModule, hookModule)
+        val modules = bootModules
 
-        module { includes(appModule, persistenceModule, telemetryModule, executionModule, servicesModule, processModule, hookModule) }
+        module { includes(bootModules) }
             .verify(extraTypes = EXTRA_TYPES)
             .verify()
 
-        val types = modules.flatMap { it.registeredTypes() }
-        assertEquals(EXPECTED_TYPES.sorted(), types.sorted())
+        assertEquals(
+            EXPECTED_TYPES.map { it.sorted() },
+            modules.map { it.registeredTypes().sorted() },
+        )
         assertEquals(
             listOf(named("applicationScope")),
             modules.flatMap { it.definitions() }.mapNotNull { it.qualifier },
@@ -100,87 +105,102 @@ class KoinGraphTest {
             )
 
         /**
-         * Every definition of the seven modules, by primary type: one line per `single`/`factory`
-         * the graph must hold. Adding a binding means adding it here — the test fails otherwise,
-         * which is the point: a dropped or duplicated definition is otherwise silent.
+         * Every definition of each boot module, by primary type: one list per module of
+         * [bootModules], in the same order, one line per `single`/`factory` the module must hold.
+         * Adding a binding means adding it to its module's list — the test fails otherwise, which
+         * is the point: a dropped, duplicated or wrong-module definition is otherwise silent.
          */
         val EXPECTED_TYPES =
             listOf(
                 // appModule
-                "Logger",
-                "ExecutionConfig",
-                "TextCompiler",
-                "FileOperations",
-                "ProcessEventBroadcaster",
-                "InputSchemaValidator",
-                "PasswordVerifier",
-                "Authorizer",
-                "ActiveSessionsRegistry",
-                "RunnerStateSink",
+                listOf(
+                    "Logger",
+                    "ExecutionConfig",
+                    "TextCompiler",
+                    "FileOperations",
+                    "ProcessEventBroadcaster",
+                    "InputSchemaValidator",
+                    "PasswordVerifier",
+                    "Authorizer",
+                    "ActiveSessionsRegistry",
+                    "RunnerStateSink",
+                ),
                 // persistenceModule
-                "DatabaseService",
-                "ProcessJobRegistry",
-                "ProcessRepository",
-                "QuestionsRepository",
-                "RunMessagesRepository",
-                "DispatchRepository",
-                "ContinuationRepository",
-                "ResultTokenRepository",
-                "CostRepository",
-                "ServerMetaRepository",
+                listOf(
+                    "DatabaseService",
+                    "ProcessJobRegistry",
+                    "ProcessRepository",
+                    "QuestionsRepository",
+                    "RunMessagesRepository",
+                    "DispatchRepository",
+                    "ContinuationRepository",
+                    "ResultTokenRepository",
+                    "CostRepository",
+                    "ServerMetaRepository",
+                ),
                 // telemetryModule
-                "TelemetryService",
-                "LangfuseClient",
-                "LlmTelemetryService",
-                "LlmCostResolver",
-                "CostMeter",
-                "CooldownGate",
+                listOf(
+                    "TelemetryService",
+                    "LangfuseClient",
+                    "LlmTelemetryService",
+                    "LlmCostResolver",
+                    "CostMeter",
+                    "CooldownGate",
+                ),
                 // executionModule
-                "WorkspaceConfigFactory",
-                "LockManager",
-                "ParallelRunsManager",
-                "SweepStatus",
-                "KubernetesRunnerStartupSweep",
-                "RunnerRegistry",
-                "ProcessFactory",
-                "AgentRunStarter",
-                "CoroutineScope",
-                "ProcessExecutor",
-                "RunAgentExecutor",
-                "LangGraphExecutor",
-                "RunnerCmdExecutor",
-                "CommandExecutorFactory",
+                listOf(
+                    "WorkspaceConfigFactory",
+                    "LockManager",
+                    "ParallelRunsManager",
+                    "SweepStatus",
+                    "KubernetesRunnerStartupSweep",
+                    "RunnerRegistry",
+                    "ProcessFactory",
+                    "AgentRunStarter",
+                    "CoroutineScope",
+                    "ProcessExecutor",
+                    "RunAgentExecutor",
+                    "LangGraphExecutor",
+                    "RunnerCmdExecutor",
+                    "CommandExecutorFactory",
+                ),
                 // servicesModule
-                "AgentsService",
-                "AgentInputResolver",
-                "AgentFilesService",
-                "GraphInspectRunner",
-                "LangGraphInspectService",
-                "GraphStateRunner",
-                "LangGraphRunStatusService",
-                "MaintenanceModeService",
-                "StartupReconciliation",
-                "McpToolFactory",
-                "QuestionsService",
-                "RunMessagesService",
-                "DispatchGroupService",
-                "DispatchService",
-                "DispatchSweepService",
-                "ContinuationService",
-                "ResultTokenService",
-                "ContinuationSweepService",
-                "QuestionsWorkspaceSetup",
-                "QuestionsMcpToolFactory",
-                "LogTailService",
-                "LlmEventStreamService",
-                "ArtifactService",
-                "CronSchedulerService",
-                "WorkspacePurgeService",
+                listOf(
+                    "AgentsService",
+                    "AgentInputResolver",
+                    "AgentFilesService",
+                    "GraphInspectRunner",
+                    "LangGraphInspectService",
+                    "GraphStateRunner",
+                    "LangGraphRunStatusService",
+                    "MaintenanceModeService",
+                    "StartupReconciliation",
+                    "McpToolFactory",
+                    "QuestionsService",
+                    "RunMessagesService",
+                    "DispatchGroupService",
+                    "DispatchService",
+                    "DispatchSweepService",
+                    "ContinuationService",
+                    "ResultTokenService",
+                    "ContinuationSweepService",
+                    "QuestionsWorkspaceSetup",
+                    "QuestionsMcpToolFactory",
+                    "LogTailService",
+                    "LlmEventStreamService",
+                    "ArtifactService",
+                    "CronSchedulerService",
+                    "WorkspacePurgeService",
+                ),
                 // processModule
-                "ProcessManager",
+                listOf(
+                    "ProcessManager",
+                ),
                 // hookModule
-                "HookRepository",
-                "HookService",
+                listOf(
+                    "HookRepository",
+                    "HookService",
+                ),
             )
     }
 }

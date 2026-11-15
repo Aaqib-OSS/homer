@@ -448,7 +448,7 @@ class ApplicationTest {
 
     /**
      * A real [AgentRunStarter] over [processExecutor] whose gate is a real [MaintenanceModeService]
-     * reading the production drain flag, exactly as `AppModule` wires it — so the test exercises
+     * reading the production drain flag, exactly as `ServicesWiring` wires it — so the test exercises
      * the route → starter → gate → `StatusPages` chain, not a stubbed exception.
      */
     private fun drainingRunStarter(processExecutor: ProcessExecutor): AgentRunStarter =
@@ -471,7 +471,7 @@ class ApplicationTest {
             processReads = mockk(relaxed = true),
         )
 
-    /** A real gate reading the production drain flag, exactly as `AppModule` wires it (see [drainingRunStarter]). */
+    /** A real gate reading the production drain flag, exactly as `ServicesWiring` wires it (see [drainingRunStarter]). */
     private fun drainingGate(): MaintenanceModeService =
         MaintenanceModeService(
             repository = mockk(relaxed = true),
