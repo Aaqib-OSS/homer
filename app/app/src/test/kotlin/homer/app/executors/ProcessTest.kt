@@ -175,6 +175,16 @@ class ProcessTest {
     // ========== Constructor and Properties Tests ==========
 
     @Test
+    fun `RunSpec toString never prints an input value or the agent's env`() {
+        val agent = testAgent.copy(env = mapOf("AGENT_TOKEN" to "agent-secret-value"))
+        val text = RunSpec(agent, mapOf("API_TOKEN" to "input-secret-value"), testContext).toString()
+
+        assertFalse("input-secret-value" in text)
+        assertFalse("agent-secret-value" in text)
+        assertTrue("API_TOKEN" in text)
+    }
+
+    @Test
     fun `Process should expose agent name`() {
         assertEquals(testAgent.name, process.name)
     }

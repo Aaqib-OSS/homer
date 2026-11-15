@@ -58,7 +58,11 @@ data class RunSpec(
     // ProcessExecutor, stored with the row at INSERT and used to scope the cooldown reads
     // in the same transaction. Rendered by the caller, never re-derived here. ADR-0106.
     val cooldownKey: String? = null,
-)
+) {
+    // Input values and the agent's env can be secret: names only. Root CLAUDE.md §12 rule 7.
+    override fun toString() =
+        "RunSpec(agent=${agent.name}, inputKeys=${queryParams.keys}, parentProcessId=$parentProcessId, rootProcessId=$rootProcessId)"
+}
 
 class Process(
     private val deps: ProcessDeps,

@@ -20,7 +20,11 @@ data class NewRunRecord(
     val parentProcessId: Int? = null,
     val rootProcessId: Int? = null,
     val tags: List<String> = emptyList(),
-)
+) {
+    // Input values can be secret: keys only. Root CLAUDE.md §12 rule 7.
+    override fun toString() =
+        "NewRunRecord(agentName=$agentName, inputKeys=${inputParams.keys}, parentProcessId=$parentProcessId, rootProcessId=$rootProcessId)"
+}
 
 /** The slice of a run a LangGraph `subs` entry shows (ADR-0044). */
 data class SubRunProgress(
