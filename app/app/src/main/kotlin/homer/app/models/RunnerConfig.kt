@@ -43,6 +43,11 @@ sealed class RunnerConfig {
      * keeps the order its rules fired in before they were reached through this
      * member, so a config with several violations still reports the same first
      * one. Called from AppConfig's init.
+     *
+     * Every variant must call [validateExtraUploads] and [validateEnv] here: they
+     * are the rules every runner shares, and no other site invokes them for a
+     * variant. `RunnerConfigBaseMembersTest` enumerates the sealed variants and
+     * fails on one whose `validate` skips either.
      */
     internal abstract fun validate(alias: String)
 

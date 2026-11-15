@@ -229,6 +229,40 @@ class RunnerConfigExternalTest {
     }
 
     @Test
+    fun `AppConfig init reports an extraUploads violation before a facets one`() {
+        // The external rules fire in the order they always have — extraUploads, then
+        // env, then the facets — so a config breaking both keeps naming the
+        // extraUploads one. See ADR-0042 and ADR-0066.
+        val ex =
+            assertThrows<IllegalArgumentException> {
+                config(
+                    """
+                  workers: !<external>
+                    token: secret-1
+                    heartbeatTimeoutSec: 34
+                    extraUploads:
+                      - { local: /a, remote: workdir }
+                    """,
+                )
+            }
+        assertEquals(true, ex.message!!.contains("extraUploads"), ex.message)
+
+        // The facets rule is broken on its own in the same config, so the assertion
+        // above is about the order and not about a violation that never fires.
+        val facetsOnly =
+            assertThrows<IllegalArgumentException> {
+                config(
+                    """
+                  workers: !<external>
+                    token: secret-1
+                    heartbeatTimeoutSec: 34
+                    """,
+                )
+            }
+        assertEquals(true, facetsOnly.message!!.contains("heartbeatTimeoutSec"), facetsOnly.message)
+    }
+
+    @Test
     fun `toString lists extraUploads by remote path only`() {
         val s =
             RunnerConfig

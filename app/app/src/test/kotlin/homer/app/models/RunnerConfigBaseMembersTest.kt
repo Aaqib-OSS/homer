@@ -1,5 +1,6 @@
 package homer.app.models
 
+import kotlinx.serialization.descriptors.elementDescriptors
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -9,25 +10,59 @@ import kotlin.test.assertTrue
  * The members the sealed base declares for every variant: `env`, `extraUploads`
  * and the alias-aware `validate`. Dispatch sites read them through
  * [RunnerConfig] instead of repeating a `when` arm per variant. See ADR-0042.
+ *
+ * The two variant maps below are keyed by serial name and checked against the
+ * sealed descriptor, so a new variant fails `every variant of the sealed base is
+ * listed here` until it is added — and then every test here runs for it.
  */
 class RunnerConfigBaseMembersTest {
     private val token = "t".repeat(32)
 
-    /** One runner of each variant, typed as the base, all carrying [env]. */
-    private fun withEnv(env: Map<String, String>): List<RunnerConfig> =
-        listOf(
-            RunnerConfig.Ssh(host = "h", user = "u", auth = SshAuth.Agent, remoteWorkspaceRoot = "/ws", env = env),
-            RunnerConfig.Kubernetes(image = "img", env = env),
-            RunnerConfig.External(token = token, env = env),
+    /** Every variant, built with neither `env` nor `extraUploads` passed, so the constructor defaults apply. */
+    private val defaults: Map<String, RunnerConfig> =
+        mapOf(
+            "ssh" to RunnerConfig.Ssh(host = "h", user = "u", auth = SshAuth.Agent, remoteWorkspaceRoot = "/ws"),
+            "kubernetes" to RunnerConfig.Kubernetes(image = "img"),
+            "external" to RunnerConfig.External(token = token),
         )
+
+    /** Every variant, built with the given [env] and [extraUploads]. */
+    private val builders: Map<String, (Map<String, String>, List<ExtraUploadSpec>) -> RunnerConfig> =
+        mapOf(
+            "ssh" to { env, extras ->
+                RunnerConfig.Ssh(
+                    host = "h",
+                    user = "u",
+                    auth = SshAuth.Agent,
+                    remoteWorkspaceRoot = "/ws",
+                    env = env,
+                    extraUploads = extras,
+                )
+            },
+            "kubernetes" to { env, extras -> RunnerConfig.Kubernetes(image = "img", env = env, extraUploads = extras) },
+            "external" to { env, extras -> RunnerConfig.External(token = token, env = env, extraUploads = extras) },
+        )
+
+    /** One runner of each variant, typed as the base, all carrying [env]. */
+    private fun withEnv(env: Map<String, String>): List<RunnerConfig> = builders.values.map { it(env, emptyList()) }
 
     /** One runner of each variant, typed as the base, all carrying [extraUploads]. */
     private fun withExtraUploads(extraUploads: List<ExtraUploadSpec>): List<RunnerConfig> =
-        listOf(
-            RunnerConfig.Ssh(host = "h", user = "u", auth = SshAuth.Agent, remoteWorkspaceRoot = "/ws", extraUploads = extraUploads),
-            RunnerConfig.Kubernetes(image = "img", extraUploads = extraUploads),
-            RunnerConfig.External(token = token, extraUploads = extraUploads),
-        )
+        builders.values.map { it(emptyMap(), extraUploads) }
+
+    @Test
+    fun `every variant of the sealed base is listed here`() {
+        val declared =
+            RunnerConfig
+                .serializer()
+                .descriptor
+                .getElementDescriptor(1)
+                .elementDescriptors
+                .map { it.serialName }
+                .toSet()
+        assertEquals(declared, defaults.keys, "a new RunnerConfig variant must be added to `defaults` and `builders`")
+        assertEquals(declared, builders.keys, "a new RunnerConfig variant must be added to `defaults` and `builders`")
+    }
 
     @Test
     fun `every variant exposes env and extraUploads through the base`() {
@@ -39,10 +74,10 @@ class RunnerConfigBaseMembersTest {
 
     @Test
     fun `the base defaults both members to empty for every variant`() {
-        assertEquals(emptyMap(), RunnerConfig.Kubernetes(image = "img").env)
-        assertEquals(emptyList(), RunnerConfig.Kubernetes(image = "img").extraUploads)
-        assertEquals(emptyMap(), RunnerConfig.External(token = token).env)
-        assertEquals(emptyList(), RunnerConfig.External(token = token).extraUploads)
+        defaults.forEach { (alias, runner) ->
+            assertEquals(emptyMap(), runner.env, alias)
+            assertEquals(emptyList(), runner.extraUploads, alias)
+        }
     }
 
     @Test
