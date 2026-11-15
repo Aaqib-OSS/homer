@@ -297,18 +297,18 @@ pip install --require-hashes --no-deps -r clients/python/requirements.lock
 pip install --no-deps ./clients/python
 ```
 
-A plain `pip install ./clients/python` resolves the dependencies itself, and on
-a musl system such as Alpine it ends on older langgraph releases with known
-advisories ([ADR-0114](../../../docs/adr/0114-python-runtime-installs-from-a-hash-pinned-lock.md)).
+A plain `pip install ./clients/python` resolves the dependencies itself: the
+way to install on Python 3.10 or 3.11, which the lock does not cover. On a musl
+system such as Alpine it ends on older langgraph releases with known advisories
+([ADR-0114](../../../docs/adr/0114-python-runtime-installs-from-a-hash-pinned-lock.md)).
 
 ## Tests
 
 ```sh
 cd clients/python
 python3 -m venv .venv
-.venv/bin/pip install --require-hashes --no-deps -r requirements.lock
-.venv/bin/pip install --no-deps -e .
-.venv/bin/pip install pytest
+.venv/bin/pip install --require-hashes --no-deps -r requirements.lock -r requirements-test.lock
+.venv/bin/pip install --no-deps --no-build-isolation -e .
 .venv/bin/python -m pytest
 ```
 

@@ -46,13 +46,24 @@ requirements.lock`, then `homer_langgraph` itself with `--no-deps --no-build-iso
 the setuptools Alpine's `py3-pip` brings. The image never resolves. `homer-python-tests` installs
 the same lock the same way, so a dependency missing from the lock fails the tests, and runs
 `pip-audit --require-hashes --disable-pip -r requirements.lock`, auditing the tree the image
-ships instead of a fresh resolve. Renovate's `pip-compile` manager reads the command from the
-lock's header and refreshes it weekly (lock file maintenance); a change to `pyproject.toml`
-regenerates it in the same commit.
+ships instead of a fresh resolve. The job's own tools, pytest and the setuptools its editable
+install builds with, come from `requirements-test.lock`, hash-pinned too and compiled with the
+runtime lock as a constraint; both locks go into one `pip install`, so a pin they disagree on
+fails it. Nothing in the job, which holds the repository token, is resolved from the index.
+Renovate's `pip-compile` manager reads the command from each lock's header and refreshes them
+weekly (lock file maintenance); a change to `pyproject.toml` regenerates the lock in the same
+commit.
 
 The lock holds every distribution's hash for each pinned version, so one file installs on musl
 and glibc, amd64 and arm64. A version whose native dependencies ship no musllinux wheel fails
 the image build rather than silently backtracking.
+
+The lock is resolved for Python 3.12 and newer (`--python-version=3.12`), the image's
+interpreter, although `pyproject.toml` still allows 3.10. A 3.10 floor would leave the 3.12 pins
+as they are but add a second branch for 3.10 and 3.11, on older releases (langchain-core 1.7.7,
+websockets 16 at the time of the change), that the 3.12 CI job neither installs, tests nor
+audits: a hash-pinned tree nothing checks. A consumer on 3.10 or 3.11 falls back to a plain
+`pip install` of the package, which resolves for their interpreter.
 
 **Why not the others:**
 
@@ -68,14 +79,17 @@ the image build rather than silently backtracking.
 - Good: the image ships langgraph 1.2.22, langgraph-checkpoint 4.3.2,
   langgraph-checkpoint-sqlite 3.1.3 and langgraph-sdk 0.4.14 at the time of the change, none with
   a known advisory.
-- Good: a thread parked under the old line reads and resumes under the new one. The fixture
-  `homer_langgraph/tests/fixtures/checkpoints-lg1.1.10.sqlite`, written by the runtime under the
-  old versions, keeps this tested (`test_checkpoint_upgrade.py`).
+- Good: a thread parked under the old line reads and resumes under the new one, in every park
+  shape the runner resumes: a pending human gate (by interrupt id and by the scalar form), two
+  gates parked at once, an ungrouped fan-out, a grouped join, and a failed task re-entered through
+  recover. The fixture `homer_langgraph/tests/fixtures/checkpoints-lg1.1.10.sqlite`, written by
+  the runtime under the old versions, keeps this tested (`test_checkpoint_upgrade.py`).
 - Good: CI's tests and audit judge exactly the runtime dependencies the image ships.
 - Bad: `pip check` reports `sqlite-vec` missing, and `SqliteStore` cannot be used from the image.
   A graph that wants vector search brings its own runtime.
 - Bad: the lock's `packaging` replaces the apk copy `py3-pip` installs, so the apk database names
   a version the image no longer has.
-- Bad: the test extra (`pytest`) is installed unpinned in CI; it never ships.
+- Bad: the documented install path covers Python 3.12 and newer only; on 3.10 or 3.11 it is a
+  plain, resolving install.
 - Bad: the installer itself stays outside the lock: `py3-pip`'s pip and setuptools (with the
   wheel and jaraco.context it vendors) come from Alpine and are judged only by the image scan.

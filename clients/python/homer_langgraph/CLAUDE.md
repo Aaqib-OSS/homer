@@ -32,9 +32,8 @@ update it in the same commit when a contract it describes changes.
 
 ```sh
 python3 -m venv .venv                                                 # from clients/python
-.venv/bin/pip install --require-hashes --no-deps -r requirements.lock
-.venv/bin/pip install --no-deps -e .
-.venv/bin/pip install pytest
+.venv/bin/pip install --require-hashes --no-deps -r requirements.lock -r requirements-test.lock
+.venv/bin/pip install --no-deps --no-build-isolation -e .
 .venv/bin/python -m pytest                                            # from clients/python
 ```
 
@@ -55,8 +54,17 @@ commit, from `clients/python`, with the command its header records:
 uv pip compile pyproject.toml --universal --generate-hashes --python-version=3.12 --no-emit-package=sqlite-vec --output-file=requirements.lock
 ```
 
-Renovate refreshes it weekly; keep the header as uv writes it, since Renovate
-re-runs that command (options in `--name=value` form). `--no-emit-package=sqlite-vec`
+`requirements-test.lock` pins the tools the tests need (pytest, and setuptools
+for the editable install) from `requirements-test.in`, with the runtime lock as a
+constraint; regenerate it after the runtime lock, with its header's command:
+
+```sh
+uv pip compile requirements-test.in --constraint=requirements.lock --universal --generate-hashes --python-version=3.12 --output-file=requirements-test.lock
+```
+
+Both go into one `pip install`, so a pin they disagree on fails the install.
+Renovate refreshes both weekly; keep the headers as uv writes them, since Renovate
+re-runs those commands (options in `--name=value` form). `--no-emit-package=sqlite-vec`
 leaves out `langgraph.store.sqlite`'s vector extension, which has no musl wheel
 and which the runtime never imports. On a langgraph bump,
 `tests/test_checkpoint_upgrade.py` proves a thread parked under the image's
