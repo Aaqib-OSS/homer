@@ -133,7 +133,8 @@ const splitList = (value) => value.split(',').map((item) => item.trim())
 function unmarkedAmendments(docs) {
   const found = []
   for (const [number, { text }] of docs) {
-    if (!AMENDMENT.test(text)) continue
+    // A plural `## Amendments` list is an amendment marker on its own, so enter on either form.
+    if (!AMENDMENT.test(text) && bulletDates(text).length === 0) continue
     const amended = frontMatterField(text, 'amended')
     const dates = amended === undefined ? [] : splitList(amended)
     const unlisted = amendmentDates(text).filter((date) => !dates.includes(date))
@@ -228,6 +229,13 @@ test('an amendment must be dated and a supersession must name an ADR file', () =
     ['9991', { name: '9991-partial.md', text: withFrontMatter('status: accepted\namended: 2026-01-02', '# ADR-9991: Partial\n\n> **Amendment — no date of its own.**\n\n## Amendment 2026-01-02 — one\n\n### Amendment 2026-03-04 — two\n') }],
     ['9989', { name: '9989-list.md', text: withFrontMatter('status: accepted\namended: 2026-02-01', '# ADR-9989: List\n\n## Amendments\n\n- 2026-02-01: one\n- 2026-02-03: two\n') }],
     ['9988', { name: '9988-scoped.md', text: withFrontMatter('status: accepted\namended: 2026-02-01', '# ADR-9988: Scoped\n\n## Amendments\n\n- 2026-02-01: one\n\n## Notes\n\n- 2026-02-03: not an amendment, the section ended above\n') }],
+    // A plural `## Amendments` section ends only at a heading of its own level or above: a `### Sub`
+    // inside a `##` one (9987) and a `####` inside a `###` one (9986) leave it open, while the `##`
+    // heading in 9986 closes it; a bullet without the trailing colon is no amendment at all (9985).
+    // Each `amended:` deliberately omits the later date, so the finding proves the bullet was read.
+    ['9987', { name: '9987-nested.md', text: withFrontMatter('status: accepted\namended: 2026-02-01', '# ADR-9987: Nested\n\n## Amendments\n\n- 2026-02-01: one\n\n### Sub\n\n- 2026-02-03: two\n') }],
+    ['9986', { name: '9986-deeper.md', text: withFrontMatter('status: accepted\namended: 2026-02-01', '# ADR-9986: Deeper\n\n### Amendments\n\n- 2026-02-01: one\n\n#### Deeper still\n\n- 2026-02-05: two\n\n## Notes\n\n- 2026-02-07: not an amendment, the section ended above\n') }],
+    ['9985', { name: '9985-unterminated.md', text: withFrontMatter('status: accepted\namended: 2026-02-01', '# ADR-9985: Unterminated\n\n## Amendments\n\n- 2026-02-03 x\n') }],
   ])
   assert.deepEqual(unmarkedAmendments(docs), [
     '9996: an amendment with no `amended:`',
@@ -238,6 +246,8 @@ test('an amendment must be dated and a supersession must name an ADR file', () =
     '9992: an amendment with no `amended:`',
     '9991: `amended: 2026-01-02` does not list 2026-03-04',
     '9989: `amended: 2026-02-01` does not list 2026-02-03',
+    '9987: `amended: 2026-02-01` does not list 2026-02-03',
+    '9986: `amended: 2026-02-01` does not list 2026-02-05',
   ])
 })
 
