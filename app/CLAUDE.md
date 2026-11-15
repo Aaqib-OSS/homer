@@ -193,8 +193,8 @@ app/gradlew -p app :app:shadowJar                  # fat jar → app/build/libs/
 app/gradlew -p app :agentdebug:shadowJar           # CLI debugger
 app/gradlew -p app :homer-runner:shadowJar         # external runner binary
 app/gradlew -p app :app:generateThirdPartyNotices  # regenerate NOTICE + THIRD-PARTY-LICENSES.md
-app/gradlew -p app --write-verification-metadata pgp,sha256 --export-keys check koverVerify crapReport :app:queryPlanReport detektMain shadowJar dependencyCheckAnalyze :app:pitest  # regenerate gradle/verification-* (ADR-0115) — every task CI runs, the nightly's dependency-check and PIT included
-app/gradlew -p app/buildSrc --write-verification-metadata pgp,sha256 --export-keys check  # regenerate buildSrc/gradle/verification-* (separate build)
+app/gradlew -p app --refresh-dependencies --no-configuration-cache --write-verification-metadata pgp,sha256 --export-keys check koverVerify crapReport :app:queryPlanReport detektMain shadowJar dependencyCheckAnalyze :app:pitest  # regenerate gradle/verification-* (ADR-0115) — every task CI runs, the nightly's dependency-check and PIT included
+app/gradlew -p app/buildSrc --refresh-dependencies --no-configuration-cache --write-verification-metadata pgp,sha256 --export-keys check  # regenerate buildSrc/gradle/verification-* (separate build)
 app/gradlew -p app/buildSrc check                  # buildSrc's own ktlint + tests (not part of `-p app check`)
 app/gradlew -p app detektMain -Dorg.gradle.jvmargs="-XX:MaxMetaspaceSize=1g"  # detekt (required in the gate), not in `check`
 app/gradlew -p app :architecture:test              # Konsist architecture rules, required (ADR-0082)
@@ -239,7 +239,12 @@ cache (ADR-0084): those runners reach no key server.
   all four anywhere in `gradle.properties`, the workflows or a Dockerfile.
 - **Read the regeneration diff before committing it.** Gradle adds an entry for everything the run
   resolved; an artifact nobody meant to add, or a checksum that changes under an unchanged version, is
-  exactly what the gate exists to surface.
+  exactly what the gate exists to surface. Gradle only records what the run *downloads*: a warm
+  regeneration — where the configuration cache skips project configuration and up-to-date tasks skip
+  classpath resolution — records nothing and silently leaves the file incomplete (CI then fails cold
+  on artifacts it resolves and the metadata does not list). Regenerate with `--refresh-dependencies`
+  and `--no-configuration-cache`, so the run resolves everything CI resolves cold and records the
+  trust or checksum each newly seen artifact needs.
 
 Two sibling modules: [`agentdebug/`](agentdebug/) is a Clikt CLI running agents locally without the Ktor server via thin stubs ([`agentdebug/README.md`](agentdebug/README.md)) — `:app:test` does not compile it, so build `:agentdebug:shadowJar` after changing an `:app` signature it uses; and [`homer-runner/`](homer-runner/) is the reference pull-mode runner instance (ADR-0066), wrapped by [`homer-runner.sh`](homer-runner.sh) with options in [`SERVER.md`](SERVER.md) § *External runners (pull mode)*. It reuses the protocol DTOs, `TarStreams` and `ProcessGroupSupport` from `:app`.
 

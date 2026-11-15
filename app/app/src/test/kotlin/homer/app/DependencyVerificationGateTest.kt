@@ -138,11 +138,15 @@ class DependencyVerificationGateTest {
     /**
      * Every spelling of turning verification down: the Gradle property and the CLI flag, the
      * `GRADLE_DEPENDENCY_VERIFICATION` environment variable (`_` separators, a YAML `:` value),
-     * `=` a space and a colon between, either mode, and any capitalisation — `=Lenient` must fail
-     * exactly like `=lenient` does.
+     * `=` a space and a colon between, an optional quote around the value (a YAML or shell
+     * spelling), either mode, and any capitalisation — `=Lenient` must fail exactly like
+     * `=lenient` does.
      */
     private val weakened =
-        Regex("""(gradle_)?dependency[-._]verification\s*[=\s:]\s*(lenient|off)\b""", RegexOption.IGNORE_CASE)
+        Regex(
+            """(gradle_)?dependency[-._]verification\s*[=\s:]\s*["']?(lenient|off)\b""",
+            RegexOption.IGNORE_CASE,
+        )
 
     @Test
     fun `the weakening guard recognizes every spelling of lenient and off`() {
@@ -155,7 +159,9 @@ class DependencyVerificationGateTest {
                 "dependency_verification=off",
                 "GRADLE_DEPENDENCY_VERIFICATION=lenient",
                 "GRADLE_DEPENDENCY_VERIFICATION: off",
+                "GRADLE_DEPENDENCY_VERIFICATION: \"off\"",
                 "--dependency-verification lenient",
+                "--dependency-verification=\"off\"",
                 "dependency-verification=LENIENT",
                 "dependency-verification=Off",
             )
