@@ -55,6 +55,44 @@ test('the base path is stripped from absolute links; links off the site are not 
   assert.deepEqual(missingAnchors(site, '/homer/next/'), ['index.html: /homer/next/operate/server.html#nope'])
 })
 
+test('links without a fragment, with an undecodable path, or leaving the site are not checked', () => {
+  const site = dist({
+    // Outside the built site: a link that reached it would be reported, since it has no id x.
+    'out.html': '<p>outside</p>',
+    'site/index.html': [
+      '<a href="./guide/backend.html">no fragment</a>',
+      // decodeURI rejects the path, so it names no page of the site and is skipped; a dead page
+      // link is VitePress's own check.
+      '<a href="%zz.html#x">malformed</a>',
+      '<a href="../out.html#x">up</a>',
+      '<a href="/../out.html#x">absolute up</a>',
+    ].join(''),
+    'site/guide/backend.html': '<a href="../../out.html#x">up twice</a>',
+  })
+  assert.deepEqual(missingAnchors(join(site, 'site')), [])
+})
+
+test('a directory named like a page is not read as one; its index page is the target', () => {
+  const site = dist({
+    'docs.html/index.html': '<h1 id="x">x</h1>',
+    'index.html': '<a href="docs.html#x">a</a><a href="docs.html#y">b</a>',
+  })
+  assert.deepEqual(missingAnchors(site), ['index.html: docs.html#y'])
+})
+
+test('entities in ids and hrefs are decoded before they are compared', () => {
+  const site = dist({ 'index.html': '<h2 id="a&amp;b">x</h2><a href="#a&amp;b">a</a><a href="#a%26b">b</a><a href="#a&amp;c">c</a>' })
+  assert.deepEqual(missingAnchors(site), ['index.html: #a&c'])
+})
+
+test('run as a script on a clean site, it exits 0 and says so', () => {
+  const site = dist({ 'index.html': '<h1 id="here">h</h1><a href="#here">a</a>' })
+  const script = fileURLToPath(new URL('./check-anchors.mjs', import.meta.url))
+  const run = spawnSync(process.execPath, [script, site], { encoding: 'utf8' })
+  assert.equal(run.status, 0)
+  assert.match(run.stdout, /Every link to a section lands on it\./)
+})
+
 test('run as a script, it exits 1 and names each miss', () => {
   const site = dist({ 'index.html': '<a href="#gone">a</a>' })
   const script = fileURLToPath(new URL('./check-anchors.mjs', import.meta.url))

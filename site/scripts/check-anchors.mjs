@@ -5,7 +5,7 @@
 // Usage: node scripts/check-anchors.mjs [DIST]   (default: site/.vitepress/dist)
 // Env: DOCS_BASE, the path the build is served under (as in the VitePress config).
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { dirname, join, posix } from 'node:path'
+import { dirname, join, posix, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ID = /\sid="([^"]*)"/g
@@ -22,9 +22,9 @@ const unescape = (text) =>
  * "<page>: <href>". Only links to the site's own HTML pages are checked.
  */
 export function missingAnchors(dist, base = '/') {
-  const pages = readdirSync(dist, { recursive: true })
-    .map((name) => name.split('\\').join('/'))
-    .filter((name) => name.endsWith('.html'))
+  const pages = readdirSync(dist, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.html'))
+    .map((entry) => relative(dist, join(entry.parentPath, entry.name)).split('\\').join('/'))
   const ids = new Map()
   const idsOf = (page) => {
     if (!ids.has(page)) {
