@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-06-17
 deciders: Lukáš Vlk
+amended: 2026-10-01
 ---
 # ADR-0026: Join continuations — resume a parked workflow once after N watched processes end
 

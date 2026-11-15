@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-08-24
 deciders: Lukáš Vlk, Tomas Hladik
+amended: 2026-11-09
 ---
 # ADR-0050: Per-agent telemetry is one block, and every start path goes through it
 

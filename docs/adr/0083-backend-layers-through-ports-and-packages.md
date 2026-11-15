@@ -3,6 +3,7 @@ status: accepted
 date: 2026-10-13
 deciders: Lukáš Vlk
 consulted: ADR-0082
+amended: 2026-11-15
 ---
 
 # ADR-0083: Backend layers are enforced through kernel types, ports and one package per layer

@@ -2,6 +2,8 @@
 status: accepted
 date: 2026-05-06
 deciders: Lukáš Vlk
+amended: 2026-10-09
+superseded-by: ADR-0035
 ---
 # ADR-0007: `CostMeter` as an in-memory soft throttle, enforced at the HTTP boundary
 

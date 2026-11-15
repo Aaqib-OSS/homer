@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-06-08
 deciders: Lukáš Vlk
+amended: 2026-10-25
 ---
 # ADR-0015: Runtime image base and toolchain — full alpine userland, distroless rejected
 

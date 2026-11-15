@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-08
 deciders: Lukáš Vlk
+amended: 2026-09-29
 ---
 # ADR-0060: Run tags — subject tags stored per run and filterable through the API
 

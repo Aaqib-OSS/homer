@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-02
 deciders: Lukáš Vlk
+amended: 2026-11-10
 ---
 # ADR-0057: Claude CLI output is modelled only where Homer reads it
 

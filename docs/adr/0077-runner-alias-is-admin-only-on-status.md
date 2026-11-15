@@ -3,6 +3,7 @@ status: accepted
 date: 2026-10-03
 deciders: Lukáš Vlk
 consulted: ADR-0037, ADR-0047
+amended: 2026-11-13
 ---
 
 # ADR-0077: The runner alias is admin-only on the status API

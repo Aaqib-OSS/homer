@@ -3,6 +3,7 @@ status: accepted
 date: 2026-08-24
 deciders: Lukáš Vlk
 consulted: SAST (MR !6)
+amended: 2026-09-26
 ---
 # ADR-0051: The cooldown is enforced in the process-INSERT transaction, on recorded timestamps
 

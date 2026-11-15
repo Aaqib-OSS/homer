@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-10-14
 deciders: Lukáš Vlk
+amended: 2026-11-15
 ---
 
 # ADR-0084: GitHub Actions CI on GitHub-hosted runners, without Artifactory

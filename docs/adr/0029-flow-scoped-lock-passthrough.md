@@ -2,6 +2,8 @@
 status: accepted
 date: 2026-06-24
 deciders: Lukáš Vlk
+amended: 2026-06-24, 2026-09-30, 2026-11-12
+superseded-by: ADR-0030, ADR-0104
 ---
 # ADR-0029: Flow-scoped lock pass-through (`acceptParentLock`)
 

@@ -3,6 +3,8 @@ status: accepted
 date: 2026-05-06
 last-updated: 2026-05-14
 deciders: Lukáš Vlk
+amended: 2026-10-09
+superseded-by: ADR-0030
 ---
 # ADR-0008: Bound `RunAgent` recursion via the `X-Homer-Invocation-Chain` header
 

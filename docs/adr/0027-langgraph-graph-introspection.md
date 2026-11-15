@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-06-19
 deciders: Lukáš Vlk
+amended: 2026-09-30
 ---
 # ADR-0027: Read-only LangGraph graph introspection
 

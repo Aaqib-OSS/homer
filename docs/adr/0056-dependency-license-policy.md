@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-08-28
 deciders: Lukáš Vlk
+amended: 2026-10-09
 ---
 # ADR-0056: Dependency license policy and gating
 

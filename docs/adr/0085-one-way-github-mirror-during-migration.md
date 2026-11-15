@@ -3,6 +3,7 @@ status: deprecated
 date: 2026-10-14
 deciders: Lukáš Vlk
 consulted: ADR-0084
+amended: 2026-10-16
 ---
 
 # ADR-0085: A one-way GitHub mirror from a single initial commit during the migration
