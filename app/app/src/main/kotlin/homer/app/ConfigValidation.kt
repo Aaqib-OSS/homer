@@ -193,13 +193,7 @@ internal fun validateNoLegacyEndpoints(config: AppConfig) {
  */
 internal fun validateExtraUploads(config: AppConfig) {
     config.runners.forEach { (alias, runner) ->
-        val extraUploads =
-            when (runner) {
-                is RunnerConfig.Ssh -> runner.extraUploads
-                is RunnerConfig.Kubernetes -> runner.extraUploads
-                is RunnerConfig.External -> runner.extraUploads
-            }
-        extraUploads.forEach { spec ->
+        runner.extraUploads.forEach { spec ->
             if (!Files.isReadable(Path.of(spec.local))) {
                 throw ConfigurationException(
                     "runner '$alias' extraUploads.local '${spec.local}' does not exist or is not readable.",

@@ -262,4 +262,19 @@ extraUploads:
             databasePath = "d",
             runners = mapOf("box" to cfg),
         )
+
+    @Test
+    fun `AppConfig init reports an extraUploads violation before a transport timing one`() {
+        // The ssh rules fire in the order they always have — extraUploads, then the
+        // transport timing fields — so a config breaking both keeps naming the
+        // extraUploads one. See ADR-0042.
+        val ex =
+            assertFailsWith<IllegalArgumentException> {
+                appConfig(
+                    ssh(listOf(ExtraUploadSpec("/a", "workdir")))
+                        .copy(idleTimeoutSeconds = 0),
+                )
+            }
+        assertTrue(ex.message!!.contains("extraUploads"), ex.message)
+    }
 }

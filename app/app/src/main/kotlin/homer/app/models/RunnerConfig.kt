@@ -21,6 +21,31 @@ enum class KubernetesWorkload { Pod, Job }
  */
 @Serializable
 sealed class RunnerConfig {
+    /** Per-runner env, layered between `globalEnv` and agent `env`. See SERVER.md, "Remote runners". */
+    abstract val env: Map<String, String>
+
+    /** Host paths materialized into every remote workspace on this runner. See ADR-0042. */
+    abstract val extraUploads: List<ExtraUploadSpec>
+
+    /**
+     * Shape rules for extraUploads (relative remote, reserved paths,
+     * uniqueness, non-HMR_ env). Alias-aware and invoked from AppConfig's
+     * init — still parse-time for any decoded config — so violations name
+     * the runner alias. See ADR-0042.
+     */
+    internal fun validateExtraUploads(alias: String) = validateExtraUploadSpecs(alias, extraUploads)
+
+    /** Alias-aware shape rules for the per-runner `env` keys. */
+    internal fun validateEnv(alias: String) = validateRunnerEnv(alias, env)
+
+    /**
+     * Every shape rule this variant has, naming the runner [alias]. Each variant
+     * keeps the order its rules fired in before they were reached through this
+     * member, so a config with several violations still reports the same first
+     * one. Called from AppConfig's init.
+     */
+    internal abstract fun validate(alias: String)
+
     @Serializable
     @SerialName("kubernetes")
     data class Kubernetes(
@@ -48,23 +73,24 @@ sealed class RunnerConfig {
         val jobTtlSecondsAfterFinished: Long? = null,
         val homerApiUrl: String? = null,
         /** Per-runner env, layered between `globalEnv` and agent `env`. See SERVER.md, "Remote runners". */
-        val env: Map<String, String> = emptyMap(),
+        override val env: Map<String, String> = emptyMap(),
         val imagePullSecrets: List<String> = emptyList(),
         val serviceAccountName: String? = null,
         val securityContext: SecurityContextSpec? = null,
         val syncExcludes: List<String> = emptyList(),
-        val extraUploads: List<ExtraUploadSpec> = emptyList(),
+        override val extraUploads: List<ExtraUploadSpec> = emptyList(),
         override val tags: List<String> = emptyList(),
         override val concurrency: Int? = null,
     ) : RunnerConfig(),
         RunnerQueueFacets {
         val effectiveJobTtlSeconds: Long get() = jobTtlSecondsAfterFinished ?: 3600
 
-        /** Same contract as Ssh.validateExtraUploads — see that KDoc and ADR-0042/0043. */
-        internal fun validateExtraUploads(alias: String) = validateExtraUploadSpecs(alias, extraUploads)
-
-        /** Same shape rules as Ssh.validateEnv — see that KDoc. */
-        internal fun validateEnv(alias: String) = validateRunnerEnv(alias, env)
+        internal override fun validate(alias: String) {
+            validateWorkload(alias)
+            validateExtraUploads(alias)
+            validateEnv(alias)
+            validateQueueFacets(alias)
+        }
 
         internal fun validateWorkload(alias: String) {
             require(maxRunSeconds == null || maxRunSeconds >= 1) {
@@ -100,11 +126,11 @@ sealed class RunnerConfig {
         val remoteWorkspaceRoot: String,
         val homerApiUrl: String? = null,
         /** Per-runner env, layered between `globalEnv` and agent `env`. See SERVER.md, "Remote runners". */
-        val env: Map<String, String> = emptyMap(),
+        override val env: Map<String, String> = emptyMap(),
         val shell: String = "/bin/sh",
         val connectTimeoutSeconds: Long = 30,
         val syncExcludes: List<String> = emptyList(),
-        val extraUploads: List<ExtraUploadSpec> = emptyList(),
+        override val extraUploads: List<ExtraUploadSpec> = emptyList(),
         /** MINA client idle timeout in seconds; `null` (the default) disables it. See SERVER.md. */
         val idleTimeoutSeconds: Long? = null,
         /** Client heartbeat interval in seconds; default `30`, `null` disables keepalives. */
@@ -118,16 +144,13 @@ sealed class RunnerConfig {
         override val concurrency: Int? = null,
     ) : RunnerConfig(),
         RunnerQueueFacets {
-        /**
-         * Shape rules for extraUploads (relative remote, reserved paths,
-         * uniqueness, non-HMR_ env). Alias-aware and invoked from AppConfig's
-         * init — still parse-time for any decoded config — so violations name
-         * the runner alias. See ADR-0042.
-         */
-        internal fun validateExtraUploads(alias: String) = validateExtraUploadSpecs(alias, extraUploads)
-
-        /** Alias-aware shape rules for the per-runner `env` keys. */
-        internal fun validateEnv(alias: String) = validateRunnerEnv(alias, env)
+        internal override fun validate(alias: String) {
+            validateExtraUploads(alias)
+            validateTransportTiming(alias)
+            validateEnv(alias)
+            validateQueueFacets(alias)
+            validateRemoteWorkspaceRoot(alias)
+        }
 
         /** Likewise alias-aware shape rules for the transport timing fields. */
         internal fun validateTransportTiming(alias: String) {
@@ -169,9 +192,9 @@ sealed class RunnerConfig {
         /** Largest tar an instance may post for one download op. §12 rule 4. */
         val maxTransferBytes: Long = 1L * 1024 * 1024 * 1024,
         /** Per-domain env, same contract as `Ssh.env` / `Kubernetes.env`. */
-        val env: Map<String, String> = emptyMap(),
+        override val env: Map<String, String> = emptyMap(),
         /** Same contract as `Ssh.extraUploads` (ADR-0042), sent to whichever instance claims the run. */
-        val extraUploads: List<ExtraUploadSpec> = emptyList(),
+        override val extraUploads: List<ExtraUploadSpec> = emptyList(),
     ) : RunnerConfig() {
         init {
             require(token.isNotBlank()) { "external runner token must not be blank" }
@@ -182,10 +205,11 @@ sealed class RunnerConfig {
             internal const val HEARTBEAT_SLACK_SEC = 5
         }
 
-        internal fun validateEnv(alias: String) = validateRunnerEnv(alias, env)
-
-        /** Same contract as Ssh.validateExtraUploads — see that KDoc and ADR-0042. */
-        internal fun validateExtraUploads(alias: String) = validateExtraUploadSpecs(alias, extraUploads)
+        internal override fun validate(alias: String) {
+            validateExtraUploads(alias)
+            validateEnv(alias)
+            validateFacets(alias)
+        }
 
         internal fun validateFacets(alias: String) {
             allowedTags?.let { RunnerTagValidation.validate("runner '$alias' allowedTags", it) }
