@@ -348,3 +348,7 @@ per cycle, the edges cheapest to cut: a kernel package's import of another packa
 edge with the fewest imports. **Where the size limits came from.** They complement the CRAP check
 (ADR-0081), which misses long code that branches little; they were set where the outliers showed — 9
 files, 16 classes and 67 functions at introduction — and became `required` once those were split.
+The test-file cap (3,300 lines) came later, for agents that had to load a 3,000-line test to add one
+test: it sits at the largest test file left once `AgentExecutorTest` and `ApplicationTest` were split
+(`DatabaseMigrationTest`, 3,292), and may only be lowered. It skipped the pending lane because it was
+born with no finding.

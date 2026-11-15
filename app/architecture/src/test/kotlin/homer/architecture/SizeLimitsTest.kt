@@ -4,7 +4,8 @@ import java.io.File
 import kotlin.test.Test
 
 /**
- * Size limits on the main code of :app, agentdebug and homer-runner — the complement of the CRAP check
+ * Size limits on the main code of :app, agentdebug and homer-runner, plus a line cap on their test files
+ * — the complement of the CRAP check
  * (ADR-0081), which misses long code that branches little. They restate root CLAUDE.md §2 ("If you write
  * 200 lines and it could be 50, rewrite it") as numbers; app/CLAUDE.md "Architecture tests" records them.
  */
@@ -18,6 +19,17 @@ class SizeLimitsTest {
                 violation(file.path, 1, "${file.name}.kt has $lines lines (limit $MAX_FILE_LINES)")
             }
         assertNoViolations("Source files ≤ $MAX_FILE_LINES lines (root CLAUDE.md §2)", violations)
+    }
+
+    @Test
+    fun `test files have at most 3300 lines`() {
+        val violations =
+            Sources.modules.map { Sources.test(it) }.flatMap { it.files }.mapNotNull { file ->
+                val lines = File(file.path).readLines().size
+                if (lines <= MAX_TEST_FILE_LINES) return@mapNotNull null
+                violation(file.path, 1, "${file.name}.kt has $lines lines (limit $MAX_TEST_FILE_LINES)")
+            }
+        assertNoViolations("Test files ≤ $MAX_TEST_FILE_LINES lines (root CLAUDE.md §2)", violations)
     }
 
     @Test
@@ -58,6 +70,7 @@ class SizeLimitsTest {
 
     private companion object {
         const val MAX_FILE_LINES = 600
+        const val MAX_TEST_FILE_LINES = 3_300
         const val MAX_CLASS_LINES = 400
         const val MAX_BODY_LINES = 60
         val DECLARATION_KEYWORD = Regex("""\b(fun|class|object|interface)\b""")
