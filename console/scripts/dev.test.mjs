@@ -58,6 +58,31 @@ describe('dev.sh .env.local loading', () => {
     });
   });
 
+  it('expands unquoted and double-quoted $ references, as a shell does', () => {
+    const { status, env } = runDevSh(
+      [
+        'PORT=3001',
+        'HOST=localhost:8080',
+        'API=$HOST/api',
+        'GREETING="port ${PORT:-3000}"',
+        'ESCAPED=\\$HOME',
+        "QUOTED='pa$$word'",
+        'PID=$$',
+        '',
+      ].join('\n'),
+    );
+
+    expect(status).toBe(0);
+    expect(env).toMatchObject({
+      PORT: '3001',
+      API: 'localhost:8080/api',
+      GREETING: 'port 3001',
+      ESCAPED: '$HOME',
+      QUOTED: 'pa$$word',
+    });
+    expect(env.PID).toMatch(/^\d+$/);
+  });
+
   it('stops before starting the dev server when a line is not valid shell', () => {
     const { status, env } = runDevSh('UNQUOTED=two words\n');
 

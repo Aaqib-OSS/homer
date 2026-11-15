@@ -35,7 +35,10 @@ if [ ! -d node_modules ]; then
 fi
 
 # Load environment variables: source with auto-export so shell quoting,
-# comments and '=' inside values are honoured (quote values with spaces)
+# comments and '=' inside values are honoured. Next.js also reads this file;
+# this shell parse is the stricter one: quote values with spaces, single-quote
+# values with '$' ($$ expands to the PID). Not left to Next.js alone: a PORT
+# here takes effect only through this export, and the summary below reads it.
 if [ -f .env.local ]; then
     set -a
     # shellcheck source=/dev/null # the developer's own file, not in the repo

@@ -54,6 +54,8 @@ cp .env.example .env.local
 CONSOLE_HOMER_API_URL=http://localhost:8080
 CONSOLE_AUTH_ENABLED=false
 ```
+   `scripts/dev.sh` also sources this file in the shell, which is stricter than
+   Next.js's parser: quote values with spaces, and single-quote values with `$`.
 
 4. Start the development server (`next dev` ignores `PORT` in `.env.local`;
    use `PORT=3001 npm run dev` for another port):
