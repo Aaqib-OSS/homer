@@ -96,7 +96,7 @@ forwarded caller bearer and the server-wide dispatch token no longer applies to
 
 - Executor: [`RunAgentExecutor.kt`](../../app/app/src/main/kotlin/homer/app/executors/RunAgentExecutor.kt).
 - Dispatch core: [`AgentRunStarter.kt`](../../app/app/src/main/kotlin/homer/app/services/AgentRunStarter.kt).
-- DI cycle break (provider lambda): `AppModule` `RunAgentExecutor` single,
+- DI cycle break (provider lambda): `ExecutionWiring` `RunAgentExecutor` single,
   same precedent as `ProcessExecutor.onTerminal` ([ADR-0023](0023-completion-continuations.md)).
 - Supersedes the loopback mechanism of [ADR-0008](0008-recursion-guard-via-invocation-chain-header.md);
   refines [ADR-0022](0022-script-driven-immediate-dispatch.md).
