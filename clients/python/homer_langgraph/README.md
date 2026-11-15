@@ -288,18 +288,27 @@ A per-thread file cache was tried and removed; see [ADR-0044](../../../docs/adr/
 ## Install
 
 Requires Python ≥ 3.10. The backend Docker image already bundles the
-runtime (`app/Dockerfile`); elsewhere, from the repo root:
+runtime (`app/Dockerfile`); elsewhere, from the repo root, install the
+hash-pinned dependencies the image ships (the lock covers Python ≥ 3.12, the
+image's version), then the package:
 
 ```sh
-pip install ./clients/python
+pip install --require-hashes --no-deps -r clients/python/requirements.lock
+pip install --no-deps ./clients/python
 ```
+
+A plain `pip install ./clients/python` resolves the dependencies itself, and on
+a musl system such as Alpine it ends on older langgraph releases with known
+advisories ([ADR-0114](../../../docs/adr/0114-python-runtime-installs-from-a-hash-pinned-lock.md)).
 
 ## Tests
 
 ```sh
 cd clients/python
 python3 -m venv .venv
-.venv/bin/pip install -e '.[test]'
+.venv/bin/pip install --require-hashes --no-deps -r requirements.lock
+.venv/bin/pip install --no-deps -e .
+.venv/bin/pip install pytest
 .venv/bin/python -m pytest
 ```
 

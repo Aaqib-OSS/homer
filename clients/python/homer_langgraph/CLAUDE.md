@@ -31,21 +31,34 @@ update it in the same commit when a contract it describes changes.
 ## Tests
 
 ```sh
-python3 -m venv .venv
-.venv/bin/pip install -e '.[test]' langgraph-checkpoint-sqlite   # from clients/python
-.venv/bin/python -m pytest                                        # from clients/python
+python3 -m venv .venv                                                 # from clients/python
+.venv/bin/pip install --require-hashes --no-deps -r requirements.lock
+.venv/bin/pip install --no-deps -e .
+.venv/bin/pip install pytest
+.venv/bin/python -m pytest                                            # from clients/python
 ```
 
 Tests mock `subprocess.run` and use LangGraph's in-memory `MemorySaver`, so no
 real Homer wrappers or network are required.
 
-`langgraph` is unpinned, so a local run only verifies the line the package
-index resolves: CI installs the newest, while an index missing the newest
-wheels backtracks to an older one — a green run there has been mistaken for a
-fresh-install green. The `homer-python-tests` CI job is the fresh-install check
-(it installs from `pyproject.toml` on a full index and resolves the newest line),
-so read its result before treating a local green as covering that line. Check
-what resolved (`.venv/bin/pip show langgraph`); when
-touching LangGraph-internals behavior, verify on the newest line explicitly,
-e.g. `.venv/bin/pip install 'langgraph==<newest>' 'langgraph-checkpoint==<newest>'
-'langgraph-checkpoint-sqlite==<newest>'`.
+## Dependencies
+
+`requirements.lock` pins every runtime dependency with hashes, and is exactly
+what the image and the `homer-python-tests` CI job install (with `--no-deps`)
+and what `pip-audit` judges — never resolve at install time: on the image's musl
+base a resolve backtracks to old langgraph releases. See
+[ADR-0114](../../../docs/adr/0114-python-runtime-installs-from-a-hash-pinned-lock.md).
+A change to `pyproject.toml`'s dependencies regenerates the lock in the same
+commit, from `clients/python`, with the command its header records:
+
+```sh
+uv pip compile pyproject.toml --universal --generate-hashes --python-version=3.12 --no-emit-package=sqlite-vec --output-file=requirements.lock
+```
+
+Renovate refreshes it weekly; keep the header as uv writes it, since Renovate
+re-runs that command (options in `--name=value` form). `--no-emit-package=sqlite-vec`
+leaves out `langgraph.store.sqlite`'s vector extension, which has no musl wheel
+and which the runtime never imports. On a langgraph bump,
+`tests/test_checkpoint_upgrade.py` proves a thread parked under the image's
+former line (langgraph 1.1.10 / checkpoint 2.1.2) still reads and resumes; keep
+its fixture.
