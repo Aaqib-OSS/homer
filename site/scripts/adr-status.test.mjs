@@ -98,23 +98,30 @@ function numberingGaps(docs, reasons = GAP_REASONS) {
   return found
 }
 
-// A `## Amendment` section or `> **Amendment` blockquote amends a decision in place.
-const AMENDMENT = /^(?:## Amendment|> \*\*Amendment)/m
+// An `Amendment` heading at any level, or a `> **Amendment` blockquote, amends a decision in place.
+const AMENDMENT = /^(?:#{2,6} Amendment|> \*\*Amendment)/m
+// The date each amendment heading or blockquote carries; a bare `## Amendments` list drops out.
+const amendmentDates = (text) =>
+  [...text.matchAll(/^(?:#{2,6} Amendment[^\n]*|> \*\*Amendment[^\n]*)/gm)]
+    .map((line) => line[0].match(/\d{4}-\d{2}-\d{2}/)?.[0])
+    .filter((date) => date !== undefined)
 // `YYYY-MM-DD` with the month and day ranges: a date, not a run of digits.
 const DATE = /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/
 const ADR_NUMBER = /^ADR-\d{4}$/
 const splitList = (value) => value.split(',').map((item) => item.trim())
 
-// Every amendment is dated, ascending, and every `superseded-by:` names an existing ADR file.
+// Every amendment is dated, listed and ascending, and every `superseded-by:` names an existing ADR file.
 function unmarkedAmendments(docs) {
   const found = []
   for (const [number, { text }] of docs) {
     if (!AMENDMENT.test(text)) continue
     const amended = frontMatterField(text, 'amended')
     const dates = amended === undefined ? [] : splitList(amended)
+    const unlisted = amendmentDates(text).filter((date) => !dates.includes(date))
     if (amended === undefined) found.push(`${number}: an amendment with no \`amended:\``)
     else if (!dates.every((date) => DATE.test(date))) found.push(`${number}: \`amended: ${amended}\` is not a comma-separated YYYY-MM-DD list`)
     else if (dates.join() !== [...dates].sort().join()) found.push(`${number}: \`amended: ${amended}\` is not ascending`)
+    else if (unlisted.length > 0) found.push(`${number}: \`amended: ${amended}\` does not list ${unlisted.join(', ')}`)
     const supersededBy = frontMatterField(text, 'superseded-by')
     if (supersededBy === undefined) continue
     const named = splitList(supersededBy)
@@ -198,6 +205,8 @@ test('an amendment must be dated and a supersession must name an ADR file', () =
     ['9998', { name: '9998-descending.md', text: withFrontMatter('status: accepted\namended: 2026-02-02, 2026-01-01', `# ADR-9998: Descending\n\n${amendment}`) }],
     ['9999', { name: '9999-missing.md', text: withFrontMatter('status: accepted\namended: 2026-01-02\nsuperseded-by: ADR-9990', `# ADR-9999: Missing\n\n${amendment}`) }],
     ['9993', { name: '9993-nonsense.md', text: withFrontMatter('status: accepted\namended: 2026-01-02\nsuperseded-by: foo', `# ADR-9993: Nonsense\n\n${amendment}`) }],
+    ['9992', { name: '9992-subheading.md', text: withFrontMatter('status: accepted', '# ADR-9992: Subheading\n\n### Amendment 2026-01-02 — later\n') }],
+    ['9991', { name: '9991-partial.md', text: withFrontMatter('status: accepted\namended: 2026-01-02', '# ADR-9991: Partial\n\n> **Amendment — no date of its own.**\n\n## Amendment 2026-01-02 — one\n\n### Amendment 2026-03-04 — two\n') }],
   ])
   assert.deepEqual(unmarkedAmendments(docs), [
     '9996: an amendment with no `amended:`',
@@ -205,6 +214,8 @@ test('an amendment must be dated and a supersession must name an ADR file', () =
     '9998: `amended: 2026-02-02, 2026-01-01` is not ascending',
     '9999: `superseded-by: ADR-9990` names no ADR file',
     '9993: `superseded-by: foo` is not a comma-separated ADR-NNNN list',
+    '9992: an amendment with no `amended:`',
+    '9991: `amended: 2026-01-02` does not list 2026-03-04',
   ])
 })
 

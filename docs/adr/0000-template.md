@@ -4,7 +4,7 @@ date: YYYY-MM-DD
 deciders: <names or roles>
 consulted: <optional>
 informed: <optional>
-# amended: YYYY-MM-DD[, YYYY-MM-DD…] — once this ADR carries an ## Amendment section
+# amended: YYYY-MM-DD[, YYYY-MM-DD…] — once this ADR carries an Amendment section
 # superseded-by: ADR-NNNN[, ADR-NNNN…] — when an amendment supersedes or reverses part of it
 ---
 # ADR-NNNN: <short title of the decision>
