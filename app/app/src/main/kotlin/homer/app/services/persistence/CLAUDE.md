@@ -129,6 +129,9 @@ there and a row here (SQLite rule 1 in
 rows are not unique, ascending and ending at `SCHEMA_VERSION`. It seeds v1 and v4 only, so a table
 created after v4 is built from today's `Tables.kt` on both sides and its drift is not compared;
 for those tables the per-version tests in `DatabaseMigrationTest` remain the guard.
+An `integer()` column a step adds with `ALTER TABLE ADD COLUMN` is declared with
+`integerWithoutRangeCheck` in `Tables.kt`: `ADD COLUMN` cannot add Exposed's int32 range CHECK,
+so a fresh database would carry one an upgraded one lacks (`SchemaEquivalenceTest` fails on it).
 
 | v | What changed | ADR |
 | --- | --- | --- |

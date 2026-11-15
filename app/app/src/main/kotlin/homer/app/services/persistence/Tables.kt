@@ -3,8 +3,10 @@ package homer.app.services.persistence
 import homer.app.services.ContinuationKind
 import homer.app.services.DispatchKind
 import org.jetbrains.exposed.v1.core.BooleanColumnType
+import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.ColumnType
 import org.jetbrains.exposed.v1.core.Expression
+import org.jetbrains.exposed.v1.core.IntegerColumnType
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.isNotNull
@@ -26,6 +28,13 @@ internal class IntegerBooleanColumnType : ColumnType<Boolean>() {
 
     override fun nonNullValueToString(value: Boolean): String = bool.nonNullValueToString(value)
 }
+
+/**
+ * `integer()` without the int32 range CHECK that `Table.integer()` adds: same column type, so the
+ * same `INT` declaration and value mapping. For a column a migration step adds with `ALTER TABLE
+ * ADD COLUMN`, which cannot add the CHECK, so a fresh database matches an upgraded one (#233).
+ */
+private fun Table.integerWithoutRangeCheck(name: String): Column<Int> = registerColumn(name, IntegerColumnType())
 
 /**
  * Durable schema for orchestrator state. See ADR-0020.
@@ -77,14 +86,14 @@ internal object Processes : Table("processes") {
     // Id of the run that caused this one; null at the root of a flow. Not a
     // foreign key: the parent row may be evicted or purged first, and the link
     // must keep reading as "caused by #N" after that. See ADR-0058.
-    val parentProcessId = integer("parent_process_id").nullable()
+    val parentProcessId = integerWithoutRangeCheck("parent_process_id").nullable()
 
     // Id of the first run of this run's flow, written once at INSERT as
     // `parent.rootProcessId ?: parent.id`; null at the root itself. Denormalized
     // so a whole flow is one paginated read instead of one request per parent
     // hop. Not a foreign key, for the same eviction/purge reason as
     // parentProcessId above. See ADR-0058.
-    val rootProcessId = integer("root_process_id").nullable()
+    val rootProcessId = integerWithoutRangeCheck("root_process_id").nullable()
 
     // Wall-clock second the row was inserted. Written in the same transaction as
     // the INSERT, which is what makes it usable as the cooldown's "last run
@@ -139,7 +148,7 @@ internal object Processes : Table("processes") {
     // The run that blocked this one (the lock holder), when the cause names one. Not a
     // foreign key, like the other run links: the holder may be evicted first and the id must
     // keep reading after that. Served only to a caller who may see that run. See ADR-0058.
-    val failureReasonRunId = integer("failure_reason_run_id").nullable()
+    val failureReasonRunId = integerWithoutRangeCheck("failure_reason_run_id").nullable()
 
     // What a graceful stop did to the run — its cause, the step it interrupted and the stop
     // steps' outcome — as a JSON blob, written once by the stop phase. Null for a run no
@@ -264,7 +273,7 @@ internal object Questions : Table("questions") {
     // 1 only for questions created by ask-and-dispatch. The question-teardown
     // queries (expire/remove on the asker's lifecycle) skip these rows so a
     // dispatch outlives its asking process. See the ask-and-dispatch ADR.
-    val dispatchBound = integer("dispatch_bound").default(0)
+    val dispatchBound = integerWithoutRangeCheck("dispatch_bound").default(0)
 
     // v24: the per-process open-question checks (cap, expiry and teardown at every run end,
     // under the write lock) and the open-question counts every process-list read carries.
@@ -432,7 +441,7 @@ internal object Continuations : Table("continuations"), FiredRecordTable {
     // clear on its own (capacity, cost cap) returns the row to PENDING with the
     // attempt counted and the next attempt scheduled, instead of ending as FAILED.
     // Null next_attempt_at = never retried; the sweep only picks up non-null, due rows.
-    val fireAttempts = integer("fire_attempts").default(0)
+    val fireAttempts = integerWithoutRangeCheck("fire_attempts").default(0)
     val nextAttemptAt = long("next_attempt_at").nullable()
 
     // v27: `params[HMR_LG_THREAD]` copied out at INSERT so a LangGraph run's `subs` reads its
