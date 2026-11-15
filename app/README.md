@@ -931,49 +931,12 @@ call anyway, nothing is lost — the question is server-side state and
 
 ## Architecture Overview
 
-```
-┌─────────────┐
-│  HTTP API   │ ← User requests
-└──────┬──────┘
-       │
-       ▼
-┌─────────────────┐
-│ Agent Loader    │ ← Reads agent definitions from agentsSearchPath
-└──────┬──────────┘
-       │
-       ▼
-┌─────────────────┐
-│ Process Manager │ ← Creates per-run workspaces
-└──────┬──────────┘
-       │
-       ▼
-┌──────────────────────────────────┐
-│ Command Executor (Sequential)    │
-│  • Cmd (shell commands)          │
-│  • Script (shell scripts)        │
-│  • Claude (Claude Code CLI)      │
-│  • Codex (Codex CLI)             │
-│  • Opencode (opencode CLI)       │
-│  • RunAgent (nested agent)       │
-│  • LangGraph (Python graph)      │
-│  • RunnerCmd (remote runner cmd) │
-└──────┬───────────────────────────┘
-       │
-       ▼
-┌─────────────────┐
-│ Result Transformer │ ← JSONPath, Regex
-└──────┬──────────┘
-       │
-       ▼
-┌─────────────────┐
-│ Environment     │ ← Pass results between commands
-└──────┬──────────┘
-       │
-       ▼
-┌──────────────────────────────────┐
-│ OpenTelemetry → Langfuse         │ ← Full observability
-└──────────────────────────────────┘
-```
+A run loads its agent definition, gets a workspace and a runner, and runs the agent's commands in
+order, each result mapped into the run's environment and every step reported as telemetry. The
+layers that do it — HTTP API, Services, Execution, Executors, Infra — are described in
+[`CLAUDE.md`](CLAUDE.md) § [Layered architecture](CLAUDE.md#layered-architecture), which is the
+accurate description; the terms it uses (run/process, dispatch, continuation, claim, runner) are
+defined once in [`docs/glossary.md`](../docs/glossary.md).
 
 ### Process Lifecycle
 

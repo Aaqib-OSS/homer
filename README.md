@@ -364,6 +364,7 @@ TLS-terminating reverse proxy in front. Details:
 | --- | --- |
 | Everything below as one searchable site, per release | [livesport.github.io/homer](https://livesport.github.io/homer/) |
 | Guided tour of every feature | [Feature atlas](https://livesport.github.io/homer/atlas/) (source: [`docs/homer-feature-atlas.html`](docs/homer-feature-atlas.html)) |
+| Core terms (run, process, dispatch, …) | [`docs/glossary.md`](docs/glossary.md) |
 | Agent definition format | [`app/AGENT.md`](app/AGENT.md) |
 | Server configuration | [`app/SERVER.md`](app/SERVER.md) |
 | HTTP API, MCP server, building the backend | [`app/README.md`](app/README.md) |

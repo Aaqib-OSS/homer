@@ -3,6 +3,7 @@
 export const pages = [
   { from: 'README.md', to: 'guide/getting-started.md', title: 'Getting started' },
   { from: 'app/README.md', to: 'guide/backend.md', title: 'Backend' },
+  { from: 'docs/glossary.md', to: 'guide/glossary.md', title: 'Glossary' },
   { from: 'app/AGENT.md', to: 'agents/reference.md', title: 'Agent reference' },
   { from: 'app/agentdebug/README.md', to: 'agents/debugging.md', title: 'Debugging agents' },
   { from: 'clients/python/homer_langgraph/README.md', to: 'agents/langgraph.md', title: 'LangGraph workflows' },
