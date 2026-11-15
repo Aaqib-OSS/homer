@@ -45,6 +45,7 @@ export default defineConfig({
             { text: 'Getting started', link: '/guide/getting-started' },
             { text: 'Feature atlas', link: '/atlas/' },
             { text: 'Backend', link: '/guide/backend' },
+            { text: 'Glossary', link: '/guide/glossary' },
           ],
         },
         {
