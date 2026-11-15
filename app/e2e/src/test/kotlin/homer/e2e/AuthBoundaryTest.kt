@@ -29,8 +29,10 @@ import kotlin.test.assertNotNull
 /**
  * The operator auth boundary, swept over every resource family through the live server:
  * a request with no credential is `401`, and a bearer token granted on another agent gets
- * `404` — identical to not-found (ADR-0047 rule 3) — on single-resource routes, while list
- * endpoints answer `200` with the other agent's rows filtered out. One route per family also
+ * `404` — identical to not-found (ADR-0047 rule 3) — on routes scoped to one resource. The
+ * family-level list endpoints (`/status/all`, `/questions`, `/dispatches`, `/continuations`)
+ * answer `200` with the other agent's rows filtered out; a route scoped to one resource, such
+ * as `/artifacts/list?processId=`, answers the same `404`. One route per family also
  * compares the denial's body against the same request at an id that does not exist. The
  * callback-token `401` is `WhoamiTest`'s.
  *
