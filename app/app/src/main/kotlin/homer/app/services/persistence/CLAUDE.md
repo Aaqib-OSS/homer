@@ -76,7 +76,7 @@ See ADR-0020.
   transactions through the free `insertPendingHooksTx`, so recording needs no
   second database handle. See ADR-0107.
   `ResultTokenRepository` owns the `result_tokens` table (schema v4;
-  `consumer_agent` audience column v7). See ADR-0025.
+  `consumer_agent` audience column v7, its upgrade default dropped v33). See ADR-0025.
   `CostRepository` owns the append-only `cost_entries` LLM-spend ledger
   (schema v6) backing `CostMeter`'s cap windows and the cost statistics;
   rows are never pruned. See ADR-0035. `ServerMetaRepository` owns the
@@ -164,6 +164,7 @@ for those tables the per-version tests in `DatabaseMigrationTest` remain the gua
 | 30 | `processes.failure_reason`, `processes.failure_reason_run_id` | [0098](../../../../../../../../../docs/adr/0098-pre-start-failure-reason-is-a-fixed-vocabulary.md) |
 | 31 | `processes.cooldown_key` (left NULL, no backfill) + `processes_agent_cooldown_key` and `processes_agent_cooldown_status_ended`; `processes.stop` (what a graceful stop did); `pending_hooks` table (agent-level status hooks) | [0106](../../../../../../../../../docs/adr/0106-cooldown-key-scopes-windows-per-subject.md), [0107](../../../../../../../../../docs/adr/0107-agent-status-hooks.md), [0108](../../../../../../../../../docs/adr/0108-graceful-stop-of-a-run.md) |
 | 32 | `dispatches.kind` + `dispatch_group_questions` table (grouped ask-and-dispatch; its own version — a database the cooldown release stamped 31 skips every step guarded below 32) | [0109](../../../../../../../../../docs/adr/0109-grouped-ask-and-dispatch.md) |
+| 33 | `result_tokens` rebuilt without the `DEFAULT ''` the v7 step gave `consumer_agent` (only where it is present; rows kept) | [0025](../../../../../../../../../docs/adr/0025-capability-token-result-read.md) |
 
 ### Schema constraints
 

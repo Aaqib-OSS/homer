@@ -60,7 +60,7 @@ class DatabaseMigrationTest {
         svc.migrate()
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertTrue("dispatch_bound" in columnNames(st, "questions"))
                 assertTrue("kind" in columnNames(st, "continuations"))
                 assertTrue("consumer_agent" in columnNames(st, "result_tokens"))
@@ -167,7 +167,7 @@ class DatabaseMigrationTest {
         svc.migrate()
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertTrue(processIndexNames(st).containsAll(processListIndexes))
                 val plan =
                     st.executeQuery("EXPLAIN QUERY PLAN SELECT COUNT(*) FROM processes WHERE root_process_id = 7").use { rs ->
@@ -406,7 +406,7 @@ class DatabaseMigrationTest {
         DatabaseService(dbPath, logger).also { it.migrate() }.close()
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertTrue("cooldown_key" in columnNames(st, "processes"))
                 for ((table, names) in v31Indexes) assertTrue(indexNames(st, table).containsAll(names), "$table: ${indexNames(st, table)}")
                 assertEquals(listOf("FINISHED"), processStatuses(st))
@@ -421,7 +421,7 @@ class DatabaseMigrationTest {
         DatabaseService(dbPath, logger).also { it.migrate() }.close()
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertEquals(listOf("FINISHED"), processStatuses(st))
                 assertEquals(listOf(null), cooldownKeys(st))
                 // The migration's raw SQL and the Tables.kt declarations must define the same index.
@@ -645,7 +645,7 @@ class DatabaseMigrationTest {
         svc.migrate()
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 for ((table, names) in v24Indexes) assertTrue(indexNames(st, table).containsAll(names), "$table: ${indexNames(st, table)}")
                 // The migration's raw SQL and the Tables.kt declarations must define the same index.
                 assertEquals(freshDefinitions, indexDefinitions(st))
@@ -1071,7 +1071,7 @@ class DatabaseMigrationTest {
         svc.migrate()
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 for ((table, indexes) in v26Indexes) {
                     assertTrue(
                         indexNames(st, table).containsAll(indexes),
@@ -1232,7 +1232,7 @@ class DatabaseMigrationTest {
         DatabaseService(dbPath, logger).also { it.migrate() }.close()
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertEquals(fresh, indexDefinitions(st, names))
             }
         }
@@ -1255,7 +1255,7 @@ class DatabaseMigrationTest {
         DatabaseService(dbPath, logger).also { it.migrate() }.close()
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertEquals(
                     listOf("id", "process_id", "text", "status", "sender", "created_at", "delivered_at"),
                     columnNames(st, "run_messages"),
@@ -1286,7 +1286,7 @@ class DatabaseMigrationTest {
         DatabaseService(dbPath, logger).also { it.migrate() }.close()
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertEquals(fresh, indexDefinitions(st, names))
             }
         }
@@ -1315,7 +1315,7 @@ class DatabaseMigrationTest {
         DatabaseService(dbPath, logger).also { it.migrate() }.close()
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertEquals(
                     listOf(
                         "id",
@@ -1394,7 +1394,7 @@ class DatabaseMigrationTest {
         DatabaseService(dbPath, logger).also { it.migrate() }.close()
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertEquals(
                     listOf(
                         "id",
@@ -1445,7 +1445,7 @@ class DatabaseMigrationTest {
         DatabaseService(dbPath, logger).also { it.migrate() }.close()
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertTrue("kind" in columnNames(st, "dispatches"))
                 // No backfill: the row a pre-v32 write left reads as the single dispatch it was.
                 assertEquals(
@@ -1594,7 +1594,7 @@ class DatabaseMigrationTest {
         }
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertModelColumns(st, Continuations)
                 assertEquals(
                     mapOf(1 to "t-a", 2 to "t-b", 3 to null, 4 to null, 5 to "t-\"q\"-ž\\", 6 to null),
@@ -1614,7 +1614,7 @@ class DatabaseMigrationTest {
         }
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertEquals(6, threadIds(st).size)
                 assertEquals("t-a", threadIds(st)[1])
             }
@@ -1666,7 +1666,7 @@ class DatabaseMigrationTest {
         DatabaseService(dbPath, logger).also { it.migrate() }.close()
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertTrue("failure_reason" in columnNames(st, "processes"))
                 assertTrue("failure_reason_run_id" in columnNames(st, "processes"))
                 assertEquals(listOf("FINISHED"), processStatuses(st))
@@ -1680,7 +1680,7 @@ class DatabaseMigrationTest {
         DatabaseService(dbPath, logger).also { it.migrate() }.close()
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertEquals(listOf("FINISHED"), processStatuses(st))
                 assertEquals(null to null, failureReason(st))
             }
@@ -1726,7 +1726,7 @@ class DatabaseMigrationTest {
         DatabaseService(dbPath, logger).also { it.migrate() }.close()
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertTrue("failure_reason" in columnNames(st, "processes"))
                 assertTrue("failure_reason_run_id" in columnNames(st, "processes"))
                 assertEquals(listOf("FINISHED"), processStatuses(st))
@@ -1763,7 +1763,7 @@ class DatabaseMigrationTest {
         svc.migrate()
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 val src =
                     st.executeQuery("SELECT cost_source FROM processes").use { rs ->
                         rs.next()
@@ -1805,7 +1805,7 @@ class DatabaseMigrationTest {
         }
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertTrue("process_tags" in tableNames(st))
                 val (surviving, tags) =
                     st.executeQuery("SELECT COUNT(*), MAX(tag) FROM process_tags").use {
@@ -1860,7 +1860,7 @@ class DatabaseMigrationTest {
         }
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 // End-to-end chain assertion, not just this hop's column. `SchemaUtils.create`
                 // never ALTERs an existing table, so every column below reached this v1
                 // `processes` table through a migration block. Comparing against the model's
@@ -1920,7 +1920,7 @@ class DatabaseMigrationTest {
         }
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 val bound =
                     st.executeQuery("SELECT dispatch_bound FROM questions WHERE id='q1'").use {
                         it.next()
@@ -1986,7 +1986,7 @@ class DatabaseMigrationTest {
         }
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertTrue("result_tokens" in tableNames(st))
                 assertTrue("continuation_watches" in tableNames(st))
                 assertTrue("kind" in columnNames(st, "continuations"))
@@ -2026,7 +2026,7 @@ class DatabaseMigrationTest {
         }
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertTrue("consumer_agent" in columnNames(st, "result_tokens"))
                 val (surviving, audience) =
                     st.executeQuery("SELECT COUNT(*), MAX(consumer_agent) FROM result_tokens").use {
@@ -2037,6 +2037,188 @@ class DatabaseMigrationTest {
                 // The pre-existing (ephemeral) token gets the empty default and so matches no
                 // agent — it fails closed until the TTL sweep removes it.
                 assertEquals("", audience)
+            }
+        }
+    }
+
+    /** `result_tokens` as a v4–v6 database upgraded through the v7 step has it: `consumer_agent` carries `DEFAULT ''`. */
+    private val v32ResultTokensDdl =
+        "CREATE TABLE result_tokens (token VARCHAR(64) PRIMARY KEY, watched_process_id INTEGER NOT NULL, " +
+            "path TEXT NOT NULL, result_transformer TEXT, size_bytes BIGINT NOT NULL, created_at BIGINT NOT NULL, " +
+            "expires_at BIGINT, consumer_agent TEXT NOT NULL DEFAULT '')"
+
+    private fun consumerAgentDefault(st: java.sql.Statement): String? =
+        st.executeQuery("PRAGMA table_info(result_tokens)").use { rs ->
+            generateSequence { if (rs.next()) rs.getString("name") to rs.getString("dflt_value") else null }
+                .first { (name, _) -> name == "consumer_agent" }
+                .second
+        }
+
+    private fun resultTokenRows(st: java.sql.Statement): List<String> =
+        st
+            .executeQuery(
+                "SELECT token, watched_process_id, path, result_transformer, size_bytes, created_at, expires_at, " +
+                    "consumer_agent FROM result_tokens ORDER BY token",
+            ).use { rs -> generateSequence { if (rs.next()) (1..8).joinToString("|") { rs.getString(it) ?: "NULL" } else null }.toList() }
+
+    private fun insertOmittingConsumerAgent(st: java.sql.Statement) {
+        st.execute(
+            "INSERT INTO result_tokens (token, watched_process_id, path, size_bytes, created_at) " +
+                "VALUES ('tok-omitted', 1, 'cmd_0.out', 1, 1)",
+        )
+    }
+
+    @Test
+    fun `v32 database drops the consumer_agent default keeping every result token`(
+        @TempDir dir: Path,
+    ) = runTest {
+        val dbPath = dir.resolve("v32.db").toString()
+        DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
+            c.createStatement().use { st ->
+                st.execute(v32ResultTokensDdl)
+                st.execute("INSERT INTO result_tokens VALUES ('tok-live', 5, 'cmd_0.out', '{\"a\":1}', 99999, 100, 4000, 'agent-a')")
+                // A token the v7 step backfilled: it keeps its empty audience and still fails closed.
+                st.execute("INSERT INTO result_tokens VALUES ('tok-legacy', 6, 'cmd_1.out', NULL, 123, 50, 3600, '')")
+                // What an upgraded database accepted before v33 and a fresh one never did.
+                insertOmittingConsumerAgent(st)
+                st.execute("DELETE FROM result_tokens WHERE token = 'tok-omitted'")
+                st.execute("PRAGMA user_version = 32")
+            }
+        }
+        val before = DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c -> c.createStatement().use(::resultTokenRows) }
+        DatabaseService(dbPath, logger).also {
+            it.migrate()
+            it.close()
+        }
+        DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
+            c.createStatement().use { st ->
+                assertEquals(33, userVersion(st))
+                assertEquals(null, consumerAgentDefault(st))
+                assertEquals(before, resultTokenRows(st))
+                assertEquals(2, before.size)
+                assertTrue("result_tokens_v32" !in tableNames(st), "the moved-aside table must be dropped")
+                // The rebuilt table keeps its primary key.
+                kotlin.test.assertFailsWith<java.sql.SQLException> {
+                    st.execute("INSERT INTO result_tokens VALUES ('tok-live', 7, 'x', NULL, 1, 1, NULL, 'agent-b')")
+                }
+                // An INSERT omitting the audience now fails, as it does on a fresh database.
+                val failure = kotlin.test.assertFailsWith<java.sql.SQLException> { insertOmittingConsumerAgent(st) }
+                assertTrue("NOT NULL" in failure.message.orEmpty(), "unexpected failure: ${failure.message}")
+            }
+        }
+    }
+
+    @Test
+    fun `the v33 rebuild runs once and is a no-op on a re-run`(
+        @TempDir dir: Path,
+    ) = runTest {
+        val dbPath = dir.resolve("v32-rerun.db").toString()
+        DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
+            c.createStatement().use { st ->
+                st.execute(v32ResultTokensDdl)
+                st.execute("INSERT INTO result_tokens VALUES ('tok-live', 5, 'cmd_0.out', NULL, 99999, 100, 4000, 'agent-a')")
+                st.execute("PRAGMA user_version = 32")
+            }
+        }
+        val rename = "ALTER TABLE result_tokens RENAME TO result_tokens_v32"
+        val first = RecordingWriterConnection()
+        DatabaseService(dbPath, logger, wrapWriterConnection = first.wrap).also {
+            it.migrate()
+            it.close()
+        }
+        assertEquals(1, first.matching(rename).size, "ran: ${first.statements}")
+        val after = DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c -> c.createStatement().use(::resultTokenRows) }
+        // Stamped back below v33, the step is in range again, but the default is already gone.
+        DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
+            c.createStatement().use { it.execute("PRAGMA user_version = 32") }
+        }
+        val rerun = RecordingWriterConnection()
+        DatabaseService(dbPath, logger, wrapWriterConnection = rerun.wrap).also {
+            it.migrate()
+            it.migrate()
+            it.close()
+        }
+        assertEquals(emptyList(), rerun.matching("result_tokens_v32"), "ran: ${rerun.statements}")
+        DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
+            c.createStatement().use { st ->
+                assertEquals(33, userVersion(st))
+                assertEquals(after, resultTokenRows(st))
+                assertEquals(null, consumerAgentDefault(st))
+            }
+        }
+    }
+
+    /** Wraps a writer connection so the statement whose SQL contains [fragment] throws instead of running. */
+    private fun failingOn(fragment: String): (java.sql.Connection) -> java.sql.Connection =
+        { connection ->
+            java.lang.reflect.Proxy.newProxyInstance(
+                javaClass.classLoader,
+                arrayOf(java.sql.Connection::class.java),
+            ) { _, method, args ->
+                val result = delegate(connection, method, args)
+                if (method.name != "createStatement" || result == null) return@newProxyInstance result
+                java.lang.reflect.Proxy.newProxyInstance(
+                    javaClass.classLoader,
+                    arrayOf(java.sql.Statement::class.java),
+                ) { _, statementMethod, statementArgs ->
+                    val sql = statementArgs?.firstOrNull() as? String
+                    if (sql != null && fragment in sql) throw java.sql.SQLException("injected failure: $sql")
+                    delegate(result, statementMethod, statementArgs)
+                }
+            } as java.sql.Connection
+        }
+
+    @Test
+    fun `a v33 rebuild that fails part-way leaves the v32 table untouched`(
+        @TempDir dir: Path,
+    ) = runTest {
+        val dbPath = dir.resolve("v32-failed.db").toString()
+        DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
+            c.createStatement().use { st ->
+                st.execute(v32ResultTokensDdl)
+                st.execute("INSERT INTO result_tokens VALUES ('tok-live', 5, 'cmd_0.out', NULL, 99999, 100, 4000, 'agent-a')")
+                st.execute("PRAGMA user_version = 32")
+            }
+        }
+        val before = DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c -> c.createStatement().use(::resultTokenRows) }
+        // The last statement of the step: the rename, the new table and the copy have all run.
+        val db = DatabaseService(dbPath, logger, wrapWriterConnection = failingOn("DROP TABLE result_tokens_v32"))
+        try {
+            val failure = kotlin.test.assertFails { db.migrate() }
+            assertTrue(
+                generateSequence(failure) { it.cause }.any { "injected failure" in it.message.orEmpty() },
+                "unexpected failure: $failure",
+            )
+        } finally {
+            db.close()
+        }
+        DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
+            c.createStatement().use { st ->
+                assertEquals(32, userVersion(st))
+                assertEquals("''", consumerAgentDefault(st))
+                assertEquals(before, resultTokenRows(st))
+                assertTrue("result_tokens_v32" !in tableNames(st), "the rename must have rolled back")
+            }
+        }
+    }
+
+    @Test
+    fun `a fresh database has no consumer_agent default and skips the v33 rebuild`(
+        @TempDir dir: Path,
+    ) = runTest {
+        val dbPath = dir.resolve("fresh-v33.db").toString()
+        val recorded = RecordingWriterConnection()
+        DatabaseService(dbPath, logger, wrapWriterConnection = recorded.wrap).also {
+            it.migrate()
+            it.close()
+        }
+        assertEquals(emptyList(), recorded.matching("result_tokens_v32"), "ran: ${recorded.statements}")
+        DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
+            c.createStatement().use { st ->
+                assertEquals(33, userVersion(st))
+                assertEquals(null, consumerAgentDefault(st))
+                val failure = kotlin.test.assertFailsWith<java.sql.SQLException> { insertOmittingConsumerAgent(st) }
+                assertTrue("NOT NULL" in failure.message.orEmpty(), "unexpected failure: ${failure.message}")
             }
         }
     }
@@ -2070,7 +2252,7 @@ class DatabaseMigrationTest {
         }
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 val columns = columnNames(st, "continuations")
                 assertTrue("fire_attempts" in columns)
                 assertTrue("next_attempt_at" in columns)
@@ -2114,7 +2296,7 @@ class DatabaseMigrationTest {
         }
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertTrue("trace_id" in columnNames(st, "processes"))
                 val (surviving, traceId) =
                     st.executeQuery("SELECT COUNT(*), MAX(trace_id) FROM processes").use {
@@ -2154,7 +2336,7 @@ class DatabaseMigrationTest {
         }
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertTrue("record_purge_at" in columnNames(st, "processes"))
                 val (surviving, recordPurgeAt) =
                     st.executeQuery("SELECT COUNT(*), MAX(record_purge_at) FROM processes").use {
@@ -2200,7 +2382,7 @@ class DatabaseMigrationTest {
         }
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertTrue("created_at" in columnNames(st, "processes"))
                 val (surviving, createdAt) =
                     st.executeQuery("SELECT COUNT(*), MAX(created_at) FROM processes").use {
@@ -2253,7 +2435,7 @@ class DatabaseMigrationTest {
         }
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertTrue("ended_at" in columnNames(st, "processes"))
                 val (surviving, endedAt) =
                     st.executeQuery("SELECT COUNT(*), MAX(ended_at) FROM processes").use {
@@ -2301,7 +2483,7 @@ class DatabaseMigrationTest {
         }
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertTrue("secret_input_keys" in columnNames(st, "processes"))
                 val (surviving, keys) =
                     st.executeQuery("SELECT COUNT(*), MAX(secret_input_keys) FROM processes").use {
@@ -2343,7 +2525,7 @@ class DatabaseMigrationTest {
         }
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertTrue("secret_input_keys" in columnNames(st, "dispatches"))
                 assertTrue("secret_input_keys" in columnNames(st, "continuations"))
                 assertModelColumns(st, Dispatches)
@@ -2388,7 +2570,7 @@ class DatabaseMigrationTest {
         }
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertTrue("secret_param_names" in columnNames(st, "dispatches"))
                 assertTrue("secret_param_names" in columnNames(st, "continuations"))
                 assertModelColumns(st, Dispatches)
@@ -2437,7 +2619,7 @@ class DatabaseMigrationTest {
         }
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 val columns = columnNames(st, "processes")
                 assertTrue("retain_artifacts" in columns)
                 assertTrue("workspace_purged_at" in columns)
@@ -2499,7 +2681,7 @@ class DatabaseMigrationTest {
         }
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertTrue("parent_process_id" in columnNames(st, "processes"))
                 val (surviving, parent) =
                     st.executeQuery("SELECT COUNT(*), MAX(parent_process_id) FROM processes").use {
@@ -2558,7 +2740,7 @@ class DatabaseMigrationTest {
         }
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertTrue("root_process_id" in columnNames(st, "processes"))
                 val (surviving, maxRoot) =
                     st.executeQuery("SELECT COUNT(*), MAX(root_process_id) FROM processes").use {
@@ -2581,7 +2763,7 @@ class DatabaseMigrationTest {
         }
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertEquals(1, columnNames(st, "processes").count { it == "root_process_id" })
             }
         }
@@ -2630,7 +2812,7 @@ class DatabaseMigrationTest {
         }
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertTrue("input_params" !in columnNames(st, "processes"))
                 assertTrue("process_inputs" in tableNames(st))
                 val moved =
@@ -2663,7 +2845,7 @@ class DatabaseMigrationTest {
         }
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 assertEquals(
                     2,
                     st.executeQuery("SELECT COUNT(*) FROM process_inputs").use {
@@ -2976,6 +3158,14 @@ class DatabaseMigrationTest {
                 PendingHooks,
                 "CREATE INDEX IF NOT EXISTS pending_hooks_status_created ON pending_hooks (status, created_at)",
             ),
+            sqlStep(
+                "v33 result_tokens rebuild",
+                1,
+                33,
+                ResultTokens,
+                "ALTER TABLE result_tokens RENAME TO result_tokens_v32",
+                v32ResultTokensDdl,
+            ),
         )
 
     /** The shape a table had one version before a step: the model's columns minus the ones it adds. */
@@ -3084,7 +3274,7 @@ class DatabaseMigrationTest {
         }
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                assertEquals(32, userVersion(st))
+                assertEquals(33, userVersion(st))
                 val (surviving, createdAt, endedAt) =
                     st.executeQuery("SELECT COUNT(*), MAX(created_at), MAX(ended_at) FROM processes").use {
                         it.next()

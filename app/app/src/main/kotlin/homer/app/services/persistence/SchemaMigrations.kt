@@ -22,6 +22,7 @@ internal fun upgradeSchema(
     migrateToV30(st, current)
     migrateToV31(st, current)
     migrateToV32(st, current)
+    migrateToV33(st, current)
 }
 
 /** The column names of [table], from `PRAGMA table_info`. */
@@ -31,6 +32,18 @@ private fun columnNames(
 ): Set<String> =
     st.executeQuery("PRAGMA table_info($table)").use { rs ->
         generateSequence { if (rs.next()) rs.getString("name") else null }.toSet()
+    }
+
+/** The declared default of [column] in [table], from `PRAGMA table_info`; null when it has none. */
+private fun columnDefault(
+    st: Statement,
+    table: String,
+    column: String,
+): String? =
+    st.executeQuery("PRAGMA table_info($table)").use { rs ->
+        generateSequence { if (rs.next()) rs.getString("name") to rs.getString("dflt_value") else null }
+            .firstOrNull { (name, _) -> name == column }
+            ?.second
     }
 
 /**
@@ -75,10 +88,10 @@ private fun migrateToV10(
     if (current in 3 until 7) {
         // v6→v7 adds result_tokens.consumer_agent (audience binding, ADR-0025).
         // SchemaUtils.create never ALTERs an existing table, so add the column by
-        // hand on a dev DB that already had a v4+ result_tokens table. The empty
-        // default makes any pre-existing (ephemeral, TTL'd) token match no agent,
-        // so it fails closed until swept. The feature is unreleased, so this only
-        // ever runs against local dev databases.
+        // hand on a database that already had a v4+ result_tokens table (read-by-reference
+        // shipped in 1.6.0, the audience binding in 1.13.0). The empty default makes any
+        // pre-existing (ephemeral, TTL'd) token match no agent, so it fails closed until
+        // swept; v33 then rebuilds the table without the default.
         addColumnIfMissing(st, "result_tokens", "consumer_agent", "TEXT NOT NULL DEFAULT ''")
     }
     if (current in 1 until 8) {
@@ -398,5 +411,27 @@ private fun migrateToV32(
             "CREATE INDEX IF NOT EXISTS dispatch_group_questions_question_id " +
                 "ON dispatch_group_questions (question_id)",
         )
+    }
+}
+
+/**
+ * v32→v33 drops the `DEFAULT ''` the v7 step had to give `result_tokens.consumer_agent` (an added
+ * NOT NULL column needs one), so an upgraded database rejects an INSERT that omits the audience
+ * exactly as a fresh one does. SQLite cannot drop a column default in place, so the table is
+ * rebuilt from its `Tables.kt` DDL, every row kept. Guarded on the default itself, not only on the
+ * version: a fresh database never had it, and a re-run finds it gone.
+ */
+private fun migrateToV33(
+    st: Statement,
+    current: Int,
+) {
+    if (current in 1 until 33 && columnDefault(st, "result_tokens", "consumer_agent") != null) {
+        // The old table moves aside first so the generated DDL runs verbatim. SQLite's caution
+        // about this order concerns triggers, views and foreign keys naming the table; none do.
+        val columns = ResultTokens.columns.joinToString(", ") { it.name }
+        st.execute("ALTER TABLE result_tokens RENAME TO result_tokens_v32")
+        ResultTokens.ddl.forEach(st::execute)
+        st.execute("INSERT INTO result_tokens ($columns) SELECT $columns FROM result_tokens_v32")
+        st.execute("DROP TABLE result_tokens_v32")
     }
 }

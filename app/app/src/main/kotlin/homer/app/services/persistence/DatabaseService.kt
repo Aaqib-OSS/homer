@@ -292,7 +292,7 @@ class DatabaseService(
     }
 
     companion object {
-        const val SCHEMA_VERSION = 32
+        const val SCHEMA_VERSION = 33
         const val OPTIMIZE_INTERVAL_MS = 60 * 60 * 1000L
         private const val BUSY_TIMEOUT_MS = 5000
 

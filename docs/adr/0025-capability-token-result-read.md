@@ -119,3 +119,18 @@ no agent, so they fail closed until the TTL sweep removes them (the feature is
 unreleased, so no production tokens exist). Combined with the earlier redaction
 of the token from `api.log`, this closes the "Unbound Callback Result
 Authorization" finding.
+
+## Amendment (2026-11-15): schema v33 drops the transitional `DEFAULT ''`
+
+The empty-string default above was only the placeholder the v7 step needed to
+add a NOT NULL column to existing rows. The sole writer,
+`ResultTokenRepository.create`, always sets the audience to the continuation's
+target agent, whose name is never empty. So `Tables.kt` declares no default, and
+schema v33 rebuilds an upgraded `result_tokens` table without it, keeping its
+rows. Declaring `.default("")` in the model instead was rejected: it would turn a
+missing assignment into a token no agent can redeem, noticed only as a `403` at
+fetch time.
+
+Correction to the amendment above: the audience binding was not unreleased. It
+shipped in 1.13.0, after read-by-reference shipped in 1.6.0, so production
+databases created in between carried the default until v33.
