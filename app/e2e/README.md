@@ -20,6 +20,21 @@ always-on "does the production Dockerfile still build" gate.
 - **No sleep-and-assert.** Async state is always polled (`Awaits.awaitStatus`,
   30 s timeout / 250 ms interval); SSE assertions subscribe **before**
   triggering (`SseCollector`).
+- **The auth boundary is swept end to end.** `AuthBoundaryTest` drives every
+  operator resource family (process, question, dispatch, continuation,
+  artifacts, agent run) through the live server twice: with no credential at
+  all, which must be `401`, and with a bearer token granted on another agent.
+  On routes scoped to one resource that token must get `404` — indistinguishable
+  from not-found (ADR-0047 rule 3), never `403`. The family-level list endpoints
+  (`/status/all`, `/questions`, `/dispatches`, `/continuations`) instead answer
+  `200` with the other agent's rows filtered out; `/artifacts/list?processId=` is
+  scoped to one process, so it answers the same `404` as the single-resource
+  routes. The callback-domain `401` is `WhoamiTest`'s. ADR-0112 makes
+  `ROUTE_AUTHZ` the enforced per-route inventory: a new route fails until it has
+  a row. On top of that matrix, `AuthBoundaryTest` is the black-box sample over
+  families — a new resource family must extend it. Password, HMAC and
+  session/CSRF coverage stays excluded: exercising those schemes needs a compose
+  profile that configures them, which the suite deliberately does not add.
 - **Excluded on purpose:** Claude, Codex, opencode and LangGraph commands — the
   runner image ships all four toolchains (Claude CLI, Codex CLI, opencode CLI,
   `homer_langgraph`), but running them needs LLM credentials at run time, which
