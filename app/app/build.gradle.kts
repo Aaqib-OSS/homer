@@ -169,8 +169,24 @@ tasks.test {
             repoRoot.resolve("app/settings.gradle.kts"),
             repoRoot.resolve("app/buildSrc/settings.gradle.kts"),
             repoRoot.resolve("app/gradle/artifactory.settings.gradle.kts"),
-            repoRoot.resolve(".github/workflows/release.yml"),
-            repoRoot.resolve(".github/workflows/pages.yml"),
+            // DependencyVerificationGateTest reads these (ADR-0115). The keyrings are files, not
+            // directories, so a key added to either one is part of the cache key too.
+            repoRoot.resolve("app/gradle/libs.versions.toml"),
+            repoRoot.resolve("app/gradle/verification-metadata.xml"),
+            repoRoot.resolve("app/gradle/verification-keyring.keys"),
+            repoRoot.resolve("app/buildSrc/gradle/verification-metadata.xml"),
+            repoRoot.resolve("app/buildSrc/gradle/verification-keyring.keys"),
+            // Every Dockerfile and gradle.properties: DependencyVerificationGateTest scans them all
+            // (any of them may invoke Gradle), so a new one is part of the cache key too. Skip the
+            // same directories the test's walk skips — in particular the build outputs, which are
+            // other tasks' outputs and must not enter this task's inputs.
+            fileTree(repoRoot) {
+                include("**/Dockerfile", "**/gradle.properties")
+                exclude("**/.git/**", "**/node_modules/**", "**/build/**", "**/.gradle/**", "**/.next/**")
+            },
+            // Every workflow (either extension GitHub Actions accepts): DependencyVerificationGateTest
+            // scans them all, so a new one is part of the cache key too.
+            fileTree(repoRoot.resolve(".github/workflows")) { include("*.yml", "*.yaml") },
             fileTree(repoRoot) { include("docker-compose*.yml") },
             fileTree(repoRoot.resolve("example/agents")),
             fileTree(repoRoot.resolve("example/config")),

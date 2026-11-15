@@ -204,3 +204,4 @@ Neither key is a status: `status:` stays one of the four values above.
 | [0112](0112-runtime-route-authorization-matrix.md) | Every route and MCP tool has a row in a runtime authorization matrix | accepted |
 | [0113](0113-nightly-image-scan-with-grype.md) | Scan the release images nightly with grype, failing on fixable High and Critical findings | accepted |
 | [0114](0114-python-runtime-installs-from-a-hash-pinned-lock.md) | The image's Python runtime installs from a hash-pinned lock, and CI tests and audits that lock | accepted |
+| [0115](0115-gradle-dependency-verification.md) | Gradle verifies every dependency against committed checksums, and signatures where a key is trusted | accepted |
