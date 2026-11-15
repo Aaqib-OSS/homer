@@ -375,6 +375,52 @@ authoritative, WAL is still on, writes are still `IMMEDIATE` read-modify-write
 transactions on `query { }`, reads that only read are still on `read { }`, and
 `migrate()` still completes before any database access.
 
+## Amendment (2026-11-15): the v23 and v24 indexes, and why each exists
+
+Schema v23 and v24 add no column and change no behaviour; they are index-only
+versions, and no other ADR records them. The `query-plans` work (ADR-0082) drove
+them: at a full `maxProcesses` table every `GET /status/all` scanned `processes`
+twice — once for the page and once for the `COUNT(*)` behind `total` — costing
+about 100 ms.
+
+**v23 indexes the process-list filters** — `agent_name`, `status`,
+`parent_process_id`, `root_process_id`, and `owner` for the non-admin visibility
+predicate `owner = ? OR agent_name IN (…)` — under the names the `Processes` table
+declares. The migration creates them by hand, because `SchemaUtils.create` only
+indexes a table it creates. An `OR` stays indexable only while both of its sides
+are, so one unindexed column in `getAll`'s predicate turns the whole count back
+into a scan; a new list filter gets its index and its pinned plan in
+`DatabaseMigrationTest` in the same change.
+
+**v24 indexes the sweep, cooldown and lookup filters** that still scanned their
+tables at that size:
+
+- `processes_artifacts_dir` serves the shared-workspace check that runs before a
+  purge, an eviction or the end-of-run cleanup deletes a directory.
+- Three serve the purge sweeps. `processes_workspace_purge` is partial
+  (`artifacts_dir IS NOT NULL AND workspace_purged_at IS NULL`): a swept row keeps
+  its `purge_at`, so a plain index on it would walk every row the sweep had already
+  handled. `processes_record_purge` and the partial `processes_legacy_record_purge`
+  serve the two arms of the record sweep's `OR` (pre-v12 rows have no
+  `record_purge_at`).
+- `processes_agent_status_ended` serves `cooldown.afterFailure`'s latest-failure
+  lookup inside `obtainProcessId`'s write transaction; `latestRunStartedAtTx` stays
+  on `processes_agent_name`, whose entries are already in id order.
+- Outside `processes`: `questions_status_dispatch_bound` (the open-question cap,
+  expiry and counts) and `questions_process_dispatch_bound` (teardown);
+  `dispatches_status_expires`; and `continuations_watched_status` and
+  `continuations_status_expires` for the watched-process lookup, the PENDING caps
+  and the expiry and retry sweeps.
+
+The upgrade test also checks that the migration's raw SQL and the `Tables.kt`
+declarations define each index identically, and `DatabaseMigrationTest` pins each
+of these query shapes to its index (`v24LookupShapes`), planned without
+`sqlite_stat1`.
+
+The admin `?tag=` filter is an `id IN (SELECT …)` subquery driven by
+`process_tags_tag_process_id`; a scoped caller keeps the correlated `EXISTS`, whose
+cost never depends on runs it cannot see (ADR-0060, 2026-09-29 amendment).
+
 ## More Information
 
 - Supersedes the in-memory lifecycle described in [ADR-0019](0019-human-in-the-loop-questions.md) for the *durable* parts of questions; the callback-token registry and answer-wait deferreds remain in memory as that ADR describes.

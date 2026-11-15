@@ -123,7 +123,11 @@ current version; `DatabaseService.migrate()` upgrades in place, running the
 per-version steps in [`SchemaMigrations.kt`](SchemaMigrations.kt), and stamps
 `PRAGMA user_version`. One row per version — a new migration adds its step
 there and a row here (SQLite rule 1 in
-[`app/CLAUDE.md`](../../../../../../../../CLAUDE.md) § SQLite rules).
+[`app/CLAUDE.md`](../../../../../../../../CLAUDE.md) § SQLite rules). The table is
+an index, not the reasoning: why a version exists, what it measured and what it
+left alone are in the ADR the row names, and § Schema constraints keeps only the
+constraints that ADR does not state. Four rows name none — v1, v9, v11 and v28 —
+and for those no ADR records the reasoning, so the row's phrase is the whole of it.
 `SchemaEquivalenceTest` fails when a database the steps upgraded differs from a fresh one
 (columns, indexes, CHECK constraints; drift not yet fixed is listed there) or when this table's
 rows are not unique, ascending and ending at `SCHEMA_VERSION`. It seeds v1 and v4 only, so a table
@@ -157,203 +161,55 @@ so a fresh database would carry one an upgraded one lacks (`SchemaEquivalenceTes
 | 20 | `process_tags` table | [0060](../../../../../../../../../docs/adr/0060-run-tags.md) |
 | 21 | `processes.cost_source` | [0061](../../../../../../../../../docs/adr/0061-price-claude-runs-from-session-spend-endpoint.md) |
 | 22 | `processes.root_process_id` (left NULL, no backfill) | [0058](../../../../../../../../../docs/adr/0058-parent-child-run-linkage.md) |
-| 23 | indexes for the process-list filters | [0020](../../../../../../../../../docs/adr/0020-durable-state-in-sqlite.md) |
-| 24 | indexes for the sweep, cooldown and lookup filters | — |
+| 23 | process-list filter indexes | [0020](../../../../../../../../../docs/adr/0020-durable-state-in-sqlite.md) |
+| 24 | sweep, cooldown and lookup indexes | [0020](../../../../../../../../../docs/adr/0020-durable-state-in-sqlite.md) |
 | 25 | write-once `input_params` moved to the `process_inputs` side table | [0020](../../../../../../../../../docs/adr/0020-durable-state-in-sqlite.md) |
 | 26 | prune indexes + paginated list filters for `dispatches`/`continuations` | [0021](../../../../../../../../../docs/adr/0021-ask-and-dispatch.md) |
-| 27 | `continuations.thread_id` + `continuations_thread_id` index (LangGraph `subs` thread lookup) | [0044](../../../../../../../../../docs/adr/0044-langgraph-resume-and-run-introspection.md) |
+| 27 | `continuations.thread_id` + its index (LangGraph `subs` thread lookup) | [0044](../../../../../../../../../docs/adr/0044-langgraph-resume-and-run-introspection.md) |
 | 28 | `questions_agent_name` index (the read-grant arm of the paged `GET /questions`) | — |
 | 29 | `run_messages` table (the per-run inbox) + `run_messages_process_status` index | [0097](../../../../../../../../../docs/adr/0097-per-run-inbox.md) |
 | 30 | `processes.failure_reason`, `processes.failure_reason_run_id` | [0098](../../../../../../../../../docs/adr/0098-pre-start-failure-reason-is-a-fixed-vocabulary.md) |
-| 31 | `processes.cooldown_key` (left NULL, no backfill) + `processes_agent_cooldown_key` and `processes_agent_cooldown_status_ended`; `processes.stop` (what a graceful stop did); `pending_hooks` table (agent-level status hooks) | [0106](../../../../../../../../../docs/adr/0106-cooldown-key-scopes-windows-per-subject.md), [0107](../../../../../../../../../docs/adr/0107-agent-status-hooks.md), [0108](../../../../../../../../../docs/adr/0108-graceful-stop-of-a-run.md) |
-| 32 | `dispatches.kind` + `dispatch_group_questions` table (grouped ask-and-dispatch; its own version — a database the cooldown release stamped 31 skips every step guarded below 32) | [0109](../../../../../../../../../docs/adr/0109-grouped-ask-and-dispatch.md) |
-| 33 | `result_tokens` rebuilt without the `DEFAULT ''` the v7 step gave `consumer_agent` (only where it is present; rows kept) | [0025](../../../../../../../../../docs/adr/0025-capability-token-result-read.md) |
+| 31 | `processes.cooldown_key` + two indexes; `processes.stop`; `pending_hooks` table | [0106](../../../../../../../../../docs/adr/0106-cooldown-key-scopes-windows-per-subject.md), [0107](../../../../../../../../../docs/adr/0107-agent-status-hooks.md), [0108](../../../../../../../../../docs/adr/0108-graceful-stop-of-a-run.md) |
+| 32 | `dispatches.kind` + `dispatch_group_questions` table (its own version — a database the cooldown release stamped 31 skips every step guarded below 32) | [0109](../../../../../../../../../docs/adr/0109-grouped-ask-and-dispatch.md) |
+| 33 | `result_tokens` rebuilt without the transitional `DEFAULT ''` | [0025](../../../../../../../../../docs/adr/0025-capability-token-result-read.md) |
 
 ### Schema constraints
 
-Editor-facing constraints the row's ADR does not state:
+The constraints an editor can break without noticing, and that the row's ADR does
+not state. Everything else about a version — why it exists, what it measured,
+what it rejected — is in the ADR that version's row names; where the row names
+none (v1, v9, v11, v28), the table's phrase is all there is.
 
-- `processes.created_at` / `ended_at` (v13/v14) exist so the `cooldown` bound
-  has a start and an end timestamp valid the instant the row is. The cooldown
-  is evaluated **inside** `obtainProcessId`'s transaction, atomic with the
-  INSERT; `CooldownGate` in the service layer is a pre-flight refusal only and
-  cannot hold the bound on its own. Both share `CooldownDecision` so they cannot
-  drift. Row `id` is INSERT order and same-agent runs overlap by default, so an
-  older run can fail after a newer one — ordering by id returned the wrong
-  failure.
-- `processes.cooldown_key` (v31) is the run's rendered `cooldown.key`, captured
-  by the INSERT — a fact recorded when the run starts, not re-derived from a
-  definition that may have changed since (the v13/v14 principle). Null means the
-  run has no subject: a keyed agent's windows ignore it, and a keyless agent's
-  windows still count it, which is what "no key means unchanged" has to mean.
-  Both keyed lookups filter with `eq` — never `LIKE` — so a key containing `%`
-  or `_` matches only itself; they read through
-  `processes_agent_cooldown_key` and
-  `processes_agent_cooldown_status_ended`, while the keyless shapes stay on
-  `processes_agent_name` and `processes_agent_status_ended`. See ADR-0106.
-- A GROUP `dispatches` row's `question_id` is a synthetic `group:`-prefixed sentinel; the `dispatch_group_questions` table owns the ordered member set (v32). Readers of `dispatches.question_id` must branch on `kind`.
-- `processes.secret_input_keys` (v15) records the `envName`s the agent declared
-  `secret: true` **at run time**; API redaction reads it in preference to the
-  agent's current definition, so an input later flipped to `secret: false`
-  cannot expose the historical value from a retained record. Three states: a set
-  (captured), an empty set (nothing was secret), null (no snapshot — fall back
-  to the current definition, for rows predating v15).
-- `processes.retain_artifacts` (v18) is captured at terminal status next to
-  `purge_at` — same run-time-capture principle as v15 (a restart's `UNKNOWN`
-  rows, which never ended, take it from the agent at reconciliation; ADR-0048).
-  `workspace_purged_at` is the sweep marker for a row the workspace sweep
-  pruned rather than fully deleted: it keeps `artifacts_dir` set so the
-  artifact routes keep resolving the retained files, so `artifacts_dir IS NULL` alone no longer means "swept" —
-  the record sweep's "already handled" check accepts either marker.
-  `retained_truncated` flags a prune that couldn't fit everything the globs
-  matched under `server.maxRetainedArtifactBytes`: set true or false whenever
-  files are kept, and set true — never left null — when the cap truncates the
-  kept set down to nothing; null only when nothing matched at all.
-- `processes.parent_process_id` (v19) is the id of the run that caused this one
-  (`RunAgent`, dispatch, continuation, or the `X-Homer-Parent-Process-Id`
-  header; a retry/resume copies the source run's value). Written once at INSERT,
-  null at the root. **Not a foreign key**: the parent row may be evicted or
-  record-purged first and the child keeps the id as a plain reference.
-- `processes.root_process_id` (v22) denormalizes the flow root onto every row,
-  written once at INSERT as `parent.rootProcessId ?: parent.id` by every path
-  that sets `parent_process_id`, copied from the source run by retry/resume,
-  null at a root run. It buys one paginated read of a whole flow
-  (`?rootProcessId=`, `?roots=true`), which walking `parent_process_id` hop by
-  hop cannot. Like the parent it is **not a foreign key**. Existing rows are
-  deliberately **left NULL** rather than backfilled: a pre-v22 parent with no
-  root of its own is indistinguishable from a root, and an evicted/purged parent
-  cannot be resolved at all. NULL reads as "flow root unknown", never as "this
-  row is a root".
-- v23 indexes the process-list filters: `agent_name`, `status`,
-  `parent_process_id`, `root_process_id`, and `owner` for the non-admin
-  visibility `owner = ? OR agent_name IN (…)`, under the names the `Processes`
-  table declares. The migration creates them by hand because
-  `SchemaUtils.create` only indexes a table it creates. Without them every
-  `GET /status/all` scanned the table twice (the page and the `COUNT(*)` behind
-  `total`), costing ~100 ms at a full `maxProcesses` table. An OR stays
-  indexable only while both of its sides are, so one unindexed column in
-  `getAll`'s predicate turns the whole count back into a scan — a new list
-  filter gets its index and its pinned plan in `DatabaseMigrationTest` in the
-  same change. See ADR-0020.
-- v24 indexes the sweep, cooldown and lookup filters that still scanned their
-  tables at a full `maxProcesses` table: `processes_artifacts_dir` for the
-  shared-workspace check before a purge, eviction or end-of-run cleanup deletes
-  a directory, and three for the purge sweeps. `processes_workspace_purge` is partial
-  (`artifacts_dir IS NOT NULL AND workspace_purged_at IS NULL`): a swept row
-  keeps its `purge_at`, so a plain index on it would walk every row the sweep
-  already handled. `processes_record_purge` and the partial
-  `processes_legacy_record_purge` serve the two arms of the record sweep's OR
-  (pre-v12 rows have no `record_purge_at`). `processes_agent_status_ended`
-  serves `cooldown.afterFailure`'s latest-failure lookup inside
-  `obtainProcessId`'s write transaction; `latestRunStartedAtTx` stays on
-  `processes_agent_name`, whose entries are already in id order. Outside
-  `processes`, v24 indexes the question checks
-  (`questions_status_dispatch_bound` for the open-question cap, expiry and
-  counts, `questions_process_dispatch_bound` for teardown),
-  `dispatches_status_expires`, and `continuations_watched_status` and
-  `continuations_status_expires` for the watched-process lookup, the PENDING
-  caps and the expiry and retry sweeps. The upgrade test also checks that the
-  migration's raw SQL and the `Tables.kt` declarations define each index
-  identically. `DatabaseMigrationTest` pins each of these query shapes to its
-  index (`v24LookupShapes`), planned without `sqlite_stat1`. The admin `?tag=`
-  filter is an `id IN (SELECT …)` subquery driven by
-  `process_tags_tag_process_id`; a scoped caller keeps the correlated `EXISTS`,
-  whose cost never depends on runs it cannot see (ADR-0060, 2026-09-29
-  amendment).
-- v25 moves write-once `input_params` out of the `processes` row into the
-  `process_inputs` side table (`process_id` PK, no foreign key), in the same
-  change that narrows the transition reads. A run's inputs are bounded only by
-  `server.maxRequestBodyBytes` (10 MiB), and SQLite rewrites a row's whole
-  overflow chain on any UPDATE that changes its size — so while they sat inline,
-  every per-step `setCurrentCommand`/`addExecution` of such a run rewrote
-  megabytes of WAL (13.5 ms and 4.9 MB of WAL for a 5 MB row, against 0.05 ms
-  for a normal 500-byte one). `process_inputs` rows are written and deleted
-  co-transactionally with the process row — written with the process INSERT,
-  deleted on both record purge and capacity eviction (ADR-0048). The side row is
-  read only where `ProcessInfo.inputParams` is served (`getInfo` reads its one
-  row; `getAll` and `costByTag` batch it via `inputsByProcessTx`, like
-  `tagsByProcessTx`). Paths that never surface inputs — the purge sweeps — pass
-  `emptyMap()` and skip the read; the reload-kill path (`createdRunsOf`) selects
-  only `id` and `agent_name`. The v24→v25 migration copies each row's value with
-  `COALESCE(…, '{}')` and drops the column, guarded by a `PRAGMA table_info`
-  check so a re-run is a no-op. `DatabaseMigrationTest` pins the upgrade, the
-  value round-trip and the WAL volume. Those same two inputs-free sweeps project
-  away the other blobs too: they select `Processes.recordReadColumns` rather
-  than the whole row, so a purge sweep at a full `maxProcesses` table never
-  pulls `history`, `executions` or `runner_state` off disk to discard them.
-  `costByTag` reads its up to 10 000 candidates through the same projection (its
-  secret screen needs only tags, inputs and record-level columns).
-  `ProcessRepositoryTest` pins each projection.
-- v26 bounds `dispatches` and `continuations`. The two sweeps delete a
-  settled row (any status but `PENDING` and `DISPATCHING`) once its `created_at`
-  is older than `server.dispatch.settledRetentionSec`, with its dependent rows
-  in the same transaction — a dispatch's `dispatch_bound` question, a join's
-  `continuation_watches` — behind a `read { }` due-row pre-check and in batches
-  of 500. The settled set is an `IN` list of the remaining statuses, not
-  `NOT IN`, so `dispatches_status_created` / `continuations_status_created` can
-  seek. The list routes page in SQL (`DispatchRepository.page` /
-  `ContinuationRepository.page`, newest first), with the visibility rule before
-  the limit as `id IN (SELECT id … owner = ? UNION SELECT id … agent_name IN
-  (…))`, each arm on its own index (`*_owner`, `*_agent_name`,
-  `*_status_created`). Do not fold it back into `owner = ? OR agent_name IN
-  (…)`: with statistics that plans as a backward walk of the whole table. Only
-  the unfiltered admin page walks the table, and it reads offset + limit rows.
-  `DatabaseMigrationTest` pins the prune shapes and the SQL each page actually
-  sends, at 150 000 rows, with and without statistics. See ADR-0021 (2026-09-30
-  amendment).
-- v27 adds `continuations.thread_id`: `params[HMR_LG_THREAD]`, written
-  at INSERT and backfilled with `json_extract`, under `continuations_thread_id`.
-  LangGraph `subs` reads one thread's rows on that index, the run's owner a
-  residual filter, then all its sub runs in batched reads below the
-  512-id chunk they split at. `DatabaseMigrationTest` pins both plans. See
-  ADR-0044.
-- `processes.failure_reason` / `failure_reason_run_id` (v30) hold why a run ended
-  `FAILED` before any of its commands started, and the run that blocked it when the
-  cause names one (the lock holder; **not a foreign key**, like the other run links).
-  Both are left NULL on the v29→v30 upgrade: a pre-v30 row's failure is not
-  reconstructible, and NULL reads as "no reason recorded", never as "ran and failed".
-  The write is guarded on the row's own state — it lands only while `status = FAILED`
-  with no recorded execution and no current command — so a run that failed mid-flight
-  and one whose failure raced a kill that won the status CAS both keep NULL, and the
-  column is never rewritten. `failure_reason` is truncated to 500 characters inside
-  the write, so its bound holds whatever the caller passes. The write trails the
-  terminal-status commit in a second transaction and emits no event of its own, so a
-  client refetching on the `FAILED` event reads the reason on its next poll, not
-  immediately — an accepted trade, recorded in ADR-0098. A non-null value also keeps
-  the row out of `cooldown.afterFailure`'s latest-failure lookup
-  (`latestFailureEndedAtTx`): only a run that failed while executing arms the window,
-  so a refusal that never ran — a duplicate trigger the lock correctly dropped, for
-  this subject or another — does not back the agent off.
-- `pending_hooks` (v31) is the agent-level status-hook queue: one row per hook entry a
-  status transition matched, INSERTed **inside that transition's own transaction** (the
-  `CREATED` INSERT, `transitionStatus`, `killTransition`, `markInterruptedAsUnknown`) and
-  fired after it commits, so a restart between the status and the fire loses nothing. A
-  guard-rejected CAS records none, and neither does a write that leaves the status where it was
-  (a run's own start re-asserts `CREATED` as its kill guard): the status was reached once, so its
-  hooks fire once. The rows share `FiredRecords`' claim CAS, PENDING cap and
-  settled prune with `dispatches` and `continuations`. The rows carry no chain depth: a fire
-  derives it from the triggering run's own stored `HMR_HOOK_DEPTH` in `process_inputs` plus
-  one, so the bound is durable without the transition reading or writing anything extra, and
-  the transition stays a projection of `status`/`history`/`agent_name`/`owner`. The cap is
-  checked with one `COUNT` per fan-out, not per row, and rows over it are **dropped**, never
-  queued: a status write is not a request, so there is no caller to reject. Retention is
-  `server.hooks.settledRetentionSec`, swept by the continuation sweep tick through
-  `pending_hooks_status_created`. See ADR-0107.
-
-`transitionStatus` and `killTransition` project `status`, `history`, `agent_name`
-and `owner` instead of `selectAll()`: they run under the write lock, and pulling
-the blobs of the row into memory only to write them back is pure cost. `owner` is
-there because the hook rows recorded in the same transaction are owned by the
-triggering run's owner.
-
-`processes.stop` (v31) is one JSON blob — the stop's reason, the interrupted
-step's index and label, when it was detected, and how the `onStop:` steps ended
-— written once by the run's stop phase (`setStop`) and left NULL on every other
-run, so NULL reads as "not stopped gracefully", never as "stopped for an unknown
-reason". The run's status stays `FAILED`; the column is what distinguishes a
-graceful stop from an ordinary failure, and no backfill is possible. It is read
-only where `ProcessInfo` is served, through the same `getOrNull` guard the other
-blob columns use. See ADR-0108.
+- **An index is declared by hand.** `SchemaUtils.create` only indexes a table it
+  creates, so a migration adds each index in its own step; `DatabaseMigrationTest`
+  checks that the step's raw SQL and the `Tables.kt` declaration define each index
+  identically, and pins every planned shape (`v24LookupShapes`) at 150 000 rows
+  with and without `sqlite_stat1`. An `OR` stays indexable only while both sides
+  are, so one unindexed column in `getAll`'s predicate turns its `COUNT(*)` back
+  into a scan: a new list filter gets its index and its pinned plan in the same
+  change (ADR-0020).
+- **A settled set is an `IN` list of the remaining statuses, never `NOT IN`**, so
+  the sweep's `dispatches_status_created` / `continuations_status_created` index
+  can seek (ADR-0021).
+- **A keyed cooldown lookup filters with `eq`, never `LIKE`** — a key containing
+  `%` or `_` matches only itself (ADR-0106).
+- **`processes.failure_reason` is written only while `status = FAILED` with no
+  recorded execution and no current command**, and a non-null value keeps the row
+  out of `cooldown.afterFailure`'s latest-failure lookup: only a run that failed
+  while executing arms the window (ADR-0098).
+- **`processes.stop` is NULL on every run that was not stopped gracefully**, read
+  only where `ProcessInfo` is served, through the same `getOrNull` guard the other
+  blob columns use (ADR-0108).
+- **A GROUP `dispatches` row's `question_id` is a synthetic `group:`-prefixed
+  sentinel** (v32): a reader of that column branches on `kind` (ADR-0109).
+- **`transitionStatus` / `killTransition` project `status`, `history`, `agent_name`
+  and `owner`, never `selectAll()`**: they run under the write lock, and `owner` is
+  there because the hook rows recorded in the same transaction carry the triggering
+  run's owner (ADR-0020, ADR-0107).
+- **`created_at`/`ended_at`, `cooldown_key`, `secret_input_keys`, `retain_artifacts`
+  and `parent_process_id`/`root_process_id` are facts captured when they happened**,
+  never re-derived from the agent's current definition (ADR-0048, ADR-0051,
+  ADR-0052, ADR-0053, ADR-0058).
 
 Schema: `id`/`status`/`agent_name` are real columns (filtered/sorted on);
 `history`/`executions`/`runner_state` and question `options`

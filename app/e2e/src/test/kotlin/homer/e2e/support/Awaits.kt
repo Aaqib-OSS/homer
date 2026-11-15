@@ -5,7 +5,13 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.delay
 
-/** Poll-based waiting — the suite never sleep-and-asserts. */
+/**
+ * Poll-based waiting — the suite never sleep-and-asserts.
+ *
+ * The `:app` tests keep their own port of this pattern (`homer.app.fixtures.Awaits`): the modules
+ * share no test source, so the pattern is ported, not imported — porting over a shared test-fixtures
+ * module is the deliberate choice.
+ */
 object Awaits {
     val TERMINAL = setOf("FINISHED", "FAILED", "KILLED", "UNKNOWN")
 

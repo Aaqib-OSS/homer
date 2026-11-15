@@ -65,7 +65,7 @@ The layering rule becomes `required`.
 - **A lower layer that needs a higher one declares a port.** The port is a narrow interface in the lower layer's own package that lists only the calls it makes. The higher layer implements the port, and `di/AppModule.kt` binds it. Two examples:
   - `ProcessManager` implements the Execution-side record of a run's steps and status.
   - The services implement the sub-run start that `RunAgentExecutor` needs.
-- **The diagram is corrected only where a type's nature was misfiled.** A wrapper over an external system, such as the OpenTelemetry and Langfuse clients, is Infra. An in-memory execution gate is Execution. Each move between rows names its reason in `app/CLAUDE.md`. A type is never reclassified only to silence a finding.
+- **The diagram is corrected only where a type's nature was misfiled.** A wrapper over an external system, such as the OpenTelemetry and Langfuse clients, is Infra. An in-memory execution gate is Execution. Each move between rows names its reason below, in the amendment that records the list. A type is never reclassified only to silence a finding.
 
 ### Step 3: cycles
 
@@ -103,6 +103,36 @@ The cycle rule becomes `required`, and the pending lane goes away.
 
 - Good: done once.
 - Bad: one diff too large to review, and every other branch hits all of its conflicts at once.
+
+## Amendment (2026-11-15): the reason each type moved between rows
+
+Step 2 requires every move between rows to name its reason. That list lived in
+`app/CLAUDE.md` § Layered architecture, where it restated this ADR's steps; it is
+recorded here instead, so the guide keeps the diagram and this ADR the reasoning.
+
+- `CostMeter` → Services: the spend-cap service over the durable cost ledger, not
+  support code (it had no row, so its package put it in Infra).
+- `CooldownGate`, `StartupReconciliation` → Services: stateful services over
+  `ProcessRepository` (reconciliation also drives `QuestionsService`,
+  `DispatchService` and `ContinuationService`), not Infra support code.
+- `ExternalRunnerDomain`, `ExternalRunnerInstance` → Execution: an instance is a
+  claim consumer of `RunnerClaimQueue` like `StaticRunnerConsumer`, and its domain
+  registers and expires them (ADR-0066).
+- `RunnerStatusReport` → Execution: the operator read view of `RunnerRegistry`, its
+  claim queue and the external domains, the Execution state it reports.
+- `LockManager`, `ParallelRunsManager` → Execution: the in-memory lock and slot
+  gates `Process` holds while a run executes.
+- `TelemetryService`, `LangfuseClient` → Infra: clients over the OpenTelemetry
+  exporter and the Langfuse HTTP API.
+- The support code that calls a service → Services: `McpToolFactory`,
+  `QuestionsMcpToolFactory`, `McpRunTools`, `DispatchGates`,
+  `AgentDefinitionWriteGate`, `AgentFilePathResolver`, `RunLiveness` and
+  `ProcessGraphInspectRunner` (the runner `LangGraphInspectService` declares).
+  Their package had put them in Infra while their same-package calls into services
+  went unseen; they stayed in `services/` when the Infra code moved to `infra/`.
+- `LlmSpanEmitter` → Services: it calls no service, but it is the span writer
+  `LlmTelemetryService` was split into for size, built only by that service, so it
+  stays beside it in `services/`.
 
 ## More Information
 

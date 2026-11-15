@@ -223,7 +223,7 @@ class WorkspaceSyncTest {
     @Test
     fun `upload of missing local path throws`(
         @TempDir local: Path,
-    ) = runBlocking {
+    ) = runBlocking<Unit> {
         assertThrows<IllegalStateException> {
             sync.upload(local.resolve("nope"), server.rootDir.resolve("x").toString())
         }

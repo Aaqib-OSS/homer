@@ -1,6 +1,7 @@
 package homer.app.infra
 
 import homer.app.exceptions.OutputCapExceededException
+import homer.app.fixtures.awaitProcessExit
 import homer.app.models.CommandResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancelAndJoin
@@ -341,7 +342,7 @@ class LocalShellExecutorTest {
 
             val pid = pidFile.readText().trim().toLong()
             assertTrue(
-                waitForExit(pid),
+                awaitProcessExit(pid),
                 "backgrounded grandchild (pid $pid) should have been reaped with the process group",
             )
         }
@@ -438,7 +439,7 @@ class LocalShellExecutorTest {
                 "the SIGKILL must wait out the grace; took $elapsedMs ms for a ${grace.inWholeMilliseconds} ms grace",
             )
             val pid = pidFile.readText().trim().toLong()
-            assertTrue(waitForExit(pid), "the SIGINT-ignoring process (pid $pid) should have been SIGKILLed")
+            assertTrue(awaitProcessExit(pid), "the SIGINT-ignoring process (pid $pid) should have been SIGKILLed")
         }
 
     @Test
@@ -792,32 +793,6 @@ class LocalShellExecutorTest {
             stderrContent.contains("[HOMER] Output cap exceeded"),
             "expected stderr to contain '[HOMER] Output cap exceeded' marker; got: $stderrContent",
         )
-    }
-
-    /** Polls (up to ~3s) for [pid] to no longer be a live process. */
-    private fun waitForExit(pid: Long): Boolean {
-        val deadline = System.currentTimeMillis() + 3_000
-        while (System.currentTimeMillis() < deadline) {
-            // Read the /proc state, not ProcessHandle.isAlive: the reaped orphan
-            // dies as a zombie (state Z) until its reparent target (in a CI
-            // container: a PID 1 that may never get around to it) wait()s on it,
-            // and ProcessHandle counts an unreaped zombie as alive. Z means the
-            // group kill worked. Only called under the setsid assumption, so
-            // /proc exists. (This test runs on Linux only.)
-            val stat = runCatching { Path.of("/proc/$pid/stat").readText() }.getOrNull() ?: return true
-            val state =
-                stat
-                    .substringAfterLast(") ")
-                    .trim()
-                    .split(" ")[0]
-            if (state == "Z" || state == "X") return true
-            Thread.sleep(50)
-        }
-        return ProcessHandle
-            .of(pid)
-            .map { it.isAlive }
-            .orElse(false)
-            .not()
     }
 
     // ========== stdout filter (ADR-0063) ==========
