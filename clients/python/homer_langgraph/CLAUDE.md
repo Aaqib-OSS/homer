@@ -37,8 +37,10 @@ python3 -m venv .venv                                                 # from cli
 .venv/bin/python -m pytest                                            # from clients/python
 ```
 
-Tests mock `subprocess.run` and use LangGraph's in-memory `MemorySaver`, so no
-real Homer wrappers or network are required.
+Tests mock `subprocess.run` and use LangGraph's in-memory `MemorySaver`, except
+the checkpoint-upgrade tests: they resume a committed SQLite checkpoint fixture
+with the real `SqliteSaver`, and one runs the module as a subprocess. No test
+needs real Homer wrappers or network.
 
 ## Dependencies
 
