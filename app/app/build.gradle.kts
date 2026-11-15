@@ -169,8 +169,18 @@ tasks.test {
             repoRoot.resolve("app/settings.gradle.kts"),
             repoRoot.resolve("app/buildSrc/settings.gradle.kts"),
             repoRoot.resolve("app/gradle/artifactory.settings.gradle.kts"),
+            // DependencyVerificationGateTest reads these (ADR-0114). The keyrings are files, not
+            // directories, so a key added to either one is part of the cache key too.
+            repoRoot.resolve("app/gradle.properties"),
+            repoRoot.resolve("app/gradle/libs.versions.toml"),
+            repoRoot.resolve("app/gradle/verification-metadata.xml"),
+            repoRoot.resolve("app/gradle/verification-keyring.keys"),
+            repoRoot.resolve("app/buildSrc/gradle/verification-metadata.xml"),
+            repoRoot.resolve("app/buildSrc/gradle/verification-keyring.keys"),
             repoRoot.resolve(".github/workflows/release.yml"),
             repoRoot.resolve(".github/workflows/pages.yml"),
+            repoRoot.resolve(".github/workflows/ci.yml"),
+            repoRoot.resolve(".github/workflows/nightly.yml"),
             fileTree(repoRoot) { include("docker-compose*.yml") },
             fileTree(repoRoot.resolve("example/agents")),
             fileTree(repoRoot.resolve("example/config")),
