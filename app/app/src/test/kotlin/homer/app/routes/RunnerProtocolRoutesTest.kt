@@ -55,6 +55,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -1284,28 +1285,36 @@ class RunnerProtocolRoutesTest {
             session.close()
         }
 
+    /**
+     * Runs [block] through [ExternalRunnerDomain.withTransferTimeout] only once that call's
+     * watchdog has fired, so the block starts past the deadline: the condition wait that replaces
+     * the fixed sleep which used to outlast the 1 s timeout. Waiting on the watchdog itself keeps
+     * the wait and the deadline from drifting apart.
+     */
+    private suspend fun <T> pastDeadline(
+        domain: ExternalRunnerDomain,
+        block: suspend () -> T,
+    ): T {
+        val fired = CompletableDeferred<Unit>()
+        return domain.withTransferTimeout(release = { fired.complete(Unit) }) {
+            withTimeout(10.seconds) { fired.await() }
+            block()
+        }
+    }
+
     @Test
     fun `past the deadline only the cancelled channel's failure becomes a timeout, a transfer's own refusal keeps its status`() =
         runBlocking<Unit> {
             val slow = ExternalRunnerDomain("slow", RunnerConfig.External(token = "slow-token", transferTimeoutSec = 1), queue)
-            // Each block outlives the deadline (the watchdog has fired) before it fails.
+            // Each block starts after the deadline (the watchdog has fired) before it fails.
             assertThrows<SecurityException> {
-                slow.withTransferTimeout(release = {}) {
-                    Thread.sleep(1_500)
-                    throw SecurityException("entry escapes the target")
-                }
+                pastDeadline(slow) { throw SecurityException("entry escapes the target") }
             }
             assertThrows<RunnerTransferTooLargeException> {
-                slow.withTransferTimeout(release = {}) {
-                    Thread.sleep(1_500)
-                    throw RunnerTransferTooLargeException(16)
-                }
+                pastDeadline(slow) { throw RunnerTransferTooLargeException(16) }
             }
             assertThrows<RunnerTransferTimeoutException> {
-                slow.withTransferTimeout(release = {}) {
-                    Thread.sleep(1_500)
-                    throw java.io.IOException("channel cancelled")
-                }
+                pastDeadline(slow) { throw java.io.IOException("channel cancelled") }
             }
         }
 
@@ -1319,8 +1328,7 @@ class RunnerProtocolRoutesTest {
                 val caller = coroutineContext.job
                 val result =
                     runCatching {
-                        slow.withTransferTimeout(release = {}) {
-                            Thread.sleep(1_500) // the watchdog has fired
+                        pastDeadline(slow) {
                             caller.cancel() // e.g. the runner disconnects
                             throw CancellationException("caller cancelled")
                         }

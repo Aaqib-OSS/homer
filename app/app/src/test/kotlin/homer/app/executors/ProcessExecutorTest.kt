@@ -8,6 +8,7 @@ import homer.app.exceptions.MaxQueuedRunsExceededException
 import homer.app.exceptions.RunnerClaimTimeoutException
 import homer.app.exceptions.UnresolvedLockKeyPlaceholderException
 import homer.app.fixtures.TestFixtures
+import homer.app.fixtures.eventually
 import homer.app.infra.SecretRedactor
 import homer.app.infra.TelemetryService
 import homer.app.models.Cooldown
@@ -337,6 +338,10 @@ class ProcessExecutorTest {
             }
 
             processExecutor.execute(mockProcess, testContext)
+            testScope.coroutineContext[Job]!!
+                .children
+                .toList()
+                .forEach { it.join() }
 
             // Job should be assigned immediately
             coVerify { mockProcessManager.assignJob(1, any()) }
@@ -1290,7 +1295,9 @@ class ProcessExecutorTest {
 
             executeAndJoin()
 
-            awaitVerified {
+            // The failure path commits on the launched coroutine: retry the assertions to the
+            // shared timeout rather than judge them on one attempt.
+            eventually {
                 coVerify { mockProcessManager.compareAndSetStatus(1, any(), ProcessStatus.FAILED) }
                 verify { mockSpan.end() }
                 coVerify { mockProcessManager.removeJob(1) }
@@ -1304,27 +1311,6 @@ class ProcessExecutorTest {
                 }
             }
         }
-
-    /**
-     * Re-runs [block] until it passes or 5 s elapse, rethrowing its last failure: the paths
-     * under test run on a launched coroutine, so one fixed sleep outruns them on a loaded
-     * JVM (and under the mutation check's instrumented one) however correct the code.
-     */
-    private suspend fun awaitVerified(block: () -> Unit) {
-        val deadline = System.currentTimeMillis() + 5_000
-        while (true) {
-            try {
-                block()
-                return
-            } catch (e: RuntimeException) {
-                if (System.currentTimeMillis() >= deadline) throw e
-                delay(50)
-            } catch (e: AssertionError) {
-                if (System.currentTimeMillis() >= deadline) throw e
-                delay(50)
-            }
-        }
-    }
 
     // ========== onTerminal Callback Tests (ADR-0023) ==========
 

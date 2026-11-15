@@ -1,5 +1,6 @@
 package homer.app.services
 
+import homer.app.fixtures.awaitProcessExit
 import homer.app.infra.GraphSubprocessOutcome
 import homer.app.infra.MAX_GRAPH_STDERR_BYTES
 import homer.app.infra.MAX_GRAPH_STDOUT_BYTES
@@ -171,7 +172,7 @@ class ProcessGraphInspectRunnerTest {
             assertTrue(result is GraphInspectResult.Err, "the flood should fail the call, got $result")
             val pid = pidFile.readText().trim().toLong()
             assertTrue(
-                waitForExit(pid),
+                awaitProcessExit(pid),
                 "detached grandchild (pid $pid) should have been reaped with the process group",
             )
             assertEquals(before, inspectTempFiles(), "no homer-lg-inspect* temp file may remain")
@@ -201,7 +202,7 @@ class ProcessGraphInspectRunnerTest {
 
             val pid = pidFile.readText().trim().toLong()
             assertTrue(
-                waitForExit(pid),
+                awaitProcessExit(pid),
                 "the reparented grandchild (pid $pid) should have been reaped with the process group",
             )
         }
@@ -238,7 +239,7 @@ class ProcessGraphInspectRunnerTest {
 
                 val pid = pidFile.readText().trim().toLong()
                 assertTrue(
-                    waitForExit(pid),
+                    awaitProcessExit(pid),
                     "the subprocess (pid $pid) should have been reaped when the caller was cancelled mid-capture",
                 )
             } finally {
@@ -398,22 +399,6 @@ class ProcessGraphInspectRunnerTest {
                 .toList()
                 .toSet()
         }
-
-    /** Polls (up to ~3s) for [pid] to no longer be a live process. */
-    private fun waitForExit(pid: Long): Boolean {
-        val deadline = System.currentTimeMillis() + 3_000
-        while (System.currentTimeMillis() < deadline) {
-            // A group-killed orphan dies as a zombie (state Z) until its reparent
-            // target wait()s on it, and ProcessHandle counts an unreaped zombie as
-            // alive; Z means the kill worked. Only called under the setsid assumption,
-            // so /proc exists. (This test runs on Linux only.)
-            val stat = runCatching { Path.of("/proc/$pid/stat").readText() }.getOrNull() ?: return true
-            val state = stat.substringAfterLast(") ").trim().split(" ")[0]
-            if (state == "Z" || state == "X") return true
-            Thread.sleep(50)
-        }
-        return false
-    }
 }
 
 /**
