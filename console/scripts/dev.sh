@@ -37,7 +37,7 @@ fi
 # Load environment variables: source with auto-export so shell quoting,
 # comments and '=' inside values are honoured. Next.js also reads this file;
 # this shell parse is the stricter one: quote values with spaces, single-quote
-# values with '$' ($$ expands to the PID). See console/README.md § Development.
+# values with '$' ($$ expands to the PID). See console/README.md § Quick Start.
 if [ -f .env.local ]; then
     set -a
     # shellcheck source=/dev/null # the developer's own file, not in the repo
