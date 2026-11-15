@@ -83,3 +83,31 @@ would also need a credential that fork pull requests do not receive.
   protected tag, so
   the tag and `main` rulesets are what allow a release once the repository is
   public. The Slack release announcement is not ported.
+
+## Amendment (2026-11-15): the build history the backend guide used to carry
+
+`app/CLAUDE.md` § Build commands carried the history behind the build it
+describes. It is recorded here, so the guide keeps the commands and points at
+[`docs/quality-checks.md`](../../docs/quality-checks.md) for the report commands.
+
+**CI resolves from Maven Central, with the Gradle cache in GitHub's Actions
+cache, and sets no Artifactory variable** — the decision above. The Artifactory
+proxy and its remote build cache remain an optional path for other environments,
+on only when all three of `ARTIFACTORY_URL` (a bare `https://` origin; a path or
+embedded credentials in it fail the build), `ARTIFACTORY_USER` and
+`ARTIFACTORY_TOKEN` are set. Inside a Docker build the three are BuildKit secrets,
+never an `ARG`/`ENV` (root §12 rule 7), and the e2e runner keeps them as run-time
+environment; `ArtifactorySecretExposureTest` guards both halves. The remote cache
+is pushed only when `CI_COMMIT_REF_PROTECTED` is `true`, matching the
+protected-refs-only rule recorded above. The operator-facing half is
+[`DOCKER.md`](../../DOCKER.md) § Artifactory build secrets.
+
+**A cold or `--rerun-tasks` build that dies in codegen** with
+`OutOfMemoryError: GC overhead limit exceeded` is the Kotlin daemon's heap, not
+the test the failure names: check the live daemon's `-Xmx`
+(`ps | grep KotlinCompileDaemon`) before blaming anything else, because a daemon
+already running with a **larger** heap is reused and its settings come from
+[`gradle.properties`](../../app/gradle.properties) (`kotlin.daemon.jvmargs`). detekt
+left the `homer-app-tests` build for its own job for the same reason — its
+Analysis API loads into the Gradle daemon and that job ran out of memory
+(ADR-0082).
