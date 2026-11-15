@@ -268,6 +268,7 @@ A new rule whose code still has findings is tagged `@Tag(REPORT_ONLY)` and is *p
 | Tests mock with MockK, not Mockito | root §6 |
 | Every handler under `apiV1Routes` makes a denying call — `authorizer.<method>(`, `deniedUnlessAdmin(`, or a `routes/` function every overload of which makes one; a bare `authorizer` argument does not count. A builder mounted under two prefixes is checked under both, an expression-body builder like a block one; a `::fn` handler is checked through `fn` when that name is unambiguous; a route shape the walk cannot read, or a registration-named call on an explicit receiver outside handlers and route-free helpers, is a finding; `GET /heartbeat` and `GET /schemas/agent` are open to any authenticated caller ([`README.md`](README.md)) | root §12 rule 3, "Adding a new HTTP endpoint" |
 | Main code: a source file ≤ 600 lines, a top-level class or object ≤ 400 (KDoc and annotations excluded), a function body ≤ 60 (from the line opening it) — one rule each | root §2 |
+| Main code: a function (overrides excluded) or a constructor of a non-`data` class takes ≤ 13 parameters; group more into a `data` class parameter object | root §2 |
 | Test files: a test source file ≤ 3,300 lines (the cap may only be lowered) | root §2 |
 | Each layer imports only itself, the layers below it and the kernel; the kernel only itself | "Layered architecture", "Directory layout" |
 | No import cycle between the top-level packages `homer.app.(*)` (the root package is no slice) | "Layered architecture" |
