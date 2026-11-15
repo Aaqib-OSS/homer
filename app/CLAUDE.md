@@ -495,9 +495,12 @@ A Kotlin compiler warning fails the build (`allWarningsAsErrors` in the conventi
 `@Suppress` at the narrowest scope; only `:app`'s tests are opted in to `ExperimentalCoroutinesApi` module-wide.
 
 **Dependency verification (ADR-0115).** Both Gradle builds verify every resolved artifact against the
-committed SHA-256 checksums in `gradle/verification-metadata.xml` and, where the repository publishes a
-signature, against a PGP key trusted by full fingerprint in `<trusted-keys>` and carried in the
-committed `gradle/verification-keyring.keys`. The keyring holds **public keys only** — never a `.gpg`
+committed SHA-256 checksums in `gradle/verification-metadata.xml` and, where the metadata records a
+`<pgp>` entry for it, against a PGP key trusted by full fingerprint in `<trusted-keys>` and carried in
+the committed `gradle/verification-keyring.keys`. Most of the graph is checksum-only today — the keys
+of most artifacts are served by no key server Gradle queries, and those entries say so
+(`reason="A key couldn't be downloaded"`); fetching such a key by id and regenerating is the fix, not
+an exemption. The keyring holds **public keys only** — never a `.gpg`
 binary keyring, never private material — and it is what lets a keyless CI or Docker build verify a cold
 cache (ADR-0084): those runners reach no key server.
 

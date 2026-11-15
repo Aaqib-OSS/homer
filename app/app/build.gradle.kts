@@ -177,10 +177,9 @@ tasks.test {
             repoRoot.resolve("app/gradle/verification-keyring.keys"),
             repoRoot.resolve("app/buildSrc/gradle/verification-metadata.xml"),
             repoRoot.resolve("app/buildSrc/gradle/verification-keyring.keys"),
-            repoRoot.resolve(".github/workflows/release.yml"),
-            repoRoot.resolve(".github/workflows/pages.yml"),
-            repoRoot.resolve(".github/workflows/ci.yml"),
-            repoRoot.resolve(".github/workflows/nightly.yml"),
+            // Every workflow: DependencyVerificationGateTest scans them all, so a new one is part
+            // of the cache key too.
+            fileTree(repoRoot.resolve(".github/workflows")) { include("*.yml") },
             fileTree(repoRoot) { include("docker-compose*.yml") },
             fileTree(repoRoot.resolve("example/agents")),
             fileTree(repoRoot.resolve("example/config")),

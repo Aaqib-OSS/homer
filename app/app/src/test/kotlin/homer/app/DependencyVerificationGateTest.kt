@@ -8,8 +8,9 @@ import kotlin.test.assertTrue
 /**
  * Guard for Gradle dependency verification (CWE-494, CWE-345). Both Gradle builds (`app` and its
  * `buildSrc`) verify every resolved artifact against a committed SHA-256 checksum and, where the
- * repository publishes a signature, against a PGP key trusted by full fingerprint in
- * `verification-metadata.xml` and carried in a committed public keyring.
+ * metadata records a `<pgp>` entry for it, against a PGP key trusted by full fingerprint in
+ * `verification-metadata.xml` and carried in a committed public keyring. Most of the graph is
+ * checksum-only today — see the known gap in ADR-0115.
  *
  * The guard keeps the three ways the gate could be quietly undone out of the repository: a
  * per-artifact exemption (`ignored-key`) or a key trusted for every group, a private key committed
@@ -25,15 +26,26 @@ class DependencyVerificationGateTest {
     private val buildSrcMetadata = "app/buildSrc/gradle/verification-metadata.xml"
     private val buildSrcKeyring = "app/buildSrc/gradle/verification-keyring.keys"
 
-    /** The files a build runs from, none of which may weaken verification. */
-    private val buildFiles =
-        listOf(
-            "app/gradle.properties",
-            "app/Dockerfile",
-            "app/e2e/Dockerfile",
-            ".github/workflows/ci.yml",
-            ".github/workflows/nightly.yml",
-        )
+    /** Directories the repository walk below skips: VCS metadata, dependency and build output. */
+    private val skippedDirs = setOf(".git", "node_modules", "build", ".gradle", ".next")
+
+    /**
+     * The files a build runs from, none of which may weaken verification — discovered, not
+     * enumerated, so a new workflow, Dockerfile or `gradle.properties` (any of them may invoke
+     * Gradle) is scanned without this test having to learn about it.
+     */
+    private fun buildFiles(): List<String> =
+        repoRoot
+            .walkTopDown()
+            .onEnter { it.name !in skippedDirs }
+            .filter { it.isFile }
+            .map { it.relativeTo(repoRoot).path }
+            .filter { path ->
+                val name = path.substringAfterLast('/')
+                name == "gradle.properties" || name == "Dockerfile" ||
+                    (path.startsWith(".github/workflows/") && name.endsWith(".yml"))
+            }.sorted()
+            .toList()
 
     /**
      * Plugin ids the convention plugin applies from a module dependency rather than from its
@@ -123,10 +135,42 @@ class DependencyVerificationGateTest {
         }
     }
 
+    /**
+     * Every spelling of turning verification down: the Gradle property and the CLI flag, `=` and a
+     * space between, either mode, and any capitalisation — `=Lenient` must fail exactly like
+     * `=lenient` does.
+     */
+    private val weakened = Regex("""dependency[-.]verification\s*[=\s]\s*(lenient|off)\b""", RegexOption.IGNORE_CASE)
+
+    @Test
+    fun `the weakening guard recognizes every spelling of lenient and off`() {
+        val weakenedForms =
+            listOf(
+                "dependency-verification=lenient",
+                "dependency-verification=off",
+                "org.gradle.dependency-verification=off",
+                "dependency.verification=off",
+                "--dependency-verification lenient",
+                "dependency-verification=LENIENT",
+                "dependency-verification=Off",
+            )
+        for (form in weakenedForms) {
+            assertTrue(
+                weakened.containsMatchIn(form),
+                "The weakening guard does not recognize `$form`: a build file or workflow could turn " +
+                    "verification down in a form the guard misses (CWE-494).",
+            )
+        }
+        assertTrue(
+            !weakened.containsMatchIn("dependency-verification=strict"),
+            "The weakening guard rejects strict mode, which is the setting every build file should " +
+                "carry: point the guard back at lenient and off only.",
+        )
+    }
+
     @Test
     fun `no build file or workflow weakens dependency verification`() {
-        val weakened = Regex("""dependency[-.]verification\s*[=\s]\s*(lenient|off)\b""")
-        for (path in buildFiles) {
+        for (path in buildFiles()) {
             val text = read(path)
             val lenient = weakened.find(text)?.value
             assertTrue(

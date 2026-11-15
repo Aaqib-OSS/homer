@@ -5,7 +5,7 @@ deciders: Lukáš Vlk
 consulted: ADR-0047, ADR-0084, ADR-0086, ADR-0088
 ---
 
-# ADR-0115: Gradle verifies every dependency against committed checksums and signatures
+# ADR-0115: Gradle verifies every dependency against committed checksums, and signatures where a key is trusted
 
 ## Context and Problem Statement
 
@@ -42,10 +42,14 @@ The questions are which mechanism, how strict, and what the gate costs per bump.
 Chosen: **A** and **1**, in both Gradle builds.
 
 `app/gradle/verification-metadata.xml` and `app/buildSrc/gradle/verification-metadata.xml` set
-`verify-metadata` and `verify-signatures` true. Every artifact is checked against a SHA-256 entry,
-and where the repository publishes a signature, against a PGP key trusted by **full fingerprint**
-in `<trusted-key>` and restricted to the group the key signs for. The public keys live in the
-committed `gradle/verification-keyring.keys`; the binary `.gpg` variant is not committed (Gradle
+`verify-metadata` and `verify-signatures` true. Every artifact is checked against a SHA-256 entry;
+a signature is verified only where the metadata also records a `<pgp>` entry for the artifact, and
+such an entry trusts a key by **full fingerprint** in `<trusted-key>`, restricted to the group the
+key signs for. Most of the graph is checksum-only today: the keys of 422 of the main build's 583
+artifacts are served by no key server Gradle queries, so their entries carry the reason "A key
+couldn't be downloaded" next to the checksum — a downgrade this ADR records as a known gap, not
+one it hides (closing it means fetching those keys by id, one at a time). The public keys live in
+the committed `gradle/verification-keyring.keys`; the binary `.gpg` variant is not committed (Gradle
 reads either, and one artifact of truth is enough). Verification happens at dependency resolution,
 so no task has to be invoked for it to apply — a build that resolves a mismatching artifact fails
 before anything runs it.
@@ -58,15 +62,16 @@ artifact came from Maven Central, the Plugin Portal or the optional Artifactory 
 must be.
 
 **Nothing is exempted.** The metadata holds no `<ignored-key>`: an ignored key downgrades every
-artifact that key signs to a checksum check, which is the gap the decision exists to close. Three
-keys in the current graph are served by no key server Gradle queries; each was fetched once by key
-id from a public key server and committed in the keyring, where it is trusted like any other key.
+artifact that key signs to a checksum check, which is the gap the decision exists to close. The
+checksum-only entries above are the same downgrade held in the open, with its reason recorded —
+the way out of one is the way out of the other: fetch the key by id from a public key server and
+commit it in the keyring, where it is trusted like any other key, never exempt it.
 `DependencyVerificationGateTest` fails on an ignored key, on a key trusted without a group
 restriction, on a pattern that matches every group, and on a keyring holding private material.
 
 **The Docker builds need no change.** Both Dockerfiles `COPY app/gradle` wholesale, so the metadata
 and the keyring travel with the build context and the in-image resolution is verified too
-(`app/Dockerfile:41,54`, `app/e2e/Dockerfile:31,43`). Never add `--dependency-verification` there:
+(`app/Dockerfile:13,17`, `app/e2e/Dockerfile:11,13`). Never add `--dependency-verification` there:
 strict is the default, and an explicit flag is one more thing to get wrong.
 
 **The bump workflow** is documented in `app/CLAUDE.md` § Build commands: regenerate with
