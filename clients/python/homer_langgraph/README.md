@@ -288,20 +288,31 @@ A per-thread file cache was tried and removed; see [ADR-0044](../../../docs/adr/
 ## Install
 
 Requires Python ≥ 3.10. The backend Docker image already bundles the
-runtime (`app/Dockerfile`); elsewhere, from the repo root:
+runtime (`app/Dockerfile`); elsewhere, from the repo root, install the
+hash-pinned dependencies the image ships (the lock covers Python ≥ 3.12, the
+image's version), then the package:
 
 ```sh
-pip install ./clients/python
+pip install --require-hashes --no-deps -r clients/python/requirements.lock
+pip install --no-deps ./clients/python
 ```
+
+A plain `pip install ./clients/python` resolves the dependencies itself: the
+way to install on Python 3.10 or 3.11, which the lock does not cover. On a musl
+system such as Alpine it ends on older langgraph releases with known advisories
+([ADR-0114](../../../docs/adr/0114-python-runtime-installs-from-a-hash-pinned-lock.md)).
 
 ## Tests
 
 ```sh
 cd clients/python
 python3 -m venv .venv
-.venv/bin/pip install -e '.[test]'
+.venv/bin/pip install --require-hashes --no-deps -r requirements.lock -r requirements-test.lock
+.venv/bin/pip install --no-deps --no-build-isolation -e .
 .venv/bin/python -m pytest
 ```
 
-Tests mock `subprocess.run` and use LangGraph's in-memory `MemorySaver`, so no
-real Homer wrappers or network are required.
+Tests mock `subprocess.run` and use LangGraph's in-memory `MemorySaver`, except
+the checkpoint-upgrade tests: they resume a committed SQLite checkpoint fixture
+with the real `SqliteSaver`, and one runs the module as a subprocess. No test
+needs real Homer wrappers or network.

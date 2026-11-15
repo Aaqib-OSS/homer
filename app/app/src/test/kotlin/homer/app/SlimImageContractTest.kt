@@ -2,6 +2,7 @@ package homer.app
 
 import homer.app.fixtures.DockerfileStages
 import homer.app.fixtures.DockerfileStages.Companion.apkPackages
+import homer.app.fixtures.DockerfileStages.Stage
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -37,6 +38,40 @@ class SlimImageContractTest {
             "the slim stage no longer installs homer_langgraph, which the server runs for LangGraph inspect and state.",
         )
     }
+
+    @Test
+    fun `the image installs the Python runtime from the hash-pinned lock and never resolves`() {
+        val slim = dockerfile.stage("slim")
+        assertTrue(
+            pipInstalls(slim).any { it.contains("--require-hashes") && it.contains("--no-deps") && it.endsWith("requirements.lock") },
+            "the slim stage no longer installs homer_langgraph's dependencies from requirements.lock (ADR-0114).",
+        )
+        val resolving = dockerfile.stages.flatMap(::resolvingPipInstalls)
+        assertTrue(
+            resolving.isEmpty(),
+            "`$resolving` resolves Python dependencies at build time, which on musl ends on old langgraph releases; " +
+                "install them from requirements.lock with --require-hashes --no-deps (ADR-0114).",
+        )
+    }
+
+    @Test
+    fun `a pip install without --no-deps counts as resolving`() {
+        val stage =
+            DockerfileStages(
+                "FROM a AS slim\nRUN pip install --break-system-packages /src && pip install --no-deps /x",
+            ).stage("slim")
+        assertEquals(listOf("pip install --break-system-packages /src"), resolvingPipInstalls(stage))
+    }
+
+    private fun pipInstalls(stage: Stage): List<String> =
+        stage.instructions
+            .filter { it.startsWith("RUN ") }
+            .flatMap { it.removePrefix("RUN ").split(Regex("""&&|;""")) }
+            .map { it.trim() }
+            .filter { Regex("""(^|\s)pip3? install\s""").containsMatchIn(it) }
+
+    private fun resolvingPipInstalls(stage: Stage): List<String> =
+        pipInstalls(stage).filterNot { "--no-deps" in it.split(Regex("""\s+""")) }
 
     @Test
     fun `the full image is the slim one plus the agent toolchain`() {

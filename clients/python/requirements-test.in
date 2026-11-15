@@ -1,0 +1,4 @@
+# The homer-python-tests job's test runner and the build backend for its editable
+# install, compiled into requirements-test.lock; neither ships.
+pytest
+setuptools>=68
