@@ -125,8 +125,9 @@ per-version steps in [`SchemaMigrations.kt`](SchemaMigrations.kt), and stamps
 there and a row here (SQLite rule 1 in
 [`app/CLAUDE.md`](../../../../../../../../CLAUDE.md) § SQLite rules). The table is
 an index, not the reasoning: why a version exists, what it measured and what it
-left alone are in that row's ADR, and § Schema constraints keeps only the
-constraints the ADR does not state.
+left alone are in the ADR the row names, and § Schema constraints keeps only the
+constraints that ADR does not state. Four rows name none — v1, v9, v11 and v28 —
+and for those no ADR records the reasoning, so the row's phrase is the whole of it.
 `SchemaEquivalenceTest` fails when a database the steps upgraded differs from a fresh one
 (columns, indexes, CHECK constraints; drift not yet fixed is listed there) or when this table's
 rows are not unique, ascending and ending at `SCHEMA_VERSION`. It seeds v1 and v4 only, so a table
@@ -176,7 +177,8 @@ so a fresh database would carry one an upgraded one lacks (`SchemaEquivalenceTes
 
 The constraints an editor can break without noticing, and that the row's ADR does
 not state. Everything else about a version — why it exists, what it measured,
-what it rejected — is in that ADR.
+what it rejected — is in the ADR that version's row names; where the row names
+none (v1, v9, v11, v28), the table's phrase is all there is.
 
 - **An index is declared by hand.** `SchemaUtils.create` only indexes a table it
   creates, so a migration adds each index in its own step; `DatabaseMigrationTest`
