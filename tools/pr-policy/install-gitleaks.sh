@@ -9,7 +9,8 @@
 set -eu
 
 dir=$1
-# shellcheck source=tools/pr-policy/gitleaks.env
+# infra-lint runs shellcheck without -x; the file holds only VAR=value pins.
+# shellcheck source=tools/pr-policy/gitleaks.env disable=SC1091
 . "$(cd "$(dirname "$0")" && pwd)/gitleaks.env"
 
 sha256() {
