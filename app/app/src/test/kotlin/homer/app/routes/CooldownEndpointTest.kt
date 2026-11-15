@@ -17,6 +17,7 @@ import homer.app.infra.QuestionsWorkspaceSetup
 import homer.app.infra.WorkspaceConfigFactory
 import homer.app.models.Agent
 import homer.app.models.Cooldown
+import homer.app.models.NewRunRecord
 import homer.app.models.Param
 import homer.app.models.ParamType
 import homer.app.models.ProcessInfo
@@ -128,7 +129,7 @@ class CooldownEndpointTest {
          * cases would pass whether or not the fix is present.
          */
         suspend fun seedFailedRun(cooldownKey: String? = null) {
-            val id = processManager.obtainProcessId(agent.name, emptyMap(), cooldownKey = cooldownKey)
+            val id = processManager.obtainProcessId(NewRunRecord(agent.name, emptyMap(), cooldownKey = cooldownKey))
             processManager.setProcessStatus(id, ProcessStatus.WORKING)
             processManager.setProcessStatus(id, ProcessStatus.FAILED)
         }

@@ -5,6 +5,7 @@ import homer.app.infra.PurgeSchedule
 import homer.app.models.Cooldown
 import homer.app.models.CostSource
 import homer.app.models.ExecutionInfo
+import homer.app.models.NewRunRecord
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
 import homer.app.services.CooldownDecision
@@ -83,7 +84,7 @@ class ProcessRepository(
 
     /**
      * Inserts a new CREATED row and returns its id, enforcing capacity and — when
-     * [cooldown] is set — the agent's frequency bound, both inside the same
+     * [NewRunRecord.cooldown] is set — the agent's frequency bound, both inside the same
      * `BEGIN IMMEDIATE` transaction as the INSERT.
      *
      * The cooldown check belongs *here*, not only in the caller: a check that
@@ -97,31 +98,23 @@ class ProcessRepository(
      * See ADR-0020.
      */
     suspend fun obtainProcessId(
-        agentName: String,
-        inputParams: Map<String, String>,
+        record: NewRunRecord,
         maxProcesses: Int,
-        owner: String? = null,
-        cooldown: Cooldown? = null,
-        cooldownKey: String? = null,
-        secretInputKeys: Set<String>? = null,
-        parentProcessId: Int? = null,
-        rootProcessId: Int? = null,
-        tags: List<String> = emptyList(),
         hookRecording: HookRecording? = null,
         nowSec: Long = System.currentTimeMillis() / 1000,
     ): ObtainResult =
         db.query {
-            cooldown?.let { enforceCooldownTx(agentName, it, nowSec, cooldownKey) }
+            record.cooldown?.let { enforceCooldownTx(record.agentName, it, nowSec, record.cooldownKey) }
             val evicted = evictForCapacityTx(maxProcesses)
             val newId =
                 Processes.insert {
                     it[status] = ProcessStatus.CREATED.name
-                    it[Processes.agentName] = agentName
+                    it[Processes.agentName] = record.agentName
                     it[history] = EMPTY_HISTORY_JSON
                     it[executions] = EMPTY_EXECUTIONS_JSON
                     it[costUsd] = 0.0
                     it[costSource] = CostSource.CLI.wire
-                    it[Processes.owner] = owner
+                    it[Processes.owner] = record.owner
                     // Same transaction as the INSERT: this is the timestamp the cooldown
                     // reads, and `history` does not get its first entry until the launched
                     // coroutine writes one. See ADR-0051.
@@ -130,32 +123,32 @@ class ProcessRepository(
                     // so it is valid the instant the row is — the cooldown reads below and
                     // every later read of this row see the same subject. Never re-derived:
                     // the agent definition (and `HMR_PROCESS_ID`) may differ by then. ADR-0106.
-                    it[Processes.cooldownKey] = cooldownKey
+                    it[Processes.cooldownKey] = record.cooldownKey
                     // Captured now, not looked up later: the agent's `secret` flags can
                     // change while this record is retained. Null when the caller did not
                     // capture a snapshot, which reads back as "ask the current definition"
                     // — an empty set means "nothing was secret". See ADR-0052.
-                    it[Processes.secretInputKeys] = secretInputKeys?.let { keys -> encodeKeys(keys) }
-                    it[Processes.parentProcessId] = parentProcessId
-                    it[Processes.rootProcessId] = rootProcessId
+                    it[Processes.secretInputKeys] = record.secretInputKeys?.let { keys -> encodeKeys(keys) }
+                    it[Processes.parentProcessId] = record.parentProcessId
+                    it[Processes.rootProcessId] = record.rootProcessId
                 }[Processes.id]
             // Write-once inputs live in their own table so the per-step UPDATEs below
             // never rewrite them. Same transaction as the INSERT, so a run is never
             // readable with its inputs missing. See ADR-0020.
             ProcessInputs.insert {
                 it[ProcessInputs.processId] = newId
-                it[ProcessInputs.inputParams] = encodeParams(inputParams)
+                it[ProcessInputs.inputParams] = encodeParams(record.inputParams)
             }
             // fromInputs tags written in the INSERT's own transaction, so the run is
             // findable by `?tag=` the instant its row exists. De-duplicated: the tag set
             // is a set, and (process_id, tag) is the PK. See ADR-0051 and ADR-0060.
-            ProcessTags.batchInsert(tags.distinct(), shouldReturnGeneratedValues = false) { tag ->
+            ProcessTags.batchInsert(record.tags.distinct(), shouldReturnGeneratedValues = false) { tag ->
                 this[ProcessTags.processId] = newId
                 this[ProcessTags.tag] = tag
             }
             // CREATED hooks ride the INSERT's own transaction: a restart between the row and
             // the fire loses nothing. See ADR-0107.
-            ObtainResult(newId, evicted, hookRecording.record(newId, agentName, ProcessStatus.CREATED, owner, nowSec))
+            ObtainResult(newId, evicted, hookRecording.record(newId, record.agentName, ProcessStatus.CREATED, record.owner, nowSec))
         }
 
     /**

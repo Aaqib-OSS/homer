@@ -1,6 +1,6 @@
 package homer.app.executors
 
-import homer.app.models.Cooldown
+import homer.app.models.NewRunRecord
 import homer.app.models.ProcessStatus
 import kotlinx.coroutines.Job
 
@@ -10,21 +10,8 @@ import kotlinx.coroutines.Job
  * `ProcessManager`, which owns the status FSM. See ADR-0083.
  */
 interface RunRecords : GuardedStatusWrite {
-    // Inserts the run's row (cooldown checked in the same transaction) and returns its id. The
-    // port carries ProcessRepository.obtainProcessId's optional parameters one for one.
-    // jscpd:ignore-start
-    suspend fun obtainProcessId(
-        agentName: String,
-        inputParams: Map<String, String> = emptyMap(),
-        owner: String? = null,
-        cooldown: Cooldown? = null,
-        cooldownKey: String? = null,
-        secretInputKeys: Set<String>? = null,
-        parentProcessId: Int? = null,
-        rootProcessId: Int? = null,
-        tags: List<String> = emptyList(),
-    ): Int
-    // jscpd:ignore-end
+    // Inserts the run's row (cooldown checked in the same transaction) and returns its id.
+    suspend fun obtainProcessId(record: NewRunRecord): Int
 
     suspend fun assignJob(
         processId: Int,

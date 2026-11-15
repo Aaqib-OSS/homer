@@ -14,6 +14,7 @@ import homer.app.models.ContinuationResponse
 import homer.app.models.CreateJoinResponse
 import homer.app.models.CreateRunResponse
 import homer.app.models.DispatchConfig
+import homer.app.models.NewRunRecord
 import homer.app.models.ProcessStatus
 import homer.app.services.AgentRunStarter
 import homer.app.services.AgentsService
@@ -88,7 +89,7 @@ class ContinuationRoutesTest {
         /** A real, still-running watched process so a seeded continuation stays PENDING. */
         fun workingProcess(): Int =
             runBlocking {
-                processManager.obtainProcessId("handler").also {
+                processManager.obtainProcessId(NewRunRecord("handler")).also {
                     processManager.setProcessStatus(it, ProcessStatus.WORKING)
                 }
             }
@@ -256,7 +257,7 @@ class ContinuationRoutesTest {
             // The dispatched sub is already FINISHED before the continuation row exists.
             val subId =
                 runBlocking {
-                    val pid = h.processManager.obtainProcessId("handler")
+                    val pid = h.processManager.obtainProcessId(NewRunRecord("handler"))
                     h.processManager.setProcessStatus(pid, ProcessStatus.FINISHED)
                     pid
                 }
@@ -365,13 +366,13 @@ class ContinuationRoutesTest {
             val h = Harness()
             val sub1 =
                 runBlocking {
-                    val p = h.processManager.obtainProcessId("handler")
+                    val p = h.processManager.obtainProcessId(NewRunRecord("handler"))
                     h.processManager.setProcessStatus(p, ProcessStatus.FINISHED)
                     p
                 }
             val sub2 =
                 runBlocking {
-                    val p = h.processManager.obtainProcessId("handler")
+                    val p = h.processManager.obtainProcessId(NewRunRecord("handler"))
                     h.processManager.setProcessStatus(p, ProcessStatus.FINISHED)
                     p
                 }

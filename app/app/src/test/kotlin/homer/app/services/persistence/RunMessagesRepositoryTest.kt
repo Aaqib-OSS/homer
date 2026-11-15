@@ -2,6 +2,7 @@ package homer.app.services.persistence
 
 import homer.app.fixtures.PersistenceTestSupport
 import homer.app.infra.ProcessJobRegistry
+import homer.app.models.NewRunRecord
 import homer.app.models.ProcessStatus
 import homer.app.services.RunMessage
 import homer.app.services.RunMessageStatus
@@ -20,7 +21,7 @@ class RunMessagesRepositoryTest {
     private val repo = RunMessagesRepository(db)
 
     private suspend fun run(status: ProcessStatus = ProcessStatus.WORKING): Int {
-        val id = processes.obtainProcessId("a", emptyMap(), 100).processId
+        val id = processes.obtainProcessId(NewRunRecord("a"), 100).processId
         processes.transitionStatus(id, status, 1, null)
         return id
     }
@@ -126,7 +127,7 @@ class RunMessagesRepositoryTest {
             repo.tryInsert(message("e1", evicted), 10)
             processes.transitionStatus(evicted, ProcessStatus.FINISHED, 2, null)
             // At capacity (one row), the next start evicts the terminal victim.
-            processes.obtainProcessId("b", emptyMap(), maxProcesses = 1)
+            processes.obtainProcessId(NewRunRecord("b"), maxProcesses = 1)
             assertEquals(emptyList(), repo.list(evicted))
         }
 
@@ -135,7 +136,7 @@ class RunMessagesRepositoryTest {
         runTest {
             val spiedDb = spyk(PersistenceTestSupport.tempDatabase())
             val spiedRepo = RunMessagesRepository(spiedDb)
-            val id = ProcessRepository(spiedDb, ProcessJobRegistry()).obtainProcessId("a", emptyMap(), 100).processId
+            val id = ProcessRepository(spiedDb, ProcessJobRegistry()).obtainProcessId(NewRunRecord("a"), 100).processId
 
             assertEquals(emptyList(), spiedRepo.take(id, 2000L))
             assertEquals(emptyList(), spiedRepo.markUndelivered(id))

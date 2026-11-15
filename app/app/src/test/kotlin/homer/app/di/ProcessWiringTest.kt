@@ -9,6 +9,7 @@ import homer.app.infra.TextCompiler
 import homer.app.models.Agent
 import homer.app.models.AgentHook
 import homer.app.models.AppConfig
+import homer.app.models.NewRunRecord
 import homer.app.models.ProcessStatus
 import homer.app.services.AgentRunStarter
 import homer.app.services.AgentsService
@@ -120,7 +121,7 @@ class ProcessWiringTest {
             val hookFireScope = CoroutineScope(Job())
             val manager = koin(hookFireScope, runStartGate).get<ProcessManager>()
 
-            val id = manager.obtainProcessId("declarer", owner = "alice")
+            val id = manager.obtainProcessId(NewRunRecord("declarer", owner = "alice"))
             manager.setProcessStatus(id, ProcessStatus.WORKING)
             manager.compareAndSetStatus(id, setOf(ProcessStatus.WORKING), ProcessStatus.FINISHED)
 

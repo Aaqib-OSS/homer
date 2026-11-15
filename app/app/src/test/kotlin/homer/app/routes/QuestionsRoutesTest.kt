@@ -9,6 +9,7 @@ import homer.app.models.Action
 import homer.app.models.Agent
 import homer.app.models.AgentDispatchConfig
 import homer.app.models.Grant
+import homer.app.models.NewRunRecord
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessInfoResponse
 import homer.app.models.ProcessListResponse
@@ -378,7 +379,7 @@ class QuestionsRoutesTest {
             val service = PersistenceTestSupport.questionsService(db = db)
             val pm = PersistenceTestSupport.processManager(db = db)
             runBlocking {
-                val id = pm.obtainProcessId("agent-a")
+                val id = pm.obtainProcessId(NewRunRecord("agent-a"))
                 service.registerProcess(id, "agent-a")
                 service.ask(id, "one")
                 service.ask(id, "two")
@@ -402,7 +403,7 @@ class QuestionsRoutesTest {
             val pm = PersistenceTestSupport.processManager()
             val processId =
                 runBlocking {
-                    val id = pm.obtainProcessId("agent-a")
+                    val id = pm.obtainProcessId(NewRunRecord("agent-a"))
                     service.registerProcess(id, "agent-a")
                     service.ask(id, "one")
                     id

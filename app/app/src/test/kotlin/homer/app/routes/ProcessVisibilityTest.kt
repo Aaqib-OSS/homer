@@ -32,6 +32,7 @@ import homer.app.models.Grant
 import homer.app.models.LangGraphRunIdentity
 import homer.app.models.LangGraphRunStatus
 import homer.app.models.LlmEvent
+import homer.app.models.NewRunRecord
 import homer.app.models.Param
 import homer.app.models.PodPhase
 import homer.app.models.ProcessCreationResult
@@ -267,8 +268,8 @@ class ProcessVisibilityTest {
     /** A real manager with [failed] (owner alice, FAILED before it started) blocked by [holder] (owner bob). */
     private suspend fun managerWithLockSkip(): Triple<ProcessManager, Int, Int> {
         val pm = PersistenceTestSupport.processManager()
-        val holder = pm.obtainProcessId("other", owner = "bob")
-        val failed = pm.obtainProcessId("deploy", owner = "alice")
+        val holder = pm.obtainProcessId(NewRunRecord("other", owner = "bob"))
+        val failed = pm.obtainProcessId(NewRunRecord("deploy", owner = "alice"))
         pm.compareAndSetStatus(failed, setOf(ProcessStatus.CREATED), ProcessStatus.WORKING)
         pm.compareAndSetStatus(failed, setOf(ProcessStatus.WORKING), ProcessStatus.FAILED)
         pm.setFailureReason(failed, "Lock skip (SKIP_CURRENT)", holder)
@@ -1171,17 +1172,21 @@ class ProcessVisibilityTest {
             // Owned by the reader so visibility never hides it — the screen is the only
             // thing that can drop it, isolating the fix under test.
             pm.obtainProcessId(
-                "deploy",
-                inputParams = mapOf("token" to secretValue),
-                secretInputKeys = setOf("token"),
-                owner = "reader",
-                tags = listOf("token:$secretValue"),
+                NewRunRecord(
+                    "deploy",
+                    inputParams = mapOf("token" to secretValue),
+                    secretInputKeys = setOf("token"),
+                    owner = "reader",
+                    tags = listOf("token:$secretValue"),
+                ),
             )
             val sibling =
                 pm.obtainProcessId(
-                    "deploy",
-                    owner = "reader",
-                    tags = listOf("token:publicvalue"),
+                    NewRunRecord(
+                        "deploy",
+                        owner = "reader",
+                        tags = listOf("token:publicvalue"),
+                    ),
                 )
             val questionsService = mockk<QuestionsService>(relaxed = true)
             coEvery { questionsService.openCountByProcess() } returns emptyMap()
@@ -1224,9 +1229,9 @@ class ProcessVisibilityTest {
             // The foreign segment runs a different agent: the reader's grant is on
             // "deploy" alone, so an alice-owned *deploy* run would still be visible
             // through the read-grant branch of the union and prove nothing.
-            val root = pm.obtainProcessId("deploy", owner = "reader")
-            val mine = pm.obtainProcessId("deploy", owner = "reader", parentProcessId = root, rootProcessId = root)
-            pm.obtainProcessId("other", owner = "alice", parentProcessId = root, rootProcessId = root)
+            val root = pm.obtainProcessId(NewRunRecord("deploy", owner = "reader"))
+            val mine = pm.obtainProcessId(NewRunRecord("deploy", owner = "reader", parentProcessId = root, rootProcessId = root))
+            pm.obtainProcessId(NewRunRecord("other", owner = "alice", parentProcessId = root, rootProcessId = root))
             val questionsService = mockk<QuestionsService>(relaxed = true)
             coEvery { questionsService.openCountByProcess() } returns emptyMap()
             application {
@@ -1256,8 +1261,8 @@ class ProcessVisibilityTest {
             val pm = PersistenceTestSupport.processManager()
             // Same reason as above: a foreign flow has to run an agent the caller
             // holds no grant on, or the read-grant branch would expose it.
-            val foreignRoot = pm.obtainProcessId("other", owner = "alice")
-            pm.obtainProcessId("other", owner = "alice", parentProcessId = foreignRoot, rootProcessId = foreignRoot)
+            val foreignRoot = pm.obtainProcessId(NewRunRecord("other", owner = "alice"))
+            pm.obtainProcessId(NewRunRecord("other", owner = "alice", parentProcessId = foreignRoot, rootProcessId = foreignRoot))
             val questionsService = mockk<QuestionsService>(relaxed = true)
             coEvery { questionsService.openCountByProcess() } returns emptyMap()
             application {
@@ -1291,8 +1296,11 @@ class ProcessVisibilityTest {
             // The hidden flow: alice's root on an agent the reader holds no grant on, with
             // one deploy-agent descendant — visible on its own grant, so the reader does
             // hold a toehold in a flow whose root they cannot see.
-            val foreignRoot = pm.obtainProcessId("other", owner = "alice")
-            val toehold = pm.obtainProcessId("deploy", owner = "alice", parentProcessId = foreignRoot, rootProcessId = foreignRoot)
+            val foreignRoot = pm.obtainProcessId(NewRunRecord("other", owner = "alice"))
+            val toehold =
+                pm.obtainProcessId(
+                    NewRunRecord("deploy", owner = "alice", parentProcessId = foreignRoot, rootProcessId = foreignRoot),
+                )
 
             val questionsService = mockk<QuestionsService>(relaxed = true)
             coEvery { questionsService.openCountByProcess() } returns emptyMap()
@@ -1327,9 +1335,9 @@ class ProcessVisibilityTest {
         testApplication {
             val tokens = mapOf("reader" to readToken)
             val pm = PersistenceTestSupport.processManager()
-            val root = pm.obtainProcessId("deploy", owner = "reader")
-            pm.obtainProcessId("deploy", owner = "reader", parentProcessId = root, rootProcessId = root)
-            val foreignRoot = pm.obtainProcessId("other", owner = "alice")
+            val root = pm.obtainProcessId(NewRunRecord("deploy", owner = "reader"))
+            pm.obtainProcessId(NewRunRecord("deploy", owner = "reader", parentProcessId = root, rootProcessId = root))
+            val foreignRoot = pm.obtainProcessId(NewRunRecord("other", owner = "alice"))
             val questionsService = mockk<QuestionsService>(relaxed = true)
             coEvery { questionsService.openCountByProcess() } returns emptyMap()
             application {
@@ -1356,8 +1364,8 @@ class ProcessVisibilityTest {
         testApplication {
             val tokens = mapOf("reader" to readToken)
             val pm = PersistenceTestSupport.processManager()
-            val root = pm.obtainProcessId("deploy", owner = "reader")
-            pm.obtainProcessId("deploy", owner = "reader", parentProcessId = root, rootProcessId = root)
+            val root = pm.obtainProcessId(NewRunRecord("deploy", owner = "reader"))
+            pm.obtainProcessId(NewRunRecord("deploy", owner = "reader", parentProcessId = root, rootProcessId = root))
             val questionsService = mockk<QuestionsService>(relaxed = true)
             coEvery { questionsService.openCountByProcess() } returns emptyMap()
             application {
@@ -1389,10 +1397,10 @@ class ProcessVisibilityTest {
             // the same value an evicted root already produces.
             val tokens = mapOf("reader" to readToken)
             val pm = PersistenceTestSupport.processManager()
-            val foreignRoot = pm.obtainProcessId("other", owner = "alice")
+            val foreignRoot = pm.obtainProcessId(NewRunRecord("other", owner = "alice"))
             // The visible row runs "deploy", the agent the reader's grant covers, while
             // the root runs "other" — the read-grant branch cannot see the root.
-            pm.obtainProcessId("deploy", owner = "alice", parentProcessId = foreignRoot, rootProcessId = foreignRoot)
+            pm.obtainProcessId(NewRunRecord("deploy", owner = "alice", parentProcessId = foreignRoot, rootProcessId = foreignRoot))
             val questionsService = mockk<QuestionsService>(relaxed = true)
             coEvery { questionsService.openCountByProcess() } returns emptyMap()
             application {
@@ -1422,8 +1430,11 @@ class ProcessVisibilityTest {
             // points at, so the root id is nulled server-side.
             val tokens = mapOf("reader" to readToken)
             val pm = PersistenceTestSupport.processManager()
-            val foreignRoot = pm.obtainProcessId("other", owner = "alice")
-            val mine = pm.obtainProcessId("deploy", owner = "alice", parentProcessId = foreignRoot, rootProcessId = foreignRoot)
+            val foreignRoot = pm.obtainProcessId(NewRunRecord("other", owner = "alice"))
+            val mine =
+                pm.obtainProcessId(
+                    NewRunRecord("deploy", owner = "alice", parentProcessId = foreignRoot, rootProcessId = foreignRoot),
+                )
             val questionsService = mockk<QuestionsService>(relaxed = true)
             coEvery { questionsService.openCountByProcess() } returns emptyMap()
             application {
@@ -1453,7 +1464,7 @@ class ProcessVisibilityTest {
             val tokens = mapOf("reader" to readToken)
             val pm = PersistenceTestSupport.processManager()
             // Root 9999 was never inserted: getProcessInfo finds no row for it.
-            pm.obtainProcessId("deploy", owner = "reader", parentProcessId = 9999, rootProcessId = 9999)
+            pm.obtainProcessId(NewRunRecord("deploy", owner = "reader", parentProcessId = 9999, rootProcessId = 9999))
             val questionsService = mockk<QuestionsService>(relaxed = true)
             coEvery { questionsService.openCountByProcess() } returns emptyMap()
             application {
@@ -1483,10 +1494,13 @@ class ProcessVisibilityTest {
             val db = PersistenceTestSupport.tempDatabase()
             val pm = PersistenceTestSupport.processManager(db = db)
             val questionsService = PersistenceTestSupport.questionsService(db = db)
-            val root = pm.obtainProcessId("deploy", owner = "reader")
-            val mine = pm.obtainProcessId("deploy", owner = "reader", parentProcessId = root, rootProcessId = root)
-            val foreignRoot = pm.obtainProcessId("other", owner = "alice")
-            val toehold = pm.obtainProcessId("deploy", owner = "alice", parentProcessId = foreignRoot, rootProcessId = foreignRoot)
+            val root = pm.obtainProcessId(NewRunRecord("deploy", owner = "reader"))
+            val mine = pm.obtainProcessId(NewRunRecord("deploy", owner = "reader", parentProcessId = root, rootProcessId = root))
+            val foreignRoot = pm.obtainProcessId(NewRunRecord("other", owner = "alice"))
+            val toehold =
+                pm.obtainProcessId(
+                    NewRunRecord("deploy", owner = "alice", parentProcessId = foreignRoot, rootProcessId = foreignRoot),
+                )
             questionsService.registerProcess(mine, "deploy")
             questionsService.ask(mine, "go?")
             application {
@@ -1527,7 +1541,7 @@ class ProcessVisibilityTest {
             // rather than guessing (§12: fail closed).
             val tokens = mapOf("reader" to readToken)
             val pm = PersistenceTestSupport.processManager()
-            val mine = pm.obtainProcessId("deploy", owner = "reader", parentProcessId = 9999, rootProcessId = 9999)
+            val mine = pm.obtainProcessId(NewRunRecord("deploy", owner = "reader", parentProcessId = 9999, rootProcessId = 9999))
             val questionsService = mockk<QuestionsService>(relaxed = true)
             coEvery { questionsService.openCountByProcess() } returns emptyMap()
             application {
@@ -1554,8 +1568,8 @@ class ProcessVisibilityTest {
             // it and the id is served unchanged.
             val tokens = mapOf("reader" to readToken)
             val pm = PersistenceTestSupport.processManager()
-            val root = pm.obtainProcessId("deploy", owner = "reader")
-            val mine = pm.obtainProcessId("deploy", owner = "reader", parentProcessId = root, rootProcessId = root)
+            val root = pm.obtainProcessId(NewRunRecord("deploy", owner = "reader"))
+            val mine = pm.obtainProcessId(NewRunRecord("deploy", owner = "reader", parentProcessId = root, rootProcessId = root))
             val questionsService = mockk<QuestionsService>(relaxed = true)
             coEvery { questionsService.openCountByProcess() } returns emptyMap()
             application {
@@ -1591,7 +1605,7 @@ class ProcessVisibilityTest {
                 agent: String,
                 owner: String?,
             ): String {
-                val id = pm.obtainProcessId(agent, owner = owner)
+                val id = pm.obtainProcessId(NewRunRecord(agent, owner = owner))
                 questionsService.registerProcess(id, agent)
                 return questionsService.ask(id, "Proceed?").id
             }
@@ -1948,9 +1962,9 @@ class ProcessVisibilityTest {
             // Two origin runs holding the same subject input, one per owner. Process ids are
             // real rows, so the origin's stored inputs are read exactly as production reads them.
             val foreignOrigin =
-                processManager.obtainProcessId("deploy", inputParams = mapOf("TICKET_ID" to subject), owner = "bob")
+                processManager.obtainProcessId(NewRunRecord("deploy", inputParams = mapOf("TICKET_ID" to subject), owner = "bob"))
             val ownOrigin =
-                processManager.obtainProcessId("deploy", inputParams = mapOf("TICKET_ID" to subject), owner = "alice")
+                processManager.obtainProcessId(NewRunRecord("deploy", inputParams = mapOf("TICKET_ID" to subject), owner = "alice"))
             val repo = ContinuationRepository(db)
             // The row's owner is copied from its origin at registration, so only a forced
             // mismatch reaches this state — the gate is defence in depth, and this is its denial path.
@@ -1988,7 +2002,7 @@ class ProcessVisibilityTest {
                 runStarter.start(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), capture(resolve))
             } coAnswers
                 {
-                    processManager.obtainProcessId("deploy", inputParams = resolve.captured.invoke(), owner = "alice")
+                    processManager.obtainProcessId(NewRunRecord("deploy", inputParams = resolve.captured.invoke(), owner = "alice"))
                 }
             val agentsService = mockk<AgentsService>(relaxed = true)
             every { agentsService.agents } returns mapOf("deploy" to inheritAgent)

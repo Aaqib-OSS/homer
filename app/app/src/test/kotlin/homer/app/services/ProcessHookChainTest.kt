@@ -4,6 +4,7 @@ import homer.app.fixtures.AgentFixtures
 import homer.app.fixtures.HookChainFixture
 import homer.app.models.Agent
 import homer.app.models.AgentHook
+import homer.app.models.NewRunRecord
 import homer.app.models.ProcessStatus
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
@@ -42,7 +43,7 @@ class ProcessHookChainTest {
                     ProcessStatus.FINISHED to "notifier-finished",
                 )
 
-            val id = f.processManager.obtainProcessId("declarer", owner = "alice")
+            val id = f.processManager.obtainProcessId(NewRunRecord("declarer", owner = "alice"))
             f.processManager.setProcessStatus(id, ProcessStatus.WORKING)
             f.processManager.compareAndSetStatus(id, setOf(ProcessStatus.WORKING), ProcessStatus.FINISHED)
 
@@ -57,7 +58,7 @@ class ProcessHookChainTest {
             // entry fires exactly once. See ADR-0107.
             val f = chain(ProcessStatus.CREATED to "notifier-created")
 
-            val id = f.processManager.obtainProcessId("declarer", owner = "alice")
+            val id = f.processManager.obtainProcessId(NewRunRecord("declarer", owner = "alice"))
             f.processManager.compareAndSetStatus(id, setOf(ProcessStatus.CREATED), ProcessStatus.CREATED)
 
             assertEquals(listOf("notifier-created"), f.started)
@@ -72,7 +73,7 @@ class ProcessHookChainTest {
                     ProcessStatus.FAILED to "notifier-failed",
                 )
 
-            val id = f.processManager.obtainProcessId("declarer", owner = "alice")
+            val id = f.processManager.obtainProcessId(NewRunRecord("declarer", owner = "alice"))
             f.processManager.setProcessStatus(id, ProcessStatus.WORKING)
             f.processManager.compareAndSetStatus(id, setOf(ProcessStatus.WORKING), ProcessStatus.FAILED)
 
@@ -88,7 +89,7 @@ class ProcessHookChainTest {
                     ProcessStatus.KILLED to "notifier-killed",
                 )
 
-            val id = f.processManager.obtainProcessId("declarer", owner = "alice")
+            val id = f.processManager.obtainProcessId(NewRunRecord("declarer", owner = "alice"))
             f.processManager.setProcessStatus(id, ProcessStatus.WORKING)
             f.processManager.killProcess(id, "operator kill")
 
@@ -100,7 +101,7 @@ class ProcessHookChainTest {
         runTest {
             val f = chain(ProcessStatus.FINISHED to "notifier-finished")
 
-            val id = f.processManager.obtainProcessId("declarer", owner = "alice")
+            val id = f.processManager.obtainProcessId(NewRunRecord("declarer", owner = "alice"))
             f.processManager.setProcessStatus(id, ProcessStatus.WORKING)
             f.processManager.setProcessStatus(id, ProcessStatus.FAILED)
 
@@ -114,7 +115,7 @@ class ProcessHookChainTest {
             // hook row to fire. See ADR-0107.
             val f = chain(ProcessStatus.FINISHED to "notifier-finished")
 
-            val id = f.processManager.obtainProcessId("declarer", owner = "alice")
+            val id = f.processManager.obtainProcessId(NewRunRecord("declarer", owner = "alice"))
             f.processManager.setProcessStatus(id, ProcessStatus.WORKING)
             f.processManager.killProcess(id, "operator kill")
             f.processManager.compareAndSetStatus(id, setOf(ProcessStatus.WORKING), ProcessStatus.FINISHED)

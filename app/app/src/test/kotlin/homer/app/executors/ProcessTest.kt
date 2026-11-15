@@ -18,6 +18,7 @@ import homer.app.infra.WorkspaceConfigFactory
 import homer.app.models.Agent
 import homer.app.models.Command
 import homer.app.models.LockStrategy
+import homer.app.models.NewRunRecord
 import homer.app.models.OnKeyCollisionStrategy
 import homer.app.models.OnMaxParallelRunsStrategy
 import homer.app.models.Param
@@ -1511,9 +1512,9 @@ class ProcessTest {
                 val realManager = PersistenceTestSupport.processManager()
                 // Two runs of one agent on the same fixed path: run 2 stays live
                 // (CREATED) while run 1 finishes.
-                realManager.obtainProcessId("test_agent")
+                realManager.obtainProcessId(NewRunRecord("test_agent"))
                 realManager.setArtifactsDir(1, root.resolve("shared/artifacts"))
-                realManager.obtainProcessId("test_agent")
+                realManager.obtainProcessId(NewRunRecord("test_agent"))
                 realManager.setArtifactsDir(2, root.resolve("shared/artifacts"))
 
                 every {
@@ -1564,7 +1565,7 @@ class ProcessTest {
                 // run's own cleanup deletes both.
                 realManager.setProcessStatus(1, ProcessStatus.FINISHED)
                 realManager.setProcessStatus(2, ProcessStatus.FINISHED)
-                realManager.obtainProcessId("test_agent")
+                realManager.obtainProcessId(NewRunRecord("test_agent"))
                 realManager.setArtifactsDir(3, root.resolve("shared/artifacts"))
                 processWith(agent = testAgent, ancestorLockKeys = emptyList(), processManager = realManager)
                     .execute(3, mockSpan)
@@ -1604,7 +1605,7 @@ class ProcessTest {
                         workdir = root.resolve("solo/workdir"),
                         lockKey = "solo",
                     )
-                val soloId = realManager.obtainProcessId("test_agent")
+                val soloId = realManager.obtainProcessId(NewRunRecord("test_agent"))
                 realManager.setArtifactsDir(soloId, root.resolve("solo/artifacts"))
                 root.resolve("solo/workdir").createDirectories()
                 root.resolve("solo/workdir/temp.txt").writeText("temp data")

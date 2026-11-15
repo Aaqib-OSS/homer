@@ -73,9 +73,9 @@ class ProcessExecutorTest {
         // Setup default behavior
         every { mockProcess.name } returns "test-agent"
         // Relaxed mocks answer an Int? property with 0, never null; pin the real default so
-        // positional assertions on the obtainProcessId call see a rootless run.
+        // the NewRunRecord handed to obtainProcessId describes a rootless run.
         every { mockProcess.rootProcessId } returns null
-        coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+        coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
         coEvery { mockProcessManager.setProcessStatus(any(), any()) } just Runs
         coEvery { mockProcessManager.compareAndSetStatus(any(), any(), any()) } returns true
         coEvery { mockProcessManager.assignJob(any(), any()) } just Runs
@@ -102,19 +102,19 @@ class ProcessExecutorTest {
     @Test
     fun `execute should obtain process ID from ProcessManager`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 42
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 42
             coEvery { mockProcess.execute(any(), any()) } just Runs
 
             val result = processExecutor.execute(mockProcess, testContext)
 
             assertEquals(42, result.processId)
-            coVerify { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) }
+            coVerify { mockProcessManager.obtainProcessId(any()) }
         }
 
     @Test
     fun `execute should return ProcessCreationResult with process ID`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 123
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 123
             coEvery { mockProcess.execute(any(), any()) } just Runs
 
             val result = processExecutor.execute(mockProcess, testContext)
@@ -125,7 +125,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should log process creation`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } just Runs
             every { mockProcess.name } returns "my-agent"
 
@@ -137,19 +137,19 @@ class ProcessExecutorTest {
     @Test
     fun `execute should pass agent name to obtainProcessId`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } just Runs
             every { mockProcess.name } returns "my-custom-agent"
 
             processExecutor.execute(mockProcess, testContext)
 
-            coVerify { mockProcessManager.obtainProcessId("my-custom-agent", any(), any(), any(), any(), any(), any()) }
+            coVerify { mockProcessManager.obtainProcessId(match { it.agentName == "my-custom-agent" }) }
         }
 
     @Test
     fun `execute should transition through CREATED and FINISHED statuses`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } coAnswers {
                 delay(10)
             }
@@ -180,7 +180,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should log successful completion`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 5
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 5
             coEvery { mockProcess.execute(any(), any()) } just Runs
 
             processExecutor.execute(mockProcess, testContext)
@@ -197,7 +197,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should set status to FAILED when process execution throws exception`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } throws RuntimeException("Test error")
 
             processExecutor.execute(mockProcess, testContext)
@@ -214,7 +214,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should log error when process execution fails`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 2
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 2
             val exception = RuntimeException("Execution failed")
             coEvery { mockProcess.execute(any(), any()) } throws exception
 
@@ -237,7 +237,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should not throw exception when process fails`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } throws RuntimeException("Test error")
 
             // Should not throw - exceptions are caught
@@ -254,16 +254,7 @@ class ProcessExecutorTest {
     fun `execute should pass process owner to obtainProcessId`() =
         runBlocking {
             coEvery {
-                mockProcessManager.obtainProcessId(
-                    any(),
-                    any(),
-                    owner = "ci",
-                    cooldown = any(),
-                    cooldownKey = any(),
-                    secretInputKeys = any(),
-                    parentProcessId = any(),
-                    rootProcessId = any(),
-                )
+                mockProcessManager.obtainProcessId(match { it.owner == "ci" })
             } returns 1
             coEvery { mockProcess.execute(any(), any()) } just Runs
             every { mockProcess.owner } returns "ci"
@@ -271,16 +262,7 @@ class ProcessExecutorTest {
             processExecutor.execute(mockProcess, testContext)
 
             coVerify {
-                mockProcessManager.obtainProcessId(
-                    "test-agent",
-                    any(),
-                    owner = "ci",
-                    cooldown = any(),
-                    cooldownKey = any(),
-                    secretInputKeys = any(),
-                    parentProcessId = any(),
-                    rootProcessId = any(),
-                )
+                mockProcessManager.obtainProcessId(match { it.agentName == "test-agent" && it.owner == "ci" })
             }
         }
 
@@ -291,7 +273,7 @@ class ProcessExecutorTest {
             // INSERT — AgentRunStarter's pre-flight check cannot hold it on its own. If this
             // wiring is dropped the cooldown silently stops binding. See ADR-0051.
             val cooldown = Cooldown(minInterval = "1m", key = "mr-{{MR}}")
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } just Runs
             every { mockProcess.cooldown } returns cooldown
             every { mockProcess.cooldownKey } returns "mr-1"
@@ -300,16 +282,12 @@ class ProcessExecutorTest {
 
             coVerify {
                 mockProcessManager.obtainProcessId(
-                    any(),
-                    any(),
-                    any(),
-                    cooldown = cooldown,
-                    // The rendered key rides with the window it scopes: dropping this wiring
-                    // would count the window per agent again, silently. See ADR-0106.
-                    cooldownKey = "mr-1",
-                    secretInputKeys = any(),
-                    parentProcessId = any(),
-                    rootProcessId = any(),
+                    match {
+                        it.cooldown == cooldown &&
+                            // The rendered key rides with the window it scopes: dropping this wiring
+                            // would count the window per agent again, silently. See ADR-0106.
+                            it.cooldownKey == "mr-1"
+                    },
                 )
             }
         }
@@ -323,7 +301,23 @@ class ProcessExecutorTest {
             processExecutor.execute(mockProcess, testContext)
 
             coVerify {
-                mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), parentProcessId = 7)
+                mockProcessManager.obtainProcessId(match { it.parentProcessId == 7 })
+            }
+        }
+
+    @Test
+    fun `execute stores the process root id and fromInputs tags with the row`() =
+        runBlocking {
+            coEvery { mockProcess.execute(any(), any()) } just Runs
+            every { mockProcess.rootProcessId } returns 3
+            every { mockProcess.fromInputTags } returns listOf("mr:15", "projectId:4711")
+
+            processExecutor.execute(mockProcess, testContext)
+
+            coVerify {
+                mockProcessManager.obtainProcessId(
+                    match { it.rootProcessId == 3 && it.tags == listOf("mr:15", "projectId:4711") },
+                )
             }
         }
 
@@ -332,7 +326,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should assign job to process`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } coAnswers {
                 delay(50)
             }
@@ -350,7 +344,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should remove job after completion`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } just Runs
 
             processExecutor.execute(mockProcess, testContext)
@@ -365,7 +359,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should remove job even when process fails`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } throws RuntimeException("Test error")
 
             processExecutor.execute(mockProcess, testContext)
@@ -382,7 +376,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should create span with agent_execution name`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } just Runs
 
             processExecutor.execute(mockProcess, testContext)
@@ -397,7 +391,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should set process id attribute on span`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 42
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 42
             coEvery { mockProcess.execute(any(), any()) } just Runs
 
             processExecutor.execute(mockProcess, testContext)
@@ -412,7 +406,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should set WORKING status attribute on span`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } just Runs
 
             processExecutor.execute(mockProcess, testContext)
@@ -427,7 +421,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should set FINISHED status attribute on span when successful`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } just Runs
 
             processExecutor.execute(mockProcess, testContext)
@@ -442,7 +436,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should set FAILED status attribute on span when process fails`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } throws RuntimeException("Test error")
 
             processExecutor.execute(mockProcess, testContext)
@@ -457,7 +451,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should set OK status on span when successful`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } just Runs
 
             processExecutor.execute(mockProcess, testContext)
@@ -472,7 +466,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should set ERROR status on span when process fails`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } throws RuntimeException("Test error")
 
             processExecutor.execute(mockProcess, testContext)
@@ -492,7 +486,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should record exception on span when process fails`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             val exception = RuntimeException("Test error")
             coEvery { mockProcess.execute(any(), any()) } throws exception
 
@@ -508,7 +502,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should end span after successful completion`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } just Runs
 
             processExecutor.execute(mockProcess, testContext)
@@ -523,7 +517,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should end span even when process fails`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } throws RuntimeException("Test error")
 
             processExecutor.execute(mockProcess, testContext)
@@ -538,7 +532,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should call process execute with correct parameters`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 123
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 123
             coEvery { mockProcess.execute(any(), any()) } just Runs
 
             processExecutor.execute(mockProcess, testContext)
@@ -556,7 +550,7 @@ class ProcessExecutorTest {
     fun `should handle multiple concurrent process executions`() =
         runBlocking {
             var processIdCounter = 0
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } answers { processIdCounter++ }
+            coEvery { mockProcessManager.obtainProcessId(any()) } answers { processIdCounter++ }
             coEvery { mockProcess.execute(any(), any()) } coAnswers {
                 delay(50)
             }
@@ -585,7 +579,7 @@ class ProcessExecutorTest {
     fun `should handle concurrent success and failure scenarios`() =
         runBlocking {
             var processIdCounter = 0
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } answers {
+            coEvery { mockProcessManager.obtainProcessId(any()) } answers {
                 processIdCounter++
             }
 
@@ -629,7 +623,7 @@ class ProcessExecutorTest {
     @Test
     fun `full successful execution lifecycle should work correctly`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } just Runs
 
             val result = processExecutor.execute(mockProcess, testContext)
@@ -649,7 +643,7 @@ class ProcessExecutorTest {
 
             // Verify complete lifecycle (calls with a real happens-before chain only)
             coVerifyOrder {
-                mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any())
+                mockProcessManager.obtainProcessId(any())
                 mockLogger.info(any<String>(), 1, any<String>())
                 mockProcessManager.compareAndSetStatus(
                     1,
@@ -672,7 +666,7 @@ class ProcessExecutorTest {
     fun `full failed execution lifecycle should work correctly`() =
         runBlocking {
             val exception = RuntimeException("Execution failed")
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 2
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 2
             coEvery { mockProcess.execute(any(), any()) } throws exception
 
             val result = processExecutor.execute(mockProcess, testContext)
@@ -692,7 +686,7 @@ class ProcessExecutorTest {
 
             // Verify complete failure lifecycle (calls with a real happens-before chain only)
             coVerifyOrder {
-                mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any())
+                mockProcessManager.obtainProcessId(any())
                 mockLogger.info(any<String>(), 2, any<String>())
                 mockProcessManager.compareAndSetStatus(
                     2,
@@ -713,7 +707,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should expire questions after successful completion`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } just Runs
 
             processExecutor.execute(mockProcess, testContext)
@@ -732,7 +726,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should expire questions when process fails`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 2
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 2
             coEvery { mockProcess.execute(any(), any()) } throws RuntimeException("boom")
 
             processExecutor.execute(mockProcess, testContext)
@@ -751,7 +745,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should expire questions when process is killed`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 3
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 3
             coEvery { mockProcess.execute(any(), any()) } coAnswers {
                 delay(50)
                 throw kotlinx.coroutines.CancellationException("Killed !")
@@ -774,7 +768,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should still release the job when closing the inbox fails`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 4
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 4
             coEvery { mockProcess.execute(any(), any()) } just Runs
             coEvery { mockRunMessages.closeForProcess(4) } throws RuntimeException("db down")
 
@@ -793,7 +787,7 @@ class ProcessExecutorTest {
     fun `execute should set purgeAt on ProcessManager after successful completion`() =
         runBlocking {
             val fiveDaysInSeconds = 5 * 86400L
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } just Runs
             every { mockProcess.purgeAfterSeconds } returns fiveDaysInSeconds
             every { mockProcess.purgeRecordAfterSeconds } returns fiveDaysInSeconds
@@ -831,7 +825,7 @@ class ProcessExecutorTest {
         runBlocking {
             val fiveDaysInSeconds = 5 * 86400L
             val thirtyDaysInSeconds = 30L * 24 * 60 * 60
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } just Runs
             every { mockProcess.purgeAfterSeconds } returns fiveDaysInSeconds
             every { mockProcess.purgeRecordAfterSeconds } returns thirtyDaysInSeconds
@@ -866,7 +860,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should preserve KILLED status when process is killed via API`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
 
             // Simulate process being killed while running
             coEvery { mockProcess.execute(any(), any()) } coAnswers {
@@ -895,7 +889,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should set FAILED status when process fails normally`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } throws RuntimeException("Normal error")
 
             // Status is not KILLED
@@ -919,7 +913,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should preserve KILLED status from lock manager kill`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
 
             // Simulate lock manager killing the process
             coEvery { mockProcess.execute(any(), any()) } coAnswers {
@@ -950,7 +944,7 @@ class ProcessExecutorTest {
         runBlocking {
             // Happy path: process.execute() returns normally. Concurrently, killProcess set
             // KILLED. The FINISHED write must be guarded so KILLED is preserved.
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } just Runs
             // Simulate concurrent kill: by the time CAS runs, status is already KILLED.
             coEvery {
@@ -982,7 +976,7 @@ class ProcessExecutorTest {
             // Failure path: process.execute() throws while a concurrent killProcess
             // moves the record to KILLED. The FAILED write must be guarded the same
             // way as the happy-path FINISHED write so KILLED is never overwritten.
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } throws RuntimeException("boom")
 
             var status = ProcessStatus.WORKING
@@ -1017,7 +1011,7 @@ class ProcessExecutorTest {
             // first status write (a failed /callback/joins kills the sub it just started).
             // The job's CREATED write must not overwrite that KILLED: unguarded, it reset the
             // record to CREATED and the cancellation then ended the run FAILED.
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             var status = ProcessStatus.KILLED
             coEvery { mockProcessManager.getProcessStatus(1) } coAnswers { status }
             coEvery { mockProcessManager.setProcessStatus(1, any()) } coAnswers { status = secondArg() }
@@ -1043,7 +1037,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should set FAILED for lock collision with consistent telemetry`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             every { mockProcess.failureReasonRedactor } returns SecretRedactor.NONE
             val exception = homer.app.exceptions.AnotherProcessStillActive(999)
             coEvery { mockProcess.execute(any(), any()) } throws exception
@@ -1070,7 +1064,7 @@ class ProcessExecutorTest {
     @Test
     fun `a REJECT parallel-run cap is reported as a cancellation, not as a run failure`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             every { mockProcess.failureReasonRedactor } returns SecretRedactor.NONE
             val exception = MaxParallelRunsExceededException("demo", 3)
             coEvery { mockProcess.execute(any(), any()) } throws exception
@@ -1086,7 +1080,7 @@ class ProcessExecutorTest {
     @Test
     fun `a mid-run failure is reported as a run failure on the span and in the log`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             val exception = IllegalStateException("boom")
             coEvery { mockProcess.execute(any(), any()) } throws exception
             coEvery { mockProcessManager.getProcessStatus(1) } returns ProcessStatus.FAILED
@@ -1120,7 +1114,7 @@ class ProcessExecutorTest {
     ): String? {
         val reason = slot<String>()
         every { mockProcess.failureReasonRedactor } returns redactor
-        coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+        coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
         coEvery { mockProcessManager.getProcessStatus(1) } returns ProcessStatus.FAILED
         coEvery { mockProcess.execute(any(), any()) } throws e
         coEvery { mockProcessManager.setFailureReason(1, capture(reason), any()) } returns true
@@ -1134,7 +1128,7 @@ class ProcessExecutorTest {
     fun `a SKIP_CURRENT lock skip is stored with the run that held the lock`() =
         runBlocking {
             every { mockProcess.failureReasonRedactor } returns SecretRedactor.NONE
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcessManager.getProcessStatus(1) } returns ProcessStatus.FAILED
             coEvery { mockProcess.execute(any(), any()) } throws AnotherProcessStillActive(999)
             coEvery { mockProcessManager.setFailureReason(1, any(), any()) } returns true
@@ -1149,7 +1143,7 @@ class ProcessExecutorTest {
         runBlocking {
             val exception = UnresolvedLockKeyPlaceholderException(listOf("TICKET_ID"))
             every { mockProcess.failureReasonRedactor } returns SecretRedactor.NONE
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } throws exception
             // Status is not KILLED: the run never started, and no other run's collision was
             // resolved here (no SKIP, no kill). See ADR-0047.
@@ -1288,7 +1282,7 @@ class ProcessExecutorTest {
     fun `a reason write that fails still leaves the run FAILED and the job released`() =
         runBlocking {
             every { mockProcess.failureReasonRedactor } returns SecretRedactor.NONE
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcessManager.getProcessStatus(1) } returns ProcessStatus.FAILED
             coEvery { mockProcess.execute(any(), any()) } throws ClaimQueueFullException(100)
             coEvery { mockProcessManager.setFailureReason(any(), any(), any()) } throws RuntimeException("db down")
@@ -1328,7 +1322,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should invoke onTerminal with the committed final status after a successful run`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } just Runs
             coEvery { mockProcessManager.getProcessStatus(1) } returns ProcessStatus.FINISHED
 
@@ -1346,7 +1340,7 @@ class ProcessExecutorTest {
     @Test
     fun `execute should still end span and remove job when onTerminal throws`() =
         runBlocking {
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } just Runs
             coEvery { mockProcessManager.getProcessStatus(1) } returns ProcessStatus.FINISHED
 
@@ -1376,7 +1370,7 @@ class ProcessExecutorTest {
         runBlocking {
             // Happy path returns, but a concurrent kill has already committed KILLED, so the
             // FINISHED CAS fails. The hook must observe the actual final status, KILLED.
-            coEvery { mockProcessManager.obtainProcessId(any(), any(), any(), any(), any(), any(), any()) } returns 1
+            coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } just Runs
             coEvery {
                 mockProcessManager.compareAndSetStatus(

@@ -5,6 +5,7 @@ import homer.app.fixtures.AgentFixtures
 import homer.app.fixtures.PersistenceTestSupport
 import homer.app.fixtures.TestFixtures
 import homer.app.infra.ProcessJobRegistry
+import homer.app.models.NewRunRecord
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
 import homer.app.models.Retain
@@ -589,11 +590,11 @@ class WorkspacePurgeServiceTest {
                 }
 
             // keeper: purgeAfter 1d; "default-agent" is not loaded, so Workspace() defaults (5d) apply.
-            val due = repository.obtainProcessId("keeper", emptyMap(), 100).processId
+            val due = repository.obtainProcessId(NewRunRecord("keeper"), 100).processId
             val dueDir = interruptedRunDir(due)
             realManager.setArtifactsDir(due, dueDir)
             repository.transitionStatus(due, ProcessStatus.WORKING, 1, null)
-            val notDue = repository.obtainProcessId("default-agent", emptyMap(), 100).processId
+            val notDue = repository.obtainProcessId(NewRunRecord("default-agent"), 100).processId
             val notDueDir = interruptedRunDir(notDue)
             realManager.setArtifactsDir(notDue, notDueDir)
             repository.transitionStatus(notDue, ProcessStatus.WORKING, 1, null)
@@ -643,7 +644,7 @@ class WorkspacePurgeServiceTest {
 
             // purgeExpired reads the wall clock, so the stamps are relative to now, never absolute.
             suspend fun finishedRun(purgeAt: Long): Path {
-                val id = repository.obtainProcessId("test", emptyMap(), 100).processId
+                val id = repository.obtainProcessId(NewRunRecord("test"), 100).processId
                 val dir = root.resolve("$id").resolve("artifacts")
                 dir.toFile().mkdirs()
                 realManager.setArtifactsDir(id, dir)
@@ -673,7 +674,7 @@ class WorkspacePurgeServiceTest {
             val purge = WorkspacePurgeService(realManager, realQuestions, root, 16L * 1024 * 1024, logger)
 
             suspend fun runOf(status: ProcessStatus): Pair<Int, Path> {
-                val id = repository.obtainProcessId("test", emptyMap(), 100).processId
+                val id = repository.obtainProcessId(NewRunRecord("test"), 100).processId
                 val dir = root.resolve("$id").resolve("artifacts")
                 dir.toFile().mkdirs()
                 realManager.setArtifactsDir(id, dir)

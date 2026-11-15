@@ -3,6 +3,7 @@ package homer.app.routes
 import homer.app.fixtures.PersistenceTestSupport
 import homer.app.fixtures.TestFixtures
 import homer.app.fixtures.all
+import homer.app.models.NewRunRecord
 import homer.app.models.QuestionsConfig
 import homer.app.models.RunMessagesConfig
 import homer.app.services.ProcessEventBroadcaster
@@ -304,8 +305,8 @@ class QuestionsMcpRoutesTest {
         val messages =
             RunMessagesService(RunMessagesRepository(db), ProcessEventBroadcaster(), RunMessagesConfig(), TestFixtures.mockLogger())
         return runBlocking {
-            val a = pm.obtainProcessId("agent-a")
-            val b = pm.obtainProcessId("agent-b")
+            val a = pm.obtainProcessId(NewRunRecord("agent-a"))
+            val b = pm.obtainProcessId(NewRunRecord("agent-b"))
             InboxFixture(service, messages, service.registerProcess(a, "agent-a"), service.registerProcess(b, "agent-b"), a)
         }
     }

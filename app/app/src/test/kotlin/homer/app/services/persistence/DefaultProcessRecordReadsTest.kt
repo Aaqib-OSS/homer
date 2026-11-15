@@ -4,6 +4,7 @@ import homer.app.fixtures.PersistenceTestSupport
 import homer.app.infra.ProcessJobRegistry
 import homer.app.models.CostSource
 import homer.app.models.ExecutionInfo
+import homer.app.models.NewRunRecord
 import homer.app.models.PodPhase
 import homer.app.models.ProcessStatus
 import homer.app.models.RunnerState
@@ -31,7 +32,7 @@ class DefaultProcessRecordReadsTest {
     @Test
     fun `reads a stored run's record, history, executions and runner state`() =
         runTest {
-            val id = repository.obtainProcessId("a", mapOf("K" to "v"), 100, tags = listOf("team:x")).processId
+            val id = repository.obtainProcessId(NewRunRecord("a", mapOf("K" to "v"), tags = listOf("team:x")), 100).processId
             repository.transitionStatus(id, ProcessStatus.WORKING, 5, null)
             val execution = ExecutionInfo("step", 1, 2, 0, null, null, null)
             repository.addExecution(id, execution)
@@ -50,8 +51,8 @@ class DefaultProcessRecordReadsTest {
     @Test
     fun `lists with the defaults and finds CREATED runs of an agent`() =
         runTest {
-            val first = repository.obtainProcessId("a", emptyMap(), 100).processId
-            val second = repository.obtainProcessId("b", emptyMap(), 100).processId
+            val first = repository.obtainProcessId(NewRunRecord("a"), 100).processId
+            val second = repository.obtainProcessId(NewRunRecord("b"), 100).processId
 
             val page = reads.getAllProcesses()
 
@@ -63,7 +64,7 @@ class DefaultProcessRecordReadsTest {
     @Test
     fun `sums cost by tag value through the screen`() =
         runTest {
-            val id = repository.obtainProcessId("a", emptyMap(), 100, tags = listOf("team:x")).processId
+            val id = repository.obtainProcessId(NewRunRecord("a", tags = listOf("team:x")), 100).processId
             repository.addCost(id, 1.5, CostSource.CLI)
 
             val result = reads.costByTag("team") { it.tags }

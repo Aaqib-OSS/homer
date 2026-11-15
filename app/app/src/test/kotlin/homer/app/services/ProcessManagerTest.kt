@@ -8,6 +8,7 @@ import homer.app.models.CostSource
 import homer.app.models.ExecutionInfo
 import homer.app.models.FALLBACK_REASON_SESSION_FIGURE_PENDING
 import homer.app.models.LlmAccounting
+import homer.app.models.NewRunRecord
 import homer.app.models.PodPhase
 import homer.app.models.ProcessStatus
 import homer.app.models.RunnerState
@@ -89,9 +90,9 @@ class ProcessManagerTest {
     @Test
     fun `obtainProcessId should return unique IDs`() =
         runTest {
-            val id1 = processManager.obtainProcessId("test-agent")
-            val id2 = processManager.obtainProcessId("test-agent")
-            val id3 = processManager.obtainProcessId("test-agent")
+            val id1 = processManager.obtainProcessId(NewRunRecord("test-agent"))
+            val id2 = processManager.obtainProcessId(NewRunRecord("test-agent"))
+            val id3 = processManager.obtainProcessId(NewRunRecord("test-agent"))
 
             // SQLite AUTOINCREMENT ids start at 1 and never reuse.
             assertEquals(1, id1)
@@ -102,14 +103,14 @@ class ProcessManagerTest {
     @Test
     fun `obtainProcessId should start from 1`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             assertEquals(1, id)
         }
 
     @Test
     fun `obtainProcessId should create process with CREATED status`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             val status = processManager.getProcessStatus(id)
             assertEquals(ProcessStatus.CREATED, status)
         }
@@ -119,10 +120,10 @@ class ProcessManagerTest {
         runTest {
             assertEquals(-1, processManager.lastProcessId())
 
-            processManager.obtainProcessId("test-agent")
+            processManager.obtainProcessId(NewRunRecord("test-agent"))
             assertEquals(1, processManager.lastProcessId())
 
-            processManager.obtainProcessId("test-agent")
+            processManager.obtainProcessId(NewRunRecord("test-agent"))
             assertEquals(2, processManager.lastProcessId())
         }
 
@@ -130,13 +131,13 @@ class ProcessManagerTest {
     fun `obtainProcessId should evict oldest terminal process when at capacity`() =
         runTest {
             val capped = newManager(maxProcesses = 3)
-            val id0 = capped.obtainProcessId("a")
-            val id1 = capped.obtainProcessId("a")
-            val id2 = capped.obtainProcessId("a")
+            val id0 = capped.obtainProcessId(NewRunRecord("a"))
+            val id1 = capped.obtainProcessId(NewRunRecord("a"))
+            val id2 = capped.obtainProcessId(NewRunRecord("a"))
             capped.setProcessStatus(id0, ProcessStatus.FINISHED)
             capped.setProcessStatus(id1, ProcessStatus.FAILED)
 
-            capped.obtainProcessId("a")
+            capped.obtainProcessId(NewRunRecord("a"))
 
             assertEquals(ProcessStatus.UNKNOWN, capped.getProcessStatus(id0))
             assertEquals(ProcessStatus.FAILED, capped.getProcessStatus(id1))
@@ -148,11 +149,11 @@ class ProcessManagerTest {
         runTest {
             val evicted = mutableListOf<Int>()
             val capped = newManager(maxProcesses = 2, onProcessEvicted = { evicted += it })
-            val id0 = capped.obtainProcessId("a")
-            capped.obtainProcessId("a")
+            val id0 = capped.obtainProcessId(NewRunRecord("a"))
+            capped.obtainProcessId(NewRunRecord("a"))
             capped.setProcessStatus(id0, ProcessStatus.FINISHED)
 
-            capped.obtainProcessId("a")
+            capped.obtainProcessId(NewRunRecord("a"))
 
             assertEquals(listOf(id0), evicted)
         }
@@ -162,7 +163,7 @@ class ProcessManagerTest {
         @TempDir tmp: Path,
     ) = runTest {
         val capped = newManager(maxProcesses = 1, workspaceRoot = tmp)
-        val id0 = capped.obtainProcessId("a")
+        val id0 = capped.obtainProcessId(NewRunRecord("a"))
         val artifacts = tmp.resolve("run0/artifacts")
         Files.createDirectories(artifacts)
         Files.writeString(artifacts.resolve("out.txt"), "x")
@@ -170,7 +171,7 @@ class ProcessManagerTest {
         capped.setProcessStatus(id0, ProcessStatus.FINISHED)
 
         // At capacity → obtaining a new id evicts id0; its workspace must be deleted.
-        capped.obtainProcessId("a")
+        capped.obtainProcessId(NewRunRecord("a"))
 
         assertFalse(
             Files.exists(tmp.resolve("run0")),
@@ -183,8 +184,8 @@ class ProcessManagerTest {
         @TempDir tmp: Path,
     ) = runTest {
         val capped = newManager(maxProcesses = 2, workspaceRoot = tmp)
-        val id0 = capped.obtainProcessId("a")
-        val id1 = capped.obtainProcessId("a")
+        val id0 = capped.obtainProcessId(NewRunRecord("a"))
+        val id1 = capped.obtainProcessId(NewRunRecord("a"))
         val shared = tmp.resolve("shared/artifacts")
         Files.createDirectories(shared)
         capped.setArtifactsDir(id0, shared)
@@ -192,7 +193,7 @@ class ProcessManagerTest {
         capped.setProcessStatus(id0, ProcessStatus.FINISHED)
 
         // Evicts id0 (oldest terminal); the shared dir must survive for id1.
-        capped.obtainProcessId("a")
+        capped.obtainProcessId(NewRunRecord("a"))
 
         assertTrue(
             Files.exists(tmp.resolve("shared")),
@@ -212,11 +213,11 @@ class ProcessManagerTest {
         Files.writeString(outside.resolve("keep.txt"), "x")
 
         val capped = newManager(maxProcesses = 1, workspaceRoot = root)
-        val id0 = capped.obtainProcessId("a")
+        val id0 = capped.obtainProcessId(NewRunRecord("a"))
         capped.setArtifactsDir(id0, outside)
         capped.setProcessStatus(id0, ProcessStatus.FINISHED)
 
-        capped.obtainProcessId("a") // evicts id0
+        capped.obtainProcessId(NewRunRecord("a")) // evicts id0
 
         // The containment guard refuses the delete; the out-of-root dir survives.
         assertTrue(
@@ -229,11 +230,11 @@ class ProcessManagerTest {
     fun `obtainProcessId should throw ProcessManagerAtCapacityException when no terminal processes exist`() =
         runTest {
             val capped = newManager(maxProcesses = 2)
-            val id0 = capped.obtainProcessId("a")
-            val id1 = capped.obtainProcessId("a")
+            val id0 = capped.obtainProcessId(NewRunRecord("a"))
+            val id1 = capped.obtainProcessId(NewRunRecord("a"))
 
             val ex =
-                kotlin.runCatching { capped.obtainProcessId("a") }.exceptionOrNull()
+                kotlin.runCatching { capped.obtainProcessId(NewRunRecord("a")) }.exceptionOrNull()
 
             assertTrue(ex is homer.app.exceptions.ProcessManagerAtCapacityException)
             assertEquals(2, ex.maxProcesses)
@@ -248,7 +249,7 @@ class ProcessManagerTest {
     @Test
     fun `getProcessStatus should return CREATED for new process`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             val status = processManager.getProcessStatus(id)
             assertEquals(ProcessStatus.CREATED, status)
         }
@@ -263,7 +264,7 @@ class ProcessManagerTest {
     @Test
     fun `setProcessStatus should update process status`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
 
             processManager.setProcessStatus(id, ProcessStatus.WORKING)
             assertEquals(ProcessStatus.WORKING, processManager.getProcessStatus(id))
@@ -275,7 +276,7 @@ class ProcessManagerTest {
     @Test
     fun `setProcessStatus should handle all status transitions`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
 
             processManager.setProcessStatus(id, ProcessStatus.WORKING)
             assertEquals(ProcessStatus.WORKING, processManager.getProcessStatus(id))
@@ -283,7 +284,7 @@ class ProcessManagerTest {
             processManager.setProcessStatus(id, ProcessStatus.FINISHED)
             assertEquals(ProcessStatus.FINISHED, processManager.getProcessStatus(id))
 
-            val id2 = processManager.obtainProcessId("test-agent")
+            val id2 = processManager.obtainProcessId(NewRunRecord("test-agent"))
             processManager.setProcessStatus(id2, ProcessStatus.WORKING)
             processManager.setProcessStatus(id2, ProcessStatus.FAILED)
             assertEquals(ProcessStatus.FAILED, processManager.getProcessStatus(id2))
@@ -294,7 +295,7 @@ class ProcessManagerTest {
     @Test
     fun `compareAndSetStatus should update when current status is in expected set`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             processManager.setProcessStatus(id, ProcessStatus.WORKING)
 
             val updated =
@@ -313,7 +314,7 @@ class ProcessManagerTest {
         runTest {
             // Simulates the audit #9 race: DefaultLockManager set KILLED while ProcessExecutor
             // is about to write FINISHED. The terminal KILLED status must win.
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             processManager.setProcessStatus(id, ProcessStatus.WORKING)
             processManager.setProcessStatus(id, ProcessStatus.KILLED)
 
@@ -344,7 +345,7 @@ class ProcessManagerTest {
     @Test
     fun `compareAndSetStatus should append to history only when transition succeeds`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             processManager.setProcessStatus(id, ProcessStatus.WORKING)
             val historyBefore = processManager.getProcessHistory(id)
 
@@ -372,7 +373,7 @@ class ProcessManagerTest {
     @Test
     fun `assignJob should assign job to process`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             val job: Job =
                 mockk(relaxed = true) {
                     every { isActive } returns true
@@ -387,7 +388,7 @@ class ProcessManagerTest {
     @Test
     fun `removeJob should remove job from process`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             val job: Job = mockk(relaxed = true)
 
             processManager.assignJob(id, job)
@@ -400,7 +401,7 @@ class ProcessManagerTest {
     @Test
     fun `hasLiveJob is true only while an active job is registered`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             assertFalse(processManager.hasLiveJob(id))
 
             val job = Job()
@@ -420,7 +421,7 @@ class ProcessManagerTest {
     @Test
     fun `killProcess should cancel job and change status to KILLED`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             val job: Job =
                 mockk(relaxed = true) {
                     every { cancel(any()) } just Runs
@@ -438,7 +439,7 @@ class ProcessManagerTest {
     @Test
     fun `killProcess should kill process in CREATED status`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             val job: Job =
                 mockk(relaxed = true) {
                     every { cancel(any()) } just Runs
@@ -456,7 +457,7 @@ class ProcessManagerTest {
     @Test
     fun `killProcess should not affect non-WORKING process`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             processManager.setProcessStatus(id, ProcessStatus.FINISHED)
 
             processManager.killProcess(id)
@@ -468,7 +469,7 @@ class ProcessManagerTest {
     @Test
     fun `killProcess should log when killing a process`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             val job: Job = mockk(relaxed = true)
 
             processManager.assignJob(id, job)
@@ -491,7 +492,7 @@ class ProcessManagerTest {
     @Test
     fun `killProcess should append a KILLED history entry with a fresh timestamp`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             val job: Job = mockk(relaxed = true)
             processManager.assignJob(id, job)
             processManager.setProcessStatus(id, ProcessStatus.WORKING)
@@ -507,7 +508,7 @@ class ProcessManagerTest {
     @Test
     fun `killProcess should not append to history when process is already terminal`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             processManager.setProcessStatus(id, ProcessStatus.FINISHED)
             val historyBefore = processManager.getProcessHistory(id)
 
@@ -542,7 +543,7 @@ class ProcessManagerTest {
             coroutineScope {
                 repeat(10) {
                     launch {
-                        val id = processManager.obtainProcessId("test-agent")
+                        val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
                         synchronized(ids) {
                             ids.add(id)
                         }
@@ -561,7 +562,7 @@ class ProcessManagerTest {
     @Test
     fun `should handle concurrent status updates`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
 
             coroutineScope {
                 // Multiple concurrent status updates
@@ -578,7 +579,7 @@ class ProcessManagerTest {
     @Test
     fun `should handle concurrent killProcess calls`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             val job: Job = mockk(relaxed = true)
 
             processManager.assignJob(id, job)
@@ -601,7 +602,7 @@ class ProcessManagerTest {
     fun `full process lifecycle should work correctly`() =
         runTest {
             // Obtain ID
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             assertEquals(ProcessStatus.CREATED, processManager.getProcessStatus(id))
 
             // Assign job
@@ -629,7 +630,7 @@ class ProcessManagerTest {
 
             // Create multiple processes
             repeat(processCount) {
-                val id = processManager.obtainProcessId("test-agent")
+                val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
                 processIds.add(id)
 
                 val job: Job = mockk()
@@ -661,7 +662,7 @@ class ProcessManagerTest {
     @Test
     fun `history should be empty for new process`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             val history = processManager.getProcessHistory(id)
             assertEquals(0, history.size)
         }
@@ -669,7 +670,7 @@ class ProcessManagerTest {
     @Test
     fun `setProcessStatus should append to history with timestamp`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
 
             processManager.setProcessStatus(id, ProcessStatus.WORKING)
             processManager.setProcessStatus(id, ProcessStatus.FINISHED)
@@ -685,7 +686,7 @@ class ProcessManagerTest {
     @Test
     fun `history should contain all status transitions in order`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
 
             processManager.setProcessStatus(id, ProcessStatus.WORKING)
             processManager.setProcessStatus(id, ProcessStatus.FINISHED)
@@ -700,7 +701,7 @@ class ProcessManagerTest {
     @Test
     fun `history timestamps should be monotonically increasing`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
 
             processManager.setProcessStatus(id, ProcessStatus.WORKING)
             processManager.setProcessStatus(id, ProcessStatus.FINISHED)
@@ -713,7 +714,7 @@ class ProcessManagerTest {
     @Test
     fun `concurrent status updates should maintain complete history`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             val statusCount = 10
 
             coroutineScope {
@@ -742,7 +743,7 @@ class ProcessManagerTest {
     @Test
     fun `executions should be empty for new process`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             val executions = processManager.getProcessExecutions(id)
             assertEquals(0, executions.size)
         }
@@ -750,7 +751,7 @@ class ProcessManagerTest {
     @Test
     fun `completeStep should append execution info`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
 
             val executionInfo =
                 ExecutionInfo(
@@ -773,7 +774,7 @@ class ProcessManagerTest {
     @Test
     fun `settleAccounting replaces a recorded step's pending accounting`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             val pending = LlmAccounting("sess-1", 0.42, CostSource.CLI, FALLBACK_REASON_SESSION_FIGURE_PENDING)
             val settled = LlmAccounting("sess-1", 0.18, CostSource.SESSION)
             processManager.completeStep(id, step("llm", pending), null, null)
@@ -787,7 +788,7 @@ class ProcessManagerTest {
     @Test
     fun `settleAccounting that lands before the step is recorded is merged when it is`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             val pending = LlmAccounting("sess-1", 0.42, CostSource.CLI, FALLBACK_REASON_SESSION_FIGURE_PENDING)
             val settled = LlmAccounting("sess-1", 0.18, CostSource.SESSION)
 
@@ -802,7 +803,7 @@ class ProcessManagerTest {
         runTest {
             // ADR-0089: removeProcess already ran the only unappliedSettlements removal that
             // would ever clear it, so buffering here would leak the entry for the server's uptime.
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             val pending = LlmAccounting("sess-1", 0.42, CostSource.CLI, FALLBACK_REASON_SESSION_FIGURE_PENDING)
             val settled = LlmAccounting("sess-1", 0.18, CostSource.SESSION)
             processManager.removeProcess(id)
@@ -829,7 +830,7 @@ class ProcessManagerTest {
     @Test
     fun `completeStep should handle multiple commands`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
 
             val exec1 =
                 ExecutionInfo(
@@ -864,7 +865,7 @@ class ProcessManagerTest {
     @Test
     fun `concurrent completeStep calls should maintain all executions`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             val executionCount = 10
 
             coroutineScope {
@@ -892,7 +893,7 @@ class ProcessManagerTest {
     @Test
     fun `completeStep should store error message when provided`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
 
             val executionInfo =
                 ExecutionInfo(
@@ -923,7 +924,7 @@ class ProcessManagerTest {
     @Test
     fun `completeStep should handle non-zero exit codes`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
 
             val executionInfo =
                 ExecutionInfo(
@@ -948,7 +949,7 @@ class ProcessManagerTest {
     @Test
     fun `full process lifecycle should populate both history and executions`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
 
             // Status transitions
             processManager.setProcessStatus(id, ProcessStatus.WORKING)
@@ -1002,7 +1003,7 @@ class ProcessManagerTest {
     @Test
     fun `getProcessInfo should return full process information`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
 
             // Set status and add execution
             processManager.setProcessStatus(id, ProcessStatus.WORKING)
@@ -1039,7 +1040,7 @@ class ProcessManagerTest {
     @Test
     fun `getProcessInfo should include job when assigned`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             val job: Job = mockk(relaxed = true)
             processManager.assignJob(id, job)
 
@@ -1051,7 +1052,7 @@ class ProcessManagerTest {
     @Test
     fun `getProcessInfo should return complete state snapshot`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
 
             // Build up process state
             processManager.setProcessStatus(id, ProcessStatus.WORKING)
@@ -1099,9 +1100,9 @@ class ProcessManagerTest {
     @Test
     fun `getAllProcesses should return all process infos`() =
         runTest {
-            val processId1 = processManager.obtainProcessId("test-agent")
-            val processId2 = processManager.obtainProcessId("test-agent")
-            val processId3 = processManager.obtainProcessId("test-agent")
+            val processId1 = processManager.obtainProcessId(NewRunRecord("test-agent"))
+            val processId2 = processManager.obtainProcessId(NewRunRecord("test-agent"))
+            val processId3 = processManager.obtainProcessId(NewRunRecord("test-agent"))
 
             processManager.setProcessStatus(processId1, ProcessStatus.WORKING)
             processManager.setProcessStatus(processId2, ProcessStatus.FINISHED)
@@ -1127,9 +1128,9 @@ class ProcessManagerTest {
     @Test
     fun `getAllProcesses should filter by status`() =
         runTest {
-            val processId1 = processManager.obtainProcessId("test-agent")
-            val processId2 = processManager.obtainProcessId("test-agent")
-            val processId3 = processManager.obtainProcessId("test-agent")
+            val processId1 = processManager.obtainProcessId(NewRunRecord("test-agent"))
+            val processId2 = processManager.obtainProcessId(NewRunRecord("test-agent"))
+            val processId3 = processManager.obtainProcessId(NewRunRecord("test-agent"))
 
             processManager.setProcessStatus(processId1, ProcessStatus.WORKING)
             processManager.setProcessStatus(processId2, ProcessStatus.FINISHED)
@@ -1148,9 +1149,9 @@ class ProcessManagerTest {
     @Test
     fun `getAllProcesses should order ascending by ID`() =
         runTest {
-            val processId1 = processManager.obtainProcessId("test-agent")
-            val processId2 = processManager.obtainProcessId("test-agent")
-            val processId3 = processManager.obtainProcessId("test-agent")
+            val processId1 = processManager.obtainProcessId(NewRunRecord("test-agent"))
+            val processId2 = processManager.obtainProcessId(NewRunRecord("test-agent"))
+            val processId3 = processManager.obtainProcessId(NewRunRecord("test-agent"))
 
             val result = processManager.getAllProcesses(orderAsc = true)
 
@@ -1164,9 +1165,9 @@ class ProcessManagerTest {
     @Test
     fun `getAllProcesses should order descending by ID by default`() =
         runTest {
-            val processId1 = processManager.obtainProcessId("test-agent")
-            val processId2 = processManager.obtainProcessId("test-agent")
-            val processId3 = processManager.obtainProcessId("test-agent")
+            val processId1 = processManager.obtainProcessId(NewRunRecord("test-agent"))
+            val processId2 = processManager.obtainProcessId(NewRunRecord("test-agent"))
+            val processId3 = processManager.obtainProcessId(NewRunRecord("test-agent"))
 
             val result = processManager.getAllProcesses()
 
@@ -1180,10 +1181,10 @@ class ProcessManagerTest {
     @Test
     fun `getAllProcesses should combine filtering and ordering`() =
         runTest {
-            val processId1 = processManager.obtainProcessId("test-agent")
-            val processId2 = processManager.obtainProcessId("test-agent")
-            val processId3 = processManager.obtainProcessId("test-agent")
-            val processId4 = processManager.obtainProcessId("test-agent")
+            val processId1 = processManager.obtainProcessId(NewRunRecord("test-agent"))
+            val processId2 = processManager.obtainProcessId(NewRunRecord("test-agent"))
+            val processId3 = processManager.obtainProcessId(NewRunRecord("test-agent"))
+            val processId4 = processManager.obtainProcessId(NewRunRecord("test-agent"))
 
             processManager.setProcessStatus(processId1, ProcessStatus.WORKING)
             processManager.setProcessStatus(processId2, ProcessStatus.FINISHED)
@@ -1206,7 +1207,7 @@ class ProcessManagerTest {
     @Test
     fun `getAllProcesses should apply pagination with offset`() =
         runTest {
-            repeat(10) { processManager.obtainProcessId("test-agent") }
+            repeat(10) { processManager.obtainProcessId(NewRunRecord("test-agent")) }
 
             val result =
                 processManager.getAllProcesses(
@@ -1226,7 +1227,7 @@ class ProcessManagerTest {
     @Test
     fun `getAllProcesses should apply pagination with limit`() =
         runTest {
-            repeat(10) { processManager.obtainProcessId("test-agent") }
+            repeat(10) { processManager.obtainProcessId(NewRunRecord("test-agent")) }
 
             val result =
                 processManager.getAllProcesses(
@@ -1242,7 +1243,7 @@ class ProcessManagerTest {
     @Test
     fun `getAllProcesses should handle offset beyond total`() =
         runTest {
-            repeat(5) { processManager.obtainProcessId("test-agent") }
+            repeat(5) { processManager.obtainProcessId(NewRunRecord("test-agent")) }
 
             val result =
                 processManager.getAllProcesses(
@@ -1259,7 +1260,7 @@ class ProcessManagerTest {
         runTest {
             // Create 10 processes with alternating statuses
             repeat(10) { idx ->
-                val processId = processManager.obtainProcessId("test-agent")
+                val processId = processManager.obtainProcessId(NewRunRecord("test-agent"))
                 val status =
                     if (idx % 2 == 0) {
                         ProcessStatus.WORKING
@@ -1287,7 +1288,7 @@ class ProcessManagerTest {
     @Test
     fun `obtainProcessId should store agent name in ProcessInfo`() =
         runTest {
-            val id = processManager.obtainProcessId("my-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("my-agent"))
             val processInfo = processManager.getProcessInfo(id)
 
             assertNotNull(processInfo)
@@ -1297,8 +1298,8 @@ class ProcessManagerTest {
     @Test
     fun `getProcessInfo should include agent name`() =
         runTest {
-            val id1 = processManager.obtainProcessId("agent-one")
-            val id2 = processManager.obtainProcessId("agent-two")
+            val id1 = processManager.obtainProcessId(NewRunRecord("agent-one"))
+            val id2 = processManager.obtainProcessId(NewRunRecord("agent-two"))
 
             val processInfo1 = processManager.getProcessInfo(id1)
             val processInfo2 = processManager.getProcessInfo(id2)
@@ -1312,7 +1313,7 @@ class ProcessManagerTest {
     @Test
     fun `agent name should persist through status changes`() =
         runTest {
-            val id = processManager.obtainProcessId("persistent-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("persistent-agent"))
 
             processManager.setProcessStatus(id, ProcessStatus.WORKING)
             val processInfo1 = processManager.getProcessInfo(id)
@@ -1326,7 +1327,7 @@ class ProcessManagerTest {
     @Test
     fun `agent name should persist through job assignment`() =
         runTest {
-            val id = processManager.obtainProcessId("job-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("job-agent"))
             val job: Job = mockk(relaxed = true)
 
             processManager.assignJob(id, job)
@@ -1338,7 +1339,7 @@ class ProcessManagerTest {
     @Test
     fun `agent name should persist when process is killed`() =
         runTest {
-            val id = processManager.obtainProcessId("killable-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("killable-agent"))
             val job: Job = mockk(relaxed = true)
 
             processManager.assignJob(id, job)
@@ -1354,7 +1355,7 @@ class ProcessManagerTest {
     @Test
     fun `setPurgeAt stores purgeAt on process`() =
         runTest {
-            val id = processManager.obtainProcessId("agent")
+            val id = processManager.obtainProcessId(NewRunRecord("agent"))
             processManager.setPurgeAt(id, 9999L)
             val info = processManager.getProcessInfo(id)
             assertEquals(9999L, info?.purgeAt)
@@ -1363,7 +1364,7 @@ class ProcessManagerTest {
     @Test
     fun `removeProcess removes process from manager`() =
         runTest {
-            val id = processManager.obtainProcessId("agent")
+            val id = processManager.obtainProcessId(NewRunRecord("agent"))
             processManager.removeProcess(id)
             val info = processManager.getProcessInfo(id)
             assertEquals(null, info)
@@ -1381,7 +1382,7 @@ class ProcessManagerTest {
     @Test
     fun `label should be preserved through completeStep and getProcessExecutions`() =
         runTest {
-            val id = processManager.obtainProcessId("test-agent")
+            val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
 
             val executionInfo =
                 ExecutionInfo(
@@ -1408,7 +1409,7 @@ class ProcessManagerTest {
         runTest {
             val params = mapOf("TARGET" to "prod", "USER" to "alice")
 
-            val processId = processManager.obtainProcessId("deploy-agent", params)
+            val processId = processManager.obtainProcessId(NewRunRecord("deploy-agent", params))
 
             val info = processManager.getProcessInfo(processId)
             assertNotNull(info)
@@ -1419,7 +1420,7 @@ class ProcessManagerTest {
     @Test
     fun `obtainProcessId defaults inputParams to empty map when not provided`() =
         runTest {
-            val processId = processManager.obtainProcessId("simple-agent")
+            val processId = processManager.obtainProcessId(NewRunRecord("simple-agent"))
 
             val info = processManager.getProcessInfo(processId)
             assertNotNull(info)
@@ -1431,7 +1432,7 @@ class ProcessManagerTest {
     @Test
     fun `setRunnerState seeds state when previous is null`() =
         runTest {
-            val pid = processManager.obtainProcessId("demo")
+            val pid = processManager.obtainProcessId(NewRunRecord("demo"))
 
             processManager.setRunnerState(pid) {
                 RunnerState(alias = "k8s", podPhase = PodPhase.CREATING)
@@ -1446,7 +1447,7 @@ class ProcessManagerTest {
     @Test
     fun `setRunnerState updates prior state via copy`() =
         runTest {
-            val pid = processManager.obtainProcessId("demo")
+            val pid = processManager.obtainProcessId(NewRunRecord("demo"))
             processManager.setRunnerState(pid) {
                 RunnerState(
                     alias = "k8s",
@@ -1480,7 +1481,7 @@ class ProcessManagerTest {
     @Test
     fun `addCost accumulates across calls`() =
         runTest {
-            val pid = processManager.obtainProcessId("demo")
+            val pid = processManager.obtainProcessId(NewRunRecord("demo"))
             processManager.addCost(pid, 0.10, CostSource.CLI)
             processManager.addCost(pid, 0.25, CostSource.CLI)
             processManager.addCost(pid, 0.05, CostSource.CLI)
@@ -1491,7 +1492,7 @@ class ProcessManagerTest {
     @Test
     fun `addCost with zero delta is a no-op`() =
         runTest {
-            val pid = processManager.obtainProcessId("demo")
+            val pid = processManager.obtainProcessId(NewRunRecord("demo"))
             processManager.addCost(pid, 1.0, CostSource.CLI)
             processManager.addCost(pid, 0.0, CostSource.CLI)
 
@@ -1526,7 +1527,7 @@ class ProcessManagerTest {
                     onHooksRecorded = { handed += it },
                 )
 
-            val id = manager.obtainProcessId("declarer", owner = "alice")
+            val id = manager.obtainProcessId(NewRunRecord("declarer", owner = "alice"))
 
             // The CREATED write recorded exactly one row, and its id is what the callback got.
             assertEquals(
@@ -1556,7 +1557,7 @@ class ProcessManagerTest {
                     hookRecording = { recording(ProcessStatus.FINISHED) },
                     onHooksRecorded = { handed += it },
                 )
-            val id = manager.obtainProcessId("declarer")
+            val id = manager.obtainProcessId(NewRunRecord("declarer"))
 
             manager.setProcessStatus(id, ProcessStatus.WORKING)
             manager.setProcessStatus(id, ProcessStatus.FINISHED)
@@ -1584,7 +1585,7 @@ class ProcessManagerTest {
                     onHooksRecorded = { handed += it },
                 )
 
-            manager.obtainProcessId("declarer")
+            manager.obtainProcessId(NewRunRecord("declarer"))
 
             assertEquals(
                 listOf(ShedHooks(count = 1, agentName = "declarer", status = ProcessStatus.CREATED)),
@@ -1602,7 +1603,7 @@ class ProcessManagerTest {
                     hookRecording = { recording(ProcessStatus.KILLED) },
                     onHooksRecorded = { handed += it },
                 )
-            val id = manager.obtainProcessId("declarer")
+            val id = manager.obtainProcessId(NewRunRecord("declarer"))
             manager.setProcessStatus(id, ProcessStatus.WORKING)
 
             manager.killProcess(id, "operator kill")
@@ -1626,7 +1627,7 @@ class ProcessManagerTest {
                     hookRecording = { recording(ProcessStatus.FINISHED) },
                     onHooksRecorded = { handed += it },
                 )
-            val id = manager.obtainProcessId("declarer")
+            val id = manager.obtainProcessId(NewRunRecord("declarer"))
             manager.setProcessStatus(id, ProcessStatus.WORKING)
             manager.killProcess(id, "operator kill")
             handed.clear()
@@ -1642,7 +1643,7 @@ class ProcessManagerTest {
             val handed = mutableListOf<RecordedHooks>()
             val manager = newManager(onHooksRecorded = { handed += it })
 
-            val id = manager.obtainProcessId("declarer")
+            val id = manager.obtainProcessId(NewRunRecord("declarer"))
             manager.setProcessStatus(id, ProcessStatus.FINISHED)
 
             assertEquals(listOf(RecordedHooks(), RecordedHooks()), handed)

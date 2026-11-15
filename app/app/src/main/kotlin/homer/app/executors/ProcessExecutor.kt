@@ -4,6 +4,7 @@ import homer.app.exceptions.AnotherProcessStillActive
 import homer.app.exceptions.MaxParallelRunsExceededException
 import homer.app.exceptions.UnresolvedLockKeyPlaceholderException
 import homer.app.infra.TelemetryService
+import homer.app.models.NewRunRecord
 import homer.app.models.ProcessCreationResult
 import homer.app.models.ProcessStatus
 import io.opentelemetry.api.trace.Span
@@ -36,15 +37,17 @@ class ProcessExecutor(
         // INSERT; AgentRunStarter's pre-flight check cannot bind on its own. ADR-0051.
         val processId =
             processManager.obtainProcessId(
-                process.name,
-                process.queryParams,
-                owner = process.owner,
-                cooldown = process.cooldown,
-                cooldownKey = process.cooldownKey,
-                secretInputKeys = process.secretInputKeys,
-                parentProcessId = process.parentProcessId,
-                rootProcessId = process.rootProcessId,
-                tags = process.fromInputTags,
+                NewRunRecord(
+                    process.name,
+                    process.queryParams,
+                    owner = process.owner,
+                    cooldown = process.cooldown,
+                    cooldownKey = process.cooldownKey,
+                    secretInputKeys = process.secretInputKeys,
+                    parentProcessId = process.parentProcessId,
+                    rootProcessId = process.rootProcessId,
+                    tags = process.fromInputTags,
+                ),
             )
 
         logger.info("Process created {} for agent: {}", processId, process.name)

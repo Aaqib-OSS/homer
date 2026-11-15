@@ -11,6 +11,7 @@ import homer.app.models.AgentDispatchConfig
 import homer.app.models.ArtifactListingResponse
 import homer.app.models.ErrorResponse
 import homer.app.models.ExecutionInfo
+import homer.app.models.NewRunRecord
 import homer.app.models.Param
 import homer.app.models.ParamType
 import homer.app.models.ProcessInfo
@@ -133,8 +134,8 @@ class ProcessRoutesTest : ApiRouteTestBase() {
             // A real ProcessManager: the group is joined in from the current agent
             // definition at response time, never stored on the process row.
             val pm = realProcessManager()
-            val grouped = pm.obtainProcessId("grouped-agent")
-            val gone = pm.obtainProcessId("gone-agent")
+            val grouped = pm.obtainProcessId(NewRunRecord("grouped-agent"))
+            val gone = pm.obtainProcessId(NewRunRecord("gone-agent"))
             val agents = mockk<AgentsService>(relaxed = true)
             every { agents.agents } returns
                 mapOf("grouped-agent" to AgentFixtures.simpleAgent(name = "grouped-agent").copy(group = "Platform"))
@@ -163,8 +164,10 @@ class ProcessRoutesTest : ApiRouteTestBase() {
             val pm = realProcessManager()
             val id =
                 pm.obtainProcessId(
-                    "secret-agent",
-                    inputParams = mapOf("TOKEN" to "hunter2", "USER_N" to "alice"),
+                    NewRunRecord(
+                        "secret-agent",
+                        inputParams = mapOf("TOKEN" to "hunter2", "USER_N" to "alice"),
+                    ),
                 )
             val secretAgent =
                 AgentFixtures.simpleAgent(name = "secret-agent").copy(
@@ -194,8 +197,10 @@ class ProcessRoutesTest : ApiRouteTestBase() {
             val pm = realProcessManager()
             val id =
                 pm.obtainProcessId(
-                    "renamed-secret-agent",
-                    inputParams = mapOf("TOKEN" to "hunter2", "USER_N" to "alice"),
+                    NewRunRecord(
+                        "renamed-secret-agent",
+                        inputParams = mapOf("TOKEN" to "hunter2", "USER_N" to "alice"),
+                    ),
                 )
             // The secret input was renamed from envName TOKEN to API_TOKEN since this run
             // stored its value; the old TOKEN key matches no current input.
@@ -227,8 +232,10 @@ class ProcessRoutesTest : ApiRouteTestBase() {
             val pm = realProcessManager()
             val id =
                 pm.obtainProcessId(
-                    "removed-agent",
-                    inputParams = mapOf("TOKEN" to "hunter2", "USER_N" to "alice"),
+                    NewRunRecord(
+                        "removed-agent",
+                        inputParams = mapOf("TOKEN" to "hunter2", "USER_N" to "alice"),
+                    ),
                 )
 
             mountApiV1Routes {
@@ -249,7 +256,7 @@ class ProcessRoutesTest : ApiRouteTestBase() {
     fun `status response surfaces retainedTruncated after a retention prune`() =
         testApplication {
             val pm = realProcessManager()
-            val id = pm.obtainProcessId("retain-agent")
+            val id = pm.obtainProcessId(NewRunRecord("retain-agent"))
             pm.setProcessStatus(id, ProcessStatus.FINISHED)
             pm.markWorkspacePurged(id, retainedTruncated = true)
 
@@ -278,8 +285,8 @@ class ProcessRoutesTest : ApiRouteTestBase() {
     fun `GET status all should return all processes without filters`() =
         testApplication {
             val pm = realProcessManager()
-            val id1 = pm.obtainProcessId("test-agent")
-            val id2 = pm.obtainProcessId("test-agent")
+            val id1 = pm.obtainProcessId(NewRunRecord("test-agent"))
+            val id2 = pm.obtainProcessId(NewRunRecord("test-agent"))
             pm.setProcessStatus(id1, ProcessStatus.WORKING)
             pm.setProcessStatus(id2, ProcessStatus.FINISHED)
 
@@ -299,10 +306,10 @@ class ProcessRoutesTest : ApiRouteTestBase() {
     fun `GET status all should return the root id on each row and filter by rootProcessId`() =
         testApplication {
             val pm = realProcessManager()
-            val root = pm.obtainProcessId("test-agent")
-            val segment = pm.obtainProcessId("test-agent", parentProcessId = root, rootProcessId = root)
-            val grandchild = pm.obtainProcessId("test-agent", parentProcessId = segment, rootProcessId = root)
-            val unrelated = pm.obtainProcessId("test-agent")
+            val root = pm.obtainProcessId(NewRunRecord("test-agent"))
+            val segment = pm.obtainProcessId(NewRunRecord("test-agent", parentProcessId = root, rootProcessId = root))
+            val grandchild = pm.obtainProcessId(NewRunRecord("test-agent", parentProcessId = segment, rootProcessId = root))
+            val unrelated = pm.obtainProcessId(NewRunRecord("test-agent"))
 
             mountStatusAllRoutes(pm)
 
@@ -325,10 +332,10 @@ class ProcessRoutesTest : ApiRouteTestBase() {
     fun `GET status all should filter to flow roots with roots=true`() =
         testApplication {
             val pm = realProcessManager()
-            val rootA = pm.obtainProcessId("test-agent")
-            val rootB = pm.obtainProcessId("test-agent")
-            pm.obtainProcessId("test-agent", parentProcessId = rootA, rootProcessId = rootA)
-            pm.obtainProcessId("test-agent", parentProcessId = rootB, rootProcessId = rootB)
+            val rootA = pm.obtainProcessId(NewRunRecord("test-agent"))
+            val rootB = pm.obtainProcessId(NewRunRecord("test-agent"))
+            pm.obtainProcessId(NewRunRecord("test-agent", parentProcessId = rootA, rootProcessId = rootA))
+            pm.obtainProcessId(NewRunRecord("test-agent", parentProcessId = rootB, rootProcessId = rootB))
 
             mountStatusAllRoutes(pm)
 
@@ -354,7 +361,7 @@ class ProcessRoutesTest : ApiRouteTestBase() {
             every { agentsService.agents } returns mapOf("continuer" to target)
 
             // The flow's first run: no parent, and therefore no root of its own.
-            val root = pm.obtainProcessId("continuer")
+            val root = pm.obtainProcessId(NewRunRecord("continuer"))
 
             val runStarter = mockk<AgentRunStarter>()
             var lastFired: Int? = null
@@ -364,7 +371,7 @@ class ProcessRoutesTest : ApiRouteTestBase() {
                 runStarter.start(any(), any(), eq("continuation"), any(), any(), any(), any(), any(), any(), any(), any())
             } coAnswers {
                 pm
-                    .obtainProcessId("continuer", parentProcessId = arg<Int?>(7), rootProcessId = arg<Int?>(8))
+                    .obtainProcessId(NewRunRecord("continuer", parentProcessId = arg<Int?>(7), rootProcessId = arg<Int?>(8)))
                     .also { lastFired = it }
             }
             val continuations =
@@ -385,7 +392,7 @@ class ProcessRoutesTest : ApiRouteTestBase() {
                     questions.registerProcess(originId, "continuer")
                     // The watched run is already terminal, so `create` race-closes and fires
                     // the continuation immediately (ADR-0023).
-                    val watched = pm.obtainProcessId("continuer")
+                    val watched = pm.obtainProcessId(NewRunRecord("continuer"))
                     pm.setProcessStatus(watched, ProcessStatus.FINISHED)
                     continuations.create(originId, watched, "continuer", emptyMap(), "HMR_LG_RESUME", null, null)
                 }
@@ -412,8 +419,8 @@ class ProcessRoutesTest : ApiRouteTestBase() {
     fun `GET status all should filter by single status type`() =
         testApplication {
             val pm = realProcessManager()
-            val working = pm.obtainProcessId("test-agent")
-            val finished = pm.obtainProcessId("test-agent")
+            val working = pm.obtainProcessId(NewRunRecord("test-agent"))
+            val finished = pm.obtainProcessId(NewRunRecord("test-agent"))
             pm.setProcessStatus(working, ProcessStatus.WORKING)
             pm.setProcessStatus(finished, ProcessStatus.FINISHED)
 
@@ -433,9 +440,9 @@ class ProcessRoutesTest : ApiRouteTestBase() {
     fun `GET status all should filter by multiple status types`() =
         testApplication {
             val pm = realProcessManager()
-            val working = pm.obtainProcessId("test-agent")
-            val finished = pm.obtainProcessId("test-agent")
-            val failed = pm.obtainProcessId("test-agent")
+            val working = pm.obtainProcessId(NewRunRecord("test-agent"))
+            val finished = pm.obtainProcessId(NewRunRecord("test-agent"))
+            val failed = pm.obtainProcessId(NewRunRecord("test-agent"))
             pm.setProcessStatus(working, ProcessStatus.WORKING)
             pm.setProcessStatus(finished, ProcessStatus.FINISHED)
             pm.setProcessStatus(failed, ProcessStatus.FAILED)
@@ -455,9 +462,9 @@ class ProcessRoutesTest : ApiRouteTestBase() {
     fun `GET status all should order ascending when specified`() =
         testApplication {
             val pm = realProcessManager()
-            val id1 = pm.obtainProcessId("test-agent")
-            val id2 = pm.obtainProcessId("test-agent")
-            val id3 = pm.obtainProcessId("test-agent")
+            val id1 = pm.obtainProcessId(NewRunRecord("test-agent"))
+            val id2 = pm.obtainProcessId(NewRunRecord("test-agent"))
+            val id3 = pm.obtainProcessId(NewRunRecord("test-agent"))
 
             mountStatusAllRoutes(pm)
 
@@ -488,7 +495,7 @@ class ProcessRoutesTest : ApiRouteTestBase() {
     fun `GET status all should apply pagination with offset and limit`() =
         testApplication {
             val pm = realProcessManager()
-            val ids = List(10) { pm.obtainProcessId("test-agent") }
+            val ids = List(10) { pm.obtainProcessId(NewRunRecord("test-agent")) }
 
             mountStatusAllRoutes(pm)
 
@@ -507,8 +514,8 @@ class ProcessRoutesTest : ApiRouteTestBase() {
     fun `GET status all should filter by agent name`() =
         testApplication {
             val pm = realProcessManager()
-            val alphaProc = pm.obtainProcessId("agent-alpha")
-            val betaProc = pm.obtainProcessId("agent-beta")
+            val alphaProc = pm.obtainProcessId(NewRunRecord("agent-alpha"))
+            val betaProc = pm.obtainProcessId(NewRunRecord("agent-beta"))
 
             mountStatusAllRoutes(pm)
 
@@ -529,7 +536,7 @@ class ProcessRoutesTest : ApiRouteTestBase() {
             // ascending, then offset=1 limit=1 selects the 2nd-oldest WORKING id.
             val workingIds = mutableListOf<Int>()
             repeat(6) { idx ->
-                val pid = pm.obtainProcessId("test-agent")
+                val pid = pm.obtainProcessId(NewRunRecord("test-agent"))
                 if (idx % 2 == 0) {
                     pm.setProcessStatus(pid, ProcessStatus.WORKING)
                     workingIds.add(pid)

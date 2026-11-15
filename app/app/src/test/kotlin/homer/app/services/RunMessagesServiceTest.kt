@@ -6,6 +6,7 @@ import homer.app.exceptions.ValidationException
 import homer.app.fixtures.PersistenceTestSupport
 import homer.app.fixtures.TestFixtures
 import homer.app.infra.ProcessJobRegistry
+import homer.app.models.NewRunRecord
 import homer.app.models.ProcessStatus
 import homer.app.models.RunMessagesConfig
 import homer.app.services.persistence.ProcessRepository
@@ -45,7 +46,7 @@ class RunMessagesServiceTest {
         RunMessagesService(repository, broadcaster, config, logger, clock = { 500L })
 
     private suspend fun run(status: ProcessStatus = ProcessStatus.WORKING): Int {
-        val id = processes.obtainProcessId("a", emptyMap(), 100).processId
+        val id = processes.obtainProcessId(NewRunRecord("a"), 100).processId
         processes.transitionStatus(id, status, 1, null)
         return id
     }
@@ -135,7 +136,7 @@ class RunMessagesServiceTest {
             // Blocking JDBC on Dispatchers.IO and a barrier per round, so the takers really overlap.
             val ioDb = PersistenceTestSupport.tempDatabase(dispatcher = Dispatchers.IO)
             val ioProcesses = ProcessRepository(ioDb, ProcessJobRegistry())
-            val id = ioProcesses.obtainProcessId("a", emptyMap(), 100).processId
+            val id = ioProcesses.obtainProcessId(NewRunRecord("a"), 100).processId
             ioProcesses.transitionStatus(id, ProcessStatus.WORKING, 1, null)
             val takers = 4
             val rounds = 50
