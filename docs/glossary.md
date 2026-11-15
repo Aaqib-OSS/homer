@@ -2,10 +2,13 @@
 
 Homer's core terms, one definition each, in the vocabulary the code and the API use. A term's
 spelling in a route or a response field is the one that stays: this page fixes the words, it
-renames nothing.
+renames nothing. The run = process duality in particular is permanent: unifying the API paths
+under one term (a deprecation-style rename) was considered and rejected — both spellings already
+name the same object for every client, so a rename would break working callers to change wording,
+not behaviour. This paragraph is the recorded rationale for that rejection.
 
 - **agent** — an agent definition (`agent.yaml` / `agent.json`): its inputs, its ordered commands
-  and its policy (`runners`, `runnerTags`, `cooldown`, `onStop`), invokable by name. ADR-0005
+  and its policy (`runner`, `runnerTags`, `cooldown`, `onStop`), invokable by name. ADR-0005
   retired "skill" as a synonym.
 - **run = process** — one execution of one agent, identified by `processId` and stored as a process
   row. Both words name the same object, so both stay in the API: `GET /api/v1/status/{processId}`,
@@ -14,8 +17,10 @@ renames nothing.
   `resultCode`, `stdOut` / `stdErr`, `llmAccounting`), listed under `executions` in the status
   response. The Execution layer — `ProcessExecutor`, `AgentExecutor`, the runners — produces them.
 - **flow / root** — a run with every run it caused, linked by `parentProcessId`; the flow root is
-  the first run of that tree, `rootProcessId`, null at the root. Flow-scoped locks (ADR-0029) and
-  runner affinity (ADR-0099) key on the root, not on one run.
+  the first run of that tree, `rootProcessId`, null at the root. Runner affinity (ADR-0099) keys
+  on the root: a run's affinity key is `(rootProcessId, group)`. Flow-scoped locks (ADR-0029) are
+  not a root-held lock: every run locks its own rendered key, and a descendant that opts in with
+  `acceptParentLock` skips that lock only when its key matches an inherited ancestor key.
 - **dispatch** — one run starting another as a first-class run: `RunAgent`, ask-and-dispatch,
   `POST /api/v1/callback/runs`. The new run has its own owner, cost cap and slot, and its own
   `parentProcessId` (ADR-0021, ADR-0030); which agents a hop may reach is its authority (ADR-0039).
@@ -30,7 +35,8 @@ renames nothing.
   consuming claims inside it (ADR-0003, ADR-0066).
 - **claim** — a run's request for a runner: `RunnerClaimQueue` holds one `ClaimRequest` per run and
   a consumer (a static runner, or an external instance holding a free permit) takes the oldest
-  request it matches. The claim expires after `server.runnerClaimTimeoutSec` and the run fails with
+  request it matches. The claim expires after `server.runnerClaimTimeoutSec` — or the agent's
+  `runnerClaimTimeoutSec` override — and the run fails with
   the reason observed then (ADR-0066, ADR-0096).
 - **session / op** — a session (`Runner.openSession`) is the channel a run holds on its runner for
   the length of the run; each primitive on it is one `RunnerOp`, which an external instance drains
