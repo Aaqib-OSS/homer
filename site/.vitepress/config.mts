@@ -1,5 +1,6 @@
 import { readdirSync } from 'node:fs'
 import { defineConfig } from 'vitepress'
+import { anchor } from './anchor.mjs'
 import { tableWidths } from './table-widths.mjs'
 
 // DOCS_BASE is the path the build is served under, e.g. /homer/1.34.0/ or /homer/next/ on GitHub
@@ -23,7 +24,7 @@ export default defineConfig({
   // The docs show how to reach a local stack (http://localhost:3000); those are not site links.
   ignoreDeadLinks: 'localhostLinks',
   head: [['meta', { name: 'homer-docs-version', content: version }]],
-  markdown: { config: tableWidths },
+  markdown: { anchor, config: tableWidths },
   themeConfig: {
     search: { provider: 'local' },
     nav: [
