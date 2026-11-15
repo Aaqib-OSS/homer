@@ -88,6 +88,13 @@ class EntrypointScriptTest {
         assertBothBranches("[-jar][/app/homer.jar][*.yaml]", mapOf("CONFIG_PATH" to "*.yaml"))
 
     @Test
+    fun `a CONFIG_PATH with parameter and command substitution is passed literally`() =
+        assertBothBranches(
+            "[-jar][/app/homer.jar][\$HOME/`id`/\$(id)/config.yaml]",
+            mapOf("CONFIG_PATH" to "\$HOME/`id`/\$(id)/config.yaml"),
+        )
+
+    @Test
     fun `an empty CONFIG_PATH passes no argument`() = assertBothBranches("[-jar][/app/homer.jar]", mapOf("CONFIG_PATH" to ""))
 
     @Test
