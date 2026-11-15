@@ -33,7 +33,7 @@ class RunnerRegistry(
     private val entries: List<RegisteredRunner>,
     val externalDomains: List<ExternalRunnerDomain> = emptyList(),
     val queue: RunnerClaimQueue = RunnerClaimQueue(maxPending = Server.DEFAULT_MAX_PENDING_RUNNER_CLAIMS),
-    private val defaultClaimTimeout: Duration = 300.seconds,
+    private val defaultClaimTimeout: Duration = Server.DEFAULT_RUNNER_CLAIM_TIMEOUT_SEC.seconds,
     private val sweepInterval: Duration = 5.seconds,
     // server.localRunner.enabled: false, as RunnerWiring read it; see ADR-0095.
     private val localRunnerDisabled: Boolean = false,

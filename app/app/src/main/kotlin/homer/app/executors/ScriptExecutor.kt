@@ -1,5 +1,6 @@
 package homer.app.executors
 
+import homer.app.SpanAttributes
 import homer.app.infra.FileOperations
 import homer.app.models.Command
 import homer.app.models.CommandResult
@@ -18,7 +19,7 @@ class ScriptExecutor(
         span: Span,
     ): CommandResult {
         val redactor = context.secretRedactor()
-        span.setAttribute("input.value", redactor.redact(command.content))
+        span.setAttribute(SpanAttributes.INPUT_VALUE, redactor.redact(command.content))
 
         val result =
             context.shell.cmd(

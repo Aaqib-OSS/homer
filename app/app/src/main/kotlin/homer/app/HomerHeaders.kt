@@ -6,6 +6,9 @@ package homer.app
  *
  * The strings are a published surface — a renamed header stops reaching existing clients and
  * egress proxies, so every value here is pinned by a test.
+ *
+ * Canonical for new code: the `EnvConstants.*_HEADER` constants are transitional aliases of these
+ * values, kept only while their call sites migrate here.
  */
 object HomerHeaders {
     /** Response header of `GET /api/v1/artifacts`: the run's current status name. */

@@ -58,20 +58,23 @@ object EnvConstants {
     /**
      * Request header an external caller of `POST /api/v1/agent/{name}` sets to link
      * the new run to a parent it can see. Alias of [HomerHeaders.PARENT_PROCESS_ID],
-     * which holds the string. See ADR-0058.
+     * which holds the string and is canonical for new code; this alias is transitional
+     * and goes when its call sites migrate. See ADR-0058.
      */
     const val PARENT_PROCESS_HEADER = HomerHeaders.PARENT_PROCESS_ID
 
     /**
      * Request header carrying a run's [CALLBACK_TOKEN] to `GET /api/v1/callback/whoami`,
      * read before `Authorization`: at an egress proxy that header belongs to the upstream.
-     * Alias of [HomerHeaders.CALLBACK_TOKEN]. See ADR-0110.
+     * Alias of [HomerHeaders.CALLBACK_TOKEN], canonical for new code; this alias is
+     * transitional and goes when its call sites migrate. See ADR-0110.
      */
     const val CALLBACK_TOKEN_HEADER = HomerHeaders.CALLBACK_TOKEN
 
     /**
      * Response headers of `GET /api/v1/callback/whoami`: the identified run's agent and id.
-     * Aliases of [HomerHeaders.AGENT] / [HomerHeaders.PROCESS_ID]. See ADR-0110.
+     * Aliases of [HomerHeaders.AGENT] / [HomerHeaders.PROCESS_ID], canonical for new code;
+     * these aliases are transitional and go when their call sites migrate. See ADR-0110.
      */
     const val AGENT_HEADER = HomerHeaders.AGENT
     const val PROCESS_ID_HEADER = HomerHeaders.PROCESS_ID

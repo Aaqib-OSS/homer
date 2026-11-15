@@ -1,5 +1,6 @@
 package homer.app.executors
 
+import homer.app.SpanAttributes
 import homer.app.exceptions.CommandExecutionException
 import homer.app.infra.FileOperations
 import homer.app.infra.PathSafety
@@ -48,7 +49,7 @@ class RunnerCmdExecutor(
             SecretRedactor.from(context.workspace.config.env, context.workspace.config.secretEnvNames) +
                 SecretRedactor.from(runner.runnerEnv, runner.sysEnvBackedEnvNames)
         span.setAttribute("runner.target", command.runner)
-        span.setAttribute("input.value", redactor.redact(command.execute))
+        span.setAttribute(SpanAttributes.INPUT_VALUE, redactor.redact(command.execute))
 
         val forwardedEnv = forwardedEnv(runner, context)
 

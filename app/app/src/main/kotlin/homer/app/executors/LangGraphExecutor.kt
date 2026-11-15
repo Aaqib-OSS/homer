@@ -1,6 +1,7 @@
 package homer.app.executors
 
 import homer.app.EnvConstants
+import homer.app.SpanAttributes
 import homer.app.infra.FileOperations
 import homer.app.models.AppConfig
 import homer.app.models.Command
@@ -35,7 +36,7 @@ class LangGraphExecutor(
                 command.inputEnv,
             )
         val redactor = context.secretRedactor()
-        span.setAttribute("input.value", redactor.redact(argv.joinToString(" ")))
+        span.setAttribute(SpanAttributes.INPUT_VALUE, redactor.redact(argv.joinToString(" ")))
 
         // The state dir is authoritative: the runtime must open its checkpointer
         // at the server's resolved directory, so it overrides any workspace value.

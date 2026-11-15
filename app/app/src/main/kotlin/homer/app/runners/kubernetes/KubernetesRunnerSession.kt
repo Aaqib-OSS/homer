@@ -1,5 +1,6 @@
 package homer.app.runners.kubernetes
 
+import homer.app.SpanAttributes
 import homer.app.infra.ShellExecutor
 import homer.app.models.ExtraUploadSpec
 import homer.app.runners.DownloadMode
@@ -58,7 +59,7 @@ class KubernetesRunnerSession(
     override val runDeadline: RunDeadline? = runDeadlineFromPod()
 
     override val metadata: Map<String, String>
-        get() = mapOf("pod.name" to podName) + listOfNotNull(jobName?.let { "job.name" to it })
+        get() = mapOf(SpanAttributes.POD_NAME to podName) + listOfNotNull(jobName?.let { SpanAttributes.JOB_NAME to it })
 
     override fun markFailed() {
         failed = true
@@ -90,10 +91,10 @@ class KubernetesRunnerSession(
             ?.setParent(parentContext)
             ?.startSpan()
             ?.apply {
-                setAttribute("runner.alias", runnerAlias)
-                setAttribute("pod.namespace", namespace)
-                setAttribute("pod.name", podName)
-                jobName?.let { setAttribute("job.name", it) }
+                setAttribute(SpanAttributes.RUNNER_ALIAS, runnerAlias)
+                setAttribute(SpanAttributes.POD_NAMESPACE, namespace)
+                setAttribute(SpanAttributes.POD_NAME, podName)
+                jobName?.let { setAttribute(SpanAttributes.JOB_NAME, it) }
                 setAttribute("pod.cleanup_mode", mode)
                 setAttribute("pod.final_phase", finalPhase)
             }

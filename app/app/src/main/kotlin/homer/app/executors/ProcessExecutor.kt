@@ -79,7 +79,7 @@ class ProcessExecutor(
         // the sub it just started), and an unguarded write would reset KILLED to CREATED.
         processManager.compareAndSetStatus(processId, setOf(ProcessStatus.CREATED), ProcessStatus.CREATED)
         try {
-            processSpan.setAttribute("process.id", processId.toLong())
+            processSpan.setAttribute(SpanAttributes.PROCESS_ID, processId.toLong())
             processSpan.setAttribute(SpanAttributes.PROCESS_STATUS, ProcessStatus.CREATED.name)
             processSpan.addEvent("${SpanAttributes.PROCESS_STATUS_EVENT_PREFIX}created")
             process.execute(processId, processSpan)

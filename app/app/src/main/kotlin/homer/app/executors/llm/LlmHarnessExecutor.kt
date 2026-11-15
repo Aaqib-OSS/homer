@@ -1,5 +1,6 @@
 package homer.app.executors.llm
 
+import homer.app.SpanAttributes
 import homer.app.exceptions.MalformedLlmOutputException
 import homer.app.executors.CommandArtifactPaths
 import homer.app.executors.CommandExecutor
@@ -63,7 +64,7 @@ class LlmHarnessExecutor<C>(
         val argv0 = harness.argv(command, env)
         val compiledPrompt = compilePrompt(command, env)
         val redactor = context.secretRedactor()
-        span.setAttribute("input.value", redactor.redact(compiledPrompt))
+        span.setAttribute(SpanAttributes.INPUT_VALUE, redactor.redact(compiledPrompt))
 
         // Tier 0 is the step as declared; each `escalate` entry is a further tier, run only when its
         // `when` judges the previous tier's outcome bad. No `escalate` = exactly one pass. See ADR-0079.

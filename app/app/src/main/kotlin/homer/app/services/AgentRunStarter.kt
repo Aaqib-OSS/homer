@@ -1,5 +1,6 @@
 package homer.app.services
 
+import homer.app.SpanAttributes
 import homer.app.exceptions.InvocationCycleDetectedException
 import homer.app.exceptions.InvocationDepthExceededException
 import homer.app.executors.ProcessExecutor
@@ -255,12 +256,12 @@ internal class AgentRunStarter(
     ): Attributes =
         Attributes
             .builder()
-            .put("process.id", processId.toLong())
-            .put("server.id", serverId)
-            .put("agent.name", agent.name)
-            .put("request.source", source)
-            .apply { parentProcessId?.let { put("parent.process.id", it.toLong()) } }
-            .apply { rootProcessId?.let { put("root.process.id", it.toLong()) } }
+            .put(SpanAttributes.PROCESS_ID, processId.toLong())
+            .put(SpanAttributes.SERVER_ID, serverId)
+            .put(SpanAttributes.AGENT_NAME, agent.name)
+            .put(SpanAttributes.REQUEST_SOURCE, source)
+            .apply { parentProcessId?.let { put(SpanAttributes.PARENT_PROCESS_ID, it.toLong()) } }
+            .apply { rootProcessId?.let { put(SpanAttributes.ROOT_PROCESS_ID, it.toLong()) } }
             // Why this start did not wait at the maintenance gate: a boolean only, never a
             // parent's inputs. True only for a start admitted while the mode was on; false for
             // every parked start and every start that ran with the mode off.

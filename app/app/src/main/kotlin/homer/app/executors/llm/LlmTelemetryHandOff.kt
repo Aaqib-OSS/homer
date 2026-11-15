@@ -1,5 +1,6 @@
 package homer.app.executors.llm
 
+import homer.app.SpanAttributes
 import homer.app.infra.SecretRedactor
 import homer.app.infra.TranslatedStream
 import homer.app.models.Command
@@ -84,7 +85,7 @@ internal class LlmTelemetryHandOff<C>(
             // A kill during the hand-off must stop the step, not let it finish as a success.
             throw e
         } catch (e: Exception) {
-            span.setAttribute("telemetry.error", e.message ?: "Unknown error")
+            span.setAttribute(SpanAttributes.TELEMETRY_ERROR, e.message ?: "Unknown error")
             span.recordException(e)
         }
     }
@@ -102,7 +103,7 @@ internal class LlmTelemetryHandOff<C>(
         if (settlement == null || !settlementHandOffs.tryAcquire()) { // CWE-770/CWE-400: shed, never queue a job (ADR-0047 §12 rules 4-5).
             if (settlement != null) {
                 logger.warn("settlement hand-off shed at the concurrency bound ({})", MAX_CONCURRENT_SETTLEMENT_HANDOFFS)
-                span.setAttribute("telemetry.llm.handoff_shed", true)
+                span.setAttribute(SpanAttributes.TELEMETRY_LLM_HANDOFF_SHED, true)
             }
             telemetry.process(stream, compiledPrompt, span, redactor, step, resolvedCostUsd = telemetryCostUsd(pending))
             return
@@ -114,12 +115,14 @@ internal class LlmTelemetryHandOff<C>(
                 val settlementSpanBuilder = telemetry.tracer.spanBuilder("llm_cost_settlement").setParent(Context.current().with(span))
                 val settlementSpan = settlementSpanBuilder.startSpan()
                 // A wait that timed out, not a settlement that failed: only the former is a shed.
-                if (waited.isSuccess && waited.getOrNull() == null) settlementSpan.setAttribute("telemetry.llm.handoff_shed", true)
+                if (waited.isSuccess && waited.getOrNull() == null) {
+                    settlementSpan.setAttribute(SpanAttributes.TELEMETRY_LLM_HANDOFF_SHED, true)
+                }
                 settled?.let { accounting.annotateSettled(settlementSpan, it) }
                 runCatching { telemetry.process(stream, compiledPrompt, span, redactor, step, resolvedCostUsd = telemetryCostUsd(settled)) }
                     .onFailure {
                         logger.warn("telemetry hand-off failed after the cost settled ({})", it.message)
-                        settlementSpan.setAttribute("telemetry.error", it.message ?: "Unknown error")
+                        settlementSpan.setAttribute(SpanAttributes.TELEMETRY_ERROR, it.message ?: "Unknown error")
                         settlementSpan.recordException(it)
                     }
                 settlementSpan.end()

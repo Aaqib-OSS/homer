@@ -40,8 +40,9 @@ class ServerConfigTest {
     fun `runner queue settings default to 300 s claim TTL and 1000 pending claims`() {
         assertEquals(300, Server().runnerClaimTimeoutSec)
         assertEquals(1000, Server().maxPendingRunnerClaims)
-        // The constant RunnerRegistry's default queue reads, so the two bounds cannot drift.
+        // The constants RunnerRegistry's defaults read, so the two bounds cannot drift.
         assertEquals(1000, Server.DEFAULT_MAX_PENDING_RUNNER_CLAIMS)
+        assertEquals(300, Server.DEFAULT_RUNNER_CLAIM_TIMEOUT_SEC)
         assertEquals(LocalRunnerConfig(), Server().localRunner)
     }
 

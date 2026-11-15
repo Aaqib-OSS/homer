@@ -79,8 +79,8 @@ interface RunnerSession : AutoCloseable {
 
     /**
      * Backend-specific facts about this session's execution resource
-     * (e.g. "pod.name" for kubernetes). Stamped onto command-execution
-     * spans by AgentExecutor.
+     * (e.g. [homer.app.SpanAttributes.POD_NAME] for kubernetes). Stamped onto
+     * command-execution spans by AgentExecutor.
      */
     val metadata: Map<String, String>
         get() = emptyMap()

@@ -40,10 +40,9 @@ import kotlinx.serialization.json.buildJsonObject
 private const val HEARTBEAT_MS = 15_000L
 
 /**
- * SSE event name of a status change on `/stream/processes`. Deliberately its own constant rather
- * than `SpanAttributes.PROCESS_STATUS`: the two surfaces happen to spell the same string today, but
- * the frame name is a client contract and the span key an exported attribute, and neither may drag
- * the other along when it changes.
+ * SSE event name of a status change on `/stream/processes`. Deliberately not
+ * `SpanAttributes.PROCESS_STATUS` — a client-facing frame name, not an exported span key; the two
+ * must not be merged even though they spell the same string today.
  */
 private const val PROCESS_STATUS_SSE_EVENT = "process.status"
 

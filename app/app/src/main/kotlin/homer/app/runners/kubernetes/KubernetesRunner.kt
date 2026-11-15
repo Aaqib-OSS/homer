@@ -1,6 +1,7 @@
 package homer.app.runners.kubernetes
 
 import homer.app.EnvConstants
+import homer.app.SpanAttributes
 import homer.app.exceptions.PodStartupException
 import homer.app.models.KubernetesWorkload
 import homer.app.models.RunnerConfig
@@ -101,9 +102,9 @@ class KubernetesRunner(
             ?.setParent(params.parentContext)
             ?.startSpan()
             ?.apply {
-                setAttribute("runner.alias", alias)
-                setAttribute("pod.namespace", config.namespace)
-                if (jobName == null) setAttribute("pod.name", name) else setAttribute("job.name", jobName)
+                setAttribute(SpanAttributes.RUNNER_ALIAS, alias)
+                setAttribute(SpanAttributes.POD_NAMESPACE, config.namespace)
+                if (jobName == null) setAttribute(SpanAttributes.POD_NAME, name) else setAttribute(SpanAttributes.JOB_NAME, jobName)
             }
 
     private fun newShell(

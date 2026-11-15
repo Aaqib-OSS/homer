@@ -24,6 +24,25 @@ class SpanAttributesAndHeadersPinTest {
     }
 
     @Test
+    fun `the run, agent and runner span keys are byte-identical to the literals`() {
+        assertEquals("process.id", SpanAttributes.PROCESS_ID)
+        assertEquals("parent.process.id", SpanAttributes.PARENT_PROCESS_ID)
+        assertEquals("root.process.id", SpanAttributes.ROOT_PROCESS_ID)
+        assertEquals("server.id", SpanAttributes.SERVER_ID)
+        assertEquals("agent.name", SpanAttributes.AGENT_NAME)
+        assertEquals("request.source", SpanAttributes.REQUEST_SOURCE)
+        assertEquals("input.value", SpanAttributes.INPUT_VALUE)
+        assertEquals("output.value", SpanAttributes.OUTPUT_VALUE)
+        assertEquals("retry.attempts.used", SpanAttributes.RETRY_ATTEMPTS_USED)
+        assertEquals("telemetry.error", SpanAttributes.TELEMETRY_ERROR)
+        assertEquals("telemetry.llm.handoff_shed", SpanAttributes.TELEMETRY_LLM_HANDOFF_SHED)
+        assertEquals("runner.alias", SpanAttributes.RUNNER_ALIAS)
+        assertEquals("pod.namespace", SpanAttributes.POD_NAMESPACE)
+        assertEquals("pod.name", SpanAttributes.POD_NAME)
+        assertEquals("job.name", SpanAttributes.JOB_NAME)
+    }
+
+    @Test
     fun `header names are byte-identical to the literals`() {
         assertEquals("X-Process-Status", HomerHeaders.PROCESS_STATUS)
         assertEquals("X-File-Complete", HomerHeaders.FILE_COMPLETE)
