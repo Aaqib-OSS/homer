@@ -145,6 +145,25 @@ class ArchitectureRulesTest {
         assertNoViolations("MockK for mocks (root CLAUDE.md §6)", violations)
     }
 
+    @Test
+    fun `an infra parser, validator or builder has a property-based test`() {
+        val propertyTests = Sources.appTest.files
+        val violations =
+            Sources.appMain.files
+                .filter { file ->
+                    file.packagee?.name?.startsWith("homer.app.infra") == true &&
+                        PROPERTY_TESTED_SUFFIXES.any { file.name.endsWith(it) }
+                }.filterNot { unit ->
+                    propertyTests.any { test ->
+                        test.packagee?.name == unit.packagee?.name &&
+                            test.name.startsWith(unit.name) &&
+                            test.name.endsWith("Test") &&
+                            test.imports.any { it.name.startsWith("$KOTEST_PROPERTY.") }
+                    }
+                }.map { violation(it.path, 1, "${it.name} has no ${it.name}*Test importing $KOTEST_PROPERTY") }
+        assertNoViolations("Infra parsers, validators and builders have a property-based test (root CLAUDE.md §6)", violations)
+    }
+
     private fun KoClassDeclaration.isTestableConcreteClass(): Boolean =
         !hasPrivateModifier && !hasAbstractModifier && !hasSealedModifier && !hasDataModifier && !hasEnumModifier
 
@@ -206,6 +225,11 @@ class ArchitectureRulesTest {
         val SERVICE_PACKAGES = listOf("homer.app.services..", "homer.app.executors..", "homer.app.infra..")
 
         val INLINE_BAD_REQUEST = Regex("""\brespond\w*\(\s*(status\s*=\s*)?HttpStatusCode\.BadRequest\b""")
+
+        /** The `homer.app.infra` unit names root CLAUDE.md §6 requires a property-based test for. */
+        val PROPERTY_TESTED_SUFFIXES = listOf("Parser", "Validator", "Builder")
+
+        const val KOTEST_PROPERTY = "io.kotest.property"
 
         val BELOW_HTTP_PACKAGES =
             listOf(
