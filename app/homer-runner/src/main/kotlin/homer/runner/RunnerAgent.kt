@@ -49,12 +49,11 @@ class Backoff(
 }
 
 /**
- * The instance lifecycle: register (retrying connection errors and 5xx, failing
- * on 4xx), run `concurrency` claim loops, hand each claim to a [SessionWorker],
- * and on [drain] stop claiming, deregister and give in-flight sessions
- * `drainTimeout` to finish. A `404` on `claim` means Homer dropped the instance
- * (heartbeat expiry); the agent registers again under a new id. A host that fails
- * [healthCheck] never registers or, once running, stops claiming, drains and ends [run]
+ * The instance lifecycle: register (retrying connection errors and 5xx, failing on 4xx), run
+ * `concurrency` claim loops, hand each claim to a [SessionWorker], and on [drain] stop claiming,
+ * deregister and give in-flight sessions `drainTimeout` to finish. A `404` on `claim` means Homer
+ * dropped the instance (heartbeat expiry); the agent registers again under a new id. A host that
+ * fails [healthCheck] never registers or, once running, stops claiming, drains and ends [run]
  * with [RunnerUnhealthyException].
  */
 class RunnerAgent(

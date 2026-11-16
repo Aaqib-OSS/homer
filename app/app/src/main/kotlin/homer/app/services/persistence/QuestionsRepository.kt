@@ -115,18 +115,11 @@ class QuestionsRepository(
 
     /**
      * One page of questions, oldest first (rowid, the insertion order), and the count of all rows
-     * matching the filters. [visibleAgents] null means an admin (no visibility filter); otherwise a
-     * question matches when its asking process is owned by [visibleOwner] or it was asked by one of
-     * [visibleAgents] (a dispatch-bound question outlives its process, so the agent arm reads the
-     * question's own column). Visibility runs in SQL before the limit, so neither the page nor the
-     * total carries a question the caller cannot see (ADR-0039).
-     *
-     * Every filtered shape is `rowid IN (<one SELECT rowid per visibility arm, UNIONed>)`, as in
-     * [FiredRecords.page]: each arm seeks its own index (`processes_owner` then
-     * `questions_process_dispatch_bound`, `questions_agent_name`, `questions_status_dispatch_bound`)
-     * and the outer read walks the rowid set in order, so the page needs no sort. The plain
-     * `x OR y` form plans as a walk of the whole table once statistics exist. Only the unfiltered
-     * admin page walks the table, reading offset + limit rows. DatabaseMigrationTest pins every shape.
+     * matching the filters. Visibility runs in SQL before the limit, so neither the page nor the
+     * total carries a question the caller cannot see (ADR-0039). [visibleAgents] null means an
+     * admin; otherwise a question matches when its asking process is owned by [visibleOwner] or it
+     * was asked by one of [visibleAgents]; a dispatch-bound question outlives its process. Each
+     * shape is `rowid IN (<one SELECT rowid per arm, UNIONed>)`, each arm seeking its own index; DatabaseMigrationTest pins it.
      */
     suspend fun page(
         status: QuestionStatus?,

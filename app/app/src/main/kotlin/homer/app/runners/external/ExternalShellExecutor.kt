@@ -24,14 +24,12 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Runs each command as one `cmd` op on the claimed instance. Output arrives as
- * ordered chunks through [OutputSink] into the same stdout/stderr files every
- * other runner writes, stdout through the Claude line filter when one is set, so
- * log tailing and result parsing above the session do not change. Timeout is
- * enforced by the instance (`timedOut` in the result); Homer bounds the wait for
- * that result by `timeoutMs + heartbeatTimeoutSec`, plus the interrupt grace when
- * one is set, because the instance then stops the command gracefully before it
- * answers (ADR-0066, ADR-0108).
+ * Runs each command as one `cmd` op on the claimed instance. Output arrives as ordered chunks
+ * through [OutputSink] into the same stdout/stderr files every other runner writes, stdout through
+ * the Claude line filter when one is set, so log tailing and result parsing above the session do
+ * not change. Timeout is enforced by the instance (`timedOut` in the result); Homer bounds the wait
+ * for that result by `timeoutMs + heartbeatTimeoutSec`, plus the interrupt grace when one is set,
+ * because the instance then stops the command gracefully before it answers (ADR-0066, ADR-0108).
  */
 class ExternalShellExecutor(
     private val session: ExternalRunnerSession,
@@ -229,13 +227,12 @@ class ExternalShellExecutor(
     }
 
     /**
-     * Fails the step when the instance reports more chunks for a stream than Homer holds:
-     * the step's output is truncated, and a clean `CommandResult` over it is what let a
-     * `!<claude>` step die on a missing `result` event instead of on the real cause. One
-     * bounded wait first, never a loop — the instance reports its exit after its last post,
-     * but the two ride different connections, so the last chunk can still be in flight
-     * (§12 rules 4–5). A cap that trips during the check is the cap error, not a clean or
-     * merely incomplete result ([capError]).
+     * Fails the step when the instance reports more chunks for a stream than Homer holds: the
+     * step's output is truncated, and a clean `CommandResult` over it would let a `!<claude>` step
+     * die on a missing `result` event instead of on the real cause. One bounded wait first, never a
+     * loop — the instance reports its exit after its last post, but the two ride different
+     * connections, so the last chunk can still be in flight (§12 rules 4–5). A cap that trips
+     * during the check is the cap error, not a clean or merely incomplete result ([capError]).
      */
     private suspend fun requireCompleteOutput(
         result: OpResult,

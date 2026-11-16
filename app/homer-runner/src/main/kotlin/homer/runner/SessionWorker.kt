@@ -23,18 +23,12 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Drives one claimed session: a poller keeps one `next` long-poll open so
- * `cancel` and `close` arrive while a command runs; the dispatcher executes ops
- * in order and hands each result to a background delivery job rather than
- * posting it inline. Posting is itself a `next` long-poll racing the poller's
- * own for whichever op Homer hands out next — if delivery lost that race and
- * posting ran on the dispatcher's own coroutine, the dispatcher would stay
- * parked inside its now-pointless call for up to a full poll window even
- * though the poller already queued the op locally. Running delivery on its own
- * coroutine keeps the dispatcher free to pick that queued op up at once. Any
- * op a delivery call receives back joins the same queue. Homer unreachable for
- * [heartbeatTimeout] means Homer has dropped this instance: kill what runs,
- * cancel in-flight deliveries, and stop (ADR-0066 "Liveness").
+ * Drives one claimed session: a poller keeps one `next` long-poll open so `cancel` and `close` arrive
+ * while a command runs; the dispatcher executes ops in order, handing each result to a background
+ * delivery job, not inline — posting is itself a `next` long-poll racing the poller's, so running it
+ * on the dispatcher's coroutine would park it a full poll window though the op is already queued; a
+ * delivery job keeps it free to pick that op up at once, and any op received back joins the queue.
+ * Unreachable for [heartbeatTimeout] means Homer dropped this instance: kill what runs and stop (ADR-0066).
  */
 class SessionWorker(
     private val api: RunnerApi,
@@ -220,13 +214,11 @@ class SessionWorker(
 
     /**
      * Posts [result] on a new child coroutine of [workerScope] — never on the caller's own
-     * coroutine, whether that's `dispatchLoop`'s for-loop (non-`cmd` ops) or a `cmd`'s own
-     * launched job — so a `next` call that loses its race with the poller and sits parked
-     * for a full poll window never keeps the caller from moving on. The job is tracked in
-     * [deliveryJobs] so [lost] can cancel a call that would otherwise time out (or exhaust
-     * its retry budget) against a session that's already gone, rather than leaving [run]
-     * waiting for it. Skips posting entirely once [lost] is already set: a delivery that
-     * only gets scheduled after the session is lost has nothing to report.
+     * coroutine — so a `next` call that loses its race with the poller and sits parked for a
+     * full poll window never keeps the caller from moving on. The job is tracked in
+     * [deliveryJobs] so [lost] can cancel a call that would otherwise time out (or exhaust its
+     * retry budget) against a session that's already gone. Skips posting entirely once [lost]
+     * is already set: a delivery scheduled after the session is lost has nothing to report.
      */
     private fun deliver(result: OpResult) {
         if (lost) return
@@ -263,13 +255,12 @@ class SessionWorker(
     }
 
     /**
-     * Hands [op] to the dispatcher without ever suspending. Always runs on a delivery job's own
-     * coroutine (see [deliver]), never on the dispatcher's — but a suspending `send` here would
-     * still be wrong: a full channel is never expected to drain on its own, so blocking on it
-     * would just wedge the delivery job. A closed channel means the session is already ending
-     * (`lost()` ran concurrently); nothing to do. A full buffer means Homer handed out another op
-     * before this one was acknowledged, breaking the one-op-in-flight assumption `ops`'s bound
-     * relies on — treated as fatal (drop the session) rather than silently discarding an op.
+     * Hands [op] to the dispatcher without ever suspending: a suspending `send` would wedge the
+     * delivery job on a full channel that is never expected to drain on its own. A closed channel
+     * means the session is already ending (`lost()` ran concurrently); nothing to do. A full
+     * buffer means Homer handed out another op before this one was acknowledged, breaking the
+     * one-op-in-flight assumption `ops`'s bound relies on — treated as fatal (drop the session)
+     * rather than silently discarding an op.
      */
     private fun handOff(op: RunnerOp) {
         val result = ops.trySend(op)

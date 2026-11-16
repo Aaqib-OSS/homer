@@ -2,13 +2,10 @@ package homer.app.services.persistence
 
 import java.sql.Statement
 
-// The in-place schema upgrades [DatabaseService.migrate] runs after `SchemaUtils.create`, one
-// function per span of versions. `SchemaUtils.create` adds missing tables but never ALTERs an
-// existing one, so each step adds its columns and indexes by hand, guarded on the version it
-// upgrades from. A new version adds its step here and its row to the schema-version table in
-// `services/persistence/CLAUDE.md`.
+// In-place schema upgrades [DatabaseService.migrate] runs after `SchemaUtils.create`, one function
+// per span of versions. `SchemaUtils.create` never ALTERs an existing table, so each step adds its
+// columns/indexes by hand, guarded on the version it upgrades from.
 
-/** Runs every schema step a database at [current] still needs, in version order. */
 internal fun upgradeSchema(
     st: Statement,
     current: Int,
@@ -25,7 +22,6 @@ internal fun upgradeSchema(
     migrateToV33(st, current)
 }
 
-/** The column names of [table], from `PRAGMA table_info`. */
 private fun columnNames(
     st: Statement,
     table: String,
@@ -34,7 +30,6 @@ private fun columnNames(
         generateSequence { if (rs.next()) rs.getString("name") else null }.toSet()
     }
 
-/** The declared default of [column] in [table], from `PRAGMA table_info`; null when it has none. */
 private fun columnDefault(
     st: Statement,
     table: String,
@@ -46,10 +41,8 @@ private fun columnDefault(
             ?.second
     }
 
-/**
- * Adds [column] to [table] unless it already has it — SchemaUtils.create never ALTERs an
- * existing table. Returns whether the column was added, for a step that backfills it.
- */
+/** Adds [column] to [table] unless it already has it — SchemaUtils.create never ALTERs an existing
+ * table. Returns whether the column was added, for a step that backfills it. */
 private fun addColumnIfMissing(
     st: Statement,
     table: String,
@@ -61,85 +54,62 @@ private fun addColumnIfMissing(
     return true
 }
 
-/** Schema steps v1→v10 of [DatabaseService.migrate]; each step is guarded on the version it upgrades from. */
 private fun migrateToV10(
     st: Statement,
     current: Int,
 ) {
     if (current in 1 until 2) {
-        // v1 had questions without dispatch_bound and no dispatches table.
-        // SchemaUtils.create above adds the dispatches table (create-if-missing)
-        // but never ALTERs an existing table, so add the column by hand.
+        // v1→v2 adds questions.dispatch_bound; create adds the dispatches table but never ALTERs,
+        // so add the column by hand.
         addColumnIfMissing(st, "questions", "dispatch_bound", "INTEGER NOT NULL DEFAULT 0")
     }
-    // v2→v3 adds the continuations table; v3→v4 adds the result_tokens table.
-    // SchemaUtils.create above already created both (create-if-missing), so each
-    // step is just the version stamp.
     if (current in 3 until 5) {
-        // v4→v5 adds the continuation_watches table (created above) and the
-        // continuations.kind column. SchemaUtils.create never ALTERs an existing
-        // table, so add the column by hand on a dev DB that already had v3/v4
-        // continuations. The join feature is unreleased, so this only ever runs
-        // against local dev databases.
+        // v4→v5 adds the continuation_watches table (created above) and the continuations.kind
+        // column; create never ALTERs an existing table, so add the column by hand.
         addColumnIfMissing(st, "continuations", "kind", "TEXT NOT NULL DEFAULT 'SINGLE'")
     }
-    // v5→v6 adds the cost_entries table; SchemaUtils.create above already
-    // created it (create-if-missing), so the step is just the version stamp.
     if (current in 3 until 7) {
-        // v6→v7 adds result_tokens.consumer_agent (audience binding, ADR-0025).
-        // SchemaUtils.create never ALTERs an existing table, so add the column by
-        // hand on a database that already had a v4+ result_tokens table (read-by-reference
-        // shipped in 1.6.0, the audience binding in 1.13.0). The empty default makes any
-        // pre-existing (ephemeral, TTL'd) token match no agent, so it fails closed until
-        // swept; v33 then rebuilds the table without the default.
+        // v6→v7 adds result_tokens.consumer_agent (audience binding, ADR-0025); create never ALTERs,
+        // so add it by hand. The empty default makes a pre-existing token match no agent — it fails
+        // closed until swept; v33 rebuilds the table without it.
         addColumnIfMissing(st, "result_tokens", "consumer_agent", "TEXT NOT NULL DEFAULT ''")
     }
     if (current in 1 until 8) {
-        // v7→v8 adds process/dispatch/continuation owner columns (ADR-0038).
-        // Lower bound is 1 (not 3, unlike the sibling blocks above): processes
-        // has existed since v1, so a DB frozen at v1/v2 already has a
-        // processes table SchemaUtils.create won't ALTER.
+        // v7→v8 adds process/dispatch/continuation owner columns (ADR-0038). Lower bound is 1, not
+        // 3: processes has existed since v1, so a DB frozen at v1/v2 already has a processes table
+        // SchemaUtils.create won't ALTER.
         for (t in listOf("processes", "dispatches", "continuations")) {
             addColumnIfMissing(st, t, "owner", "TEXT")
         }
     }
-    // v8→v9 adds the server_meta table; SchemaUtils.create above already
-    // created it (create-if-missing), so the step is just the version stamp.
     if (current in 3 until 10) {
-        // v9→v10 adds continuations.fire_attempts / next_attempt_at (transient-
-        // failure retry). SchemaUtils.create never ALTERs an existing table.
-        // Existing rows default to 0 attempts and no scheduled retry, which is
-        // exactly the pre-upgrade behaviour.
+        // v9→v10 adds continuations.fire_attempts / next_attempt_at (transient-failure retry);
+        // create never ALTERs. Existing rows default to 0 attempts and no scheduled retry.
         addColumnIfMissing(st, "continuations", "fire_attempts", "INTEGER NOT NULL DEFAULT 0")
         addColumnIfMissing(st, "continuations", "next_attempt_at", "INTEGER")
     }
 }
 
-/** Schema steps v10→v15 of [DatabaseService.migrate]; each step is guarded on the version it upgrades from. */
 private fun migrateToV15(
     st: Statement,
     current: Int,
 ) {
     if (current in 1 until 11) {
-        // v10→v11 adds processes.trace_id (Langfuse deep link). Lower bound 1:
-        // processes has existed since v1, and SchemaUtils.create never ALTERs.
+        // v10→v11 adds processes.trace_id (Langfuse deep link). Lower bound 1: processes has existed
+        // since v1.
         addColumnIfMissing(st, "processes", "trace_id", "VARCHAR(32)")
     }
     if (current in 1 until 12) {
-        // v11→v12 adds processes.record_purge_at. Existing rows keep NULL, which
-        // the sweep reads as "same as purge_at" — the pre-upgrade behaviour.
+        // v11→v12 adds processes.record_purge_at. Existing rows keep NULL, which the sweep reads as
+        // "same as purge_at".
         addColumnIfMissing(st, "processes", "record_purge_at", "INTEGER")
     }
     if (current in 1 until 13) {
-        // v12→v13 adds processes.created_at, the cooldown's authoritative
-        // "last run started", backfilled from the history entry it used to be
-        // read from so the bound keeps holding across the upgrade.
+        // v12→v13 adds processes.created_at, the cooldown's authoritative "last run started",
+        // backfilled from the first history entry so the bound keeps holding across the upgrade.
         if (addColumnIfMissing(st, "processes", "created_at", "INTEGER")) {
-            // Backfill from the first history entry, which is where the start
-            // time used to be read from. Without this the cooldown would not
-            // bind for one run per agent after the upgrade — precisely on the
-            // deployments that configured it. Rows with an empty history keep
-            // NULL (json_extract returns NULL), which reads as "never ran".
+            // Without this the cooldown would not bind for one run per agent after the upgrade.
+            // Rows with an empty history keep NULL (json_extract returns NULL) = "never ran".
             st.execute(
                 "UPDATE processes SET created_at = json_extract(history, '\$[0][0]') " +
                     "WHERE created_at IS NULL",
@@ -147,13 +117,11 @@ private fun migrateToV15(
         }
     }
     if (current in 1 until 14) {
-        // v13→v14 adds processes.ended_at, the exact terminal time the
-        // `cooldown.afterFailure` window is measured from, backfilled from the
-        // last history entry of rows that are already terminal.
+        // v13→v14 adds processes.ended_at, the exact terminal time the `cooldown.afterFailure`
+        // window is measured from, backfilled from the last history entry of terminal rows.
         if (addColumnIfMissing(st, "processes", "ended_at", "INTEGER")) {
-            // Same reasoning as created_at: backfill the terminal time from the
-            // last history entry, for terminal rows only. An active row has no
-            // terminal time yet and must stay NULL.
+            // Backfill the terminal time for terminal rows only; an active row has no terminal time
+            // yet and must stay NULL.
             st.execute(
                 "UPDATE processes SET ended_at = json_extract(history, '\$[#-1][0]') " +
                     "WHERE ended_at IS NULL " +
@@ -162,80 +130,61 @@ private fun migrateToV15(
         }
     }
     if (current in 1 until 15) {
-        // v14→v15 adds processes.secret_input_keys, the redaction metadata
-        // captured at run time. Existing rows keep NULL and fall back to the
-        // current agent definition — exactly the behaviour they had before,
-        // rather than a sudden blanket redaction of every retained record.
+        // v14→v15 adds processes.secret_input_keys, the redaction metadata captured at run time.
+        // Existing rows keep NULL and fall back to the current agent definition, not a blanket
+        // redaction of every retained record.
         addColumnIfMissing(st, "processes", "secret_input_keys", "TEXT")
     }
 }
 
-/** Schema steps v15→v20 of [DatabaseService.migrate]; each step is guarded on the version it upgrades from. */
 private fun migrateToV20(
     st: Statement,
     current: Int,
 ) {
     if (current in 3 until 16) {
-        // v15→v16 adds secret_input_keys to dispatches and continuations —
-        // the target agent's secret flags captured at registration, so a
-        // definition edited before the row fires cannot expose a stored value.
-        // Lower bound 3: both tables arrive complete from SchemaUtils.create
-        // for anything older, and create never ALTERs. Existing rows keep NULL,
-        // which falls back to the flags in force at fire time.
+        // v15→v16 adds secret_input_keys to dispatches and continuations — the target agent's secret
+        // flags captured at registration, so a definition edited before the row fires cannot expose a
+        // stored value. Lower bound 3: both tables arrive complete from create for anything older.
         for (t in listOf("dispatches", "continuations")) {
             addColumnIfMissing(st, t, "secret_input_keys", "TEXT")
         }
     }
     if (current in 3 until 17) {
-        // v16→v17 adds secret_param_names to dispatches and continuations —
-        // the target agent's secret paramNames captured at registration.
-        // `dispatches.params`/`continuations.params` are stored keyed by
-        // paramName, so secret_input_keys (envName-keyed) alone cannot survive
-        // the input being deleted or re-pointed to a different envName since
-        // registration (a security follow-up; see ADR-0052). Lower bound 3,
-        // same reasoning as the v16 block above. Existing rows keep NULL, which
-        // falls back to the envName-only check redactStoredParams already had.
+        // v16→v17 adds secret_param_names to dispatches and continuations — the target agent's secret
+        // paramNames captured at registration. `params` are keyed by paramName, so envName-keyed
+        // secret_input_keys alone cannot survive the input being re-pointed since registration (ADR-0052).
         for (t in listOf("dispatches", "continuations")) {
             addColumnIfMissing(st, t, "secret_param_names", "TEXT")
         }
     }
     if (current in 1 until 18) {
-        // v17→v18 adds the retain-block columns (ADR-0053): the globs
-        // captured at terminal status, the workspace-sweep marker for
-        // retained rows, and the cap-truncation flag. Existing rows keep
-        // NULL = nothing retained, exactly the pre-upgrade behaviour.
+        // v17→v18 adds the retain-block columns (ADR-0053): the globs captured at terminal status,
+        // the workspace-sweep marker for retained rows, and the cap-truncation flag. Existing rows
+        // keep NULL = nothing retained.
         addColumnIfMissing(st, "processes", "retain_artifacts", "TEXT")
         addColumnIfMissing(st, "processes", "workspace_purged_at", "INTEGER")
         addColumnIfMissing(st, "processes", "retained_truncated", "INTEGER")
     }
     if (current in 1 until 19) {
-        // v18→v19 adds processes.parent_process_id (ADR-0058). Existing rows
-        // keep NULL = no known parent, exactly the pre-upgrade behaviour.
+        // v18→v19 adds processes.parent_process_id (ADR-0058). Existing rows keep NULL = no known parent.
         addColumnIfMissing(st, "processes", "parent_process_id", "INTEGER")
     }
-    // v19→v20 adds the process_tags table (ADR-0060). SchemaUtils.create
-    // above already created it (create-if-missing), so the step is just the
-    // version stamp — existing runs simply have no tag rows.
 }
 
-/** Schema steps v20→v24 of [DatabaseService.migrate]; each step is guarded on the version it upgrades from. */
 private fun migrateToV24(
     st: Statement,
     current: Int,
 ) {
     if (current in 1 until 21) {
-        // v20→v21 adds processes.cost_source (ADR-0061). Existing rows were
-        // priced from the CLI figure, so 'cli' is the truthful default.
+        // v20→v21 adds processes.cost_source (ADR-0061); 'cli' is the truthful default for existing rows.
         addColumnIfMissing(st, "processes", "cost_source", "TEXT NOT NULL DEFAULT 'cli'")
     }
     if (current in 1 until 22) {
-        // v21→v22 adds processes.root_process_id (ADR-0058). Existing rows stay
-        // NULL — no backfill; NULL reads as "flow root unknown" (ADR-0058 amendment).
+        // v21→v22 adds processes.root_process_id (ADR-0058). No backfill: NULL reads as "flow root unknown".
         addColumnIfMissing(st, "processes", "root_process_id", "INTEGER")
     }
     if (current in 1 until 23) {
-        // v22→v23 indexes the process-list filters; SchemaUtils.create only indexes a
-        // table it creates. Names match the Processes table declaration.
+        // v22→v23 indexes the process-list filters; create only indexes a table it creates.
         st.execute("CREATE INDEX IF NOT EXISTS processes_agent_name ON processes (agent_name)")
         st.execute("CREATE INDEX IF NOT EXISTS processes_status ON processes (status)")
         st.execute("CREATE INDEX IF NOT EXISTS processes_parent_process_id ON processes (parent_process_id)")
@@ -243,8 +192,7 @@ private fun migrateToV24(
         st.execute("CREATE INDEX IF NOT EXISTS processes_owner ON processes (owner)")
     }
     if (current in 1 until 24) {
-        // v23→v24 indexes the sweep, cooldown and lookup filters that scanned their
-        // tables. Names and definitions match the table declarations in Tables.kt.
+        // v23→v24 indexes the sweep, cooldown and lookup filters; names/definitions match Tables.kt.
         st.execute("CREATE INDEX IF NOT EXISTS processes_artifacts_dir ON processes (artifacts_dir)")
         st.execute(
             "CREATE INDEX IF NOT EXISTS processes_workspace_purge ON processes (status, purge_at) " +
@@ -272,22 +220,18 @@ private fun migrateToV24(
     }
 }
 
-/** Schema steps v24→v27 of [DatabaseService.migrate]; each step is guarded on the version it upgrades from. */
 private fun migrateToV27(
     st: Statement,
     current: Int,
 ) {
     if (current in 1 until 25) {
-        // v24→v25 moves write-once input_params into the process_inputs
-        // side table (created above). See ADR-0020.
-        // Guarded on the column: on a database that already migrated (fresh
-        // installs at v25 included, where SchemaUtils.create declared no such
-        // column) this must not attempt a second backfill or a second DROP.
+        // v24→v25 moves write-once input_params into the process_inputs side table (created above),
+        // guarded on the column so a database that already migrated must not attempt a second
+        // backfill or DROP. See ADR-0020.
         if ("input_params" in columnNames(st, "processes")) {
-            // Copied before the drop, in this same transaction, so no committed
-            // state ever has the column gone and the value nowhere. COALESCE:
-            // the column was NOT NULL, but a hand-edited or pre-v1 row could
-            // still read NULL, and the side table's column is NOT NULL.
+            // Copied before the drop, in this same transaction, so no committed state ever has the
+            // column gone and the value nowhere. COALESCE guards a hand-edited or pre-v1 NULL row:
+            // the side table's column is NOT NULL.
             st.execute(
                 "INSERT INTO process_inputs (process_id, input_params) " +
                     "SELECT id, COALESCE(input_params, '{}') FROM processes",
@@ -296,8 +240,8 @@ private fun migrateToV27(
         }
     }
     if (current in 1 until 26) {
-        // v25→v26 indexes the settled-row prune and the paginated list filters of
-        // dispatches and continuations. Names and definitions match Tables.kt.
+        // v25→v26 indexes the settled-row prune and the paginated list filters of dispatches and
+        // continuations; names/definitions match Tables.kt.
         st.execute("CREATE INDEX IF NOT EXISTS dispatches_status_created ON dispatches (status, created_at)")
         st.execute("CREATE INDEX IF NOT EXISTS dispatches_agent_name ON dispatches (agent_name)")
         st.execute("CREATE INDEX IF NOT EXISTS dispatches_owner ON dispatches (owner)")
@@ -306,9 +250,8 @@ private fun migrateToV27(
         st.execute("CREATE INDEX IF NOT EXISTS continuations_owner ON continuations (owner)")
     }
     if (current in 1 until 27) {
-        // v26→v27 adds continuations.thread_id, backfilled from params, and its index.
-        // Definitions match Tables.kt. json_valid: a hand-edited row whose
-        // params are not JSON keeps NULL instead of failing the upgrade.
+        // v26→v27 adds continuations.thread_id, backfilled from params, and its index. json_valid:
+        // a hand-edited row whose params are not JSON keeps NULL instead of failing the upgrade.
         addColumnIfMissing(st, "continuations", "thread_id", "TEXT")
         st.execute(
             "UPDATE continuations SET thread_id = json_extract(params, '\$.HMR_LG_THREAD') " +
@@ -318,7 +261,6 @@ private fun migrateToV27(
     }
 }
 
-/** v27→v28 indexes the read-grant arm of the paged question list. The name matches Tables.kt. */
 private fun migrateToV28(
     st: Statement,
     current: Int,
@@ -328,38 +270,23 @@ private fun migrateToV28(
     }
 }
 
-/**
- * v29→v30 adds the stored pre-start failure reason and the run it names. Its own version, not
- * main's v29 (the `run_messages` step): a database that release already stamped `user_version = 29`
- * skips every step guarded below 30 when it has no column to add, so folding both features into
- * v29 would leave such a database without the columns for good.
- */
+/** v29→v30 adds the stored pre-start failure reason and the run it names. Its own version, not
+ * main's v29 (`run_messages`): a database that release stamped `user_version = 29` skips every step
+ * guarded below 30 when it has no column to add, so folding both into v29 would strand its columns. */
 private fun migrateToV30(
     st: Statement,
     current: Int,
 ) {
     if (current in 1 until 30) {
-        // No backfill: a run that ended before this version was never observed by the code
-        // that maps a cause to a reason, and a guessed reason is worse than none.
+        // No backfill: a guessed reason is worse than none.
         addColumnIfMissing(st, "processes", "failure_reason", "TEXT")
         addColumnIfMissing(st, "processes", "failure_reason_run_id", "INTEGER")
     }
 }
 
-/**
- * v30→v31 adds the per-subject cooldown key and the two indexes its lookups need (ADR-0106),
- * what a graceful stop did to the run — its cause, the interrupted step and the stop steps'
- * outcome, as one JSON blob (ADR-0108) — and the indexes of the `pending_hooks` table
- * (ADR-0107). One step for all three: the features landed together, so a database stamped
- * `user_version = 31` skips the whole span. Each missing table is created by
- * `SchemaUtils.create` above.
- *
- * No backfill for `cooldown_key` or `stop`: a run that ended before this version was counted
- * per agent and was never stopped gracefully, so a guessed subject or cause is worse than none.
- * Null `cooldown_key` simply means "no key", so a keyed cooldown ignores the row and a keyless
- * one still counts it. Names match `Tables.kt`; `SchemaUtils.create` only indexes a table it
- * creates, so the migration creates every index by hand.
- */
+/** v30→v31 adds the per-subject cooldown key and its two indexes (ADR-0106), the graceful-stop
+ * blob (ADR-0108) and the `pending_hooks` indexes (ADR-0107) — one step, so a database stamped 31
+ * skips the whole span. No backfill: a guessed subject or cause is worse than none. */
 private fun migrateToV31(
     st: Statement,
     current: Int,
@@ -372,10 +299,8 @@ private fun migrateToV31(
                 "ON processes (agent_name, cooldown_key, status, ended_at)",
         )
         addColumnIfMissing(st, "processes", "stop", "TEXT")
-        // v30→v31 adds the pending_hooks table (ADR-0107). SchemaUtils.create above already
-        // created it on a database that did not have it; the indexes are created here by hand
-        // because SchemaUtils.create only indexes a table it creates. Names and definitions
-        // match the PendingHooks declaration in Tables.kt.
+        // The pending_hooks indexes (ADR-0107): create above made the table, but only indexes a
+        // table it creates, so they are made here by hand. Names/definitions match Tables.kt.
         st.execute(
             "CREATE INDEX IF NOT EXISTS pending_hooks_status_next_attempt ON pending_hooks (status, next_attempt_at)",
         )
@@ -384,28 +309,16 @@ private fun migrateToV31(
     }
 }
 
-/**
- * v31→v32 adds grouped ask-and-dispatch (ADR-0109): the `dispatches.kind` column and the
- * `dispatch_group_questions` child table's member-lookup index. Its own version, not the
- * cooldown release's v31 (the cooldown, stop and pending-hooks step): a database that release
- * already stamped `user_version = 31` skips every step guarded below 32 when it has no column
- * to add, so folding into v31 would leave such a database without the column for good — the
- * same reason v30 got its own version instead of folding into v29.
- *
- * No backfill for `dispatches.kind`: a dispatch written before this version asked a single
- * question, so `SINGLE` is the truthful default — every row that existed before it is a
- * one-question dispatch, and a database that never uses groups keeps exactly the behaviour it
- * had. Names match `Tables.kt`; `SchemaUtils.create` only indexes a table it creates, so the
- * migration creates the index by hand.
- */
+/** v31→v32 adds grouped ask-and-dispatch (ADR-0109): the `dispatches.kind` column and the
+ * `dispatch_group_questions` member-lookup index. Its own version, not v31: a database stamped 31
+ * skips steps guarded below 32. No backfill — `SINGLE` is the truthful default. */
 private fun migrateToV32(
     st: Statement,
     current: Int,
 ) {
     if (current in 1 until 32) {
-        // Grouped ask-and-dispatch (ADR-0109). SchemaUtils.create above already created the
-        // dispatch_group_questions table (create-if-missing) but never ALTERs an existing one,
-        // so the column and the child table's member-lookup index are added by hand.
+        // create above already created dispatch_group_questions but never ALTERs an existing table,
+        // so the column and the member-lookup index are added by hand (ADR-0109).
         addColumnIfMissing(st, "dispatches", "kind", "TEXT NOT NULL DEFAULT 'SINGLE'")
         st.execute(
             "CREATE INDEX IF NOT EXISTS dispatch_group_questions_question_id " +
@@ -414,20 +327,16 @@ private fun migrateToV32(
     }
 }
 
-/**
- * v32→v33 drops the `DEFAULT ''` the v7 step had to give `result_tokens.consumer_agent` (an added
- * NOT NULL column needs one), so an upgraded database rejects an INSERT that omits the audience
- * exactly as a fresh one does. SQLite cannot drop a column default in place, so the table is
- * rebuilt from its `Tables.kt` DDL, every row kept. Guarded on the default itself, not only on the
- * version: a fresh database never had it, and a re-run finds it gone.
- */
+/** v32→v33 drops the `DEFAULT ''` the v7 step gave `result_tokens.consumer_agent`, so an upgraded
+ * database rejects an audience-less INSERT like a fresh one. SQLite cannot drop a default in place,
+ * so the table is rebuilt from its `Tables.kt` DDL, every row kept; guarded on the default itself. */
 private fun migrateToV33(
     st: Statement,
     current: Int,
 ) {
     if (current in 1 until 33 && columnDefault(st, "result_tokens", "consumer_agent") != null) {
-        // The old table moves aside first so the generated DDL runs verbatim. SQLite's caution
-        // about this order concerns triggers, views and foreign keys naming the table; none do.
+        // The old table moves aside first so the generated DDL runs verbatim; no trigger, view or
+        // foreign key names it.
         val columns = ResultTokens.columns.joinToString(", ") { it.name }
         st.execute("ALTER TABLE result_tokens RENAME TO result_tokens_v32")
         ResultTokens.ddl.forEach(st::execute)

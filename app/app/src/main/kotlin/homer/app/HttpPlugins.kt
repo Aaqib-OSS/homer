@@ -132,25 +132,11 @@ fun Application.configureCors(allowedOrigins: List<String>) {
 }
 
 /**
- * Default response-hardening headers applied to every Ktor response.
- *
- * - `X-Frame-Options: DENY` — Homer's responses must never be embedded in a
- *   frame; a console served from the same origin (or any origin) inherits
- *   this and is therefore not clickjackable through a Homer-API page.
- * - `X-Content-Type-Options: nosniff` — disables browser MIME sniffing on
- *   our JSON / artifact responses, so a content-type confusion attack can't
- *   coerce a script execution from a JSON body.
- * - `Referrer-Policy: same-origin` — strips the referer on cross-origin
- *   navigations so internal URLs (which may carry process IDs or other
- *   semi-sensitive identifiers) do not leak to third-party sites.
- * - `Content-Security-Policy: default-src 'self'` — Homer's API endpoints
- *   never return HTML and never load remote subresources, so the policy can
- *   be maximally restrictive. Future HTML surfaces will need an explicit
- *   policy override before they ship.
- *
- * `Strict-Transport-Security` is intentionally omitted until the deployment
- * docs commit to HTTPS-only — emitting HSTS over HTTP would be a footgun for
- * single-node local installs. Audit P1 #13.
+ * Response-hardening headers on every Ktor response: `X-Frame-Options: DENY` (no framing), `X-Content-Type-Options:
+ * nosniff` (no MIME-confusion script execution), `Referrer-Policy: same-origin` (internal URLs do not leak
+ * cross-origin), `Content-Security-Policy: default-src 'self'`. The CSP can stay maximally restrictive because the
+ * API serves no HTML and loads no remote subresource — a future HTML surface needs an explicit policy override
+ * before it ships. HSTS is omitted until deployment is HTTPS-only: over HTTP it breaks single-node installs.
  */
 val SecurityHeaders =
     createApplicationPlugin("SecurityHeaders") {

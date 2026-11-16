@@ -33,25 +33,12 @@ class AgentInputResolver(
     private val paramValidator: ParamValidator = ParamValidator(),
 ) {
     /**
-     * Resolves agent inputs from one HTTP request, passed as the values the route
-     * extracted from it: [method], [queryParameters], [headers] and [readBody].
-     * Dispatches each [Param] to its configured source: query string, JSON request
-     * body, or HTTP header. [readBody] is called only when at least one input has
-     * `src = BODY` or the agent has an `inputSchema`, so no other request has its
-     * body read.
-     *
-     * When any input has `src = BODY`, the request body is parsed as a top-level JSON
-     * object. The method enforces:
-     *  - POST method (GET with body inputs is rejected),
-     *  - `application/json` or `application/<subtype>+json` (e.g. `application/vnd.api+json`) Content-Type,
-     *  - well-formed JSON object body.
-     *
-     * The Content-Type and JSON-object rules apply only to a **non-blank** body. For an
-     * agent without an `inputSchema`, a request that carries no bytes (or only whitespace)
-     * is treated as `{}` (checked from the bytes read, not from `Content-Length`, so a
-     * chunked body is still parsed), which lets a caller omit the body entirely when no
-     * body input is required.
-     * An agent with an `inputSchema` keeps requiring a non-empty body.
+     * Resolves agent inputs from one HTTP request (the route's extracted values), dispatching each
+     * [Param] to query string, JSON body or header. [readBody] is called only when an input has
+     * `src = BODY` or the agent has an `inputSchema`. When any input is `src = BODY` the body is parsed
+     * as a top-level JSON object and the method enforces POST (GET rejected), a JSON Content-Type and
+     * a well-formed object — but only for a non-blank body: without an `inputSchema` a body of no bytes
+     * is `{}` (checked from bytes read, so chunked is parsed); with one, a non-empty body is still required.
      */
     suspend fun resolve(
         method: HttpMethod,
@@ -110,13 +97,11 @@ class AgentInputResolver(
     }
 
     /**
-     * Resolves agent inputs for the debug-execute endpoint, where the caller passes
-     * everything in the JSON payload rather than as a live HTTP request. Bridges to
-     * [resolveInternal] using the same code path as [resolve], so the debug endpoint
-     * exercises identical extraction/validation semantics for QUERY/BODY/HEADER sources.
-     *
-     * Header lookup is case-insensitive (matches Ktor's header semantics) — the [headers]
-     * map is indexed by lower-cased key before lookup.
+     * Resolves agent inputs for the debug-execute endpoint, where the caller passes everything
+     * in the JSON payload rather than as a live HTTP request. Bridges to [resolveInternal] via
+     * the same code path as [resolve], so the debug endpoint exercises identical
+     * extraction/validation semantics for QUERY/BODY/HEADER sources. Header lookup is
+     * case-insensitive (matches Ktor) — the [headers] map is indexed by lower-cased key.
      */
     fun resolveDebug(
         queryParams: Parameters,
@@ -240,22 +225,12 @@ class AgentInputResolver(
     }
 
     /**
-     * A String-valued param map routed into the shapes [resolveInternal] expects,
-     * by each param's declared src on [agent]: QUERY params become query
-     * [Parameters]; HEADER params are dropped (headers carry transport auth an
-     * internal caller must not fabricate); reserved control keys
-     * ([ReservedEnvNames.isReserved]) are dropped too — they reach the run env via
-     * the separate `reservedControlParams` merge on the fire path, never via declared
-     * input resolution, and no external caller can legitimately declare an input bound
-     * to one (rejected at agent load); everything else — declared BODY params and
-     * undeclared keys — becomes a JSON body field, so `inputSchema` sees the same body
-     * an external POST would carry.
-     *
-     * The String-map analogue of `McpToolFactory.classifyToolArgs` — not a mirror.
-     * It differs in three ways: it drops header-named keys (MCP routes them into
-     * the body instead), it drops reserved control keys (MCP has no such concept),
-     * and every value here is string-wrapped (MCP preserves JSON value types). Don't
-     * "unify" the two without re-checking these deltas.
+     * Routes a String-valued param map into the shapes [resolveInternal] expects, by each param's
+     * declared src on [agent]: QUERY → query [Parameters]; HEADER and reserved control keys are
+     * dropped (headers carry transport auth an internal caller must not fabricate; reserved keys
+     * reach the run env via `reservedControlParams` on the fire path); everything else — declared
+     * BODY params and undeclared keys — becomes a JSON body field. Not a mirror of
+     * `McpToolFactory.classifyToolArgs`: it drops header keys and string-wraps values, so don't unify blindly.
      */
     class ClassifiedParams(
         val queryParams: Parameters,
@@ -292,14 +267,12 @@ class AgentInputResolver(
     }
 
     /**
-     * Resolves agent inputs from a plain param map (internal callers: RunAgent,
-     * dispatch, continuation). Same extraction/validation path as the HTTP route.
-     *
-     * [skipTransformFor] names params whose value is an **already-transformed stored
-     * input** — a fire inheriting the origin run's inputs, which were stored post-transformer.
-     * Those are validated like any other value, but the transformer is not applied a second
-     * time. An own param of the same name wins the merge and is transformed as usual. See
-     * ADR-0101.
+     * Resolves agent inputs from a plain param map (internal callers: RunAgent, dispatch,
+     * continuation), the same extraction/validation path as the HTTP route. [skipTransformFor]
+     * names params whose value is an **already-transformed stored input** (a fire inheriting the
+     * origin run's inputs, stored post-transformer): those are validated but the transformer is
+     * not applied again, and an own param of the same name wins the merge and is transformed as
+     * usual. See ADR-0101.
      */
     fun resolveFromParams(
         params: Map<String, String>,
@@ -363,23 +336,12 @@ class AgentInputResolver(
     }
 
     /**
-     * Re-validates a finished run's stored (envName-keyed) inputs for retry against
-     * the CURRENT agent definition and returns the cleaned env map to replay. Retry
-     * must not bypass the input policy a fresh request enforces, so this:
-     *  - rejects when a currently-required input has no stored value,
-     *  - re-runs the current [ParamValidator] on each stored value (type/pattern/enum),
-     *    so a since-tightened constraint rejects the retry instead of replaying a
-     *    now-invalid value, and
-     *  - drops stored values for inputs removed since the original run, so stale
-     *    undeclared env can no longer ride through into command execution.
-     *
-     * Stored values are already resolved (post-transformer), so transformers are NOT
-     * re-applied. Internal control markers ([ReservedEnvNames.isReserved], e.g.
-     * `HMR_LG_*`) are preserved verbatim — they are not caller inputs. `inputSchema`
-     * is intentionally not re-checked here: the stored map is envName-keyed,
-     * post-transform, and string-erased, so it cannot be faithfully validated against
-     * a paramName-keyed body schema; the ParamValidator re-check and stale-key drop
-     * are what close the retry input-policy bypass.
+     * Re-validates a finished run's stored (envName-keyed) inputs for retry against the CURRENT
+     * agent definition, so retry cannot bypass the fresh-request input policy: a required input
+     * with no stored value is rejected, each stored value is re-run through [ParamValidator], and
+     * values for removed inputs are dropped. Transformers are NOT re-applied, control markers
+     * ([ReservedEnvNames.isReserved]) are kept verbatim, and `inputSchema` is not re-checked — the
+     * envName-keyed, string-erased map cannot be validated against a paramName-keyed schema.
      */
     fun resolveRetryParams(
         agent: Agent,

@@ -101,13 +101,12 @@ class ArtifactService(
     }
 
     /**
-     * Lists regular files under the process's artifacts directory (recursive).
-     * Paths are relative to the artifacts directory, use forward slashes, and are sorted
-     * ascending. The listing is capped at [maxListEntries] entries — a directory with
-     * more files yields exactly that many with `truncated = true`, so an agent that
-     * writes an enormous number of artifacts cannot exhaust memory here. Returns
-     * failure if the process is unknown, has no artifacts dir, or the directory does
-     * not exist on disk.
+     * Lists regular files under the process's artifacts directory (recursive). Paths are
+     * relative to the artifacts directory, use forward slashes, and are sorted ascending.
+     * The listing is capped at [maxListEntries] entries — more files yield exactly that many
+     * with `truncated = true`, so an agent writing an enormous number of artifacts cannot
+     * exhaust memory here. Returns failure if the process is unknown, has no artifacts dir,
+     * or the directory does not exist on disk.
      */
     suspend fun listArtifacts(processId: Int): Result<ArtifactListingResponse> {
         val processInfo =

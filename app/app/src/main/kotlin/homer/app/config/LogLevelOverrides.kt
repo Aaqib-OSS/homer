@@ -1,24 +1,12 @@
 package homer.app.config
 
 /**
- * Translates the `HOMER_LOG_LEVELS` environment variable into slf4j-simple
- * per-logger system-property overrides, so operators can re-target log levels
- * at runtime (e.g. in a container) without editing the bundled
- * `simplelogger.properties`.
- *
- * Format: comma-separated `logger=level` pairs, e.g.
- * `HOMER_LOG_LEVELS=homer.app.executors.ProcessExecutor=debug,io.ktor=warn`.
- *
- * Levels are slf4j-simple's: `trace`, `debug`, `info`, `warn`, `error`, `off`
- * (case-insensitive). Malformed pairs and unknown levels are skipped.
- *
- * Returns the slf4j-simple property map (`org.slf4j.simpleLogger.log.<logger>`
- * -> level). The caller applies each entry only when the property is not
- * already set, so an explicit `-D` flag always wins. A logger constructed
- * before the override is applied (e.g. the top-level `homer.app.Application`
- * logger created at class load) keeps its initial level; overrides take effect
- * for loggers created afterward, which covers the DI-instantiated services and
- * executors.
+ * Translates `HOMER_LOG_LEVELS` into slf4j-simple per-logger system-property overrides, so
+ * operators can re-target log levels at runtime (e.g. in a container) without editing the bundled
+ * `simplelogger.properties`. Format: comma-separated `logger=level` pairs; levels are
+ * slf4j-simple's (`trace`..`off`, case-insensitive), and malformed pairs and unknown levels are
+ * skipped. The caller applies each entry only when the property is not already set, so an explicit
+ * `-D` flag wins; a logger built before the override keeps its initial level.
  */
 private const val ENV_LOG_LEVELS = "HOMER_LOG_LEVELS"
 private const val SLF4J_LOG_PREFIX = "org.slf4j.simpleLogger.log."

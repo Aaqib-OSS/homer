@@ -10,13 +10,11 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /**
- * Builds the Claude CLI argv from a [ClaudeCmdOptions] block. Shared by
- * [homer.app.executors.llm.ClaudeHarness] and the agentdebug dry-run printer, so
- * neither ever drifts from what actually runs.
- *
- * Template resolution (`{{VAR}}`, see AGENT.md) is applied here against [env]:
- * subagent fields are resolved BEFORE JSON-encoding `--agents` (so the encoder
- * escapes substituted values rather than templating the encoded blob), and every
+ * Builds the Claude CLI argv from a [ClaudeCmdOptions] block, shared by
+ * [homer.app.executors.llm.ClaudeHarness] and the agentdebug dry-run printer so neither
+ * drifts from what actually runs. Template resolution (`{{VAR}}`, see AGENT.md) is applied
+ * against [env] here: subagent fields are resolved BEFORE JSON-encoding `--agents` (so the
+ * encoder escapes substituted values rather than templating the encoded blob), and every
  * other argument is resolved after the list is assembled.
  */
 class ClaudeArgvBuilder(

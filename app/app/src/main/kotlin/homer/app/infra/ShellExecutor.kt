@@ -9,19 +9,12 @@ import kotlin.time.Duration
  */
 interface ShellExecutor {
     /**
-     * Execute a shell command
-     * @param command List of command and arguments
-     * @param stdOut Path to redirect stdout
-     * @param stdErr Path to redirect stderr
-     * @param stdIn Optional input to pipe to command
-     * @param env Environment variables to set
-     * @param timeout Maximum execution time
+     * Execute a shell command.
      * @param stdOutFilter Optional line filter applied to stdout before it is written
      *   to [stdOut]; null writes every byte. See ADR-0063.
      * @param interruptGrace When set, a command stopped by its own [timeout] is first
      *   interrupted (SIGINT) and given up to this long to exit before the SIGKILL path
      *   runs. Null = today's immediate SIGKILL. See ADR-0108.
-     * @return Command result with exit code
      */
     suspend fun cmd(
         command: List<String>,

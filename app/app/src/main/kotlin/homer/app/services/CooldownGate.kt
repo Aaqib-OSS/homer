@@ -5,42 +5,15 @@ import homer.app.models.Agent
 import homer.app.models.Cooldown
 import homer.app.services.persistence.ProcessRepository
 
-/**
- * Enforces an agent's `cooldown`: the minimum spacing between its runs.
- *
- * Homer bounds how many runs happen at once (`lockStrategy`, `maxParallelRuns`)
- * and how much they may spend (`costLimits`), but nothing bounded how *often*
- * one could start. A run that fails before reaching Claude costs nothing and
- * holds no lock by the time the next cron tick fires, so a fast-failing agent
- * on a one-minute schedule re-runs against identical state indefinitely — with
- * whatever side effects each attempt has (a comment on an MR, a message in a
- * channel) repeated every time.
- *
- * State comes from the process table, so a cooldown survives a restart — unlike
- * the scheduler's in-memory last-run map, which only ever fed the status
- * report. It does not survive `workspace.purgeAfter` deleting the rows, but
- * that window (days) is far longer than any sensible cooldown.
- */
+/** Enforces an agent's `cooldown`: the minimum spacing between its runs. State comes from the process table, so a
+ * cooldown survives a restart (but not `workspace.purgeAfter` deleting the rows). See ADR-0051. */
 internal class CooldownGate(
     private val repository: ProcessRepository,
     private val nowSec: () -> Long = { System.currentTimeMillis() / 1000 },
 ) {
-    /**
-     * Throws [CooldownActiveException] when [agent]'s cooldown has not elapsed. No-op when unset.
-     *
-     * [cooldownKey] is the run's already-rendered `cooldown.key`, or null when the agent
-     * sets none: it narrows both lookups to the rows of one subject, and the decision
-     * itself is the same arithmetic either way. The caller renders it — a keyed agent can
-     * only be checked after its inputs are resolved — and a key that does not render
-     * throws there, before this is reached.
-     *
-     * Pre-flight only: it refuses before the run does any work, but it is *not*
-     * the bound. Two concurrent starts can both pass here, so the authoritative
-     * check runs inside `ProcessRepository.obtainProcessId`'s transaction, atomic
-     * with the INSERT. Keep both — this one preserves the caller-facing exception
-     * ordering (cost cap → cooldown → input validation) and avoids resolving
-     * inputs for a start that is going to be refused. See ADR-0051, ADR-0106.
-     */
+    /** Throws [CooldownActiveException] when [agent]'s cooldown has not elapsed; no-op when unset. [cooldownKey] is
+     * the run's rendered `cooldown.key`, narrowing both lookups to one subject's rows. Pre-flight only, not the
+     * bound — two concurrent starts can both pass; the authoritative check is in `obtainProcessId`'s INSERT. See ADR-0051, ADR-0106. */
     suspend fun check(
         agent: Agent,
         cooldownKey: String? = null,
@@ -58,37 +31,16 @@ internal class CooldownGate(
     }
 }
 
-/**
- * [agent] as a manual-recovery start sees it: its cooldown with `afterFailure`
- * cleared, so a person unblocking a failed run is not held back by the window
- * that exists to stop an automated repeat of a failure.
- *
- * `minInterval` is a pacing bound on every start of the agent, so it always
- * survives — and when it is unset the whole cooldown is dropped, because
- * `Cooldown`'s `init` rejects a value with neither window set. A `key` rides
- * `minInterval` for the same reason: a keyed `minInterval` is still pacing, and it
- * scopes the surviving window to its subject. Retry, resume and debug all start
- * through this, so the rule is stated once. See ADR-0051, ADR-0106.
- */
+/** [agent] as a manual-recovery start sees it: cooldown with `afterFailure` cleared, so a person unblocking a
+ * failed run is not held back. `minInterval` (and its `key`) survives; an unset one drops the cooldown. See ADR-0051, ADR-0106. */
 internal fun Agent.withoutFailureBackoff(): Agent =
     cooldown
         ?.let { cd -> cd.minInterval?.let { cd.copy(afterFailure = null) } }
         ?.let { copy(cooldown = it) }
         ?: copy(cooldown = null)
 
-/**
- * The cooldown decision as a pure function of the configured windows and the two
- * timestamps, with no I/O of its own.
- *
- * Extracted so the pre-flight [CooldownGate] and the authoritative check inside
- * `ProcessRepository.obtainProcessId`'s transaction share one implementation and
- * cannot drift apart — a transaction cannot call the suspending gate, and a second
- * copy of the arithmetic is exactly how the two would come to disagree.
- *
- * `cooldown.key` deliberately does not appear here: scoping a window to one subject is
- * which rows the two lookups return, not how a window is measured, so both callers pass
- * the rendered key to their reads and the arithmetic stays one copy. See ADR-0106.
- */
+/** The cooldown decision as a pure function of the windows and the two timestamps. Extracted so [CooldownGate]
+ * and `obtainProcessId`'s transaction share one implementation, which cannot call the suspending gate. See ADR-0106. */
 internal object CooldownDecision {
     /** The refusal to throw, or null when the start is allowed. */
     fun evaluate(

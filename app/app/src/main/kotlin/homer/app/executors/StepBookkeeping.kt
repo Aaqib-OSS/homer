@@ -159,10 +159,9 @@ internal suspend fun completeCommand(
     // winning attempt writes to a different file than the attempt-0 paths
     // built above. A thrown exception on the final attempt (e.g.
     // MalformedLlmOutputException) means executedResult is never set even
-    // though the retry loop ran and wrote to later attempts' files — prefer
-    // the tracked per-attempt paths LlmHarnessExecutor kept current
-    // on StepRecords over the stale attempt-0 fallback. Only an error before
-    // the executor ever ran (e.g. an EvalError) falls through to attempt-0.
+    // though the retry loop ran and wrote to later attempts' files — prefer the
+    // tracked per-attempt paths on StepRecords over the stale attempt-0 fallback;
+    // only an error before the executor ran (e.g. an EvalError) falls through.
     val recordedStdOut =
         executedResult?.stdOut ?: stepRecords.getCommandArtifacts(processId, index)?.stdOut ?: stdOut
     val recordedStdErr =

@@ -395,17 +395,12 @@ private fun startedRunAttributes(
         .build()
 
 /**
- * Starts a run under a fresh root span [spanName] and answers its process id. [start] gets the
- * span's context and the span itself — it stamps the Langfuse trace name and tags with
- * [stampLangfuseTrace] before it calls `processExecutor.execute` — and returns the started process
- * id with the span's remaining attributes; a failure marks the span ERROR and propagates. Via
- * startAgentRootSpan, not spanBuilder: debug, retry and resume build their own root span outside
- * AgentRunStarter, so anything that gates run tracing has to be applied here too —
- * `telemetry.export: OFF` included. See ADR-0050.
- *
- * [maintenanceGate] parks [start] while maintenance mode is on, in the span and before [start]
- * runs, exactly as [AgentRunStarter.start] does: these three are the starts that do not go through
- * the starter, and every start path has to queue. See ADR-0092.
+ * Starts a run under a fresh root span [spanName] and answers its process id. [start] gets the span's context and the span
+ * itself — it stamps the Langfuse trace name and tags with [stampLangfuseTrace] before calling `processExecutor.execute` —
+ * and returns the started process id with the span's remaining attributes; a failure marks the span ERROR and propagates.
+ * Debug, retry and resume build their own root span outside AgentRunStarter, so tracing gates (`telemetry.export: OFF`)
+ * and [maintenanceGate]'s parking must be applied here too, as [AgentRunStarter.start] does — every start path queues.
+ * ADR-0050, ADR-0092.
  */
 @Suppress("SuspendFunSwallowedCancellation") // records the span error and rethrows
 private suspend fun respondStartedUnderRootSpan(

@@ -39,15 +39,12 @@ sealed class RunnerConfig {
     internal fun validateEnv(alias: String) = validateRunnerEnv(alias, env)
 
     /**
-     * Every shape rule this variant has, naming the runner [alias]. Each variant
-     * keeps the order its rules fired in before they were reached through this
-     * member, so a config with several violations still reports the same first
-     * one. Called from AppConfig's init.
-     *
-     * Every variant must call [validateExtraUploads] and [validateEnv] here: they
-     * are the rules every runner shares, and no other site invokes them for a
-     * variant. `RunnerConfigBaseMembersTest` enumerates the sealed variants and
-     * fails on one whose `validate` skips either.
+     * Every shape rule this variant has, naming the runner [alias], in the order the rules fired
+     * before they were reached through this member, so a config with several violations still
+     * reports the same first one. Called from AppConfig's init. Every variant must call
+     * [validateExtraUploads] and [validateEnv] here — no other site invokes them for a variant;
+     * `RunnerConfigBaseMembersTest` enumerates the sealed variants and fails on one whose
+     * `validate` skips either.
      */
     internal abstract fun validate(alias: String)
 

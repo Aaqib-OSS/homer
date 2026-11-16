@@ -6,184 +6,66 @@ object EnvConstants {
     const val PROCESS_ID = "HMR_PROCESS_ID"
     const val SERVER_ID = "HMR_SERVER_ID"
     const val AGENT_NAME = "HMR_AGENT_NAME"
-
-    /**
-     * Absolute path to the agent's own on-disk config directory (the directory
-     * holding its `agent.yaml` / `agent.json`). Lets a command read sibling files
-     * shipped with the agent definition (e.g. `cat "$HMR_AGENT_DIR/prompt.txt"`).
-     * Populated by `AgentsService` at load time from the agent's source directory.
-     */
     const val AGENT_DIR = "HMR_AGENT_DIR"
     const val API_URL = "HMR_API_URL"
 
-    /**
-     * Per-process random token authorizing every callback route
-     * under `/api/v1/callback/` (questions, tags, dispatches, runs, joins and
-     * results) on behalf of exactly this process. Minted by
-     * `QuestionsService.registerProcess` when the process starts; never a
-     * real operator credential. See ADR-0019.
-     */
+    /** Per-process random token; authorizes only this process's callback routes. Never an operator credential. See ADR-0019. */
     const val CALLBACK_TOKEN = "HMR_CALLBACK_TOKEN"
 
-    /**
-     * Absolute path to the pre-generated `.homer/mcp.json` wiring Claude at
-     * the `/mcp/questions` endpoint. Only set when `server.mcp.enabled`;
-     * agent authors opt in via `mcpConfig: "{{HMR_MCP_CONFIG}}"`. See ADR-0019.
-     */
     const val MCP_CONFIG = "HMR_MCP_CONFIG"
 
-    /**
-     * Comma-separated chain of agent names that led to the current invocation
-     * (root call is ""; depth 1 is "root"; depth 2 is "root,child"; etc.).
-     * Threaded from parent to child by RunAgent's in-process dispatch and used
-     * for RunAgent recursion cycle/depth enforcement. See ADR-0030.
-     */
     const val INVOCATION_CHAIN = "HMR_INVOCATION_CHAIN"
 
-    /**
-     * Id of the run that caused the current one (RunAgent, dispatch, continuation,
-     * or an external caller's [PARENT_PROCESS_HEADER]). Absent at the root of a
-     * flow. Persisted on the process row and served by the status API. See ADR-0058.
-     */
     const val PARENT_PROCESS_ID = "HMR_PARENT_PROCESS_ID"
-
-    /**
-     * Id of the first run of the current one's flow (the root), so an agent can
-     * address its whole flow without reading `langgraph.json`. Absent at the root
-     * of a flow itself, and persisted on the process row as `root_process_id`.
-     * See ADR-0058.
-     */
     const val ROOT_PROCESS_ID = "HMR_ROOT_PROCESS_ID"
-
-    /**
-     * Request header an external caller of `POST /api/v1/agent/{name}` sets to link
-     * the new run to a parent it can see. Alias of [HomerHeaders.PARENT_PROCESS_ID],
-     * which holds the string and is canonical for new code; this alias is transitional
-     * and goes when its call sites migrate. See ADR-0058.
-     */
     const val PARENT_PROCESS_HEADER = HomerHeaders.PARENT_PROCESS_ID
 
-    /**
-     * Request header carrying a run's [CALLBACK_TOKEN] to `GET /api/v1/callback/whoami`,
-     * read before `Authorization`: at an egress proxy that header belongs to the upstream.
-     * Alias of [HomerHeaders.CALLBACK_TOKEN], canonical for new code; this alias is
-     * transitional and goes when its call sites migrate. See ADR-0110.
-     */
+    /** Read before `Authorization`: at an egress proxy that header belongs to the upstream. See ADR-0110. */
     const val CALLBACK_TOKEN_HEADER = HomerHeaders.CALLBACK_TOKEN
 
-    /**
-     * Response headers of `GET /api/v1/callback/whoami`: the identified run's agent and id.
-     * Aliases of [HomerHeaders.AGENT] / [HomerHeaders.PROCESS_ID], canonical for new code;
-     * these aliases are transitional and go when their call sites migrate. See ADR-0110.
-     */
     const val AGENT_HEADER = HomerHeaders.AGENT
     const val PROCESS_ID_HEADER = HomerHeaders.PROCESS_ID
 
-    /**
-     * LangGraph thread id carried by a completion continuation from its `params`
-     * into the resumed target run, so the parked graph resumes the right thread.
-     * See ADR-0023.
-     */
     const val LG_THREAD = "HMR_LG_THREAD"
-
-    /**
-     * Default env var name a completion continuation writes the watched process's
-     * terminal result into (`{status, processId, result}` JSON) when firing the
-     * target run. Overridable per continuation via `resumeParam`. See ADR-0023.
-     */
     const val LG_RESUME = "HMR_LG_RESUME"
-
-    /**
-     * Interrupt id(s) the runtime carries into a resume run — one id for a
-     * sequential resume, comma-joined ids for a join. See ADR-0026.
-     */
     const val LG_INTERRUPT = "HMR_LG_INTERRUPT"
 
-    /**
-     * Set to "1" by `POST /api/v1/processes/{id}/resume` to re-enter a crashed
-     * LangGraph thread from its latest checkpoint. Read by the Python runtime;
-     * ignored when [LG_RESUME] is present (a crashed interrupt-resume segment
-     * replays its resume value instead). See ADR-0044.
-     */
+    /** Set by `POST /processes/{id}/resume`; ignored when [LG_RESUME] is present (an interrupt-resume replays its value). See ADR-0044. */
     const val LG_RECOVER = "HMR_LG_RECOVER"
 
-    /**
-     * Default env var name a `!<langgraph>` command reads its initial input
-     * payload from. Overridable per command via `inputEnv`. See ADR-0023.
-     */
     const val LG_INPUT = "HMR_LG_INPUT"
 
-    /**
-     * Absolute path to the durable LangGraph checkpoint directory, injected into
-     * the env of every `!<langgraph>` command so the Python `homer_langgraph`
-     * runtime can open its checkpointer there. Resolved from server config via
-     * [homer.app.models.AppConfig.resolveLangGraphStateDir]; uses the `HOMER_`
-     * prefix (not `HMR_`) because it is consumed by the Python runtime, not the
-     * Homer-internal env contract. See ADR-0024.
-     */
+    /** Durable LangGraph checkpoint dir; uses `HOMER_` (Python-runtime consumer), not the `HMR_` env contract. See ADR-0024. */
     const val LG_STATE_DIR = "HOMER_LG_STATE_DIR"
 
-    /**
-     * Zero-based command index and zero-based retry-attempt index. Template-only
-     * variables for `Agent.artifactNameTemplate` (rendered by `ArtifactNameResolver`);
-     * never exported into a command's process env. See AGENT.md.
-     */
+    /** Template-only for `artifactNameTemplate`; never exported into a command's process env. See AGENT.md. */
     const val CMD_INDEX = "HMR_CMD_INDEX"
     const val CMD_ATTEMPT = "HMR_CMD_ATTEMPT"
 
-    /**
-     * Outcome of the LLM tier that just ran (`success`, `failed`, `capped`, `malformed`) and its
-     * exit code (`-1` for `malformed`). Set only in the env of an `escalate[].when` predicate,
-     * never in a command's process env. See ADR-0079.
-     */
+    /** Set only in an `escalate[].when` predicate's env, never in a command's process env. See ADR-0079. */
     const val LLM_OUTCOME = "HMR_LLM_OUTCOME"
     const val LLM_EXIT_CODE = "HMR_LLM_EXIT_CODE"
 
-    /**
-     * The triggering run's metadata, injected into a run Homer starts from an agent's
-     * `hooks` entry: the run that reached the status ([HOOK_PROCESS_ID]), its agent
-     * ([HOOK_AGENT_NAME]), the status itself ([HOOK_STATUS]), the pre-start failure reason
-     * when the run carries one ([HOOK_FAILURE_REASON]) and the run's `key:value` subject
-     * tags ([HOOK_TAGS], comma-joined). Server-minted from the stored run only — never a
-     * secret input value, and never a caller-supplied param. See ADR-0107.
-     */
+    /** Server-minted from the stored run only — never a secret input value, never a caller-supplied param. See ADR-0107. */
     const val HOOK_PROCESS_ID = "HMR_HOOK_PROCESS_ID"
     const val HOOK_AGENT_NAME = "HMR_HOOK_AGENT_NAME"
     const val HOOK_STATUS = "HMR_HOOK_STATUS"
     const val HOOK_FAILURE_REASON = "HMR_HOOK_FAILURE_REASON"
     const val HOOK_TAGS = "HMR_HOOK_TAGS"
 
-    /**
-     * How many hook hops deep the run carrying this param is: 1 for a run a hook started
-     * from an ordinary run, one more per further hop. Bounded by `server.hooks.maxChainDepth`.
-     * Documented for agents in AGENT.md § Workspace Environment Variables. See ADR-0107.
-     */
+    /** Hook hops deep this run is; bounded by `server.hooks.maxChainDepth`. See ADR-0107. */
     const val HOOK_DEPTH = "HMR_HOOK_DEPTH"
 
-    /**
-     * Why a graceful stop happened (`step_timeout` or `run_deadline`), the zero-based
-     * index and label of the step that was interrupted, the hard deadline in epoch
-     * seconds (`run_deadline` only), and the interrupted LLM step's CLI session id
-     * (absent when the step exposed none). Set only in the env of an agent's
-     * `onStop:` steps, never in a regular command's. See ADR-0108.
-     */
+    /** Set only in an agent's `onStop:` steps' env, never in a regular command's. See ADR-0108. */
     const val STOP_REASON = "HMR_STOP_REASON"
     const val STOP_STEP_INDEX = "HMR_STOP_STEP_INDEX"
     const val STOP_STEP_LABEL = "HMR_STOP_STEP_LABEL"
     const val STOP_DEADLINE = "HMR_STOP_DEADLINE"
     const val STOP_SESSION_ID = "HMR_STOP_SESSION_ID"
 
-    /** `HMR_STOP_REASON` values: a step's own timeout, or the run's soft deadline. */
     const val STOP_REASON_STEP_TIMEOUT = "step_timeout"
     const val STOP_REASON_RUN_DEADLINE = "run_deadline"
 
-    /**
-     * Default `Agent.artifactNameTemplate` stem: renders the same path on every
-     * attempt, so a command's artifacts truncate in place exactly as before that
-     * field existed. Single source shared by the model default
-     * (`Agent.artifactNameTemplate`), `ExecutionContext.artifactNames`'s
-     * constructible default, and `AgentExecutor`'s placeholder-path fallback when
-     * rendering the agent's own (possibly custom) template fails.
-     */
+    /** Single source shared by the model default, `ExecutionContext.artifactNames` and `AgentExecutor`'s fallback — do not drift. */
     const val DEFAULT_ARTIFACT_NAME_TEMPLATE = "cmd_{{$CMD_INDEX}}"
 }

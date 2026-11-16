@@ -30,26 +30,11 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.ExperimentalTime
 
 /**
- * Store of operator questions asked by running commands (`homer-ask` helper,
- * MCP question tools) and answered over the API. Durable question state lives
- * in SQLite via [QuestionsRepository] (SQLite is authoritative; see ADR-0020).
- *
- * This instance still owns the runtime-only state that cannot be persisted and
- * is rebuilt empty on boot:
- * - [registrations] — the per-process callback-token registry. `registerProcess`
- *   mints a random token; `resolveToken` maps a presented token back to its
- *   process id (a digest lookup, then a constant-time comparison). The token is
- *   the only credential agent workspaces ever see — real API credentials never
- *   enter them.
- * - [completions] — one [CompletableDeferred] per OPEN question that
- *   answer-waiters (REST long-poll, MCP blocking tool) suspend on, keyed by
- *   question id.
- * - [activeWaits] — per-process count of held answer-waits.
- *
- * A restart loses open questions (startup reconciliation expires them) and the
- * token registry (waiting helpers get 401 and exit). Process terminal status
- * expires open questions (waiters resume); workspace purge and capacity
- * eviction remove them. See ADR-0019.
+ * Operator questions asked by running commands and answered over the API. Durable state
+ * lives in SQLite via [QuestionsRepository] (SQLite is authoritative, ADR-0020);
+ * [registrations] (callback tokens — the only credential agent workspaces ever see),
+ * [completions] and [activeWaits] are runtime-only, rebuilt empty on boot. A restart
+ * expires open questions and drops the token registry. See ADR-0019.
  */
 @OptIn(ExperimentalTime::class)
 class QuestionsService(

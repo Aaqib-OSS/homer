@@ -27,15 +27,12 @@ import kotlin.io.path.outputStream
 import kotlin.time.Duration
 
 /**
- * Runs each command in its own SSH exec channel. Argv semantics are preserved
- * by RemoteCommandBuilder (POSIX-escaped `cd && exec env ... argv`). Mirrors
- * KubernetesShellExecutor's timeout / cancellation / output-cap contract.
- *
- * When [reapProcessGroup] is set (SshRunner's capability probe found `setsid -w`
- * on the target), the command is launched as its own remote process group and,
- * on kill/timeout, the whole group is `kill -KILL`ed over a control channel
- * before the exec channel is closed, so a backgrounded remote child cannot
- * orphan on the target host. See ADR-0041.
+ * Runs each command in its own SSH exec channel. Argv semantics are preserved by
+ * RemoteCommandBuilder (POSIX-escaped `cd && exec env ... argv`); the timeout / cancellation /
+ * output-cap contract mirrors KubernetesShellExecutor's. When [reapProcessGroup] is set (SshRunner's
+ * capability probe found `setsid -w` on the target), the command runs as its own remote process group
+ * and, on kill/timeout, the whole group is `kill -KILL`ed over a control channel before the exec
+ * channel is closed, so a backgrounded remote child cannot orphan on the target host. See ADR-0041.
  */
 class SshShellExecutor(
     private val session: ClientSession,
@@ -201,16 +198,12 @@ class SshShellExecutor(
     }
 
     /**
-     * Reaps the process group the command self-reported to [pgidFile] over a
-     * fresh control channel. The pgid is validated to be a plain integer > 1
-     * before any signal runs (see [RemoteCommandBuilder.buildReapKill] /
-     * [RemoteCommandBuilder.buildReapInterrupt]), so a forged/stale/corrupt
-     * side-file can never become `kill -KILL -1` or `kill -INT -1`. When
-     * [interruptGrace] is set (the command was stopped by its own timeout and a
-     * grace is configured), the group is first SIGINTed and given the grace to
-     * exit before the SIGKILL; the channel wait covers that grace so the reaper
-     * script runs to completion. Best-effort: an empty/missing/invalid file or a
-     * failed kill is a no-op, swallowed by the caller's `runCatching`.
+     * Reaps the process group the command self-reported to [pgidFile] over a fresh control
+     * channel. The pgid is validated to be a plain integer > 1 before any signal runs (see
+     * [RemoteCommandBuilder.buildReapKill] / [RemoteCommandBuilder.buildReapInterrupt]), so a
+     * forged/stale/corrupt side-file can never become `kill -KILL -1` or `kill -INT -1`. With
+     * [interruptGrace] the group is SIGINTed, given the grace, then SIGKILLed, the channel wait
+     * covering that grace; best-effort, a missing/invalid file or a failed kill is a no-op.
      */
     private fun reapRemoteGroup(
         pgidFile: String,

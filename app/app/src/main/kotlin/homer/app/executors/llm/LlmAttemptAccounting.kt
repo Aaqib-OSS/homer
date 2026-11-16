@@ -60,16 +60,12 @@ internal class LlmAttemptAccounting(
     }
 
     /**
-     * Prices and charges one attempt inline. Runs for every exit code; no-op charge for 0.0.
-     *
+     * Prices and charges one attempt inline, for every exit code (a no-op charge for 0.0).
      * [allowRemoteLookup] false skips [LlmCostResolver.resolve] and charges the CLI figure
-     * directly — used when the caller's coroutine was genuinely cancelled: the spend is real and
-     * still gets accounted, but a cancelled run must not hold the NonCancellable block open for a
-     * bounded-but-real remote HTTP call.
-     *
-     * [startedAtMs]/[endedAtMs] are the attempt's own wall-clock window, captured around the
-     * shell call; the resolver prices a request-window-configured endpoint from the requests
-     * inside it rather than the session's cumulative total. See ADR-0061.
+     * directly — for a genuinely cancelled caller: the spend is real and still accounted, but a
+     * cancelled run must not hold the NonCancellable block open for a bounded-but-real remote
+     * HTTP call. [startedAtMs]/[endedAtMs] are the attempt's own wall-clock window; the resolver
+     * prices a request-window endpoint from the requests inside it. See ADR-0061.
      */
     suspend fun account(
         stdoutFile: Path,

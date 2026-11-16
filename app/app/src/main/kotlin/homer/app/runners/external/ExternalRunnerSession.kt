@@ -176,14 +176,12 @@ class ExternalRunnerSession(
     }
 
     /**
-     * At most one request per transfer may be in flight on this session — per op for
-     * a tar, per op and stream for output (§12 rule 4). Each holds a `Dispatchers.IO`
-     * thread and a connection for up to `transferTimeoutSec`, and nothing else stops
-     * an instance repeating one request concurrently; with this the total follows
-     * the ops Homer itself issued, not the caller. `homer-runner` overlaps them only
-     * when it retries an output post that timed out on its side, and it retries a
-     * shed one too. [key] is the op id, plus `/stream` for output. Returns the token
-     * [endTransfer] takes, or null when [key] is already in flight.
+     * At most one request per transfer may be in flight on this session — per op for a tar, per op
+     * and stream for output (§12 rule 4). Each holds a `Dispatchers.IO` thread and a connection for
+     * up to `transferTimeoutSec`, and nothing else stops an instance repeating one request
+     * concurrently; with this the total follows the ops Homer itself issued, not the caller.
+     * `homer-runner` overlaps them only when it retries an output post that timed out on its side.
+     * [key] is the op id, plus `/stream` for output. Returns the token [endTransfer] takes, or null when [key] is already in flight.
      */
     fun tryBeginTransfer(key: String): Any? {
         val token = Any()

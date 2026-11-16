@@ -23,62 +23,16 @@ import java.sql.Connection
 import javax.sql.DataSource
 import java.util.logging.Logger as JulLogger
 
-/**
- * Opens (creating if absent) the SQLite database backing the orchestrator's
- * durable state and owns the Exposed [Database] handle. SQLite is the single
- * source of truth — there is no in-memory cache of durable state. See ADR-0020.
- *
- * Pragmas are set on the [SQLiteConfig] so the driver applies them to every
- * connection Exposed opens:
- * - `journal_mode=WAL` — readers don't block the single writer.
- * - `busy_timeout=5000` — a writer waiting on the write lock retries for 5 s
- *   instead of failing immediately with `SQLITE_BUSY`.
- * - `transaction_mode=IMMEDIATE` — every transaction begins with
- *   `BEGIN IMMEDIATE`, taking the write lock up front. This is load-bearing:
- *   under WAL a DEFERRED read-then-write (the JSON-column read-modify-write in
- *   the repositories) that races another writer fails with the non-retryable
- *   `SQLITE_BUSY_SNAPSHOT`; IMMEDIATE serializes such transactions through the
- *   write lock instead, which is what replaces the old coroutine `Mutex`.
- *
- * No `foreign_keys` pragma is set: no table declares a foreign key, and
- * referential integrity is maintained in code instead — co-transactional
- * deletes, existence-guarded inserts, and plain-reference ids that may outlive
- * their parent (ADR-0048, ADR-0058, ADR-0060).
- *
- * The writer handle runs single-attempt: its [DatabaseConfig] sets
- * [DatabaseConfig.defaultMaxAttempts] to `1`. Exposed re-runs a transaction up
- * to `maxAttempts` times whatever throws `SQLException` — including a
- * `commit()` that failed *after* the data landed, which sqlite-jdbc can raise
- * from the re-`BEGIN IMMEDIATE` it issues inside `commit()`. Every write block
- * on this handle is a read-modify-write append that a replay would duplicate,
- * so the retry is disabled rather than made safe per block. See ADR-0020.
- *
- * A transaction that writes goes through [query], which ends the driver's
- * post-commit re-`BEGIN` so the write lock ends with the transaction, not with
- * Exposed's connection teardown ([BounceWriterToAutoCommit]). A transaction that only
- * reads goes through [read]: a second handle whose transactions begin DEFERRED
- * under `query_only`, so under WAL they neither take nor wait for the write
- * lock, and which keeps Exposed's default retries — a read block is safely
- * re-runnable. Both run the blocking JDBC transaction on [Dispatchers.IO]. See
- * the 2026-09-29 amendments to ADR-0020.
- */
+/** Owns the Exposed `Database` over SQLite, the single source of truth for durable state. See ADR-0020. */
 class DatabaseService(
     private val databasePath: String,
     private val logger: Logger,
-    // Blocking JDBC runs here, off the main dispatcher. Overridable in tests
-    // (e.g. an unconfined/inline dispatcher) so virtual-time and ordering-based
-    // tests stay deterministic.
+    // Blocking JDBC runs here, off the main dispatcher (overridable in tests).
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    // Wraps the writer handle's JDBC connections. Identity in production; a test
-    // substitutes a proxy that throws from `commit()` after it has landed, to
-    // drive the post-commit failure through the real [query] path. Wrapping has
-    // to happen at the DataSource: Exposed discards the `setupConnection` hook's
-    // return value, so that hook cannot make its wrapper the transaction's
-    // connection.
+    // Wraps the writer handle's JDBC connections; must happen at the DataSource because
+    // Exposed discards the `setupConnection` hook's return value.
     private val wrapWriterConnection: (Connection) -> Connection = IDENTITY_CONNECTION_WRAPPER,
-    // The writer handle's retry policy. Production always uses the companion's
-    // single-attempt default; a test substitutes Exposed's multi-attempt default
-    // to show the replay this ticket is about.
+    // The writer handle's retry policy; production uses the single-attempt default.
     private val writerDatabaseConfig: DatabaseConfig = WRITER_DATABASE_CONFIG,
 ) {
     val database: Database by lazy { open() }
@@ -172,14 +126,8 @@ class DatabaseService(
     @Volatile
     private var maintenance: Job? = null
 
-    /**
-     * Refreshes SQLite's planner statistics (`sqlite_stat1`). Without them the planner
-     * guesses selectivity and can pick an index that matches almost every row. Analyzes
-     * every table that has no statistics or has changed size a lot since its last
-     * analysis, and is a cheap no-op otherwise. `0x10000` checks all tables: a plain
-     * `PRAGMA optimize` only considers tables this connection has queried, and each
-     * transaction here opens a new connection. Never fails the caller.
-     */
+    // Refreshes planner statistics; `0x10000` is load-bearing: a plain `PRAGMA optimize` only
+    // considers tables this connection queried, and each transaction opens a new connection.
     fun optimize() {
         runCatching {
             transaction(database) { rawStatement { it.execute("PRAGMA optimize=0x10002") } }
@@ -207,24 +155,15 @@ class DatabaseService(
         if (!opened) return
         // Before the checkpoint: an open reader connection would keep the WAL alive.
         if (readerConnectionsLazy.isInitialized()) readerConnections.close()
-        // Flush the WAL into the main db on shutdown so the file is
-        // self-contained for inspection/backup. This runs on its own autocommit
-        // connection: the old form ran it inside its own write transaction
-        // (`transaction(database) { … }`), where the transaction's own write lock
-        // blocks a TRUNCATE checkpoint with `SQLITE_LOCKED` — which runCatching
-        // swallowed, so the WAL was never truncated on shutdown.
+        // Flush the WAL into the main db on shutdown so the file is self-contained for inspection/backup.
         runCatching {
             checkpoint()
         }.onFailure { logger.warn("WAL checkpoint on shutdown failed: {}", it.message) }
         logger.info("Closed SQLite database at {}", databasePath)
     }
 
-    /**
-     * `PRAGMA wal_checkpoint(TRUNCATE)` on a short-lived autocommit connection — never
-     * inside a transaction: `transaction_mode=IMMEDIATE` makes every
-     * `transaction(database)` a `BEGIN IMMEDIATE`, where SQLite refuses a checkpoint
-     * with `SQLITE_LOCKED`. See ADR-0020.
-     */
+    // `PRAGMA wal_checkpoint(TRUNCATE)` on a short-lived autocommit connection, never inside a
+    // transaction: `transaction_mode=IMMEDIATE` would get `SQLITE_LOCKED`. See ADR-0020.
     private fun checkpoint() {
         val dataSource = writerDataSource()
         dataSource.connection.use { c ->
@@ -249,11 +188,8 @@ class DatabaseService(
             }
         }
 
-    /**
-     * Runs a [block] that only reads inside one DEFERRED, `query_only` transaction on
-     * [ioDispatcher]. It sees the last committed state and never contends for the write
-     * lock; a write attempted inside it fails with `SQLITE_READONLY`.
-     */
+    // Runs a read-only [block] inside one DEFERRED, `query_only` transaction on [ioDispatcher];
+    // a write inside it fails with `SQLITE_READONLY`. See ADR-0020.
     suspend fun <T> read(block: JdbcTransaction.() -> T): T =
         withContext(ioDispatcher) {
             transaction(readDatabase) { block() }
@@ -298,24 +234,12 @@ class DatabaseService(
 
         private val IDENTITY_CONNECTION_WRAPPER: (Connection) -> Connection = { it }
 
-        /**
-         * The writer handle's config: one attempt, never a retry. A block here
-         * that throws may already have landed its data (a commit can throw after
-         * it succeeded), and the blocks on this handle are not idempotent, so
-         * re-running one duplicates durable state. The reader keeps Exposed's
-         * default. See ADR-0020 and SQLite rule 5 in `app/CLAUDE.md`.
-         */
+        // One attempt, never a retry: a block here may have landed its data before throwing, and
+        // the blocks are not idempotent. See ADR-0020 and SQLite rule 5 in `app/CLAUDE.md`.
         val WRITER_DATABASE_CONFIG: DatabaseConfig = DatabaseConfig { defaultMaxAttempts = 1 }
 
-        /**
-         * Ends the driver's post-commit re-`BEGIN IMMEDIATE` (see the 2026-09-29 amendment to
-         * ADR-0020 for why `commit()` leaves one): the write lock must end with the
-         * transaction, not with Exposed's connection teardown. Stateless, so one instance
-         * serves every transaction. Runs after the commit has landed, hence `runCatching` —
-         * a failure must not turn a landed write into an error, only widen the lock window
-         * back to the connection. Single-attempt + bounce are the same ticket's two halves:
-         * a write block here neither replays nor holds the lock past its commit.
-         */
+        // Ends the driver's post-commit re-`BEGIN IMMEDIATE` so the write lock ends with the
+        // transaction, not with Exposed's connection teardown; stateless. See ADR-0020.
         private object BounceWriterToAutoCommit : StatementInterceptor {
             override fun afterCommit(transaction: Transaction) {
                 val raw = (transaction as JdbcTransaction).connection.connection as java.sql.Connection

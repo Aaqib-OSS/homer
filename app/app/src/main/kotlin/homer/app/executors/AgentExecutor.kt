@@ -335,14 +335,12 @@ class AgentExecutor(
     }
 
     /**
-     * The run's graceful stop: runs the agent's `onStop:` steps once, in this same session and
-     * before the teardown, when [cause] is a stop trigger — a step that timed out with
-     * `onTimeout: stop`, or the backend's soft run deadline. Records what happened on the run and
-     * returns; the caller rethrows, so the run ends `FAILED` with its stop recorded. The remaining
-     * `commands` steps are never started, because the step loop was left by the throw. A stop
-     * detected between steps — the soft deadline passing before the next one starts — names the
-     * last step whose turn came in the record and the `HMR_STOP_STEP_*` env: it either completed
-     * or was skipped by `when:`, and nothing was in flight to interrupt. See ADR-0108.
+     * The run's graceful stop: runs the agent's `onStop:` steps once, in this same session and before
+     * the teardown, when [cause] is a stop trigger — a step that timed out with `onTimeout: stop`, or
+     * the backend's soft run deadline. Records what happened and returns; the caller rethrows, so the
+     * run ends `FAILED` with its stop recorded and the remaining `commands` steps never start (the step
+     * loop was left by the throw). A stop detected between steps names the last step whose turn came
+     * and the `HMR_STOP_STEP_*` env — completed or skipped, nothing in flight. See ADR-0108.
      */
     @OptIn(ExperimentalTime::class)
     private suspend fun runStopPhase(

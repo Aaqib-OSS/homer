@@ -6,27 +6,10 @@ import kotlinx.serialization.json.JsonPrimitive
 /**
  * Masks known secret values in free text before it is emitted to telemetry
  * (Langfuse spans) or logs. Built from the workspace env restricted to
- * `secretEnvNames`, which [WorkspaceConfigFactory] composes from three sources:
- * the agent's declared `secret: true` inputs, every `globalEnv` / `agent.env`
- * value the operator sourced from the host via `@SYSENV:`, and Homer's own
- * per-process `HMR_CALLBACK_TOKEN`.
- *
- * `@SYSENV:` counts as a secret declaration by construction — reaching into the
- * host environment for a value is how an operator forwards a credential, and the
- * composed value is exactly what the child process can echo. A `globalEnv` entry
- * with a literal value is *not* redacted: Homer cannot tell a token from a URL,
- * and redacting every global would replace ordinary strings with `***`
- * throughout telemetry. See SERVER.md's content-egress note.
- *
- * A name that is not an env key is resolved from the host environment instead.
- * `SysEnvResolver.secretNamesFor` contributes the host variable names a value
- * referenced, which for a composite like `"Bearer @SYSENV:TOKEN"` is the only
- * way the bare credential becomes a needle — the resolved env value is
- * `Bearer <token>`, and output holding just the token would match nothing.
- *
- * [from]'s `minNeedleLength` defaults to `1` (today's behavior: every non-empty
- * value is a needle) — see [ARTIFACT_STEM_MIN_NEEDLE_LENGTH] for the one caller
- * that must raise it.
+ * `secretEnvNames`; `@SYSENV:` counts as a secret declaration, while a literal
+ * `globalEnv` value is *not* redacted. A name that is not an env key resolves
+ * from the host env, and [SysEnvResolver.secretNamesFor] adds the host names a
+ * composite like `"Bearer @SYSENV:TOKEN"` referenced. See SERVER.md's content-egress note.
  */
 class SecretRedactor private constructor(
     private val secrets: List<String>,

@@ -160,17 +160,13 @@ class WorkspaceConfigFactory(
                     e,
                 )
             }
-        // Strict descent: a template (or a query-param value) that normalizes back
-        // to the server root itself — e.g. "{{HMR_PROCESS_ID}}/.." or "" — passes
-        // containment (root contains itself) but would make projectRoot == serverRoot,
-        // so a later purge/eviction deleting projectRoot would wipe every run's
-        // workspace. Require a real subdirectory. Security follow-up; root §12.4.
-        //
-        // Compare both the canonical and lexical forms: once the workspace root
-        // exists on disk, assertContained returns its toRealPath() (symlink-resolved),
-        // while serverRoot itself is never canonicalized — so on a host where
-        // workspaceRootPath sits behind a symlink (e.g. /tmp -> /private/tmp on
-        // Darwin/CI), a naive `projectRoot == serverRoot` silently fails to fire.
+        // Strict descent: a template that normalizes back to the server root itself
+        // passes containment (root contains itself) but would make projectRoot ==
+        // serverRoot, so a later purge deleting projectRoot would wipe every run's
+        // workspace. Require a real subdirectory. Compare both canonical and lexical
+        // forms: once the root exists, assertContained returns its toRealPath(), while
+        // serverRoot is never canonicalized — so behind a symlinked workspace root a
+        // naive `projectRoot == serverRoot` silently fails to fire.
         val normalizedServerRoot = serverRoot.toAbsolutePath().normalize()
         if (projectRoot == normalizedServerRoot || requestedRoot.toAbsolutePath().normalize() == normalizedServerRoot) {
             throw WorkspaceException(

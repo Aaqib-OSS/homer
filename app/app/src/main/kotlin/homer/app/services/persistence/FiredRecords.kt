@@ -94,18 +94,12 @@ internal class FiredRecords<T>(
         }
 
     /**
-     * One page of rows, newest first, mapped by [toRecords] inside the read, and the count of all
-     * rows matching the filters. [visibleAgents] null means an admin (no visibility filter);
-     * otherwise only rows owned by [visibleOwner] or targeting one of [visibleAgents] match, in SQL
-     * before the limit, so neither the page nor [RecordPage.total] carries a row the caller cannot
-     * see (ADR-0039).
-     *
-     * Every filtered shape is `id IN (<one SELECT id per visibility arm, UNIONed>)`: each arm seeks
-     * its own index (`<table>_owner`, `<table>_agent_name`, `<table>_status_created`) and the outer
-     * read walks the id set in primary-key order, so the page needs no sort. The plain
-     * `owner = ? OR agent_name IN (…)` form plans as a backward walk of the whole table once
-     * statistics exist. Only the unfiltered admin page walks the table, reading offset + limit rows.
-     * DatabaseMigrationTest pins every shape. See ADR-0021 (2026-09-30 amendment).
+     * One page of rows, newest first, mapped by [toRecords] inside the read, plus the count of all
+     * matching rows. Visibility runs in SQL before the limit, so neither the page nor
+     * [RecordPage.total] carries a row the caller cannot see (ADR-0039); [visibleAgents] null means
+     * an admin. Every filtered shape is `id IN (<one SELECT id per visibility arm, UNIONed>)`: each
+     * arm seeks its own index and the outer read walks the id set in primary-key order, so the page
+     * needs no sort. DatabaseMigrationTest pins every shape. See ADR-0021 (2026-09-30 amendment).
      */
     suspend fun <R> page(
         status: String?,

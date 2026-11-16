@@ -1,13 +1,12 @@
 package homer.app.runners.queue
 
 /**
- * In-memory `(flow root, group) → runner instance` map: which instance last
- * served a run of that affinity key. A run whose key has an entry prefers that
- * instance in the claim queue; an unknown key records the instance that claims
- * it. Bounded in entries (a full map evicts the least recently used one, it
- * never grows or rejects) and in age (an entry past the TTL is not used).
- * Deliberately not persisted: a restart costs the next run of a key one cold
- * start. The bounds are constants, not config. See ADR-0099, ADR-0047 rules 4–5.
+ * In-memory `(flow root, group) → runner instance` map: which instance last served a run of that
+ * affinity key. A run whose key has an entry prefers that instance in the claim queue; an unknown
+ * key records the instance that claims it. Bounded in entries (a full map evicts the least
+ * recently used one, it never grows or rejects) and in age (an entry past the TTL is not used).
+ * Deliberately not persisted: a restart costs the next run of a key one cold start. The bounds are
+ * constants, not config. See ADR-0099, ADR-0047 rules 4–5.
  */
 class RunnerAffinityMemory(
     private val maxEntries: Int = MAX_ENTRIES,

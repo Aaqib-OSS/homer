@@ -25,7 +25,6 @@ import kotlinx.serialization.json.JsonPrimitive
  * Serializes/deserializes [JsonObject] from both JSON (via [JsonDecoder]) and
  * YAML (via [YamlInput]). Used for [Agent.inputSchema] so an agent author can
  * declare a JSON Schema inline in either a `.yaml` or `.json` agent file.
- *
  * Serialization (write) delegates to [JsonObject.serializer()], which only
  * works in a JSON context; that is fine because agent files are read-only at
  * runtime — we never re-serialize an Agent back to disk.

@@ -1,32 +1,12 @@
 package homer.app.infra
 
 /**
- * Load-time heuristic that flags regular-expression patterns whose structure is
- * prone to catastrophic backtracking (ReDoS).
- *
- * Homer feeds author-supplied `pattern`s from an agent's `inputSchema` to the
- * networknt JSON-Schema validator, which compiles them to `java.util.regex` and
- * matches them against caller-supplied request bodies. Unlike [ParamValidator]'s
- * `pattern` (bounded at match time by [BoundedRegex]'s interruptible char
- * sequence), the JSON-Schema library owns the `Matcher` and feeds it a plain
- * `String` Homer never sees, so the runtime bound cannot be applied — hence this
- * structural lint at agent load. See ADR-0040.
- *
- * Recognised evil-regex shapes:
- *  - nested unbounded quantifiers — a quantified group whose body is itself
- *    unbounded: `(X+)+`, `(X*)*`, `(X+)*`, `(X*)+`, `((X+))+`;
- *  - a quantified alternation whose branches overlap: `(a|a)*`, `(a|ab)*`,
- *    `(a|)*`, including when the alternation is non-capturing (`(?:a|ab)*`) or
- *    wrapped in nested groups (`((a|ab))*`).
- *
- * Group prefixes (`(?:`, `(?<name>`, `(?=`, `(?<=`, flag-scoped `(?i:`) are
- * normalised so the analysis sees the real group body rather than the prefix.
- *
- * It is deliberately conservative and, being a heuristic, is neither sound nor
- * complete: it can over-reject an unusual-but-safe pattern (e.g. an overlapping
- * alternation nested under a quantifier but anchored by surrounding literals)
- * and can still miss an exotic vulnerable one. An author who trips it can
- * restructure the pattern.
+ * Load-time heuristic flagging regex patterns prone to catastrophic backtracking
+ * (ReDoS). Author-supplied `inputSchema` patterns go to the networknt
+ * JSON-Schema validator, which compiles them to `java.util.regex` and matches
+ * them against caller bodies; unlike [ParamValidator]'s `pattern` (bounded at
+ * match time by [BoundedRegex]), the library owns the `Matcher` and feeds it a
+ * plain `String`, so the runtime bound cannot apply — hence this load-time lint. See ADR-0040.
  */
 internal object RedosPatternDetector {
     private class Group(

@@ -184,13 +184,11 @@ internal object TarExtraction {
     }
 
     /**
-     * Records every ancestor of [from] up to (excluding) [root] into
-     * [materialized]. A directory or file entry with no preceding directory
-     * entry for its own parent chain (an untrusted stream shape — the pod's
-     * tar binary is attacker-replaceable, see the class doc) would otherwise
+     * Records every ancestor of [from] up to (excluding) [root] into [materialized]. A directory or
+     * file entry with no preceding directory entry for its own parent chain (an untrusted stream
+     * shape — the pod's tar binary is attacker-replaceable, see the class doc) would otherwise
      * leave those ancestors out of the keep set: prune() then fails with
-     * DirectoryNotEmptyException trying to remove a non-empty directory it
-     * thinks is an extra.
+     * DirectoryNotEmptyException trying to remove a non-empty directory it thinks is an extra.
      */
     private fun recordAncestors(
         root: Path,

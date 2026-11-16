@@ -21,21 +21,12 @@ sealed interface LlmPrompt {
 }
 
 /**
- * Retry configuration for the `claude` command.
- *
- * Wraps the entire CLI invocation (including stdin, env, and stdout
- * validation). Retries fire when the run finishes with a non-zero exit
- * code — except a terminal stop the command opted into (Claude's
- * `maxTurnsExitCode`), which is never retried — OR when its stdout fails
- * the JSON-event-stream validation (`MalformedLlmOutputException`). Other
- * exceptions (timeouts, cancellation, validation of `Command.Claude`
- * itself) propagate immediately.
- *
- * Backoff is exponential with full jitter:
- * `min(maxDelayMs, baseDelayMs * 2^attemptIndex + random(0, baseDelayMs))`
- * applied between attempts (no delay before the first attempt). The jitter
- * spreads concurrent retriers so they don't reconverge on the same instant.
- * With the default `attempts = 1` no retry happens and behavior is unchanged.
+ * Retry configuration for the `claude` command. Wraps the whole CLI invocation (stdin, env and
+ * stdout validation): a non-zero exit retries — except the terminal stop the command opted into
+ * (`maxTurnsExitCode`), never retried — as does stdout failing the JSON-event-stream validation
+ * (`MalformedLlmOutputException`); other exceptions (timeouts, cancellation) propagate. Backoff is
+ * exponential with full jitter between attempts — `min(maxDelayMs, baseDelayMs * 2^attemptIndex +
+ * random(0, baseDelayMs))` — so concurrent retriers do not reconverge. Default `attempts = 1`: no retry.
  */
 @Serializable
 data class LlmRetry(

@@ -20,15 +20,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
- * Accepts `when` as either:
- *   - a scalar string (shorthand for `{all: [<string>]}`), or
- *   - an object with exactly one of `all` / `any` keys, each holding a non-empty
- *     list of strings.
- *
- * Always serializes back to the structured form (`{all|any: [...]}`).
- *
- * Uses a CONTEXTUAL descriptor so kaml does not pre-validate the shape before
- * delegating here. Mirrors the pattern in `CmdArgsSerializer`.
+ * Accepts `when` as a scalar string (shorthand for `{all: [<string>]}`) or an object with exactly
+ * one of `all` / `any`, each a non-empty list of strings; always serializes back to the structured
+ * form (`{all|any: [...]}`). Uses a CONTEXTUAL descriptor so kaml does not pre-validate the shape
+ * before delegating here, mirroring `CmdArgsSerializer`.
  */
 object WhenSerializer : KSerializer<When> {
     @Serializable
@@ -144,13 +139,10 @@ object WhenSerializer : KSerializer<When> {
         }
 
     /**
-     * kaml normalizes quoted and unquoted YAML scalars to the same
-     * [YamlScalar.content] string, so we cannot tell `when: 42` from
-     * `when: "42"` after parsing. Reject anything that looks like a typed
-     * YAML primitive (bool/int/float) so the user gets an early, clear
-     * error instead of a runtime bash-eval failure. A real bash predicate
-     * is never a bare numeric or boolean literal — quote your expression
-     * and it will contain spaces / brackets that defeat these checks.
+     * kaml normalizes quoted and unquoted YAML scalars to the same [YamlScalar.content] string, so
+     * `when: 42` and `when: "42"` are indistinguishable after parsing. Reject typed YAML primitives
+     * (bool/int/float) so the user gets an early error instead of a runtime bash-eval failure; a
+     * real bash predicate is never a bare numeric or boolean literal.
      */
     private fun rejectTypedScalar(content: String) {
         val isBool = content in BOOL_LITERALS

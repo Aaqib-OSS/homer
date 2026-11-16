@@ -4,14 +4,12 @@ import java.net.URI
 import java.net.URISyntaxException
 
 /**
- * Drops the parts of a URL that carry secrets — userinfo, query and fragment —
- * keeping scheme, host, port and path. Returns null when the value will not parse,
- * which is exactly the case where guessing which part is sensitive is least safe.
- *
- * `langfuse.serverUrl` is operator-supplied and reaches two sinks: the OTLP endpoint
- * log line in `OtelTelemetryService` and the `langfuseTraceUrl` field that
- * `ResponseMapping` sets on every process API response. Both use this, so a
- * credential in the configured URL leaks to neither.
+ * Drops the parts of a URL that carry secrets — userinfo, query and fragment — keeping scheme,
+ * host, port and path; returns null when the value will not parse, exactly the case where
+ * guessing which part is sensitive is least safe. Both sinks of the operator-supplied
+ * `langfuse.serverUrl` use this — the OTLP endpoint log line in `OtelTelemetryService` and the
+ * `langfuseTraceUrl` field `ResponseMapping` sets on every process API response — so a credential
+ * in the configured URL leaks to neither.
  */
 internal fun stripUrlSecrets(raw: String): String? =
     try {
