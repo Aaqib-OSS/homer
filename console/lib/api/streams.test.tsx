@@ -449,8 +449,11 @@ describe('useAgentReloadStream', () => {
     // An empty diff is still a completed reload (file edits reload inline), so
     // the frame itself is the signal, not its contents.
     emit('agent.reload', { added: [], updated: [], removed: [] });
+    // A payload-less frame arrives as the raw empty string (sse.ts falls back
+    // when JSON.parse throws) and invalidates too — the frame name is the signal.
+    emit('agent.reload', '');
 
-    expect(keys()).toEqual([queryKeys.agents(), queryKeys.agents()]);
+    expect(keys()).toEqual([queryKeys.agents(), queryKeys.agents(), queryKeys.agents()]);
   });
 
   it('a frame that is not a reload invalidates nothing', () => {

@@ -369,8 +369,9 @@ finding of its own, so no body passes unjudged; a new output form is resolved in
 taught to skip. **The exemption-with-reason contract.** An entry in `routeBodiesNotMirrored` names
 the `@Serializable` class and the route (with its method) and caller that actually receive the body,
 with the reason the console never reads it: it is the audit trail for a deliberate hole in the
-contract, so an entry naming a route that does not exist — or a class the main sources no longer
-declare — fails the test like an unrooted body does. A shape the console *builds* rather than
+contract, so an entry whose class the main sources no longer declare as `@Serializable` fails the
+test like an unrooted body does; that the reason names a route that still exists stays on the
+reviewer — the route text in a reason is free text no check validates. A shape the console *builds* rather than
 receives keeps its `CONSOLE_ONLY` reason in `dto-contract.mjs` instead; a `CONSOLE_ONLY` key naming a
 root DTO would silently skip that type's comparison, so the check's test derives the forbidden names
 from the root list itself. **Rejected alternatives for body discovery.** A PSI or detekt pass with

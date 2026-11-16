@@ -6,7 +6,6 @@ import { openStream } from './sse';
 import { queryKeys } from './queries';
 import { useActiveInstanceId } from '@/lib/instances/use-instances';
 import type {
-  AgentReloadFrame,
   LlmEvent,
   LlmStreamFrame,
   LlmTurnStatus,
@@ -107,11 +106,11 @@ export function useAgentReloadStream() {
 
   useEffect(() => {
     const close = openStream('/api/v1/stream/agents', {
-      onEvent(name, data) {
+      onEvent(name) {
         // The payload is the grant-narrowed reload diff (AgentReloadFrame); the frame
         // itself is the reload-completed signal, so the queries invalidate whatever
         // the diff holds — an empty diff is a real completed reload.
-        if (name === 'agent.reload' && (data as Partial<AgentReloadFrame> | undefined) !== undefined) {
+        if (name === 'agent.reload') {
           queryClient.invalidateQueries({ queryKey: queryKeys.agents() });
         }
       },
