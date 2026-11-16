@@ -32,11 +32,6 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.contentType
 import io.ktor.server.application.Application
-import io.ktor.server.application.plugin
-import io.ktor.server.routing.HttpMethodRouteSelector
-import io.ktor.server.routing.RoutingRoot
-import io.ktor.server.routing.getAllRoutes
-import io.ktor.server.routing.path
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import kotlinx.serialization.json.Json
@@ -221,12 +216,6 @@ class RouteAuthorizationMatrixTest {
             noGrantRunToken,
         )
     }
-
-    private fun registeredRoutes(app: Application): List<String> =
-        app.plugin(RoutingRoot).getAllRoutes().map { node ->
-            val method = (node.selector as? HttpMethodRouteSelector)?.method
-            if (method == null) "* ${node.path}" else "${method.value} ${node.parent!!.path}"
-        }
 
     /** The status of [method] [target] sent with [bearer], and the body unless a `200` not asked to [readBody] (SSE never ends). */
     private suspend fun ApplicationTestBuilder.send(
