@@ -186,7 +186,7 @@ excluding the finishing run's own id — references the same workspace directory
 the deletes are skipped, a span event marks the skip, and cleanup still returns
 normally (`Process.execute`'s `runCatching` around the `finally` is unchanged).
 Liveness is read from the process table through
-`ProcessRepository.isArtifactsDirSharedWithActiveRun`, the same query shape the
+`ProcessRepository.isWorkspaceSharedWithActiveRun`, the same query shape the
 purge sweep's `isArtifactsDirShared` uses — one SQL source of truth, per ADR-0020,
 so the two sweeps cannot drift. Terminal siblings are deliberately ignored: a
 finished run's residue must not block the next run's cleanup. A unique per-run
