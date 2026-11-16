@@ -33,8 +33,8 @@ interface ParallelRunsManager {
     /**
      * Reserves a place for a run that is about to wait on a subject lock, refusing the surplus
      * instead of parking it. Lock waiters share the slot wait queue — one combined cap of
-     * [maxQueuedRuns] — when that queue exists and is bounded; otherwise they are capped at
-     * [maxParallelRuns], which is today's worst case because each lock waiter used to hold a slot.
+     * [maxQueuedRuns] — when that queue exists and is bounded; otherwise the cap is [maxParallelRuns].
+     * See ADR-0104.
      */
     fun enterLockWait(
         agentName: String,

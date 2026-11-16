@@ -6,7 +6,6 @@ import kotlin.test.assertEquals
 /** The comment-hygiene rule's finding functions on fixture text, so its limits hold without the real sources. */
 class CommentRunsTest {
     private val path = "app/src/main/kotlin/homer/app/Fixture.kt"
-    private val other = "app/src/main/kotlin/homer/app/Other.kt"
 
     @Test
     fun `nine consecutive comment lines are flagged at the first one and eight are not`() {
@@ -57,14 +56,18 @@ class CommentRunsTest {
     }
 
     @Test
-    fun `an allowed path suppresses only its own run`() {
-        val allowed = mapOf(path to "the run is the rule's own limit table")
+    fun `past-implementation narration is flagged, a purpose phrase is not`() {
+        val past = narrationViolations(path, "// the four flags previously carried this state\n").single()
 
-        assertEquals(emptyList(), commentRunViolations(path, comments(9), allowed))
+        assertEquals(1, past.line)
+        assertEquals("comment narrates what is gone (past-implementation narration)", past.text)
+
         assertEquals(
-            listOf(Violation(other, 1, "9 consecutive comment lines (limit 8)")),
-            commentRunViolations(other, comments(9), allowed),
+            "comment narrates what is gone (past-implementation narration)",
+            narrationViolations(path, "// each lock waiter used to hold a slot\n").single().text,
         )
+        assertEquals(emptyList(), narrationViolations(path, "// used to scope the cooldown reads\n"))
+        assertEquals(emptyList(), narrationViolations(path, "// a finished run can no longer grow its file\n"))
     }
 
     private fun comments(count: Int) = (1..count).joinToString("\n") { "// constraint $it" }

@@ -36,34 +36,29 @@ internal const val MAX_COMMENT_RUN = 8
 
 /**
  * Comment text that narrates an implementation that is gone instead of the constraint that holds now: a label for
- * the finding, and the regex that finds it in the lowercased comment text. The past-audit form is a regex rather than
- * a literal so this file does not itself read as a citation of the gitignored review document that
- * `DeadReviewReferenceScanTest` guards; it still matches that form in any case.
+ * the finding, and the regex that finds it in the lowercased comment text.
+ *
+ * The list stays on phrases that can only look backwards — a stale `previous implementation`, a bare `previously`,
+ * `used to` with a stative verb, and the past-audit form — rather than banning past tense generally: `no longer`
+ * and a purpose `used to` ("used to scope the cooldown reads") state the code as it stands, and a broader rule
+ * would fail on them. The past-audit form is a regex rather than a literal so this file does not itself read as a
+ * citation of the gitignored review document that `DeadReviewReferenceScanTest` guards; it still matches that form
+ * in any case.
  */
 internal val NARRATION_PATTERNS: List<Pair<String, Regex>> =
     listOf(
         "previous implementation" to Regex("previous implementation"),
         "past-audit narration" to Regex("audit\\s*#"),
+        "past-implementation narration" to Regex("\\bpreviously\\b|\\bused to (be|hold|read|carry|have)\\b"),
     )
-
-/**
- * Paths whose comment run may exceed [MAX_COMMENT_RUN], each with the reason it must stay. Empty while every
- * main file fits; an entry here is a deliberate exception, not a way to silence a finding.
- */
-internal val ALLOWED_COMMENT_RUNS: Map<String, String> = emptyMap()
 
 /** Every run of more than [MAX_COMMENT_RUN] consecutive comment lines in [text], reported at its first line. */
 internal fun commentRunViolations(
     path: String,
     text: String,
-    allowed: Map<String, String> = ALLOWED_COMMENT_RUNS,
 ): List<Violation> =
-    if (path in allowed) {
-        emptyList()
-    } else {
-        commentRuns(text).map { (line, length) ->
-            Violation(path, line, "$length consecutive comment lines (limit $MAX_COMMENT_RUN)")
-        }
+    commentRuns(text).map { (line, length) ->
+        Violation(path, line, "$length consecutive comment lines (limit $MAX_COMMENT_RUN)")
     }
 
 /** Every narration pattern in the comment text of [text], reported at the line it starts on. */

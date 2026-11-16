@@ -467,9 +467,8 @@ private fun finishCodeOrThrow(
 }
 
 /**
- * Per-command outcome threaded from the try/catch into the finally block and the
- * post-try early-finish check. Replaces the four mutable flags that previously
- * carried this state.
+ * Per-command outcome the try and catch branches write and the finally block and the post-try
+ * early-finish check read, so one value carries the exit code and the finish decision.
  */
 internal sealed interface CommandOutcome {
     val exitCode: Int
