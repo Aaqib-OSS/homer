@@ -100,7 +100,7 @@ class ProcessExecutor(
         process: Process,
         processSpan: Span,
     ) {
-        // Audit #9: guard WORKING/CREATED → FINISHED so a concurrent
+        // Guard WORKING/CREATED → FINISHED so a concurrent
         // killProcess (which atomically moves the record to KILLED) is
         // not overwritten after execute() returned.
         val transitionedToFinished =

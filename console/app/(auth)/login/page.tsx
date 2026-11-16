@@ -346,7 +346,7 @@ function LoginForm() {
   // Bearer mode is opt-in (CONSOLE_ALLOW_BEARER): its token lives in localStorage
   // and is XSS-exfiltratable, so the console is cookie-only unless the operator
   // enables it. When off, ignore any bearer request (URL param or saved instance)
-  // and never offer the toggle. See the 2026-07-12 security review (H3).
+  // and never offer the toggle. See ADR-0047.
   const allowBearer = appConfig.auth.allowBearer;
   const active = store.instances.find((i) => i.id === store.activeInstanceId);
   const endpointParam = searchParams?.get('endpoint') ?? null;

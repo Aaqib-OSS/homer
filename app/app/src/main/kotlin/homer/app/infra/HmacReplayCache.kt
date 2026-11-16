@@ -8,7 +8,7 @@ import java.util.concurrent.ConcurrentHashMap
  * A signature is remembered only for the length of its freshness window; once
  * that lapses the verifier's timestamp check rejects it anyway, so entries are
  * pruned on expiry. Single-node only (in-memory), matching the rest of Homer's
- * runtime state. See the 2026-07-12 security review (M13).
+ * runtime state. See ADR-0047.
  */
 class HmacReplayCache(
     private val clock: () -> Long = System::currentTimeMillis,

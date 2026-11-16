@@ -565,7 +565,7 @@ class LocalShellExecutorTest {
 
             job.cancelAndJoin()
 
-            // Audit #8: process.exitValue() must become available within 5s of cancel.
+            // The process must be gone within 5s of cancel.
             val deadline = System.currentTimeMillis() + 5_000
             while (handle.isAlive && System.currentTimeMillis() < deadline) {
                 delay(100)

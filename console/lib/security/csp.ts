@@ -1,7 +1,6 @@
 /**
  * Content-Security-Policy construction, split out from `middleware.ts` so the
- * policy logic is unit-testable without a request. See the 2026-07-12 security
- * review (H3).
+ * policy logic is unit-testable without a request. See ADR-0047.
  *
  * The policy is strict everywhere — `script-src 'self' 'nonce-…' 'strict-dynamic'`,
  * no `'unsafe-inline'`/`'unsafe-eval'` — except the single Monaco editor route,

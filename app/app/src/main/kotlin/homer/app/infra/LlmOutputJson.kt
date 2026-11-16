@@ -38,8 +38,8 @@ val LlmOutputJson: Json =
  * Prefer the [Sequence] overload with `Path.useLines` so a large (up to
  * `maxOutputBytes`) stdout is read line-by-line rather than materialized as one
  * String alongside the parsed list — halving peak heap under `maxParallelRuns`
- * (2026-07-12 security review, L4). The [String] overload remains for callers
- * that already hold the text (e.g. tests).
+ * (ADR-0047). The [String] overload remains for callers that already hold the
+ * text (e.g. tests).
  */
 fun parseNdjson(lines: Sequence<String>): List<JsonObject> =
     lines

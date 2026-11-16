@@ -61,8 +61,8 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * L2 (security review 2026-07-12): 5xx responses must not leak internal detail
- * (paths, command strings, config) to the client; 4xx messages stay actionable.
+ * L2 (ADR-0002): 5xx responses must not leak internal detail (paths, command
+ * strings, config) to the client; 4xx messages stay actionable.
  */
 class StatusPagesTest {
     @Test

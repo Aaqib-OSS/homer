@@ -273,8 +273,7 @@ internal fun validateCorsForCookieAuth(config: AppConfig) {
  * against every other agent the key can reach. The signature scheme itself is
  * unchanged (existing valid signatures still verify), so this only rejects the
  * genuinely-dangerous config at startup; the operator narrows the key's grants
- * or binds the path. See M3/M4 in the 2026-07-12 security review, re-expressed on
- * grants per ADR-0037.
+ * or binds the path. Re-expressed on grants per ADR-0037.
  */
 internal fun validateHmacSignatureScope(config: AppConfig) {
     flattenAuthSchemes(config.server.apiAuth)
@@ -361,7 +360,7 @@ internal fun validateLangfuseServerUrl(config: AppConfig) {
         throw ConfigurationException(
             "langfuse.serverUrl uses plaintext http:// to a non-loopback host ($url); the OTLP export " +
                 "carries the Langfuse public+secret keys and prompt content. Use https:// (or a localhost " +
-                "collector). See the 2026-07-12 security review (M12).",
+                "collector).",
         )
     }
 }
@@ -394,9 +393,8 @@ internal fun warnOnHmacReplayWindow(
  * Startup WARN for each HMAC key that can run an agent reading inputs from the
  * query string while its `payloadTemplate` omits `{{query}}`: a captured
  * signature then replays with altered query parameters, tampering with those
- * inputs. Non-fatal — query signing is opt-in (M3 in the 2026-07-12 review), so
- * whether to bind it is the operator's choice — but the operator should know the
- * exposure.
+ * inputs. Non-fatal — query signing is opt-in (ADR-0037), so whether to bind it
+ * is the operator's choice — but the operator should know the exposure.
  */
 internal fun warnOnUnsignedQueryInputs(
     config: AppConfig,

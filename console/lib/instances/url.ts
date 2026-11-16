@@ -51,7 +51,7 @@ export function isMixedContent(baseUrl: string): boolean {
  * allowlist means "unrestricted" (returns true). Comparison is by URL origin, so
  * allowlist entries and the endpoint are compared scheme+host+port, ignoring
  * path/trailing-slash differences. Used to reject an off-allowlist login endpoint
- * (2026-07-12 security review, H3/M2).
+ * (ADR-0047).
  */
 export function isOriginAllowed(baseUrl: string, allowedOrigins: string[]): boolean {
   if (allowedOrigins.length === 0) return true;
