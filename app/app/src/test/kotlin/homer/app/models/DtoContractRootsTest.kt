@@ -6,6 +6,7 @@ import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Test
 import java.io.File
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * Root discovery for the console DTO contract (ADR-0082): every `@Serializable` body a route in `routes/`
@@ -25,7 +26,7 @@ class DtoContractRootsTest {
             emptyList(),
             unrootedRouteBodies(
                 routeSources(),
-                serializableModels(),
+                serializableTypes(),
                 exportedNames(),
                 DtoContract.routeBodiesNotMirrored,
                 functionReturns(),
@@ -155,27 +156,34 @@ class DtoContractRootsTest {
     }
 
     @Test
-    fun `every listed body names a serializable model class`() {
-        val models = serializableModels()
+    fun `every listed body names a serializable class the main sources declare`() {
+        val types = serializableTypes()
         assertEquals(
             emptyList(),
-            DtoContract.routeBodiesNotMirrored.keys.filterNot { it in models },
-            "a listed body that homer.app.models does not declare is a stale exemption",
+            DtoContract.routeBodiesNotMirrored.keys.filterNot { it in types },
+            "a listed body that no main source declares as @Serializable is a stale exemption",
         )
+    }
+
+    @Test
+    fun `a serializable type outside the models package is judged too`() {
+        // RunnerOp is responded with by POST /sessions/{sid}/next and declared in
+        // homer.app.runners.external: a scan reading models/ alone would pass it unjudged.
+        assertTrue("RunnerOp" in serializableTypes())
     }
 }
 
-/** The `@Serializable` model types a route responds with that no root reaches and no exemption covers. */
+/** The `@Serializable` types a route responds with that no root reaches and no exemption covers. */
 private fun unrootedRouteBodies(
     sources: Map<String, String>,
-    serializableModels: Set<String>,
+    serializableTypes: Set<String>,
     roots: Set<String>,
     exempt: Map<String, String>,
     returns: Map<String, Set<String>>,
 ): List<String> =
     sources
         .flatMap { (file, source) -> respondedTypeNames(source, returns).map { file to it } }
-        .filter { (_, name) -> name in serializableModels && name !in roots && name !in exempt }
+        .filter { (_, name) -> name in serializableTypes && name !in roots && name !in exempt }
         .map { (file, name) -> "$file: $name is responded with but is not a DtoContract root" }
         .sorted()
 
@@ -197,17 +205,21 @@ private fun routeSources(): Map<String, String> =
         .orEmpty()
         .associate { it.name to it.readText() }
 
-/** Every `@Serializable` class the `homer.app.models` package declares, from its compiled classes. */
-private fun serializableModels(): Set<String> {
-    val classes = File(ErrorResponse::class.java.getResource("ErrorResponse.class")!!.toURI()).parentFile
-    return classes
-        .listFiles { file -> file.extension == "class" && '$' !in file.name }
-        .orEmpty()
+/**
+ * Every `@Serializable` type the main sources declare, from their compiled classes. The whole tree,
+ * not `homer.app.models` alone: a route may respond with a wire type another package declares — the
+ * external runner's protocol DTOs are one — and such a body is judged like any other.
+ */
+private fun serializableTypes(): Set<String> {
+    val models = File(ErrorResponse::class.java.getResource("ErrorResponse.class")!!.toURI()).parentFile
+    val root = generateSequence(models) { it.parentFile }.first { it.name == "homer" }.parentFile
+    return root
+        .walkTopDown()
+        .filter { it.extension == "class" && '$' !in it.name }
         .mapNotNull { file ->
-            val type =
-                runCatching {
-                    Class.forName("homer.app.models.${file.nameWithoutExtension}", false, DtoContract::class.java.classLoader)
-                }.getOrNull()
+            val path = file.relativeTo(root).path
+            val name = path.removeSuffix(".class").replace(File.separatorChar, '.')
+            val type = runCatching { Class.forName(name, false, DtoContract::class.java.classLoader) }.getOrNull()
             type?.takeIf { it.isAnnotationPresent(Serializable::class.java) }?.simpleName
         }.toSet()
 }

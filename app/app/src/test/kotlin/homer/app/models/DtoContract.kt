@@ -91,6 +91,7 @@ internal object DtoContract {
     val routeBodiesNotMirrored: Map<String, String> =
         mapOf(
             "AskQuestionResponse" to "callback body: POST /api/v1/callback/questions, read by homer-ask",
+            "ClaimResponse" to "runner protocol: POST /instances/{id}/claim, read by the external runner instance",
             "CreateDispatchGroupResponse" to "callback body: POST /api/v1/callback/dispatch-groups",
             "CreateDispatchResponse" to "callback body: POST /api/v1/callback/dispatches",
             "CreateJoinResponse" to "callback body: POST /api/v1/callback/joins",
@@ -101,6 +102,8 @@ internal object DtoContract {
             "LivenessResponse" to "ops probe GET /api/v1/livez, not a console response",
             "MaintenanceResponse" to "POST|DELETE /api/v1/maintenance: the console reads maintenance inside HealthResponse",
             "ReadinessResponse" to "ops probe GET /api/v1/readyz, not a console response",
+            "RegisterInstanceResponse" to "runner protocol: POST /register, read by the external runner instance",
+            "RunnerOp" to "runner protocol: POST /sessions/{sid}/next, read by the external runner instance",
             "ServerStatusResponse" to "GET /api/v1/status/{id} diagnostics: the console uses ProcessInfoResponse",
             "TakeRunMessagesResponse" to "callback body: POST /api/v1/callback/messages/take",
             "WhoamiResponse" to "callback body: GET /api/v1/callback/whoami",
