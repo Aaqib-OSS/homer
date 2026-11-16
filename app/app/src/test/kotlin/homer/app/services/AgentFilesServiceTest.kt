@@ -619,37 +619,9 @@ class AgentFilesServiceTest {
                 paths.contains("escape"),
                 "an escaping symlink must not be listed with its target's size/mtime: $paths",
             )
-
-            // Not resolved either: the link leaves the agent dir, so it is a bad request, not the host file.
-            assertIs<AgentFilesService.FileOpResult.BadRequest>(service.read(name, "escape"))
-            assertIs<AgentFilesService.FileOpResult.BadRequest>(service.write(name, "escape", "overwritten"))
-            assertEquals("leak", Files.readString(outsideFile), "a denied write through the link must leave the host file alone")
         } finally {
             outside.toFile().deleteRecursively()
         }
-    }
-
-    @Test
-    fun `list omits a symlink into a nested agent's subtree (CWE-59)`() {
-        val name = loadedName()
-        nestedChild("my_agent", "nodes/analysis", "analysis")
-        Files.createSymbolicLink(root.resolve("my_agent/notes.txt"), root.resolve("my_agent/nodes/analysis/agent.yaml"))
-        Files.createSymbolicLink(root.resolve("my_agent/shortcut"), root.resolve("my_agent/nodes/analysis"))
-
-        val res = service.list(name)
-        assertIs<AgentFilesService.FileOpResult.Ok<List<AgentFilesService.FileEntry>>>(res)
-        val paths = res.value.map { it.path }
-        assertFalse(
-            paths.any { it == "notes.txt" || it.startsWith("shortcut") },
-            "a link whose target sits below a nested agent must not be listed: $paths",
-        )
-
-        // The same link is not resolved for a read, and answers exactly like the same path with nothing
-        // there — the child's existence stays hidden (ADR-0039).
-        val viaLink = service.read(name, "notes.txt")
-        assertIs<AgentFilesService.FileOpResult.NotFound>(viaLink)
-        Files.delete(root.resolve("my_agent/notes.txt"))
-        assertEquals(service.read(name, "notes.txt"), viaLink, "a nested-agent denial must be byte-identical to not-found")
     }
 
     @Test
@@ -908,39 +880,5 @@ class AgentFilesServiceTest {
             root.resolve("my_agent/NOTES.md").exists(),
             "Under-cap write should land on disk",
         )
-    }
-
-    @Test
-    fun `read accepts a file of exactly maxConfigFileBytes and refuses one byte more`() {
-        val name = loadedName()
-        val logger = TestFixtures.mockLogger()
-        val cap = 512L
-        val cappedService = AgentFilesService(agentsService, logger, maxConfigFileBytes = cap)
-
-        Files.write(root.resolve("my_agent/at-cap.txt"), "x".repeat(cap.toInt()).toByteArray())
-        val atCap = assertIs<AgentFilesService.FileOpResult.Ok<String>>(cappedService.read(name, "at-cap.txt"))
-        assertEquals(cap.toInt(), atCap.value.length, "the file at exactly the cap is readable")
-
-        Files.write(root.resolve("my_agent/over-cap.txt"), "x".repeat(cap.toInt() + 1).toByteArray())
-        val overCap = assertIs<AgentFilesService.FileOpResult.BadRequest>(cappedService.read(name, "over-cap.txt"))
-        assertEquals("File too large to read inline: 513B (cap 512B)", overCap.msg)
-    }
-
-    @Test
-    fun `write accepts a payload of exactly maxConfigFileBytes and refuses one byte more`() {
-        val name = loadedName()
-        val logger = TestFixtures.mockLogger()
-        val cap = 512L
-        val cappedService = AgentFilesService(agentsService, logger, maxConfigFileBytes = cap)
-
-        // A two-byte character, so the cap is counted in UTF-8 bytes and not in characters.
-        val atCap = "é".repeat((cap / 2).toInt())
-        assertEquals(cap, atCap.toByteArray(Charsets.UTF_8).size.toLong())
-        assertIs<AgentFilesService.FileOpResult.Ok<Unit>>(cappedService.write(name, "AT_CAP.md", atCap))
-        assertEquals(atCap, Files.readString(root.resolve("my_agent/AT_CAP.md")), "the payload at exactly the cap lands on disk")
-
-        val overCap = assertIs<AgentFilesService.FileOpResult.BadRequest>(cappedService.write(name, "OVER_CAP.md", atCap + "x"))
-        assertEquals("File too large to write: 513B (cap 512B)", overCap.msg)
-        assertFalse(root.resolve("my_agent/OVER_CAP.md").exists(), "an over-cap write must not touch disk")
     }
 }

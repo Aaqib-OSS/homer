@@ -1,6 +1,8 @@
 package homer.app.infra
 
 import homer.app.fixtures.TestFixtures
+import homer.app.models.Agent
+import homer.app.models.Command
 import homer.app.models.ResultEnvParam
 import homer.app.models.ResultTransformer
 import homer.app.models.SrcType
@@ -31,9 +33,10 @@ import kotlin.test.assertTrue
  * emits is never one the host or Homer owns. The example cases live in `ResultToEnvMapperTest`;
  * these drive the combinations its author did not list (root CLAUDE.md §6).
  *
- * The generated parameters carry the names `AgentInputChecks` admits (its pattern, not a reserved
- * name), which is the precondition production guarantees before a run starts; the last test pins
- * that precondition so a generator drifting into rejected names cannot make the property vacuous.
+ * The generated parameters carry the names `AgentInputChecks.checkCommandBindings` admits (not a
+ * reserved name, and matching the env-name pattern), which is the precondition production
+ * guarantees before a run starts; the last test pins that precondition through the production check
+ * itself, so a generator drifting into rejected names cannot make the property vacuous.
  */
 class ResultToEnvMapperPropertyTest {
     @TempDir
@@ -48,8 +51,8 @@ class ResultToEnvMapperPropertyTest {
         stdErrFile = tmp.resolve("stderr.txt")
     }
 
-    /** The env-name rule of `AgentInputChecks.checkCommandBindings` for a result capture. */
-    private val envNamePattern = Regex("^[A-Za-z_][A-Za-z0-9_]*$")
+    private val logger = TestFixtures.mockLogger()
+    private val inputChecks = AgentInputChecks(logger, ParamValidator())
 
     /** Validated names, plus spellings one character away from a reserved one (which stay legal). */
     private val envNames: Arb<String> =
@@ -121,11 +124,32 @@ class ResultToEnvMapperPropertyTest {
         return ResultToEnvMapper(result)
     }
 
+    /** An agent whose one command captures its result into [envName], the shape production validates at load. */
+    private fun agentWithCapture(envName: String) =
+        Agent(
+            name = "capture_probe",
+            commands =
+                listOf(
+                    Command.Cmd(
+                        cmd = listOf("echo", "hi"),
+                        timeout = 60,
+                        resultEnvParam =
+                            listOf(
+                                ResultEnvParam(src = SrcType.STD_OUT, envName = envName, transformer = ResultTransformer.Pass),
+                            ),
+                    ),
+                ),
+        )
+
     @Test
     fun `the generated parameter names are the ones the agent validator admits`() {
         runTest {
             checkAll(200, envNames) { name ->
-                assertTrue(envNamePattern.matches(name), "'$name' must match the validator's env-name pattern")
+                val errors = mutableListOf<String>()
+                assertTrue(
+                    inputChecks.checkCommandBindings(agentWithCapture(name), errors),
+                    "'$name' must be admissible: $errors",
+                )
                 assertFalse(ReservedEnvNames.isReserved(name), "'$name' must not be a reserved name")
             }
         }

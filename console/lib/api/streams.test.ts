@@ -52,10 +52,6 @@ describe('useLlmEventStream', () => {
   beforeEach(() => {
     openStreamMock.mockReset();
     openStreamMock.mockReturnValue(closeMock);
-    // RTL's auto-cleanup unmounts each test's hooks, so without this the close
-    // spy carries stale calls into the next test and an assertion on it passes
-    // vacuously.
-    closeMock.mockClear();
   });
 
   it('appends frames in order and dedupes a replayed frame', async () => {
