@@ -352,7 +352,8 @@ export interface AgentFileWriteRequest {
   content: string;
 }
 
-// The body of every non-2xx JSON response (ADR-0002). `err` is the backend's
+// The body of a non-2xx JSON response (ADR-0002), except a schema-invalid agent
+// write's `SchemaErrorResponse` (msg + errors). `err` is the backend's
 // coarse code, `msg` the sentence the console surfaces.
 export interface ErrorResponse {
   err: number;
@@ -450,7 +451,7 @@ export interface HeartbeatResponse {
   version?: string;
 }
 
-// Artifact listing (GET /api/v1/processes/{id}/artifacts). `truncated` marks a
+// Artifact listing (GET /api/v1/artifacts/list?processId=…). `truncated` marks a
 // capped listing: `files` then omits some of the directory's entries.
 export interface ArtifactEntry {
   path: string;
@@ -667,8 +668,9 @@ export interface MeResponse {
 // The `data:` object of each frame the backend streams, mirrored from
 // app/src/main/kotlin/homer/app/models/StreamFrames.kt. A frame's `id:` (a log
 // offset, an LLM stream cursor) is part of the frame, not of the payload.
-// `agent.reload`, `log.end` and `llm.end` carry no payload; the `llm.event`
-// payload is `LlmStreamFrame` below.
+// `agent.reload` carries the reload diff (`AgentReloadFrame` below, built on
+// the backend from the grant-filtered lists); `log.end` and `llm.end` carry no
+// payload; the `llm.event` payload is `LlmStreamFrame` below.
 
 export interface ProcessStatusFrame { processId: number; status: ProcessStatus; agentName: string }
 /** The command that started (`startedAt`); both null when nothing runs now. */
@@ -680,6 +682,9 @@ export interface QuestionFrame { processId: number; questionId: string }
 export interface RunMessageFrame { processId: number; messageId: string }
 /** `log.chunk`: the bytes since the previous chunk; the end offset rides the frame's `id:`. */
 export interface LogChunkFrame { content: string }
+
+/** `agent.reload`: the reload diff of GET /stream/agents, narrowed to the caller's grants. */
+export interface AgentReloadFrame { added: string[]; updated: string[]; removed: string[] }
 
 // ── Canonical LLM events ────────────────────────────────────────────
 // Mirror of app/src/main/kotlin/homer/app/models/LlmEvent.kt, streamed

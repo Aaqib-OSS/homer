@@ -12,7 +12,7 @@ vi.mock('./sse', () => ({
   openStream: (...args: unknown[]) => openStreamMock(...args),
 }));
 
-import { useProcessLogStream, useProcessStatusStream, type LogStreamState } from './streams';
+import { useAgentReloadStream, useProcessLogStream, useProcessStatusStream, type LogStreamState } from './streams';
 import { queryKeys } from './queries';
 
 describe('useProcessStatusStream', () => {
@@ -409,5 +409,55 @@ describe('useProcessLogStream', () => {
     expect(read().ended).toBe(false);
     emit('log.end', {});
     await waitFor(() => expect(read().ended).toBe(true));
+  });
+});
+
+describe('useAgentReloadStream', () => {
+  beforeEach(() => {
+    openStreamMock.mockReset();
+  });
+
+  function ReloadHarness() {
+    useAgentReloadStream();
+    return null;
+  }
+
+  function mountWithSpy() {
+    let captured: CapturedHandlers | undefined;
+    openStreamMock.mockImplementation((_path: string, handlers: CapturedHandlers) => {
+      captured = handlers;
+      return () => {};
+    });
+    const qc = new QueryClient();
+    const invalidate = vi.spyOn(qc, 'invalidateQueries');
+    render(
+      <QueryClientProvider client={qc}>
+        <ReloadHarness />
+      </QueryClientProvider>
+    );
+    if (!captured) throw new Error('openStream not called');
+    return {
+      emit: (name: string, data: unknown) => act(() => captured!.onEvent(name, data)),
+      keys: () => invalidate.mock.calls.map((c) => c[0]?.queryKey),
+    };
+  }
+
+  it('the agent.reload frame invalidates the agents queries, whatever the diff holds', () => {
+    const { emit, keys } = mountWithSpy();
+
+    emit('agent.reload', { added: ['a'], updated: [], removed: ['b'] });
+    // An empty diff is still a completed reload (file edits reload inline), so
+    // the frame itself is the signal, not its contents.
+    emit('agent.reload', { added: [], updated: [], removed: [] });
+
+    expect(keys()).toEqual([queryKeys.agents(), queryKeys.agents()]);
+  });
+
+  it('a frame that is not a reload invalidates nothing', () => {
+    const { emit, keys } = mountWithSpy();
+
+    emit('process.status', { processId: 7, status: 'WORKING' });
+
+    expect(keys()).toEqual([]);
   });
 });

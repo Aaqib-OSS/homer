@@ -44,6 +44,7 @@ class DtoContractTest {
                 "QuestionFrame",
                 "RunMessageFrame",
                 "LogChunkFrame",
+                "AgentReloadFrame",
                 "LlmStreamFrame",
             )
         assertEquals(emptyList(), roots.filterNot { it in classes })

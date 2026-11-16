@@ -50,6 +50,14 @@ data class LogChunkFrame(
     val content: String,
 )
 
+/** `agent.reload`: the reload diff of `/stream/agents`, already narrowed to the caller's grants. */
+@Serializable
+data class AgentReloadFrame(
+    val added: List<String>,
+    val updated: List<String>,
+    val removed: List<String>,
+)
+
 /** `llm.event`: one translated harness event, its cursor riding the frame's `id:`. */
 @Serializable
 data class LlmStreamFrame(

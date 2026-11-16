@@ -3,6 +3,7 @@ package homer.app.routes
 import homer.app.callerKey
 import homer.app.exceptions.BodylessBadRequestException
 import homer.app.infra.SseConnectionLimiter
+import homer.app.models.AgentReloadFrame
 import homer.app.models.LlmEventJson
 import homer.app.models.LlmStreamFrame
 import homer.app.models.LogChunkFrame
@@ -39,9 +40,6 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerializationStrategy
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
 
 private const val HEARTBEAT_MS = 15_000L
 
@@ -130,11 +128,7 @@ private fun Route.agentEventsStreamRoute(
                         sendEvent(
                             this,
                             "agent.reload",
-                            buildJsonObject {
-                                put("added", buildJsonArray { added.forEach { add(JsonPrimitive(it)) } })
-                                put("updated", buildJsonArray { updated.forEach { add(JsonPrimitive(it)) } })
-                                put("removed", buildJsonArray { removed.forEach { add(JsonPrimitive(it)) } })
-                            }.toString(),
+                            frameData(AgentReloadFrame.serializer(), AgentReloadFrame(added, updated, removed)),
                         )
                     }
             }

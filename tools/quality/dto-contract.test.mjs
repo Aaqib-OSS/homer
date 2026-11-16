@@ -170,11 +170,15 @@ test('the shipped tables name each TS type at most once', () => {
 });
 
 test('no shipped table exempts a type the backend now mirrors', () => {
-  // A CONSOLE_ONLY key naming a Kotlin DTO skips that type's comparison silently.
-  // LlmStreamFrame was exactly that entry: the console mirrored the `llm.event`
-  // payload while the backend built it by hand, and StreamFrames.kt exports it now.
-  const kotlinNames = new Set(Object.values(RENAMES));
-  const exempted = Object.keys(CONSOLE_ONLY).filter((name) => kotlinNames.has(name) || name.endsWith('Frame'));
+  // A CONSOLE_ONLY key naming a root DTO marks that type coveredTs and skips its
+  // comparison silently. LlmStreamFrame was exactly that entry: the console mirrored
+  // the `llm.event` payload while the backend built it by hand, and StreamFrames.kt
+  // exports it now. The forbidden names come from the actual root list, not a suffix
+  // heuristic, so any Kotlin DTO the backend mirrors is caught.
+  const source = fs.readFileSync(new URL('../../app/app/src/test/kotlin/homer/app/models/DtoContract.kt', import.meta.url), 'utf8');
+  const roots = [...source.matchAll(/(\w+)\.serializer\(\)/g)].map((m) => m[1]);
+  assert.ok(roots.includes('ErrorResponse'), 'failed to parse the root list out of DtoContract.kt');
+  const exempted = Object.keys(CONSOLE_ONLY).filter((name) => roots.includes(name));
   assert.deepEqual(exempted, []);
 });
 

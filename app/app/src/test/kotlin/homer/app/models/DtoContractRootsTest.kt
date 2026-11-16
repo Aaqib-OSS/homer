@@ -16,8 +16,14 @@ import kotlin.test.assertTrue
  *
  * The scan reads source, not types. A `respond` argument is judged by the constructor it builds, by the
  * declared return types of the function it calls, or by the declarations binding the name it passes —
- * a lambda parameter included, through the call chain the lambda is an argument of. It never guesses:
- * an argument it cannot read is [unreadRouteBodies], a finding of its own, so no body passes unjudged.
+ * a lambda parameter included, through the call chain the lambda is an argument of. An SSE body is
+ * judged the same way: the `data:` of every `sendEvent` call, and the frame constructors inside every
+ * function that builds an [SseFrame] for `sendFrame`. It never guesses: an argument or payload it
+ * cannot read is a finding of its own ([unreadRouteBodies], [unreadSsePayloads]), so no body passes
+ * unjudged.
+ *
+ * Comments are not code: every source is read through [withoutComments], so a commented-out call is
+ * no call site and a bracket inside a comment does not split an argument.
  */
 class DtoContractRootsTest {
     @Test
@@ -40,6 +46,119 @@ class DtoContractRootsTest {
             emptyList(),
             unreadRouteBodies(routeSources(), functionReturns()),
             "a respond argument the scan cannot read is a body the contract does not cover",
+        )
+    }
+
+    @Test
+    fun `every serializable body a route streams as an sse payload is a root or listed as not mirrored`() {
+        assertEquals(
+            emptyList(),
+            unrootedSsePayloads(
+                routeSources(),
+                serializableTypes(),
+                exportedNames(),
+                DtoContract.routeBodiesNotMirrored,
+            ),
+        )
+    }
+
+    @Test
+    fun `an sse payload the scan cannot read is a finding, not a silent pass`() {
+        val sources =
+            mapOf(
+                "FixtureRoutes.kt" to
+                    """
+                    fun Route.fixture() {
+                        sendEvent(this, "agent.reload", buildJsonObject { put("added", "x") }.toString())
+                    }
+                    """.trimIndent(),
+            )
+        // A hand-built JSON payload names no @Serializable type: it is unread, a finding of its own.
+        assertEquals(
+            listOf("FixtureRoutes.kt: cannot read the type of the `agent.reload` SSE payload"),
+            unreadSsePayloads(sources, setOf("AgentReloadFrame")),
+        )
+        assertEquals(emptyList(), unrootedSsePayloads(sources, setOf("AgentReloadFrame"), setOf("AgentReloadFrame"), emptyMap()))
+    }
+
+    @Test
+    fun `a respond call in a comment is not a call site`() {
+        val sources =
+            mapOf(
+                "FixtureRoutes.kt" to
+                    """
+                    fun Route.fixture() {
+                        // call.respond(CommentedOut())
+                        /* call.respond(AlsoCommented(msg = "no (such) run")) */
+                        /* /* nested */ call.respond(NestedCommented()) */
+                        call.respond(LiveResponse("http://example.com/(live)"))
+                    }
+                    """.trimIndent(),
+            )
+        assertEquals(emptyList(), unreadRouteBodies(sources, emptyMap()))
+        assertEquals(
+            listOf("FixtureRoutes.kt: LiveResponse is responded with but is not a DtoContract root"),
+            unrootedRouteBodies(
+                sources,
+                setOf("CommentedOut", "AlsoCommented", "NestedCommented", "LiveResponse"),
+                emptySet(),
+                emptyMap(),
+                emptyMap(),
+            ),
+        )
+    }
+
+    @Test
+    fun `a sendEvent call in a comment is not a payload`() {
+        val sources =
+            mapOf(
+                "FixtureRoutes.kt" to
+                    """
+                    fun Route.fixture() {
+                        // sendEvent(this, "agent.reload", buildJsonObject { put("added", "x") }.toString())
+                    }
+                    """.trimIndent(),
+            )
+        assertEquals(emptyList(), unreadSsePayloads(sources, setOf("AgentReloadFrame")))
+    }
+
+    @Test
+    fun `a streamed frame constructor is judged like a respond argument`() {
+        val sources =
+            mapOf(
+                "FixtureRoutes.kt" to
+                    """sendEvent(this, "agent.reload", frameData(AgentReloadFrame.serializer(), AgentReloadFrame(added, updated, removed)))""",
+            )
+        assertEquals(
+            emptyList(),
+            unrootedSsePayloads(sources, setOf("AgentReloadFrame"), setOf("AgentReloadFrame"), emptyMap()),
+        )
+        assertEquals(
+            listOf("FixtureRoutes.kt: AgentReloadFrame is streamed as an SSE payload but is not a DtoContract root"),
+            unrootedSsePayloads(sources, setOf("AgentReloadFrame"), emptySet(), emptyMap()),
+        )
+    }
+
+    @Test
+    fun `a streamed payload built inside an sse frame builder is judged too`() {
+        val sources =
+            mapOf(
+                "FixtureRoutes.kt" to
+                    """
+                    internal fun fixtureFrame(event: FixtureEvent): SseFrame =
+                        when (event) {
+                            is FixtureEvent.Changed ->
+                                SseFrame("fixture", frameData(FixtureFrame.serializer(), FixtureFrame(event.id)))
+                        }
+                    """.trimIndent(),
+            )
+        assertEquals(
+            listOf("FixtureRoutes.kt: FixtureFrame is streamed as an SSE payload but is not a DtoContract root"),
+            unrootedSsePayloads(sources, setOf("FixtureFrame"), emptySet(), emptyMap()),
+        )
+        assertEquals(
+            emptyList(),
+            unrootedSsePayloads(sources, setOf("FixtureFrame"), setOf("FixtureFrame"), emptyMap()),
         )
     }
 
@@ -171,6 +290,13 @@ class DtoContractRootsTest {
         // homer.app.runners.external: a scan reading models/ alone would pass it unjudged.
         assertTrue("RunnerOp" in serializableTypes())
     }
+
+    @Test
+    fun `a nested serializable type is judged too`() {
+        // Agent.Regex (Agent.kt) is @Serializable and nested in its outer class: a filter on
+        // `$`-carrying class files would drop every nested body from the judgement.
+        assertTrue("Regex" in serializableTypes())
+    }
 }
 
 /** The `@Serializable` types a route responds with that no root reaches and no exemption covers. */
@@ -182,7 +308,7 @@ private fun unrootedRouteBodies(
     returns: Map<String, Set<String>>,
 ): List<String> =
     sources
-        .flatMap { (file, source) -> respondedTypeNames(source, returns).map { file to it } }
+        .flatMap { (file, source) -> respondedTypeNames(withoutComments(source), returns).map { file to it } }
         .filter { (_, name) -> name in serializableTypes && name !in roots && name !in exempt }
         .map { (file, name) -> "$file: $name is responded with but is not a DtoContract root" }
         .sorted()
@@ -193,9 +319,145 @@ private fun unreadRouteBodies(
     returns: Map<String, Set<String>>,
 ): List<String> =
     sources
-        .flatMap { (file, source) -> unreadArguments(source, returns).map { file to it } }
+        .flatMap { (file, source) -> unreadArguments(withoutComments(source), returns).map { file to it } }
         .map { (file, argument) -> "$file: cannot read the type of `$argument`" }
         .sorted()
+
+/**
+ * The `@Serializable` types every SSE payload in [sources] streams that no root reaches and no
+ * exemption covers. The payloads are read from source like the respond arguments: the `data:` of a
+ * `sendEvent` call, and the frame constructors inside every function that builds an [SseFrame] —
+ * the builders `sendFrame` hands the wire to. A hand-built JSON payload names no such type; it is
+ * an unread finding of its own, so an SSE body cannot pass unjudged either.
+ */
+private fun unrootedSsePayloads(
+    sources: Map<String, String>,
+    serializableTypes: Set<String>,
+    roots: Set<String>,
+    exempt: Map<String, String>,
+): List<String> =
+    sources
+        .flatMap { (file, source) -> ssePayloadTypes(withoutComments(source), serializableTypes).map { file to it } }
+        .filter { (_, name) -> name !in roots && name !in exempt }
+        .map { (file, name) -> "$file: $name is streamed as an SSE payload but is not a DtoContract root" }
+        .sorted()
+
+/** The SSE payloads of [sources] the scan cannot read: each is a body the contract does not cover. */
+private fun unreadSsePayloads(
+    sources: Map<String, String>,
+    serializableTypes: Set<String>,
+): List<String> =
+    sources
+        .flatMap { (file, source) -> unreadSsePayload(withoutComments(source), serializableTypes).map { file to it } }
+        .map { (file, event) -> "$file: cannot read the type of the `$event` SSE payload" }
+        .sorted()
+
+/** The `@Serializable` payload types of [source]: the `sendEvent` payloads plus every `SseFrame` builder's frames. */
+private fun ssePayloadTypes(
+    source: String,
+    serializableTypes: Set<String>,
+): List<String> =
+    sendEventPayloads(source, serializableTypes)
+        .flatMap { it.types }
+        .plus(sseFrameBuilders(source).flatMap { body -> constructorsIn(body).filter { it in serializableTypes } })
+        .distinct()
+        .sorted()
+
+/** The event names of the `sendEvent` payloads of [source] the scan cannot read. */
+private fun unreadSsePayload(
+    source: String,
+    serializableTypes: Set<String>,
+): List<String> =
+    sendEventPayloads(source, serializableTypes)
+        .filter { !it.readable }
+        .map { it.event }
+        .distinct()
+        .sorted()
+
+/** One `sendEvent` payload: the event it carries, the `@Serializable` types it constructs, and whether it is read at all. */
+private class SsePayload(
+    val event: String,
+    val types: Set<String>,
+    val readable: Boolean,
+)
+
+/** Every `sendEvent` call in [source] but its declaration, as the payload's [SsePayload]. */
+private fun sendEventPayloads(
+    source: String,
+    serializableTypes: Set<String>,
+): List<SsePayload> =
+    SEND_EVENT
+        .findAll(source)
+        .filterNot { call ->
+            // The declaration of `sendEvent` itself is not a call site.
+            val line = source.substring(0, call.range.first).substringAfterLast('\n')
+            RESPOND_DECLARATION.containsMatchIn(line)
+        }.mapNotNull { call ->
+            val arguments = callArguments(source, call.range.last + 1)
+            if (arguments.size < 3) return@mapNotNull null
+            val event = arguments[1].trim().removeSurrounding("\"")
+            val payload = arguments[2]
+            // A string-literal payload (a hand-written `{}`) carries no typed body; a member
+            // passthrough (`frame.data`) names no call, so it is read, with no type to judge.
+            if (payload.trim().startsWith("\"")) {
+                SsePayload(event, emptySet(), readable = true)
+            } else {
+                val types = constructorsIn(payload).filter { it in serializableTypes }.toSet()
+                val namesACall = payload.any { it == '(' || it == '{' }
+                SsePayload(event, types, readable = types.isNotEmpty() || !namesACall)
+            }
+        }.toList()
+
+/** The bodies of every function in [source] whose declared return type names `SseFrame`. */
+private fun sseFrameBuilders(source: String): List<String> =
+    FUNCTION
+        .findAll(source)
+        .mapNotNull { declaration ->
+            val open = source.indexOf('(', declaration.range.last + 1)
+            if (open < 0) return@mapNotNull null
+            val close = endOfCall(source, open) ?: return@mapNotNull null
+            val declared = declaredReturnType(source, close) ?: return@mapNotNull null
+            if ("SseFrame" !in typeNames(declared)) return@mapNotNull null
+            functionBody(source, close)
+        }.toList()
+
+/** The block or expression body a declaration opens after its parameter list closes at [close]. */
+private fun functionBody(
+    source: String,
+    close: Int,
+): String {
+    var i = close + 1
+    while (i < source.length && source[i].isWhitespace()) i++
+    if (i >= source.length) return ""
+    if (source[i] != '{') return expressionAt(source, i)
+    var depth = 0
+    var j = i
+    while (j < source.length) {
+        when (source[j]) {
+            '"' -> {
+                j = endOfLiteral(source, j) - 1
+            }
+
+            '{' -> {
+                depth++
+            }
+
+            '}' -> {
+                depth--
+                if (depth == 0) return source.substring(i, j + 1)
+            }
+        }
+        j++
+    }
+    return source.substring(i)
+}
+
+/** The capitalized constructors [text] builds; a template's braces and a string's text are not code. */
+private fun constructorsIn(text: String): Set<String> =
+    CONSTRUCTOR_CALL
+        .findAll(text)
+        .map { it.groupValues[1] }
+        .toSet()
 
 /** Every Kotlin source in `routes/`, by file name. */
 private fun routeSources(): Map<String, String> =
@@ -208,18 +470,24 @@ private fun routeSources(): Map<String, String> =
 /**
  * Every `@Serializable` type the main sources declare, from their compiled classes. The whole tree,
  * not `homer.app.models` alone: a route may respond with a wire type another package declares — the
- * external runner's protocol DTOs are one — and such a body is judged like any other.
+ * external runner's protocol DTOs are one — and such a body is judged like any other. Nested classes
+ * included: a nested type shares its outer class's file (`Outer$Nested.class`), so a `$` filter would
+ * drop every nested body from the judgement.
  */
 private fun serializableTypes(): Set<String> {
     val models = File(ErrorResponse::class.java.getResource("ErrorResponse.class")!!.toURI()).parentFile
     val root = generateSequence(models) { it.parentFile }.first { it.name == "homer" }.parentFile
     return root
         .walkTopDown()
-        .filter { it.extension == "class" && '$' !in it.name }
+        .filter { it.extension == "class" }
         .mapNotNull { file ->
             val path = file.relativeTo(root).path
-            val name = path.removeSuffix(".class").replace(File.separatorChar, '.')
-            val type = runCatching { Class.forName(name, false, DtoContract::class.java.classLoader) }.getOrNull()
+            val binaryName = path.removeSuffix(".class").replace(File.separatorChar, '.')
+            // The simple name is the last `$` segment; an anonymous or compiler-generated one
+            // (`Foo$1`, `Foo$$serializer`) starts with a digit or names no annotated class anyway.
+            val lastSegment = binaryName.substringAfterLast('$')
+            if (lastSegment.isEmpty() || lastSegment[0].isDigit()) return@mapNotNull null
+            val type = runCatching { Class.forName(binaryName, false, DtoContract::class.java.classLoader) }.getOrNull()
             type?.takeIf { it.isAnnotationPresent(Serializable::class.java) }?.simpleName
         }.toSet()
 }
@@ -251,18 +519,32 @@ private fun functionReturns(): Map<String, Set<String>> =
  */
 private fun functionReturns(sources: List<String>): Map<String, Set<String>> {
     val returns = mutableMapOf<String, MutableSet<String>>()
-    for (source in sources) {
+    for (source in sources.map(::withoutComments)) {
         for (declaration in FUNCTION.findAll(source)) {
             val open = source.indexOf('(', declaration.range.last + 1)
             if (open < 0) continue
             val name = NAME_BEFORE.find(source.substring(declaration.range.last + 1, open))?.groupValues?.get(1) ?: continue
             val close = endOfCall(source, open) ?: continue
             val declared = declaredReturnType(source, close) ?: continue
-            returns.getOrPut(name) { mutableSetOf() } += typeNames(declared)
+            returns.getOrPut(name) { mutableSetOf() } += unwrappedTypeNames(declared)
         }
     }
     return returns
 }
+
+/**
+ * The type names a declared return type names, with a leading `Result<` envelope dropped: the
+ * caller reads the wrapped value (`fold`'s `onSuccess` lambda among them), never the envelope —
+ * judging a lambda by it would report the envelope's own simple name as a route body.
+ */
+private fun unwrappedTypeNames(declared: String): Set<String> =
+    typeNames(
+        if (declared.startsWith("Result<")) {
+            declared.substringAfter('<').substringBeforeLast('>')
+        } else {
+            declared
+        },
+    )
 
 /** The types constructed in the arguments of every `respond`/`respondNoStore` call in [source]. */
 private fun respondedTypeNames(
@@ -620,6 +902,75 @@ private fun endOfLiteral(
     return source.length
 }
 
+/**
+ * [source] with every comment blanked to spaces, newlines kept: comment text is not code, so its
+ * `respond` calls are no call sites and its brackets split no argument. String literals are copied
+ * verbatim — a `//` inside one is text — and offsets are preserved, so an index into [source] is an
+ * index into the result.
+ */
+private fun withoutComments(source: String): String {
+    val out = StringBuilder(source.length)
+    var i = 0
+    while (i < source.length) {
+        when {
+            source[i] == '"' || source[i] == '\'' -> {
+                val end = endOfLiteral(source, i)
+                out.append(source, i, end)
+                i = end
+            }
+
+            source.startsWith("//", i) -> {
+                while (i < source.length && source[i] != '\n') {
+                    out.append(' ')
+                    i++
+                }
+            }
+
+            source.startsWith("/*", i) -> {
+                val end = endOfBlockComment(source, i)
+                while (i < end) {
+                    out.append(if (source[i] == '\n') '\n' else ' ')
+                    i++
+                }
+            }
+
+            else -> {
+                out.append(source[i])
+                i++
+            }
+        }
+    }
+    return out.toString()
+}
+
+/** The index just past the block comment opening at [start]; Kotlin block comments nest. */
+private fun endOfBlockComment(
+    source: String,
+    start: Int,
+): Int {
+    var depth = 0
+    var i = start
+    while (i < source.length) {
+        when {
+            source.startsWith("/*", i) -> {
+                depth++
+                i += 2
+            }
+
+            source.startsWith("*/", i) -> {
+                depth--
+                i += 2
+                if (depth == 0) return i
+            }
+
+            else -> {
+                i++
+            }
+        }
+    }
+    return source.length
+}
+
 /** Every capitalized word in [text]: `Result<ArtifactListingResponse>` names both. */
 private fun typeNames(text: String): Set<String> = CAPITALIZED.findAll(text).map { it.value }.toSet()
 
@@ -632,6 +983,10 @@ private fun parameter(name: String) = Regex("""(?<![\w.])$name\s*:\s*([A-Z]\w*)"
 private fun lambdaParameter(name: String) = Regex("""[{(,]\s*(?:\w+\s*,\s*)*$name\s*(?:,\s*\w+\s*)*->""")
 
 private val RESPOND_CALL = Regex("""\brespond(?:NoStore)?\s*\(""")
+
+private val SEND_EVENT = Regex("""\bsendEvent\s*\(""")
+
+private val CONSTRUCTOR_CALL = Regex("""\b([A-Z]\w*)\s*\(""")
 
 /** A `respond` declaration — `fun ApplicationCall.respondNoStore(…)` — rather than a call to one. */
 private val RESPOND_DECLARATION = Regex("""\bfun\s+[\w.<>?, ]*$""")
