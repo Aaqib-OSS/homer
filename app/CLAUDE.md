@@ -273,7 +273,7 @@ A new rule whose code still has findings is tagged `@Tag(REPORT_ONLY)` and is *p
 | Main code: a source file ≤ 600 lines, a top-level class or object ≤ 400 (KDoc and annotations excluded), a function body ≤ 60 (from the line opening it) — one rule each | root §2 |
 | Main code: a function (overrides excluded) or a constructor of a non-`data` class takes ≤ 13 parameters; group more into a `data` class parameter object | root §2 |
 | Test files: a test source file ≤ 3,300 lines (the cap may only be lowered) | root §2 |
-| Main code: a comment block is a one- or two-line constraint — no run of more than 8 consecutive comment lines (KDoc included), and no past-implementation narration: no `previous implementation`, no bare `previously`, no `used to` with a stative verb, no past-audit form. `no longer` and a purpose `used to` stay legal — they state the code as it stands | root §9, "Comments vs docs" |
+| Main code: a comment block is a one- or two-line constraint — no run of more than 8 consecutive comment lines (KDoc included), and no past-implementation narration: no `previous implementation`, no bare `previously`, no `used to` with `be`, `hold`, `read`, `carry` or `have`, no past-audit form. `no longer` and a purpose `used to` with any other verb stay legal — they state the code as it stands; with one of the listed verbs the narration form is indistinguishable, so the comment must be reworded | root §9, "Comments vs docs" |
 | Each layer imports only itself, the layers below it and the kernel; the kernel only itself | "Layered architecture", "Directory layout" |
 | No import cycle between the top-level packages `homer.app.(*)` (the root package is no slice) | "Layered architecture" |
 

@@ -62,9 +62,23 @@ class CommentRunsTest {
         assertEquals(1, past.line)
         assertEquals("comment narrates what is gone (past-implementation narration)", past.text)
 
+        // One row per listed verb: a typo in one would let the narration it exists for pass with the rule green.
+        listOf(
+            "used to be the exit code",
+            "used to hold a slot",
+            "used to read the config",
+            "used to carry this state",
+            "used to have a name",
+        ).forEach { phrase ->
+            assertEquals(
+                "comment narrates what is gone (past-implementation narration)",
+                narrationViolations(path, "// each lock waiter $phrase\n").single().text,
+                phrase,
+            )
+        }
         assertEquals(
             "comment narrates what is gone (past-implementation narration)",
-            narrationViolations(path, "// each lock waiter used to hold a slot\n").single().text,
+            narrationViolations(path, "// Previously this held the state\n").single().text,
         )
         assertEquals(emptyList(), narrationViolations(path, "// used to scope the cooldown reads\n"))
         assertEquals(emptyList(), narrationViolations(path, "// a finished run can no longer grow its file\n"))

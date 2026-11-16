@@ -39,9 +39,11 @@ internal const val MAX_COMMENT_RUN = 8
  * the finding, and the regex that finds it in the lowercased comment text.
  *
  * The list stays on phrases that can only look backwards — a stale `previous implementation`, a bare `previously`,
- * `used to` with a stative verb, and the past-audit form — rather than banning past tense generally: `no longer`
- * and a purpose `used to` ("used to scope the cooldown reads") state the code as it stands, and a broader rule
- * would fail on them. The past-audit form is a regex rather than a literal so this file does not itself read as a
+ * `used to` with `be`, `hold`, `read`, `carry` or `have`, and the past-audit form — rather than banning past tense
+ * generally: `no longer` and a purpose `used to` with any other verb ("used to scope the cooldown reads") state the
+ * code as it stands, and a broader rule would fail on them. A purpose phrase built on one of the listed verbs ("the
+ * buffer used to hold the partial output") is present-tense too, but no regex can tell it from the narration form,
+ * so it must be reworded as well. The past-audit form is a regex rather than a literal so this file does not itself read as a
  * citation of the gitignored review document that `DeadReviewReferenceScanTest` guards; it still matches that form
  * in any case.
  */
