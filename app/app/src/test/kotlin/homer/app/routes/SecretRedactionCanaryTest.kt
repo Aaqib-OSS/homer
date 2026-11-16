@@ -349,9 +349,9 @@ class SecretRedactionCanaryTest {
             .jsonPrimitive.int
 
     /**
-     * [body] as a JSON object, for a caller that asserts on its fields. A non-JSON answer is
-     * rethrown with the parse error alone: its message embeds the raw body, and a failure message
-     * names the route, never the value ([preview]).
+     * [body] as a JSON object, for a caller that asserts on its fields. A non-JSON or non-object
+     * answer (`[]`, a string, `null`) is rethrown with the parse error alone: both messages embed
+     * the raw body, and a failure message names the route, never the value ([preview]).
      */
     private fun parseJsonObject(
         route: String,
@@ -361,6 +361,9 @@ class SecretRedactionCanaryTest {
             json.parseToJsonElement(body).jsonObject
         } catch (e: SerializationException) {
             throw AssertionError("$route answered something other than JSON: ${preview(e.message.orEmpty())}")
+        } catch (e: IllegalArgumentException) {
+            // `.jsonObject` on a valid-JSON non-object throws this, its message embedding the element.
+            throw AssertionError("$route answered something other than a JSON object: ${preview(e.message.orEmpty())}")
         }
 
     /** What is wrong with [row]'s stream, or null when it ended on its own marker and carried no canary. */

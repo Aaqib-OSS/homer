@@ -99,8 +99,8 @@ internal val CANARY_ROUTES: List<CanaryRoute> =
         exempt("POST /api/v1/runner/sessions/{sid}/ops/{opId}/tar", RUNNER_PROTOCOL),
         exempt("POST /api/v1/runner/sessions/{sid}/ops/{opId}/output", RUNNER_PROTOCOL),
         exempt("POST /mcp/questions", "MCP transport: $CALLBACK_CREDENTIAL"),
-        exempt("GET /mcp/questions", "always 405, the endpoint is POST-only"),
-        exempt("DELETE /mcp/questions", "always 405, the endpoint is POST-only"),
+        exempt("GET /mcp/questions", "method-mismatch: the endpoint is POST-only, so the probe answers 405 with no body"),
+        exempt("DELETE /mcp/questions", "method-mismatch: the endpoint is POST-only, so the probe answers 405 with no body"),
         exempt("GET /api/v1/heartbeat", "server liveness: no run data"),
         exempt("GET /api/v1/health", "server health: no run data"),
         served(
@@ -228,9 +228,9 @@ internal val CANARY_ROUTES: List<CanaryRoute> =
         ),
         exempt("GET /api/v1/processes/{id}/langgraph", "renders a LangGraph run's state; the canary agent declares none"),
         exempt("POST /api/v1/processes/{id}/resume", "resumes a LangGraph run; the canary agent declares none"),
-        exempt("POST /mcp", "MCP JSON-RPC transport; its run tools are covered by McpRunToolsTest"),
-        exempt("GET /mcp", "always 405, the endpoint is POST-only"),
-        exempt("DELETE /mcp", "always 405, the endpoint is POST-only"),
+        exempt("POST /mcp", "protocol-exempt: MCP JSON-RPC transport; its run tools are covered by McpRunToolsTest"),
+        exempt("GET /mcp", "method-mismatch: the endpoint is POST-only, so the probe answers 405 with no body"),
+        exempt("DELETE /mcp", "method-mismatch: the endpoint is POST-only, so the probe answers 405 with no body"),
     )
 
 /** The routes [app] registers, in registration order: `"<METHOD> <path>"`, `"* <path>"` for a method-less node. */

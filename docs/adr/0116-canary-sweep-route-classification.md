@@ -58,7 +58,7 @@ without failing one of the two tests.
 ### The trusted-exemption policy
 
 An exempt row is a **claim, not a fact the test proves** — deliberately, and unlike ADR-0112's
-"existence hidden is asserted per route instead of trusted per review". Three classes of
+"existence hidden is asserted per route instead of trusted per review". Four classes of
 exemption exist, each confirmed against the route's current handler when the row is written or
 touched:
 
@@ -72,8 +72,12 @@ touched:
    fetch these bodies; their redaction is covered by the same `redactInputParams`/`screenTags`
    sites the served rows drive.
 3. **Protocol-exempt** — the route carries another host's work, not this run's data: the
-   runner-protocol endpoints, and the LangGraph/debug/cron surfaces the canary agent does not
-   declare.
+   runner-protocol endpoints, the MCP JSON-RPC transport (the canary run is driven over HTTP, and
+   the run tools the transport fronts are covered by their own tool tests), and the
+   LangGraph/debug/cron surfaces the canary agent does not declare.
+4. **Method-mismatch** — the route registers a single method and the probe reaches it with another,
+   so it answers `405` with no body: the `GET`/`DELETE` rows of the POST-only MCP endpoints. No
+   body, no run data.
 
 **The risk this accepts** is the one an exemption always carries: a route that later starts
 serializing run data keeps its exemption and the sweep stays green. The class-2 rows are the ones
