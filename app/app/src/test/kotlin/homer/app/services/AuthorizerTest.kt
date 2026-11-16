@@ -4,9 +4,12 @@ import homer.app.models.Action
 import homer.app.models.AppConfig
 import homer.app.models.AuthConfig
 import homer.app.models.Grant
+import homer.app.models.HmacKeyConfig
+import homer.app.models.PasswordUserConfig
 import homer.app.models.Server
 import homer.app.models.TokenConfig
 import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -49,6 +52,18 @@ class AuthorizerTest {
         val a = authz("bob" to Authorizer.PrincipalGrants(false, listOf(Grant(listOf("deploy-*"), listOf(Action.READ)))))
         // Resolution against a concrete agent set is the caller's job; here we expose the raw READ patterns.
         assertTrue(a.readableAgents("bob")!!.contains("deploy-*"))
+    }
+
+    @Test
+    fun `readableAgents is an empty set, never null, for an unknown or read-less principal`() {
+        val a =
+            authz(
+                "ci" to Authorizer.PrincipalGrants(false, listOf(Grant(listOf("deploy-*"), listOf(Action.RUN, Action.CONTROL)))),
+            )
+        // null means "no filter" (admin, or unsecured mode) — a denial is spelled as an empty set.
+        assertEquals(emptySet<String>(), a.readableAgents("ci"))
+        assertEquals(emptySet<String>(), a.readableAgents("ghost"))
+        assertEquals(emptySet<String>(), a.readableAgents(null))
     }
 
     @Test
@@ -258,5 +273,85 @@ class AuthorizerTest {
         assertTrue(admin.canDispatchHop("root", "a", "b"))
         val disabled = Authorizer(emptyMap(), emptyMap(), enabled = false)
         assertTrue(disabled.canDispatchHop(null, "a", "b"))
+    }
+
+    @Test
+    fun `agentCanDispatch follows only the agentGrants RUN match on the target`() {
+        val fromGrants = { grants: Map<String, List<Grant>> ->
+            Authorizer.from(
+                AppConfig(
+                    server =
+                        Server(
+                            apiAuth = AuthConfig.Bearer(tokens = mapOf("alice" to TokenConfig(token = "t"))),
+                            agentGrants = grants,
+                        ),
+                    agentsSearchPath = "unused",
+                    workspaceRootPath = "unused",
+                    databasePath = "unused",
+                ),
+            )
+        }
+        val delegated = fromGrants(mapOf("a" to listOf(Grant(listOf("b"), listOf(Action.RUN)))))
+        assertTrue(delegated.agentCanDispatch("a", "b"))
+        assertFalse(delegated.agentCanDispatch("a", "c"), "a non-matching target is not delegated")
+        assertFalse(delegated.agentCanDispatch("z", "b"), "an agent with no agentGrants entry delegates nothing")
+        assertFalse(fromGrants(emptyMap()).agentCanDispatch("a", "b"), "no agentGrants at all delegates nothing")
+        assertFalse(
+            fromGrants(mapOf("a" to listOf(Grant(listOf("b"), listOf(Action.READ))))).agentCanDispatch("a", "b"),
+            "a READ grant on the target is not a dispatch grant",
+        )
+        assertFalse(
+            Authorizer(emptyMap(), emptyMap(), enabled = false).agentCanDispatch("a", "b"),
+            "unsecured mode delegates nothing either",
+        )
+    }
+
+    @Test
+    fun `from registers bearer, hmac and password principals under their resolved keys`() {
+        val bearer =
+            AuthConfig.Bearer(
+                tokens =
+                    mapOf(
+                        "console" to
+                            TokenConfig(
+                                token = "dummy-bearer-token",
+                                grants = listOf(Grant(listOf("web"), listOf(Action.READ))),
+                            ),
+                    ),
+            )
+        val hmac = AuthConfig.Hmac(keys = mapOf("ci" to HmacKeyConfig(secret = "dummy-hmac-secret", role = "admin")))
+        val password =
+            AuthConfig.Password(
+                users =
+                    mapOf(
+                        "ops" to
+                            PasswordUserConfig(
+                                passwordHash = "dummy-password-hash",
+                                grants = listOf(Grant(listOf("deploy-*"), listOf(Action.RUN, Action.READ))),
+                            ),
+                    ),
+                sessionSecret = "dummy-session-secret",
+            )
+        val a =
+            Authorizer.from(
+                AppConfig(
+                    server = Server(apiAuth = AuthConfig.Combined(schemes = listOf(bearer, hmac, password))),
+                    agentsSearchPath = "unused",
+                    workspaceRootPath = "unused",
+                    databasePath = "unused",
+                ),
+            )
+        // A bearer principal keeps its own name.
+        assertFalse(a.isAdmin("console"))
+        assertTrue(a.hasAction("console", Action.READ, "web"))
+        assertEquals(setOf("web"), a.readableAgents("console"))
+        // An HMAC key is registered as `hmac:<name>`: its admin flag resolves there, and the bare name is nobody.
+        assertTrue(a.isAdmin("hmac:ci"))
+        assertTrue(a.hasAction("hmac:ci", Action.DEBUG, "any-agent"))
+        assertFalse(a.hasAction("ci", Action.DEBUG, "any-agent"))
+        // A password user is registered as `session:<name>`.
+        assertTrue(a.hasAction("session:ops", Action.RUN, "deploy-web"))
+        assertEquals(setOf("deploy-*"), a.readableAgents("session:ops"))
+        assertFalse(a.hasAction("ops", Action.RUN, "deploy-web"))
     }
 }
