@@ -2,6 +2,7 @@ import { appConfig } from '@/lib/config/app-config';
 import { activeBaseUrl, activeMode, getActiveToken } from '@/lib/instances/store';
 import { notifyAuthExpired } from '@/lib/auth/auth-expired-bus';
 import type {
+  AnswerQuestionRequest,
   ProcessListResponse,
   ProcessInfo,
   AgentsListResponse,
@@ -346,7 +347,7 @@ class HomerApiClient {
       `/api/v1/questions/${encodeURIComponent(id)}/answer`,
       {
         method: 'POST',
-        body: JSON.stringify({ answer }),
+        body: JSON.stringify({ answer } satisfies AnswerQuestionRequest),
       },
     );
   }

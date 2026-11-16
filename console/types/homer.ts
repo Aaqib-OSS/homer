@@ -186,6 +186,11 @@ export interface QuestionsListResponse {
   limit: number;
 }
 
+// Body of `POST /api/v1/questions/{id}/answer`
+export interface AnswerQuestionRequest {
+  answer: string;
+}
+
 // Operator message sent to a running run (its inbox)
 export type RunMessageStatus = 'QUEUED' | 'DELIVERED' | 'UNDELIVERED';
 

@@ -78,6 +78,7 @@ internal object DtoContract {
             DebugAgentRequest.serializer(),
             LoginRequest.serializer(),
             SendRunMessageRequest.serializer(),
+            AnswerQuestionRequest.serializer(),
             CreateAgentRequest.serializer(),
             AgentFileWriteRequest.serializer(),
         )
@@ -96,8 +97,11 @@ internal object DtoContract {
             "CreateRunResponse" to "callback body: POST /api/v1/callback/runs",
             "DeclareTagResponse" to "callback body: POST /api/v1/callback/tags",
             "DispatchListResponse" to "GET /dispatches page: the console only cancels a dispatch by id",
+            "DispatchResponse" to "POST /dispatches/{id}/continue: read by the dispatch caller, not the console",
             "LivenessResponse" to "ops probe GET /api/v1/livez, not a console response",
+            "MaintenanceResponse" to "POST|DELETE /api/v1/maintenance: the console reads maintenance inside HealthResponse",
             "ReadinessResponse" to "ops probe GET /api/v1/readyz, not a console response",
+            "ServerStatusResponse" to "GET /api/v1/status/{id} diagnostics: the console uses ProcessInfoResponse",
             "TakeRunMessagesResponse" to "callback body: POST /api/v1/callback/messages/take",
             "WhoamiResponse" to "callback body: GET /api/v1/callback/whoami",
         )
