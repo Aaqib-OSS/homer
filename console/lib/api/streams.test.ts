@@ -735,4 +735,67 @@ describe('boundedStringSize', () => {
     expect(boundedStringSize('y'.repeat(8), 10)).toBe(10);
     expect(boundedStringSize('y'.repeat(9), 10)).toBe(11);
   });
+
+  it('sizes plain strings just below, at and above the cap like the walk', () => {
+    const cap = 10;
+    const lengths = [cap - 2, cap - 1, cap, cap + 1];
+    const sizes = lengths.map((n) => boundedStringSize('y'.repeat(n), cap));
+    // s.length + 2 below the boundary, cap + 1 from cap - 1 units up — a length
+    // of exactly cap is where the fast path stops adding the quotes.
+    expect(sizes).toEqual([cap, cap + 1, cap + 1, cap + 1]);
+    expect(sizes).toEqual(lengths.map((n) => walkedStringSize('y'.repeat(n), cap)));
+  });
+
+  it('sizes strings holding an escape at the cap boundary like the walk', () => {
+    const cap = 10;
+    const cases = [
+      `"${'y'.repeat(cap - 3)}"`, // cap - 1 units, escapes at both ends
+      `"${'y'.repeat(cap - 2)}"`, // cap units
+      `"${'y'.repeat(cap - 1)}"`, // cap + 1 units
+      `${'y'.repeat(cap - 1)}"`, // escape on the last unit the fast path inspects
+      `${'y'.repeat(cap - 2)}"y`, // escape on the last unit that still forces the walk
+    ];
+    for (const s of cases) {
+      expect(boundedStringSize(s, cap)).toBe(walkedStringSize(s, cap));
+    }
+    // The walk adds the escape's extra byte before it passes the cap, so the
+    // estimate is cap + 2 rather than the fast path's cap + 1.
+    expect(boundedStringSize(`${'y'.repeat(cap - 2)}"y`, cap)).toBe(cap + 2);
+  });
+
+  it('walks every string below a cap of 2', () => {
+    // cap - 2 and cap - 1 are not usable there, so the fast path is skipped whole.
+    for (const cap of [0, 1]) {
+      for (const s of ['', 'a', '"', '\n', '\ud800']) {
+        expect(boundedStringSize(s, cap)).toBe(walkedStringSize(s, cap));
+      }
+    }
+    expect(boundedStringSize('', 0)).toBe(2);
+    expect(boundedStringSize('a', 1)).toBe(3);
+    expect(boundedStringSize('"', 1)).toBe(4);
+  });
+
+  it('counts a surrogate pair at the first low surrogate 0xdc00 as one unit', () => {
+    // 0xdc00 is where the low-surrogate range starts, so `>=` and `>` differ here.
+    const pair = String.fromCharCode(0xd800, 0xdc00);
+    expect(walkedStringSize(pair, 100)).toBe(4);
+    expect(boundedStringSize(pair, 100)).toBe(4);
+    expect(JSON.stringify(pair).length).toBe(4);
+  });
+
+  it('counts the pairs at both ends of the surrogate ranges as one unit', () => {
+    // 0xdbff ends the high range and 0xdfff the low one, so a range check that
+    // stops a unit short escapes each as two lone surrogates instead of a pair.
+    for (const pair of [String.fromCharCode(0xdbff, 0xdc00), String.fromCharCode(0xd800, 0xdfff)]) {
+      expect(walkedStringSize(pair, 100)).toBe(4);
+      expect(boundedStringSize(pair, 100)).toBe(4);
+      expect(JSON.stringify(pair).length).toBe(4);
+    }
+  });
+
+  it('does not pair a high surrogate at the last index', () => {
+    // Nothing follows it, so it escapes as a lone surrogate: 'a' + \ud800 + quotes.
+    expect(walkedStringSize('a\ud800', 100)).toBe(9);
+    expect(boundedStringSize('a\ud800', 100)).toBe(9);
+  });
 });
