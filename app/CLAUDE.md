@@ -261,6 +261,7 @@ A new rule whose code still has findings is tagged `@Tag(REPORT_ONLY)` and is *p
 | Test classes mirror the production package | root §6, "Directory layout" |
 | Every service has a `*Test` in its package | root §6, "Layered architecture" (Services row, and the types moved out of it) |
 | Every `executors/` `*Executor` has a `*Test` | root §6 |
+| Every `homer.app.infra` `*Parser` / `*Validator` / `*Builder` has a `*Test` importing `io.kotest.property` | root §6, "Parsers, validators, formatters and security-relevant input handling" |
 | `CommandExecutor`s are `executors/<Name>Executor.kt` | "Adding a new command type" |
 | No inline `respond(HttpStatusCode.BadRequest…)` | "Adding a new HTTP endpoint" |
 | `Route.*` builders live in `routes/` | "Adding a new HTTP endpoint", "Directory layout" |
