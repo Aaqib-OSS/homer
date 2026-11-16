@@ -16,6 +16,11 @@ This skill is a cheat-sheet for the common case. Full reference:
 [`reference/AGENT.md`](reference/AGENT.md). Contract:
 [`../../schemas/homer-agent.schema.json`](../../schemas/homer-agent.schema.json).
 
+`reference/AGENT.md` is about 4,700 lines, so read it one section at a time:
+open its [Contents list](reference/AGENT.md#contents), pick the heading you
+need, and read only that section — grep for the heading and read from there, or
+read the file with an offset and a limit. Never read the whole file.
+
 ## Workflow
 
 1. **Copy the closest pattern** from the cheat-sheet below (or from

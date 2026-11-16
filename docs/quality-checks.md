@@ -169,7 +169,10 @@ table CI does, once the reports exist.
 
 ## Open backlog and next steps
 
-The counts below are a snapshot, last refreshed when `detekt` became required (2026-10-14). For the current numbers, look at the `quality-gate` job's table and its report artifacts.
+The rows below are a hand-maintained backlog snapshot, not a live status — the
+newest of them dates from 2026-11-14, when the nightly image scan joined it. For
+the current numbers, look at the `quality-gate` job's table and its report
+artifacts.
 
 | Item | State | Next step |
 | --- | --- | --- |

@@ -79,17 +79,11 @@ unsecured backend bound to loopback).
 
 ### Environment Variables
 
-Runtime settings (`CONSOLE_HOMER_API_URL`, `CONSOLE_AUTH_ENABLED`,
-`CONSOLE_ALLOW_BEARER`, `CONSOLE_ALLOWED_API_ORIGINS`, `CONSOLE_PLUGINS`,
-`CONSOLE_THEMES`, `CONSOLE_THEME_MODES`) are read per request, so changing them needs no
-rebuild; `PORT` is read when the server starts. See
+`CONSOLE_*` environment variables configure the console at runtime.
 [`DEPLOYMENT.md` § Environment Configuration](DEPLOYMENT.md#environment-configuration)
-for the full reference. There is no runtime knob for the auth mode: the
-console is cookie-only unless `CONSOLE_ALLOW_BEARER=true` adds the token
-option to the login screen. **Each `CONSOLE_PLUGINS` entry is code that runs
-with the operator's privileges in the console's origin** — see
-[Plugins](#plugins). **Each `CONSOLE_THEMES` entry is a stylesheet that restyles
-the console for everyone who uses it** — see [Custom themes](#custom-themes).
+is the canonical table of every one of them, with its default and its trust
+notes. How the `CONSOLE_PLUGINS` and `CONSOLE_THEMES` entries it defines are
+used is covered in [Plugins](#plugins) and [Custom themes](#custom-themes).
 
 ### Configuration File
 

@@ -5,7 +5,7 @@
 - Backend (Kotlin/Ktor): see [`app/CLAUDE.md`](app/CLAUDE.md) for
   architecture and conventions. Requires JDK 25.
 - Console (Next.js): see [`console/CLAUDE.md`](console/CLAUDE.md) for
-  architecture and conventions. Requires Node.
+  architecture and conventions. Requires Node 24.
 - Using a coding agent? The `CLAUDE.md` files are its rules whatever the
   harness. The root, `app/`, `console/` and `clients/python/homer_langgraph/`
   ones sit next to an `AGENTS.md` pointer, starting with the root
@@ -75,3 +75,42 @@ Open a pull request on [github.com/livesport/homer](https://github.com/livesport
    approval are green on its latest commit and every review conversation is
    resolved. The AI review can block a merge but never approves one. Only
    maintainers merge.
+
+## Releasing
+
+A release is one version-bump commit on a branch, that branch's merge into
+`main`, and a tag on the merge. The tag publishes the images and the
+documentation site; nothing else is done by hand. This section documents the
+procedure as it is performed today — it does not change it.
+
+1. **Bump the version** in one commit, subject `release: <version>`, on a branch
+   named `aif/release-<version>` (`aif/release-1.43.0`):
+   - `CHANGELOG.md` — insert `## [<version>] - <YYYY-MM-DD>` under
+     `[Unreleased]`, so the entries accumulated there become the release's.
+   - `docker-compose.yml` — the pinned default of `${HOMER_VERSION:-<version>}`
+     on both services, backend and console
+     ([ADR-0093](docs/adr/0093-the-default-compose-stack-runs-published-images.md)).
+   - `.env.example` — the commented `# HOMER_VERSION=<version>`.
+   - `README.md` — the `version=` line of the image-verification snippet.
+   - `DOCKER.md` — the release image tags in its examples.
+2. **Merge** the branch into `main` through a pull request; every check must be
+   green, as for any other change.
+3. **Tag** the merge commit with the bare version (`1.43.0`). The tag is
+   lightweight, and it is what starts the release:
+   [`.github/workflows/release.yml`](.github/workflows/release.yml) triggers on
+   a pushed `[0-9]+.[0-9]+.[0-9]+` tag, and only on a protected ref.
+4. **`release.yml` publishes**, once its `ci` job — the full CI workflow — has
+   passed:
+   - **the documentation** — the site is built for the tag and attached to the
+     GitHub release as `homer-docs.tar.gz`, and the Pages workflow is started
+     ([ADR-0087](docs/adr/0087-versioned-documentation-site.md));
+   - **the images** — each is built natively for `linux/amd64` and
+     `linux/arm64`, pushed to GHCR by digest, joined into one multi-arch index
+     per tag, signed with cosign (keyless) and attested with SLSA provenance and
+     a CycloneDX SBOM
+     ([ADR-0086](docs/adr/0086-sign-and-attest-release-images.md));
+   - **the release page** — `tools/release/notes.sh` writes its notes: the
+     version's `CHANGELOG.md` section (`notes.sh changelog`), then the images'
+     digests and the `cosign verify` command for each (`notes.sh images`, put
+     below the changelog by `notes.sh merge`). A tag whose version has no
+     changelog section fails before anything is published.

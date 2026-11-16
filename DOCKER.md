@@ -506,12 +506,16 @@ how it was built, or if you pin it instead of the index.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `FRONTEND_PORT` | 3000 | Host port for the console (published on `127.0.0.1` only) |
-| `CONSOLE_HOMER_API_URL` | `http://localhost:<BACKEND_PORT>` | Backend API URL, as reached from the browser (`docker-compose.dev.yml` pins the default) |
 | `AUTH_ENABLED` | false (`.env.example`: true) | Passed to the console as `CONSOLE_AUTH_ENABLED`: turns on console sign-in |
-| `CONSOLE_ALLOW_BEARER` | false (`.env.example`: true) | Offers Token sign-in on the console's login screen; off means cookie (password) sign-in only. A bearer token is kept in the browser's `localStorage`, so leave it off outside a loopback setup |
-| `CONSOLE_PLUGINS` | *(unset)* | Comma-separated plugin entries — a same-origin module path under `public/`, optionally `@<requirement>` (`/plugins/costs.js@admin`). See [Console plugins in the image](#console-plugins-in-the-image) |
-| `CONSOLE_THEMES` | *(unset)* | Comma-separated theme entries as `name:path` (`acme:/themes/acme.css`) — a same-origin stylesheet under `public/`. See [Console themes in the image](#console-themes-in-the-image) |
-| `CONSOLE_THEME_MODES` | *(unset)* | `light:<name>,dark:<name>` — names two `CONSOLE_THEMES` entries as the light/dark pair; they replace the built-in themes. See [Console themes in the image](#console-themes-in-the-image) |
+
+The `CONSOLE_*` variables are passed through to the console as they are; the
+canonical table of every one of them, with its default and its trust notes, is
+[`console/DEPLOYMENT.md` § Environment Configuration](console/DEPLOYMENT.md#environment-configuration).
+`CONSOLE_HOMER_API_URL` is the backend URL as reached from the **browser**
+(`docker-compose.dev.yml` pins `http://localhost:<BACKEND_PORT>`). Where plugin
+and theme files go in the image is covered in
+[Console plugins in the image](#console-plugins-in-the-image) and
+[Console themes in the image](#console-themes-in-the-image).
 
 ### Docker Variables
 
