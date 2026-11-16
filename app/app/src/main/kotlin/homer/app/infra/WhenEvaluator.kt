@@ -10,33 +10,12 @@ import kotlin.io.path.readText
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Evaluates a [When] predicate by shelling out to `bash -c <expr>` for each
- * expression in the clause. Per-expression timeout is fixed at 5 s.
- *
- * Exit-code semantics per expression:
- *   - 0  → true
- *   - 1  → false
- *   - ≥2 → eval error (returned as [Result.EvalError]; the caller is expected
- *          to fail the agent — silent skip would mask predicate bugs)
- *
- * A timeout (the shell executors throw `CancellationException("Timeout reached. …")`)
- * is also returned as [Result.EvalError] with exit code `-1`, so it fails the
- * agent through the same path. A genuine caller cancellation (the run being
- * killed) is re-thrown unchanged — see the `isActive` discriminator below.
- *
- * Operator semantics:
- *   - [When.Operator.ALL]: AND, short-circuits on the first false
- *   - [When.Operator.ANY]: OR, short-circuits on the first true
- *
- * Per-expression stdout/stderr are written to
- * `artifactsDir/<stem>_<exprIndex>.{out,err}`, where `[stem]` defaults to
- * `when_<commandIndex>` (avoiding the host command's `cmd_<commandIndex>.{out,err}`
- * files) and a caller evaluating more than one predicate per command passes its
- * own — an LLM step's escalation tier uses `escalate_<commandIndex>_<tier>`.
- *
- * Instantiated per command in [homer.app.executors.AgentExecutor] and per tier in
- * [homer.app.executors.llm.LlmHarnessExecutor]; matches
- * [ResultToEnvMapper]'s lifecycle. No DI registration.
+ * Evaluates a [When] predicate by shelling out to `bash -c <expr>` per expression;
+ * per-expression timeout is fixed at 5 s.
+ * Exit codes: 0 → true, 1 → false, ≥2 → eval error ([Result.EvalError]; the caller
+ * fails the agent — a silent skip would mask predicate bugs). A timeout also yields
+ * [Result.EvalError] with exit code `-1`; a genuine caller cancellation is re-thrown
+ * unchanged. [When.Operator.ALL] is AND, [When.Operator.ANY] is OR, short-circuiting.
  */
 class WhenEvaluator(
     private val shell: ShellExecutor,

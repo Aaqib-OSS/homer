@@ -8,15 +8,10 @@ import java.io.InputStreamReader
 /**
  * Generates a bcrypt hash for use as `passwordHash` in `AuthConfig.Password.users`.
  *
- * Reads a password from stdin and prints the hash on stdout.
- *
- *  - Interactive (TTY available): `System.console().readPassword(...)` so the
- *    password is not echoed and never appears in the user's shell history.
- *  - Piped (stdin is not a TTY): reads one line from stdin verbatim. Used by
- *    tests and `echo 'pass' | agentdebug hash-password` flows.
- *
- * The hash is the only thing written to stdout. Prompts and confirmation
- * read-backs go to stderr so callers can `agentdebug hash-password > hash.txt`.
+ * Reads a password from stdin and prints the hash on stdout. Interactive TTY reads use
+ * `System.console().readPassword(...)` (never echoed, never in shell history); piped
+ * stdin is read one line verbatim (tests, `echo 'pass' | agentdebug hash-password`).
+ * Prompts and read-backs go to stderr, so callers can `agentdebug hash-password > hash.txt`.
  */
 class HashPasswordCommand(
     private val cost: Int,

@@ -15,11 +15,7 @@ import java.nio.file.Path
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
-/**
- * Context for command execution. Carries the session-scoped shell so
- * the runner's backend (local process, k8s pod, ...) is transparent
- * to command executors.
- */
+// Context for command execution; the session-scoped shell keeps the runner backend transparent.
 data class ExecutionContext(
     val workspace: Workspace,
     val config: ExecutionConfig,
@@ -35,12 +31,7 @@ data class ExecutionContext(
     // The owning process's owner (grants-based authorization, ADR-0038), so a
     // Command.RunAgent child run can inherit it. Null = no owner (e.g. agentdebug).
     val owner: String? = null,
-    // Renders per-attempt stdOut/stdErr paths for LlmHarnessExecutor's retry loop (see
-    // Agent.artifactNameTemplate). The default keeps ExecutionContext constructible
-    // without every caller building a resolver explicitly — callers that only ever
-    // read stdOut/stdErr above (most executors/tests) never touch this field, and
-    // production callers (AgentExecutor, DebugAgentRunner) always pass one built
-    // from the same artifactsDir/cmdIndex used for stdOut/stdErr.
+    // Renders per-attempt stdOut/stdErr paths for LlmHarnessExecutor's retry loop (see Agent.artifactNameTemplate).
     val artifactNames: ArtifactNameResolver =
         ArtifactNameResolver(
             template = EnvConstants.DEFAULT_ARTIFACT_NAME_TEMPLATE,
@@ -61,11 +52,7 @@ data class ExecutionContext(
     val facts: StepFacts = StepFacts(),
 )
 
-/**
- * What an executor learned about a step that the agent loop needs afterwards — the CLI session
- * id an LLM step exposed, and the accounting of an attempt the graceful stop interrupted, so the
- * step still carries its cost. Per step, written by the executor that ran it. See ADR-0108.
- */
+/** What an executor learned about a step the agent loop needs afterwards. Per step, written by the executor that ran it. See ADR-0108. */
 class StepFacts {
     var cliSessionId: String? = null
     var interruptedAccounting: LlmAccounting? = null
@@ -74,19 +61,11 @@ class StepFacts {
 /** This step's effective timeout: the run's deadline cap when one applies, else the command's own. */
 fun ExecutionContext.timeoutFor(command: Command): Duration = (timeoutOverrideSeconds ?: command.timeout).seconds
 
-/**
- * Redactor for this run's secret values, built from the workspace env — declared
- * `secret: true` inputs, `@SYSENV:`-sourced globals, and the callback token.
- * Every executor that writes command text or output into a telemetry span must
- * pass values through this first, or a secret echoed into a command / its stdout
- * egresses to Langfuse in cleartext (only the Claude command did this originally).
- */
+// Redactor for this run's secret values; every executor writing command text or output into a span
+// must pass values through it, or a secret egresses to Langfuse in cleartext.
 fun ExecutionContext.secretRedactor(): SecretRedactor = SecretRedactor.from(workspace.config.env, workspace.config.secretEnvNames)
 
-/**
- * Records the command's stdout on this span as `output.value`, passed through [redactor],
- * or a pointer to the file when it reaches `maxOutputSizeForTracing`.
- */
+/** Records the command's stdout on this span as `output.value` through [redactor], or a file pointer past the size cap. */
 fun Span.setOutputValue(
     context: ExecutionContext,
     fileOperations: FileOperations,

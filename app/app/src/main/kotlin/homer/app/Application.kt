@@ -65,12 +65,11 @@ val serverId = UUID.randomUUID().toString()
 
 /**
  * Drain flag flipped to `true` at the very first instant of the
- * `ApplicationStopping` lifecycle event (before the in-flight job join
- * loop). Read by `GET /api/v1/readyz`, which returns `503` while
- * draining and `200` otherwise. Kept separate from `/livez` so a
- * Kubernetes liveness probe does **not** see 503 during drain and
- * restart the pod mid-drain — exactly the failure that would defeat
- * `server.shutdownDrainSec`. Audit P1 #12.
+ * `ApplicationStopping` lifecycle event (before the in-flight job join loop).
+ * Read by `GET /api/v1/readyz`, which returns `503` while draining and `200`
+ * otherwise. Kept separate from `/livez` so a Kubernetes liveness probe does
+ * **not** see 503 during drain and restart the pod mid-drain, defeating
+ * `server.shutdownDrainSec`.
  */
 val isDraining: AtomicBoolean = AtomicBoolean(false)
 
@@ -206,9 +205,8 @@ private fun resolveStartupConfig(
     }
 
 /**
- * Installs the routing-scoped ContentNegotiation and wires every API / MCP
- * route under the same rate-limit / authenticate / CSRF nesting as before.
- *
+ * Installs the routing-scoped ContentNegotiation and wires every API / MCP route
+ * under the same rate-limit / authenticate / CSRF nesting as before.
  * ContentNegotiation is route-scoped (installed here, not at application level)
  * so /mcp can override it with McpJson. Ktor forbids mixing an application-level
  * install with a per-route one (DuplicatePluginException). StatusPages responds

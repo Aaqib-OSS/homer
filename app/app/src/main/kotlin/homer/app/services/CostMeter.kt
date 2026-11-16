@@ -14,18 +14,12 @@ import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
 /**
- * Rolling-window tracker for Claude spend, backed by the durable
- * `cost_entries` SQLite ledger — windows, monthly, and all-time statistics
- * survive restarts. See ADR-0035.
- *
- * Two cap windows are enforced:
- *  - **Global**: sum of all recorded costs in the trailing [GLOBAL_WINDOW_SECONDS] (60 s)
- *    window, capped by [CostLimits.globalUsdPerMin].
- *  - **Per-agent**: an individual agent's costs in the trailing
- *    [AGENT_WINDOW_SECONDS] (24 h) window, capped by [CostLimits.perAgentUsdPerDay].
- *
- * The intended call pattern is fail-fast: [checkCaps] BEFORE invoking Claude
- * (refuses overage), [recordCost] AFTER a successful run (charges the windows).
+ * Rolling-window tracker for Claude spend, backed by the durable `cost_entries` SQLite ledger —
+ * windows, monthly and all-time statistics survive restarts. See ADR-0035.
+ * Two cap windows: **Global**, all recorded costs in the trailing [GLOBAL_WINDOW_SECONDS] (60 s)
+ * window capped by [CostLimits.globalUsdPerMin]; **Per-agent**, one agent's costs in the trailing
+ * [AGENT_WINDOW_SECONDS] (24 h) window capped by [CostLimits.perAgentUsdPerDay]. The call pattern
+ * is fail-fast: [checkCaps] BEFORE invoking Claude (refuses overage), [recordCost] AFTER a run.
  */
 @OptIn(ExperimentalTime::class)
 class CostMeter(

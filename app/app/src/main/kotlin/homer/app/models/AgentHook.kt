@@ -41,12 +41,11 @@ internal val AGENT_NAME_PATTERN = Regex("^[a-zA-Z0-9_-]+$")
 
 /**
  * Reads and writes the one-key `{STATUS: agentName}` wire form of an [AgentHook].
- *
- * The entry is a single-entry string map, so the same shape is expressible in YAML
- * and in JSON (a list of statuses as the key is not — JSON object keys are strings).
- * A decode names only the offending key, never the value: the value is an agent name
- * an untrusted definition supplies and the error text reaches the load log and the
- * definition-write API response. See ADR-0107, root §12 rule 7.
+ * A single-entry string map is the same shape in YAML and JSON (a status list as
+ * the key is not — JSON object keys are strings). A decode names only the
+ * offending key, never the value: the value is an untrusted agent name and the
+ * error text reaches the load log and the definition-write API response.
+ * See ADR-0107, root §12 rule 7.
  */
 object AgentHookSerializer : KSerializer<AgentHook> {
     private val entries = MapSerializer(String.serializer(), String.serializer())

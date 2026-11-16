@@ -24,16 +24,12 @@ import kotlin.io.path.name
 import kotlin.time.Duration
 
 /**
- * Recursive SFTP transfer over an authenticated [session]. Directory-oriented:
- * uploads the workspace + agent dir before a run, downloads artifacts (and
- * workdir when kept) after, and removes the remote projectRoot on cleanup.
- * A fresh SftpClient is opened per operation and closed with it.
- *
- * Every blocking SFTP round trip is bounded by [transferTimeout], including the
- * client's own close (CWE-400): a stalling peer answering
- * keepalives while withholding SFTP data would otherwise hold a `Dispatchers.IO`
- * worker, the workspace lock and a run slot indefinitely — MINA heartbeats only
- * disconnect a peer that stops answering.
+ * Recursive SFTP transfer over an authenticated [session]. Directory-oriented: uploads the
+ * workspace + agent dir before a run, downloads artifacts (and workdir when kept) after, and
+ * removes the remote projectRoot on cleanup. A fresh SftpClient is opened per operation.
+ * Every blocking SFTP round trip is bounded by [transferTimeout], including the client's own
+ * close (CWE-400): a stalling peer answering keepalives while withholding SFTP data would
+ * otherwise hold a `Dispatchers.IO` worker, the workspace lock and a run slot indefinitely.
  */
 class WorkspaceSync(
     private val session: ClientSession,
@@ -152,23 +148,12 @@ class WorkspaceSync(
     }
 
     /**
-     * [visited] holds the realpath of every directory already descended into (seeded by
-     * the caller with the upload root's realpath). Every directory is resolved with its own
-     * `toRealPath()` at descent, not just a symlinked one (canonical-form rationale at the
-     * descent site below; ADR-0042). A symlink that resolves
-     * back INSIDE the tree (`loop -> .`, `a/self -> .`, `a/b -> a`, or a second name for one
-     * directory) satisfies the containment check below and isDirectory() follows it, so
-     * without a de-duplicated visited set and the [depth] cap the walk never terminates.
-     * On the walk by name from the root a real directory (its realpath is its own entry
-     * path under the directory's realpath) is always uploaded, so the result never depends
-     * on which name the walk reaches first; only a symlink to a visited directory is
-     * skipped. Under a symlink ([viaLink]) every visited directory is skipped, so each
-     * directory is walked at most once by name and once through links. Entries are walked
-     * real ones first, then symlinks, each group by name (parity with
-     * `TarStreams.addDirContents`).
-     *
-     * [prefix] is built by concatenation, never `root.relativize(localDir)`: the walk
-     * descends on realpaths, so relativize would corrupt anchored excludes (ADR-0042).
+     * [visited] holds the realpath of every directory already descended into (seeded with the upload
+     * root's realpath); every directory is resolved with its own `toRealPath()` at descent, symlinked
+     * or not (canonical-form rationale at the descent site; ADR-0042). A symlink resolving back INSIDE
+     * the tree passes the containment check and isDirectory() follows it, so the de-duplicated visited
+     * set and the [depth] cap are what make the walk terminate. [prefix] is concatenated, never
+     * `root.relativize(localDir)`: the walk descends on realpaths, so relativize corrupts anchored excludes (ADR-0042).
      */
     private suspend fun uploadDirInto(
         sftp: SftpClient,
@@ -353,18 +338,14 @@ class WorkspaceSync(
             val fn = entry.filename
             if (fn == "." || fn == "..") continue
             val remoteChild = "$remoteDir/$fn"
-            // containedChild is lexical only (absolute/".."/multi-segment rejection); it
-            // can't see a symlink already present in the destination. PathSafety adds the
-            // realpath check, so a pre-existing local symlink can't steer the write outside
-            // the workspace even when the entry name itself is lexically safe (intra-root
-            // symlinks stay allowed). Used as a pure check here, not for its return value:
-            // assertContained resolves an existing candidate to its realpath, and binding
-            // that into the next level's localDir would compare a realpath child against
-            // the still-lexical root on recursion — spuriously rejecting deep downloads
-            // into an existing local tree on symlinked-prefix hosts (e.g. macOS /var ->
-            // /private/var). Recursion and writes stay on the lexical path throughout —
-            // the same reason materialized records this lexical localChild, not a
-            // realpath: prune()'s own walk stays lexical too, so the two must agree.
+            // containedChild is lexical only (absolute/".."/multi-segment rejection); it can't see a
+            // symlink already present in the destination, so PathSafety adds the realpath check and a
+            // pre-existing local symlink cannot steer the write outside the workspace (intra-root
+            // symlinks stay allowed). Used as a pure check, not for its return value: binding the
+            // resolved realpath into the next level's localDir would compare a realpath child against
+            // the still-lexical root and spuriously reject deep downloads on symlinked-prefix hosts.
+            // Recursion and writes stay lexical throughout — the same reason materialized records the
+            // lexical localChild: prune()'s own walk stays lexical too, so the two must agree.
             val localChild = containedChild(localDir, fn)
             PathSafety.assertContained(root, localChild)
             materialized?.add(root.toAbsolutePath().normalize().relativize(localChild.toAbsolutePath().normalize()))

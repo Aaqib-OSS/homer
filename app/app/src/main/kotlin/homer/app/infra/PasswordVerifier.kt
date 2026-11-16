@@ -4,15 +4,11 @@ import at.favre.lib.crypto.bcrypt.BCrypt
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Thin wrapper over `at.favre.lib:bcrypt` for the username + password auth path
- * (`AuthConfig.Password`, see ADR-0011).
- *
- * `verify` always performs a bcrypt comparison even when the caller knows the
- * user does not exist — the caller passes [dummyHashAtCost] so the wall-clock
- * cost of "no such user" matches "user exists but wrong password", preventing
- * account enumeration via login latency. The dummy hash must be at the same
- * cost as the configured `bcryptCost`; a hardcoded constant at cost 12 would
- * re-introduce the oracle when the operator deviates from 12.
+ * `verify` must always perform a bcrypt comparison, even for unknown users: the
+ * caller passes [dummyHashAtCost] so its wall-clock cost matches a real
+ * wrong-password rejection, preventing account enumeration via login latency.
+ * The dummy hash must use the configured `bcryptCost`, or a hardcoded cost
+ * re-introduces the oracle when the operator deviates. See ADR-0011.
  */
 class PasswordVerifier {
     private val dummyHashCache = ConcurrentHashMap<Int, String>()

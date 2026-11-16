@@ -41,13 +41,10 @@ internal class SftpTransferDeadline(
     }
 
     /**
-     * Close [sftp] under the transfer deadline. A failed or timed-out release is
-     * swallowed and WARN-logged: cleanup must not mask the block's own outcome
-     * (a cancelled run's `NonCancellable` teardown still reaches here).
-     *
-     * The release itself is non-cancellable (CWE-400): the watchdog is
-     * a child of the caller's job, so a caller already cancelled at entry would
-     * never let its `delay()` fire and an unbounded close would ride in under the
+     * Close [sftp] under the transfer deadline; a failed or timed-out release is swallowed and
+     * WARN-logged, so cleanup cannot mask the block's own outcome. The release is non-cancellable
+     * (CWE-400): the watchdog is a child of the caller's job, so a caller already cancelled at
+     * entry would never let its `delay()` fire and an unbounded close would ride in under the
      * cancellation. See ADR-0064.
      */
     @Suppress("SuspendFunSwallowedCancellation") // NonCancellable inside: a failure here is the close, not a cancel

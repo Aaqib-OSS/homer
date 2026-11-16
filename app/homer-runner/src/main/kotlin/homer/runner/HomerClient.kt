@@ -45,14 +45,12 @@ import kotlin.time.Duration.Companion.seconds
 private const val ERROR_BODY_PREVIEW_BYTES = 512L
 
 /**
- * Ktor CIO client for the runner protocol. Long-polls run under [pollTimeout]
- * (server `pollSec` plus slack); tar transfers under [transferTimeout]. Error
- * text never includes the token: it is only ever placed in the header.
- *
- * Every call uses `prepareX(...).execute { }`, never the plain `client.get`/`post`/`delete`
- * shortcuts: those run Ktor's SaveBody step, which reads the *entire* response body into
- * memory before the call even returns, defeating [toException]'s bounded read. `execute`'s
- * response is only ever consumed inside its own block, streamed.
+ * Ktor CIO client for the runner protocol. Long-polls run under [pollTimeout] (server `pollSec`
+ * plus slack); tar transfers under [transferTimeout]. Error text never includes the token: it is
+ * only ever placed in the header. Every call uses `prepareX(...).execute { }`, never the plain
+ * `client.get`/`post`/`delete` shortcuts: those run Ktor's SaveBody step, which reads the *entire*
+ * response body into memory before the call returns, defeating [toException]'s bounded read.
+ * `execute`'s response is only ever consumed inside its own block, streamed.
  */
 class HomerClient(
     baseUrl: String,

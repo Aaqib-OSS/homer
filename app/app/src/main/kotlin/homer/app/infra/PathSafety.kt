@@ -6,26 +6,9 @@ import java.nio.file.Path
 import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.deleteRecursively
 
-/**
- * Containment check for filesystem paths.
- *
- * String-level `..` rejection (already done by `ArtifactService.validateRelativePath`)
- * stops the obvious traversal but does nothing against:
- *  - Symlinks created inside the workspace that point at host files.
- *  - Multi-stage paths that resolve outside the root via OS-level
- *    canonicalization differences (case-insensitive FS, junctions, etc).
- *
- * This helper compares `realpath` of both root and candidate when each
- * exists, and falls back to normalized lexical containment otherwise
- * (so callers that resolve a path before the file is written — common
- * for streamed artifacts — still get a check). The candidate is
- * considered contained if it sits inside the root by both the
- * lexical-normalized view and the realpath-canonical view; mismatches
- * between the two (e.g. the symlinked-out case) are still rejected.
- *
- * Throws `SecurityException` if the candidate is not inside the root.
- * Closes audit P0 #4.
- */
+// Containment check that string-level `..` rejection misses: symlinks inside the workspace and OS
+// canonicalization differences (case-insensitive FS, junctions) both escape. A candidate is
+// contained only when BOTH the lexical-normalized and the realpath-canonical view agree; else SecurityException.
 internal object PathSafety {
     fun assertContained(
         root: Path,
@@ -37,11 +20,8 @@ internal object PathSafety {
         val lexicalRoot = root.toAbsolutePath().normalize()
         val lexicalCandidate = candidate.toAbsolutePath().normalize()
 
-        // When neither root nor candidate exists, we can't call
-        // toRealPath() directly. Walk up to the longest existing ancestor,
-        // canonicalize that, and append the remainder so we still detect
-        // symlink-escapes for prefix segments — and the two sides stay
-        // consistent (e.g. on macOS `/tmp` -> `/private/tmp`).
+        // Not-yet-existing paths fall back to canonicalizing the longest existing ancestor, so both
+        // sides stay consistent (e.g. /tmp -> /private/tmp on macOS) and prefix symlink-escapes are still caught.
         val realRoot = if (rootExists) root.toRealPath() else resolveLongestExistingPrefix(lexicalRoot)
         val realCandidate =
             if (candidateExists) {
@@ -50,8 +30,6 @@ internal object PathSafety {
                 resolveLongestExistingPrefix(lexicalCandidate)
             }
 
-        // Both views must agree: the candidate must be contained both
-        // lexically and under realpath canonicalization.
         val lexicalContained = lexicalCandidate.startsWith(lexicalRoot)
         val realContained = realCandidate.startsWith(realRoot)
 
@@ -60,21 +38,13 @@ internal object PathSafety {
                 "Path '$candidate' resolves outside root '$root' (resolved to '$realCandidate')",
             )
         }
-        // For existing candidates return the realpath; for non-existing
-        // ones return the lexically-normalized absolute path so callers
-        // that go on to create the file write to the path they expect.
+        // Existing candidate returns its realpath; a missing one the lexical absolute path.
         return if (candidateExists) realCandidate else lexicalCandidate
     }
 
-    /**
-     * Recursively deletes [dir], but only after asserting it is contained within
-     * [root]. Workspace-cleanup paths (capacity eviction, the purge sweep) read the
-     * directory back from persisted state (`processes.artifacts_dir`) rather than the
-     * freshly-validated workspace config, so without this re-check a poisoned or
-     * crafted stored path could steer `deleteRecursively` at an arbitrary host
-     * directory. Throws [SecurityException] (deleting nothing) when [dir] resolves
-     * outside [root]. Closes "Unsafe Recursive Workspace Deletion" (CWE-22/73).
-     */
+    // Recursively deletes [dir] only after re-asserting containment under [root]: cleanup paths read
+    // the directory back from persisted state, so a poisoned stored path could steer deleteRecursively
+    // at an arbitrary host directory. Throws SecurityException, deleting nothing.
     @OptIn(ExperimentalPathApi::class)
     fun deleteContainedRecursively(
         root: Path,
@@ -82,37 +52,19 @@ internal object PathSafety {
     ) {
         val resolved = assertContained(root, dir)
         val normalizedRoot = root.toAbsolutePath().normalize()
-        // Strict descent: assertContained accepts dir == root (a set contains itself),
-        // but the delete callers (purge sweep, capacity eviction) pass a per-run
-        // projectRoot read back from persisted state. A poisoned/degenerate value
-        // equal to the root must not turn a workspace cleanup into a wipe of the
-        // whole workspace root. Root §12.
+        // assertContained accepts dir == root, but a persisted per-run projectRoot equal to the root
+        // must not turn a cleanup into a wipe of the whole workspace root.
         if (resolved == normalizedRoot || dir.toAbsolutePath().normalize() == normalizedRoot) {
             throw SecurityException("Refusing to recursively delete the workspace root itself: $dir")
         }
         dir.deleteRecursively()
     }
 
-    /**
-     * Asserts no path component strictly below [root] — up to and including
-     * [candidate] — is a symbolic link. Call AFTER [assertContained], which
-     * guarantees [candidate] is lexically inside [root] but *follows* symlinks
-     * and only checks the resolved target stays in root. That is not enough for
-     * per-run workspace isolation: an earlier same-UID run can plant a symlink at
-     * a predictable future per-run path (process ids are monotonic), so two
-     * string-distinct per-run paths resolve to one directory — cross-run, and
-     * across owner boundaries. This walk rejects that (CWE-59).
-     *
-     * lstat-based ([Files.isSymbolicLink] never follows), and it only inspects
-     * components strictly below [root], so a symlink in the root's own ancestry
-     * (e.g. /tmp -> /private/tmp on Darwin/CI) is not flagged.
-     *
-     * Residual: a component created as a symlink after this check but before the
-     * workspace directory is materialized is a same-UID race — not a trust
-     * boundary (§12), same class as LocalFileOperations.openBounded's documented residual.
-     *
-     * Throws [SecurityException] on a symlink component.
-     */
+    // Rejects a symlink at any component strictly below [root]: an earlier same-UID run can plant one
+    // at a predictable future per-run path, so two string-distinct paths would resolve to one directory.
+    // lstat-based; call AFTER assertContained, which follows links. Throws SecurityException.
+    // Residual: a link planted after this check but before the directory is materialized is a same-UID
+    // race, not a trust boundary (ADR-0047).
     fun assertNoSymlinkComponentsBelow(
         root: Path,
         candidate: Path,
@@ -132,17 +84,9 @@ internal object PathSafety {
         }
     }
 
-    /**
-     * A write that follows a *dangling* symlink at [candidate] creates the link's
-     * destination, which [assertContained] cannot see: the link does not resolve, so
-     * it falls back to the link's own lexical path. Follows the chain hop by hop and
-     * requires every destination to resolve inside [root]; a dangling link that stays
-     * inside is allowed. CWE-59.
-     *
-     * Destinations are compared by realpath only and never normalized first: the kernel
-     * applies `..` after following links, so a lexical view can disagree with where the
-     * write lands, and an absolute target may spell the root through another alias.
-     */
+    // A write that follows a dangling symlink creates the link's destination, which assertContained
+    // cannot see. Follows the chain hop by hop, requiring every destination to resolve inside [root].
+    // Destinations are compared by realpath only, never normalized: the kernel applies `..` after following links.
     fun assertDanglingLinkContained(
         root: Path,
         candidate: Path,
@@ -159,27 +103,19 @@ internal object PathSafety {
         }
     }
 
-    /**
-     * True when [path] exists but is not a single-name regular file: a symlink (dangling
-     * or not), FIFO, device, directory, or a hard link, whose other name may be anywhere.
-     * A read that serves a run's own file must refuse it; a missing path answers false.
-     * Without the `unix` attribute view nlink reads as 1. CWE-59.
-     */
+    // True when [path] exists but is not a single-name regular file — a symlink, FIFO, device,
+    // directory or hard link; a read serving a run's own file must refuse it.
     fun isLinkedOrSpecial(path: Path): Boolean {
         if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) return false
         if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) return true
         return isHardLinked(path)
     }
 
-    /**
-     * True when [path] itself (not a link's target) has more than one link, i.e. the same
-     * bytes are also reachable under a name a walk never sees, so containment cannot be
-     * decided. Without the `unix` attribute view nlink reads as 1 and the answer is false.
-     * The one hard-link check for every upload walk and linked-file refusal. CWE-59.
-     */
+    // True when [path] itself has more than one link: the same bytes are reachable under a name a
+    // walk never sees, so containment cannot be decided.
     fun isHardLinked(path: Path): Boolean {
-        // Some attribute view implementations report nlink as Long rather than Int;
-        // a bare `as? Int` would silently drop those and read as unlinked (CWE-59).
+        // Some attribute views report nlink as Long, not Int; a bare `as? Int` would silently drop
+        // those and read as unlinked.
         val nlink =
             runCatching {
                 Files.readAttributes(path, "unix:nlink", LinkOption.NOFOLLOW_LINKS)["nlink"] as? Number
@@ -190,16 +126,8 @@ internal object PathSafety {
     /** The kernel's own ELOOP bound on Linux. */
     private const val MAX_LINK_HOPS = 40
 
-    /**
-     * Where a write to [candidate] would land (absolute, canonical): the candidate
-     * with its own dangling symlink chain followed AND its intermediate symlink
-     * components resolved — `link/new.txt` is not itself a link, but the write
-     * follows `link`. Companion to [assertDanglingLinkContained], which throws on a
-     * chain that leaves the root — a caller that first asserted containment gets
-     * the landing path from here to run its own boundary checks on (a lexical gate
-     * alone reads the link's name, never the link's destination).
-     * CWE-59.
-     */
+    // Where a write to [candidate] would land: its own dangling-symlink chain followed and its
+    // intermediate symlink components resolved. Companion to [assertDanglingLinkContained].
     fun resolveDanglingLinkTarget(candidate: Path): Path {
         var current = candidate.toAbsolutePath()
         var hops = 0
@@ -210,12 +138,6 @@ internal object PathSafety {
         return resolveLongestExistingPrefix(current.toAbsolutePath().normalize())
     }
 
-    /**
-     * Walk up `path`'s ancestry until we find a path that exists on
-     * disk. Canonicalize that ancestor with `toRealPath()` and
-     * re-append the remainder lexically. If no ancestor exists,
-     * return the lexically-normalized absolute path unchanged.
-     */
     private fun resolveLongestExistingPrefix(path: Path): Path {
         var existing: Path? = path
         while (existing != null && !Files.exists(existing)) {

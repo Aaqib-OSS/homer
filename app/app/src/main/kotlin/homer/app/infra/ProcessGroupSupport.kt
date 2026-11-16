@@ -6,20 +6,9 @@ import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.readText
 
-/**
- * Best-effort POSIX process-group reaping for locally-launched commands.
- *
- * `ProcessHandle.descendants()` misses a child spawned in the snapshot→kill
- * window and any double-fork/`setsid`-detached child, so killing only the
- * direct process and its descendants can leak orphaned processes on kill or
- * timeout. Launching the command under `setsid` makes it the leader of a new
- * session/process group; killing the negative pgid then reaps the whole group,
- * including late-spawned and reparented (but not re-`setsid`'d) children.
- *
- * Degrades gracefully: where `setsid` is not on `PATH` (e.g. macOS dev) the
- * command is launched unchanged and callers fall back to the descendants() kill.
- * See ADR-0041.
- */
+// Best-effort POSIX process-group reaping. `ProcessHandle.descendants()` misses a child spawned in
+// the snapshot→kill window and any double-fork/setsid-detached child, so the command is launched
+// under `setsid` and the negative pgid reaped. Degrades to descendants() where setsid is absent. See ADR-0041.
 object ProcessGroupSupport {
     private const val KILL_GROUP_WAIT_SEC = 2L
 
@@ -29,36 +18,21 @@ object ProcessGroupSupport {
     /** Prepends `setsid` so [command] leads a new process group, when available. */
     fun launchArgv(command: List<String>): List<String> = setsidPath?.let { listOf(it) + command } ?: command
 
-    /**
-     * The process group id to reap for [process], or null when a group kill is
-     * not safe/possible. Returns a pgid ONLY when the process leads its own group
-     * (pgid == pid, read from `/proc`), which is exactly what a non-forking
-     * `setsid` produces — so a group kill can never target the JVM's own group.
-     *
-     * Prefer KILL time to right after launch: the freshly-spawned child only
-     * becomes a leader once it has run setsid(2), and a single immediate read
-     * races that transition (loses reliably under CPU contention). A launch-time
-     * read is safe only when retried until the transition is observed
-     * (`GraphSubprocessOutcome.captureOwnProcessGroupId`), which is what lets the
-     * pgid be known before the leader exits.
-     */
+    // The pgid to reap for [process], or null when a group kill is not safe. Returns a pgid ONLY when
+    // the process leads its own group (pgid == pid), so a group kill can never target the JVM's own
+    // group. Read at KILL time, not at launch: the child is a leader only after setsid(2) has run.
     fun ownProcessGroupId(process: java.lang.Process): Long? = if (setsidPath == null) null else groupLeaderPgid(process, ::readPgid)
 
-    /**
-     * [process]'s pid when [pgidOf] reports it as its own group's leader and the pid still
-     * names [process]; null otherwise. The decision of [ownProcessGroupId], `/proc` read injected.
-     */
+    // [process]'s pid when [pgidOf] reports it as its own group's leader and the pid still names
+    // [process]; null otherwise. `/proc` read injected.
     internal fun groupLeaderPgid(
         process: java.lang.Process,
         pgidOf: (Long) -> Long?,
     ): Long? {
         val pid = process.pid()
         val pgid = pgidOf(pid) ?: return null
-        // PID-reuse guard (TOCTOU): confirm AFTER the /proc read that the pid
-        // still belongs to THIS process — ProcessHandle equality includes the
-        // start time. If the child died and the kernel recycled the pid, the
-        // stat we just read described a stranger; returning null falls back to
-        // the descendants-only kill instead of group-killing an innocent.
+        // PID-reuse guard (TOCTOU): confirm AFTER the /proc read that the pid still belongs to THIS
+        // process (ProcessHandle equality includes the start time), else fall back to descendants-only.
         val isSameProcess =
             ProcessHandle
                 .of(pid)
@@ -68,23 +42,14 @@ object ProcessGroupSupport {
         return pid.takeIf { pgid == it }
     }
 
-    /**
-     * Sends SIGKILL to the whole process group [pgid] (best-effort). Must go
-     * through the `sh` builtin `kill`: the standalone binaries misparse the
-     * negative target — procps rejects `kill -KILL -<pgid>` outright and
-     * busybox rejects the `kill -KILL -- -<pgid>` form — while the dash and
-     * busybox-ash builtins both accept it. [pgid] is a Long, so the
-     * interpolation cannot inject.
-     */
+    // SIGKILL to the whole group, best-effort. Must go through the `sh` builtin `kill`: the standalone
+    // binaries misparse the negative target. [pgid] is a Long, so the interpolation cannot inject.
     fun killGroup(pgid: Long) {
         signalGroup("KILL", pgid)
     }
 
-    /**
-     * Sends SIGINT to the whole process group [pgid] (best-effort), so a command that
-     * handles the signal can shut down cleanly before [killGroup] follows. Same
-     * `sh`-builtin and Long-interpolation rules as [killGroup]. See ADR-0108.
-     */
+    // SIGINT to the whole group so a handler can shut down before [killGroup] follows. Same
+    // `sh`-builtin and Long-interpolation rules as [killGroup]. See ADR-0108.
     fun interruptGroup(pgid: Long) {
         signalGroup("INT", pgid)
     }
@@ -104,8 +69,7 @@ object ProcessGroupSupport {
 
     private fun readPgid(pid: Long): Long? =
         runCatching {
-            // /proc/<pid>/stat: "pid (comm) state ppid pgrp ...". comm can contain
-            // spaces and ')', so parse the fields after the final ") ".
+            // /proc/<pid>/stat comm can contain spaces and ')': parse the fields after the final ") ".
             val fields =
                 Path
                     .of("/proc/$pid/stat")
@@ -118,13 +82,8 @@ object ProcessGroupSupport {
 
     private fun resolveOnPath(name: String): String? = firstExecutableOnPath(name, System.getenv("PATH"))
 
-    /**
-     * First executable named [name] found on [pathValue], as an **absolute**
-     * path. Relative `PATH` entries are ignored: a relative wrapper path would
-     * be resolved against the per-run job workdir (which the command can write),
-     * letting a planted binary hijack `setsid`/`kill`. Pure/testable — the
-     * production callers pass `System.getenv("PATH")`.
-     */
+    // First executable named [name] on [pathValue], as an absolute path. Relative PATH entries are
+    // ignored: they would resolve against the writable per-run workdir and let a planted binary hijack.
     internal fun firstExecutableOnPath(
         name: String,
         pathValue: String?,

@@ -7,24 +7,12 @@ import homer.app.infra.TextCompiler
 import java.nio.file.Path
 
 /**
- * Renders the per-command, per-attempt stdout/stderr artifact file names from an
- * agent's `artifactNameTemplate` (see AGENT.md). The template's *stem* is rendered
- * via [TextCompiler] against the workspace env plus two synthetic, template-only
- * variables ([EnvConstants.CMD_INDEX], [EnvConstants.CMD_ATTEMPT]) and validated at
- * the point of use — fail closed, per root CLAUDE.md §12 — because the workspace env
- * is attacker-influenced (`resultEnvParam` writes into it) and the rendered value
- * becomes a server-local file name. The exception message names the template, never
- * the rendered stem, since the stem can embed secret env values.
- *
- * Two layers keep a secret value out of the rendered stem: [secretEnvNames]
- * is excluded from the render map, so a template referencing one leaves `{{NAME}}` literal
- * and fails the existing charset check; [secretRedactor] then catches DERIVED secrets (e.g.
- * a `resultEnvParam`-captured value copied into a non-classified var) by rejecting any stem
- * it would alter, even one that otherwise passes validation. Callers building
- * [secretRedactor] for this class must raise its needle-length floor
- * (`SecretRedactor.ARTIFACT_STEM_MIN_NEEDLE_LENGTH`) — unlike telemetry redaction, a short
- * needle here would match as a substring of nearly any stem, including the default
- * template, and hard-fail every command (§12: availability is in scope).
+ * Renders the per-command, per-attempt artifact names from an agent's `artifactNameTemplate`,
+ * validated at the point of use — fail closed (root §12): the env is attacker-influenced and
+ * the rendered stem becomes a server-local file name; the exception names the template, never
+ * the stem (it can embed secrets). [secretEnvNames] is excluded from the render map and
+ * [secretRedactor] rejects any stem it would alter; callers must raise its needle-length floor
+ * (`SecretRedactor.ARTIFACT_STEM_MIN_NEEDLE_LENGTH`) — a shorter one matches nearly any stem and hard-fails every command.
  */
 class ArtifactNameResolver(
     private val template: String,

@@ -153,15 +153,12 @@ internal fun hmacBodyCapturePlugin(hmacBodyKey: AttributeKey<ByteArray>) =
     }
 
 /**
- * Installs Sessions (when a Password scheme is present), the HMAC body-capture
- * plugins (when an Hmac scheme is present), and the Authentication plugin with
- * one provider per configured scheme.
- *
- * Install order is load-bearing and preserved exactly: Sessions BEFORE
- * Authentication (the session provider reads `call.sessions`), DoubleReceive +
- * HmacBodyCapture BEFORE Authentication (the HMAC provider reads the captured
- * body). Returns the registered provider names in registration order plus the
- * Password scheme and HMAC body key for downstream wiring.
+ * Installs Sessions (when a Password scheme is present), the HMAC body-capture plugins
+ * (when an Hmac scheme is present), and the Authentication plugin with one provider per
+ * configured scheme.
+ * Install order is load-bearing: Sessions and DoubleReceive + HmacBodyCapture BEFORE
+ * Authentication (each provider reads what those install). Returns the provider names in
+ * registration order plus the Password scheme and HMAC body key.
  */
 internal fun Application.configureAuth(
     config: AppConfig,

@@ -34,15 +34,12 @@ import org.jetbrains.exposed.v1.jdbc.union
 import org.jetbrains.exposed.v1.jdbc.update
 
 /**
- * Durable access to ask-and-dispatch records. SQLite is authoritative (ADR-0020);
- * the question + dispatch rows are created in one transaction so the pending cap
- * and the question insert can never race apart. See the ask-and-dispatch ADR.
- *
- * A SINGLE dispatch is one question and one dispatch row. A GROUP dispatch (ADR-0109) is one
- * dispatch row with `kind = GROUP` and a synthetic `question_id` sentinel, plus N member rows in
- * [DispatchGroupQuestions] that own which questions it is and in what order their answers are
- * aggregated. Every read that resolves a question id, and every teardown path, therefore covers
- * both shapes.
+ * Durable access to ask-and-dispatch records. SQLite is authoritative (ADR-0020); the
+ * question + dispatch rows are created in one transaction so the pending cap and the
+ * question insert can never race apart. See ADR-0021. A SINGLE dispatch is one question
+ * and one dispatch row; a GROUP dispatch (ADR-0109) is one dispatch row with `kind = GROUP`
+ * and a synthetic `question_id` sentinel, plus N ordered member rows in
+ * [DispatchGroupQuestions]. Every read and teardown covers both shapes.
  */
 class DispatchRepository(
     private val db: DatabaseService,
@@ -81,11 +78,10 @@ class DispatchRepository(
     /**
      * Inserts a GROUP [dispatch] row, its N [questions] (each one's index in the list is its
      * `position`) and their member rows, all in one transaction — so a refused group leaves no
-     * question and no member row behind, and a created one is never observably partial.
-     *
-     * Refused by the global PENDING cap, or by the asking process's open-question cap counted
-     * over its dispatch-bound questions: a group adds up to `dispatch.maxGroupSize` of them in a
-     * single call, which is the multiplication this bound exists for. See ADR-0109.
+     * question and no member row behind, and a created one is never observably partial. Refused
+     * by the global PENDING cap, or by the asking process's open-question cap counted over its
+     * dispatch-bound questions (a group adds up to `dispatch.maxGroupSize` in one call). See
+     * ADR-0109.
      */
     suspend fun createGroup(
         questions: List<Question>,
@@ -371,13 +367,11 @@ class DispatchRepository(
         }
 
     /**
-     * markDispatched / markFailed both land the dispatch in a terminal state. On a
-     * successful transition the dispatch-bound question has served its purpose (its
-     * answer is now in the fired run, or the fire failed), so delete it in the same
-     * transaction — the question lifecycle is owned by the dispatch, not the long-gone
-     * asking process, and leaving these rows behind grew SQLite unbounded. A group's member
-     * questions go with it; its member rows stay until the settled-row prune, so a settled
-     * group still reports the question ids it was registered with. See ADR-0021, ADR-0109.
+     * markDispatched / markFailed both land the dispatch in a terminal state, so the
+     * dispatch-bound question has served its purpose and is deleted in the same transaction —
+     * the question lifecycle is owned by the dispatch, not the long-gone asking process. A
+     * group's member questions go with it; its member rows stay until the settled-row prune,
+     * so a settled group still reports the question ids it was registered with. ADR-0021, ADR-0109.
      */
     private suspend fun transition(
         id: Int,

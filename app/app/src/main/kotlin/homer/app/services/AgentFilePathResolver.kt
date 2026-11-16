@@ -7,12 +7,9 @@ import kotlin.io.path.exists
 import kotlin.io.path.invariantSeparatorsPathString
 import kotlin.io.path.name
 
-/**
- * Path containment for [AgentFilesService]: resolves a caller-supplied path against
- * an agent's directory and refuses `..`, absolute paths, symlink escapes, a nested
- * agent's subtree (ADR-0047, ADR-0068) and landings discovery would never reach.
- * Every file-API read, write and delete resolves through [resolveSafe].
- */
+// Path containment for [AgentFilesService]: resolves a caller-supplied path against an agent's
+// directory and refuses `..`, absolute paths, symlink escapes and a nested agent's subtree.
+// See ADR-0047, ADR-0068.
 internal class AgentFilePathResolver(
     private val agentsService: AgentsService,
 ) {
@@ -46,40 +43,16 @@ internal class AgentFilePathResolver(
         candidate: Path,
         resolved: Path,
     ): ResolveResult {
-        // ADR-0047 boundary: an agent nested inside this one is a different agent
-        // with its own grant, so containment in the parent's directory is not
-        // authorization. Nothing at or inside a nested agent's subtree is reachable
-        // through the parent — not its `agent.yaml` (which isAgentDef deliberately
-        // keeps matching at the root only) and not any other file of its definition.
-        // Denied as not-found, identical to a path that does not exist, so the
-        // parent's caller learns nothing about the child (§12 rule 3).
-        //
-        // CWE-59: the gate runs on the resolved path
-        // (`assertContained` returns the realpath of an existing candidate), not on
-        // the lexical candidate — a parent-relative symlink like
-        // `notes.txt -> nodes/analysis/agent.yaml` lexically stats as `notes.txt`,
-        // so a lexical gate misses it and hands the child's file to
-        // read/write/delete. Relative to the agent dir's OWN real path: the agent
-        // directory itself may legitimately be a symlink, so `resolved` lives under
-        // the real root, not the lexical one. A path that does not exist resolves
-        // lexically and is gated as the candidate. A realpath that still escapes
-        // the real root after containment is impossible (assertContained rejects
-        // it first); nothing else falls through.
+        // Nested agent = different grant, so containment is not authorization: nothing at or inside
+        // its subtree is reachable, denied as not-found like a missing path (§12 rule 3). The gate
+        // runs on the resolved realpath, not the lexical candidate (CWE-59). See ADR-0047, ADR-0068.
         val realDir = dir.toRealPath()
         val gateRel = if (resolved.startsWith(realDir)) realDir.relativize(resolved) else dir.relativize(candidate)
         if (AgentDirs.isBelowNestedAgentDir(dir, gateRel)) {
             return ResolveError(AgentFilesService.FileOpResult.NotFound("File not found: $relPath"))
         }
-        // CWE-59: a WRITE to a path that does not exist
-        // yet follows any dangling symlink at the candidate — including one in an
-        // intermediate component (`link/new.txt` is not itself a link) — and
-        // `assertContained` only saw the link's lexical name, so a link could steer
-        // the write outside the agent dir or into a nested agent's subtree with no
-        // grant on the child. Gate where the write would land — the candidate with
-        // its link chain followed — as both a containment check (the counterpart
-        // the read path gets from assertContained's realpath) and the nested-agent
-        // boundary, relative to the real root. A live (resolving) link is already
-        // covered above: `resolved` is its realpath there.
+        // A WRITE to a not-yet-existing path follows any dangling symlink in the chain, so gate where
+        // the write would land (link chain followed) against the real root and the nested boundary.
         val landingAbsolute = PathSafety.resolveDanglingLinkTarget(candidate)
         if (!landingAbsolute.startsWith(realDir)) {
             return ResolveError(AgentFilesService.FileOpResult.NotFound("File not found: $relPath"))
@@ -97,22 +70,15 @@ internal class AgentFilePathResolver(
         realDir: Path,
         landing: Path,
     ): ResolveError? {
-        // A deep path is the walk's entry cap pointed at the disk instead: the
-        // directories a write's createDirectories builds are real, so one PUT with
-        // enough segments could make every later discovery walk pay for the chain
-        // — and the entry budget it drains is other agents' availability (§12
-        // rule 4). Bound the caller-supplied depth before any disk touch.
-        // CWE-400; a read is bounded by the same check for
-        // free, since it resolves through here too.
+        // A deep path is the walk's entry cap pointed at the disk: bound the caller-supplied depth
+        // before any disk touch, since the directories a write creates are real (§12 rule 4, CWE-400).
         if (AgentDirs.isTooDeep(landing)) {
             return ResolveError(
                 AgentFilesService.FileOpResult.BadRequest("Path is too deep (more than ${AgentDirs.MAX_PATH_SEGMENTS} segments): $relPath"),
             )
         }
-        // A definition landing discovery never reaches (deeper than MAX_DEPTH below
-        // the search path, or under a hidden directory) would leave a subtree this
-        // API can only answer 404 for. Refused before any disk touch, like the
-        // segment cap above. See ADR-0068.
+        // A definition landing discovery never reaches (too deep or under a hidden dir) would leave a
+        // subtree this API can only 404 for; refused before any disk touch. See ADR-0068.
         if (isDefFileName(landing.invariantSeparatorsPathString) &&
             AgentDirs.isUnreachableByDiscovery(agentRootDepth(realDir), landing)
         ) {
@@ -125,15 +91,8 @@ internal class AgentFilePathResolver(
         return null
     }
 
-    /**
-     * How many levels [dir] sits below the agents search path — the depth
-     * discovery starts counting from. [dir] is the resolved (real) agent
-     * directory, the one root the rest of [resolveSafe] keys on, so the search
-     * path is resolved to its real path too (the config value may be relative or
-     * reach the directory through a symlink); a dir outside it is impossible for
-     * a loaded agent and fails loudly rather than passing a made-up depth into
-     * the reach check.
-     */
+    // Levels [dir] sits below the agents search path, resolved to real paths (the config value may be
+    // relative or reach through a symlink); a dir outside it fails loudly rather than faking a depth.
     private fun agentRootDepth(dir: Path): Int {
         val root = agentsService.rootPath.toRealPath()
         require(dir.startsWith(root)) { "Agent directory '$dir' is not below the agents search path '$root'" }
@@ -159,9 +118,8 @@ internal data class ResolveError(
     val result: AgentFilesService.FileOpResult<Nothing>,
 ) : ResolveResult()
 
-// Normalize before matching: the raw string is checked before resolveSafe
-// normalizes it, so "./agent.yaml" or "x/../agent.yaml" would otherwise slip
-// past the delete/validate guards yet still resolve to the real definition.
+// Normalize before matching: the raw string is checked before resolveSafe normalizes it, so
+// "./agent.yaml" would otherwise slip past the delete/validate guards.
 
 /** True when [relPath] is the agent's own root definition file. */
 internal fun isAgentDef(relPath: String): Boolean {
@@ -169,8 +127,7 @@ internal fun isAgentDef(relPath: String): Boolean {
     return normalized == "agent.yaml" || normalized == "agent.json"
 }
 
-// Any definition file at any depth: whatever its path, reload() loads it as an
-// agent the moment its directory holds it (ADR-0068), so a write here creates
-// an agent even when the file is not this agent's own root definition.
+// Any definition file at any depth: reload() loads it as an agent the moment its directory holds it
+// (ADR-0068), so a write here creates an agent even if it is not this agent's own root definition.
 internal fun isDefFileName(relPath: String): Boolean =
     runCatching { Path.of(relPath).normalize().name }.getOrNull() in AgentDirs.DEFINITION_FILE_NAMES

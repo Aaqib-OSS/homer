@@ -20,33 +20,15 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.seconds
 
-/**
- * The permit a start holds between leaving the maintenance gate and its run existing, so the
- * release that follows the mode going off drains at most `releaseConcurrency` starts at a time
- * instead of resuming every parked caller at once. Releasing twice is harmless. See ADR-0092.
- */
+/** The permit a start holds from leaving the gate until its run exists; it caps a release drain at
+ * `releaseConcurrency` starts at a time. Releasing twice is harmless. See ADR-0092. */
 internal fun interface MaintenanceSlot {
     fun release()
 }
 
-/**
- * Admin maintenance mode: the admission gate every non-cron agent start passes through
- * while an operator replaces Homer. The flag is durable (a `server_meta` key) and the
- * starts it holds back wait in a bounded FIFO queue, released in order within one release
- * drain once the mode goes off (rapid re-toggles overlap drains, so the order across
- * drains is not guaranteed). Cron is skipped at its own tick instead — a missed schedule
- * is never replayed.
- * See ADR-0092 and root §12 rules 4–5.
- *
- * A queued start is only *parked* here: the caller runs its own preflight (cycle, depth,
- * cost cap, cooldown) and input resolution after [awaitRelease] returns, so a released
- * start is validated against the state in force at dequeue, not at enqueue.
- *
- * A start that is part of already-admitted work — a `!<agent>` hop, a dispatch or a continuation
- * fire made by a run that is still `WORKING` — does not park: it is admitted, not new.
- * The shutdown drain reads the same rule through [isDraining] and refuses everything else
- * outright instead of queueing it. See [gated], ADR-0092 and ADR-0102.
- */
+/** Admin maintenance mode: the admission gate every non-cron start passes while an operator
+ * replaces Homer. Durable flag; held-back starts wait in a bounded FIFO queue released in order,
+ * validated at dequeue not enqueue; an admitted start does not park. See [gated], ADR-0092, ADR-0102. */
 internal class MaintenanceModeService(
     private val repository: ServerMetaRepository,
     private val config: MaintenanceConfig,
@@ -55,9 +37,8 @@ internal class MaintenanceModeService(
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob()),
     private val now: () -> Long = { Instant.now().epochSecond },
     // The shutdown drain flag (`homer.app.isDraining`), injected as a lambda so this Services
-    // layer type stays off the HTTP-layer flag. While it is set a non-admitted start is refused
-    // instead of parked: the process is going away, so a parked start could only end `UNKNOWN`.
-    // See ADR-0102.
+    // type stays off the HTTP-layer flag. While set, a non-admitted start is refused, never
+    // parked — the process is going away, so a parked start could only end `UNKNOWN`. See ADR-0102.
     isDraining: () -> Boolean = { false },
 ) {
     private val draining = isDraining
@@ -81,11 +62,8 @@ internal class MaintenanceModeService(
 
     fun isEnabled(): Boolean = enabled.get()
 
-    /**
-     * The shutdown drain flag, as [gated] and `AgentRunStarter` read it: while it is set, a
-     * non-admitted start is refused and a server-derived start is admitted from its live parent.
-     * See ADR-0102.
-     */
+    /** The shutdown drain flag, as [gated] and `AgentRunStarter` read it: while set, a non-admitted
+     * start is refused and a server-derived start is admitted from its live parent. See ADR-0102. */
     fun isDraining(): Boolean = draining()
 
     fun queueDepth(): Int = synchronized(lock) { queue.size }
@@ -93,10 +71,8 @@ internal class MaintenanceModeService(
     /** The toggle endpoint's read model: the flag, when it was turned on, and the current depth. */
     fun snapshot(): MaintenanceResponse = MaintenanceResponse(enabled = enabled.get(), since = since.get(), queued = queueDepth())
 
-    /**
-     * Persists and applies the flag. The write lands first: a failed write leaves the mode
-     * where it was, so the stored state and the in-memory one never disagree.
-     */
+    /** Persists and applies the flag. The write lands first: a failed write leaves the mode where
+     * it was, so the stored state and the in-memory one never disagree. */
     suspend fun setEnabled(enabled: Boolean) {
         repository.writeMaintenanceMode(enabled)
         // The flag flips under the same lock [awaitRelease] enqueues under, so a start can
@@ -113,15 +89,9 @@ internal class MaintenanceModeService(
         }
     }
 
-    /**
-     * Parks the caller while the mode is on, returning once it is off and the caller's turn
-     * in the release drain's arrival order comes up. Throws [MaintenanceQueueFullException] when the queue or this
-     * caller's share of it is at its bound, and [MaintenanceWaitTimeoutException] when the wait
-     * runs out — in both cases the start never runs and is never replayed.
-     *
-     * The returned [MaintenanceSlot] must be released once the caller's run exists; it is what
-     * holds the release from the queue to `releaseConcurrency` starts at a time.
-     */
+    /** Parks the caller while the mode is on, returning when it is off and the caller's turn in the
+     * release drain's arrival order comes up; throws when the queue bound or wait runs out — the
+     * start never runs and is never replayed. The returned slot must be released once its run exists. */
     suspend fun awaitRelease(owner: String?): MaintenanceSlot {
         if (!enabled.get()) return NO_SLOT
         val waiter = enqueue(owner) ?: return NO_SLOT
@@ -137,12 +107,8 @@ internal class MaintenanceModeService(
             return MaintenanceSlot { waiter.done.complete(Unit) }
         } finally {
             // A caller that timed out, was cancelled or was released by stop() must not pin a
-            // release slot the drain may already have handed it — and the drain does hand one
-            // out to a waiter whose caller is gone, so this has to run on cancellation too.
-            // Its queue entry and per-principal count go with it: a disconnected caller is no
-            // longer waiting, and a phantom entry would overstate `queued` and eat the
-            // caller's share of the queue until the mode went off. A waiter the drain already
-            // popped makes the removal a no-op.
+            // release slot; its queue entry and per-principal count go with it, so a phantom entry
+            // cannot overstate `queued`. Removal of a waiter the drain already popped is a no-op.
             if (parked) {
                 remove(waiter)
                 waiter.done.complete(Unit)
@@ -150,10 +116,8 @@ internal class MaintenanceModeService(
         }
     }
 
-    /**
-     * Fails every parked start with the wait-timeout error and stops the release drain, so a
-     * shutdown does not leave callers holding a request until the drain window expires.
-     */
+    /** Fails every parked start with the wait-timeout error and stops the release drain, so a
+     * shutdown does not leave callers holding a request until the drain window expires. */
     fun stop() {
         val parked =
             synchronized(lock) {
@@ -207,20 +171,9 @@ internal class MaintenanceModeService(
         }
     }
 
-    /**
-     * Releases parked starts in arrival order, at most [MaintenanceConfig.releaseConcurrency] of
-     * them at a time, so the end of the mode does not resume every caller in one burst. Stops if
-     * the mode goes on again, leaving the rest queued for the next release.
-     *
-     * Both the slot and the wake-up are taken **in the loop**, not by a coroutine per waiter:
-     * waiters racing each other for the slot woke in whatever order their threads reached it, and
-     * the queue's arrival order is the whole point. Only the wait for the released start's run to
-     * exist runs off the loop, so the loop stays free to release the next one up to the bound.
-     *
-     * The order is per drain: two rapid toggles-off launch overlapping drains, and which drain's
-     * acquire resumes first — scheduling, not arrival — decides the order across them. Every
-     * waiter is still handed out exactly once.
-     */
+    /** Releases parked starts in arrival order, at most [MaintenanceConfig.releaseConcurrency] at a
+     * time, stopping if the mode goes on again. Take the slot and the wake-up **in the loop**, not
+     * by a coroutine per waiter — arrival order is the point; only a released run's wait runs off it. */
     private fun releaseQueuedStarts() {
         scope.launch {
             while (true) {
@@ -263,23 +216,9 @@ internal class MaintenanceModeService(
     }
 }
 
-/**
- * The park-and-release protocol every start path shares: park behind the gate, run [start] once
- * the mode is off and this start's turn comes, and give the release slot back in `finally`, so a
- * cancelled caller never pins it. The caller's preflight and input resolution belong inside
- * [start], so a released start is validated against the state in force at dequeue — and the slot
- * is held until [start]'s run exists. `AgentRunStarter.start` and the direct-build start paths in
- * `routes/RunHandlers.kt` both go through this, so the discipline cannot drift between them.
- *
- * [admitted] marks a start that is part of work the window already admitted: a `!<agent>` hop, a
- * dispatch or a continuation fire made by a run that is still `WORKING`. Such a start never queues.
- * The flag is decided from the parent's own row, never from a caller-supplied parent id.
- * See ADR-0092.
- *
- * A start that is neither admitted nor part of the shutdown drain's work is refused with
- * [ServerDrainingException] as soon as the drain flag is set — shed, never parked, because a
- * start queued behind a process that is going away could only end `UNKNOWN`. See ADR-0102.
- */
+/** Park behind the gate, run [start] when the mode is off and this start's turn comes, release the
+ * slot in `finally`; its preflight and input resolution belong inside [start], so a released start is
+ * validated at dequeue. [admitted] work never queues; otherwise the drain sheds it. See ADR-0092, ADR-0102. */
 internal suspend fun <T> MaintenanceModeService.gated(
     owner: String?,
     admitted: Boolean = false,

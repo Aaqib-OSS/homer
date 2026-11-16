@@ -223,11 +223,9 @@ suspend fun ProcessRepository.setTraceId(
  * Stores why the run ended FAILED before any of its commands started, and the run that
  * blocked it when the cause names one. The write is guarded: it lands only while the row
  * still reads `FAILED` and shows no started work — no recorded execution and no current
- * command. A run that failed while it was running therefore keeps NULL, and so does one
- * whose failure raced a kill that won the status CAS. Returns whether the write landed.
- *
- * [reason] is truncated to `MAX_FAILURE_REASON_LENGTH` here, so the column's bound holds
- * whatever the caller passes. See ADR-0020.
+ * command. A run that failed while running, or whose failure raced a kill that won the
+ * status CAS, keeps NULL. [reason] is truncated to `MAX_FAILURE_REASON_LENGTH` here, so the
+ * column's bound holds whatever the caller passes. See ADR-0020.
  */
 suspend fun ProcessRepository.setFailureReason(
     processId: Int,

@@ -18,13 +18,12 @@ import org.slf4j.LoggerFactory
 import kotlin.io.path.writeText
 
 /**
- * Executes a `Command.RunAgent` (`!<agent>`) by dispatching the target agent
- * **in-process** through [SubRunStarter], over the same call-independent core
- * (`AgentRunStarter`) the HTTP route (`handleAgentExecution`) and `DispatchService`
- * use. There is no HTTP self-call, so dispatch works regardless of how the
- * originating run was authenticated (bearer, HMAC, or console session cookie).
- * Invocation-chain cycle/depth checks and ancestor-lock-key propagation are
- * preserved by passing them through to [SubRunStarter.start]. See ADR-0030.
+ * Executes a `Command.RunAgent` (`!<agent>`) by dispatching the target agent **in-process**
+ * through [SubRunStarter], over the same call-independent core (`AgentRunStarter`) the HTTP route
+ * (`handleAgentExecution`) and `DispatchService` use. There is no HTTP self-call, so dispatch works
+ * regardless of how the originating run was authenticated (bearer, HMAC, or console session cookie).
+ * Invocation-chain cycle/depth checks and ancestor-lock-key propagation pass through to
+ * [SubRunStarter.start]. See ADR-0030.
  */
 internal class RunAgentExecutor(
     private val subRuns: SubRunStarter,

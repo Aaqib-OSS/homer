@@ -3,43 +3,28 @@ package homer.app.exceptions
 import homer.app.models.RunnerFilter
 import kotlin.time.Duration
 
-/**
- * Base exception for all Homer application exceptions
- */
 sealed class HomerException(
     message: String,
     cause: Throwable? = null,
 ) : Exception(message, cause)
 
-/**
- * Exception thrown when an agent execution fails
- */
 class AgentException(
     message: String,
     val agentName: String,
     cause: Throwable? = null,
 ) : HomerException("Agent '$agentName': $message", cause)
 
-/**
- * Exception thrown when a command execution fails
- */
 class CommandExecutionException(
     message: String,
     val exitCode: Int,
     val command: String,
 ) : HomerException("Command '$command' failed with exit code $exitCode: $message")
 
-/**
- * Exception thrown for configuration-related errors
- */
 class ConfigurationException(
     message: String,
     cause: Throwable? = null,
 ) : HomerException("Configuration error: $message", cause)
 
-/**
- * Exception thrown for validation errors
- */
 class ValidationException(
     message: String,
     val field: String? = null,
@@ -51,22 +36,13 @@ class ValidationException(
         },
     )
 
-/**
- * Raised when a cookie/session (`session:`) authenticated request is missing
- * the required `X-Homer-CSRF` header. Browsers auto-attach the session cookie
- * to cross-site requests (GET navigations / `<img>` loads under `SameSite=Lax`,
- * all cross-site requests under `cookieSameSite=None`), but cannot set a custom
- * request header cross-origin, so requiring one blocks the drive-by CSRF surface
- * regardless of SameSite. Maps to 403 Forbidden. Token/HMAC callers are exempt
- * (their credential is not browser-ambient). See ADR-0016.
- */
+// Blocks the drive-by CSRF surface for `session:` auth: browsers auto-attach the cookie cross-site
+// but cannot set a custom header cross-origin. Maps to 403; token/HMAC callers are exempt (their
+// credential is not browser-ambient). See ADR-0016.
 class CsrfValidationException(
     message: String,
 ) : HomerException(message)
 
-/**
- * Exception thrown for workspace-related errors
- */
 class WorkspaceException(
     message: String,
     cause: Throwable? = null,
@@ -76,18 +52,11 @@ class AnotherProcessStillActive(
     val activeProcessId: Int,
 ) : HomerException("The process $activeProcessId is still active, stopping current")
 
-/**
- * Raised when a lock key template names a `{{NAME}}` the run's env does not hold; the run is
- * denied before it takes a slot, a lock or a workspace. See ADR-0098 for why the denial fails
- * closed (ADR-0047 for the cross-subject collision it prevents).
- *
- * [placeholders] carries the unresolved names only — never the rendered key, which may hold an
- * input value, and never any value.
- */
+// A lock-key `{{NAME}}` the run's env does not hold: denied before a slot, lock or workspace.
+// [placeholders] carries the unresolved names only — never the rendered key or a value. See ADR-0098.
 class UnresolvedLockKeyPlaceholderException(
     names: Collection<String>,
 ) : HomerException(denialMessage(namedPlaceholders(names))) {
-    /** The unresolved placeholder names, distinct, sorted and bounded, as the denial names them. */
     val placeholders: List<String> = namedPlaceholders(names)
 }
 
@@ -97,7 +66,6 @@ private const val MAX_NAMED_PLACEHOLDERS = 5
 /** Bounds each name, so the echoed sentence stays short whatever a template's placeholder is called. */
 private const val MAX_PLACEHOLDER_NAME_LENGTH = 50
 
-/** The distinct placeholder names a denial names, in a stable order, each cut to [MAX_PLACEHOLDER_NAME_LENGTH]. */
 private fun namedPlaceholders(names: Collection<String>): List<String> =
     names
         .distinct()
@@ -105,13 +73,8 @@ private fun namedPlaceholders(names: Collection<String>): List<String> =
         .take(MAX_NAMED_PLACEHOLDERS)
         .map { it.take(MAX_PLACEHOLDER_NAME_LENGTH) }
 
-/**
- * The singular/plural sentence naming unresolved placeholders — `placeholder {{A}} has no value`
- * for one, `placeholders {{A}}, {{B}} have no value` for several — shared by the denial's log
- * sentence and the stored pre-start failure reason, so the two wordings cannot drift. The names
- * come from the agent definition (a `\w+` template reference), never from the rendered key —
- * which may hold an input value — and never from a value. See ADR-0098.
- */
+// Shared by the denial's log sentence and the stored pre-start failure reason, so the two cannot
+// drift. The names come from the agent definition, never from the rendered key or a value. See ADR-0098.
 internal fun placeholderSentence(names: List<String>): String =
     if (names.size == 1) {
         "placeholder {{${names.single()}}} has no value"
@@ -119,7 +82,6 @@ internal fun placeholderSentence(names: List<String>): String =
         "placeholders ${names.joinToString(", ") { "{{$it}}" }} have no value"
     }
 
-/** The denial's log sentence: the shared placeholder sentence behind the lock-key prefix. */
 private fun denialMessage(names: List<String>): String = "Lock key ${placeholderSentence(names)}"
 
 class MaxParallelRunsExceededException(
@@ -127,38 +89,22 @@ class MaxParallelRunsExceededException(
     val maxParallelRuns: Int,
 ) : HomerException("Agent '$agentName' has reached the maximum of $maxParallelRuns parallel runs")
 
-/**
- * Raised under the `WAIT` strategy when an agent already has `maxQueuedRuns`
- * runs suspended waiting for a parallel-run slot. Each waiting run holds a
- * non-evictable process row, so an unbounded wait queue on one agent could
- * exhaust global process capacity and starve every other agent; the opt-in
- * bound fails the surplus run instead of parking it indefinitely.
- */
+// Under WAIT: each waiting run holds a non-evictable row, so an unbounded queue on one agent could
+// exhaust global process capacity. The surplus run fails instead of parking.
 class MaxQueuedRunsExceededException(
     val agentName: String,
     val maxQueuedRuns: Int,
 ) : HomerException("Agent '$agentName' has reached the maximum of $maxQueuedRuns queued runs")
 
-/**
- * Raised when an agent already has `bound` runs suspended waiting for a subject lock. A run
- * waiting on a lock no longer holds a parallel-run slot (ADR-0104), so the wait needs its own
- * local bound: an unbounded lock queue on one agent could pin just as many process rows as the
- * slot queue could, and starve every other agent. The bound is `maxQueuedRuns` when that shares
- * the slot queue, and `maxParallelRuns` otherwise — the surplus run is failed instead of parked.
- * §12 rules 4–5, ADR-0047.
- */
+// A lock-waiting run holds no parallel-run slot, so the wait needs its own local bound or one
+// agent's queue could pin just as many rows. The surplus run fails instead of parking. See ADR-0104.
 class MaxLockWaitersExceededException(
     val agentName: String,
     val bound: Int,
 ) : HomerException("Agent '$agentName' has reached the maximum of $bound runs waiting for a lock")
 
-/**
- * Raised when an incoming agent invocation would exceed the configured maximum
- * RunAgent chain depth. Prevents accidental (or malicious) recursion from
- * burning unbounded tokens. The chain is threaded across HTTP hops via the
- * X-Homer-Invocation-Chain header (HMR_INVOCATION_CHAIN env var inside the
- * called process).
- */
+// Bounds RunAgent chain depth, so recursion cannot burn unbounded tokens. The chain is threaded
+// across HTTP hops via the X-Homer-Invocation-Chain header. See ADR-0008.
 class InvocationDepthExceededException(
     val agentName: String,
     val maxDepth: Int,
@@ -168,13 +114,8 @@ class InvocationDepthExceededException(
             "configured maximum of $maxDepth (chain: ${chain.joinToString(" → ")})",
     )
 
-/**
- * Raised when an incoming agent invocation already names the target agent in
- * its upstream chain (A → B → A). Distinct from
- * [InvocationDepthExceededException]: a cycle can fire well below the depth
- * cap and would otherwise burn the rest of the budget on a guaranteed-loop.
- * Same HTTP mapping (422) — the request shape is unprocessable either way.
- */
+// A cycle (A -> B -> A) can fire well below the depth cap, so it is denied on its own. Same 422
+// mapping as [InvocationDepthExceededException].
 class InvocationCycleDetectedException(
     val agentName: String,
     val chain: List<String>,
@@ -183,13 +124,8 @@ class InvocationCycleDetectedException(
             "in the upstream chain (chain: ${chain.joinToString(" → ")})",
     )
 
-/**
- * Raised when ProcessManager is at capacity and no terminal process can be
- * evicted to make room for a new one. The previous behavior (warn-and-continue)
- * silently drove the in-memory process map past its bound and risked OOM under
- * sustained burst load. Surfacing this as a typed exception lets the HTTP
- * boundary respond 503, signalling backpressure to clients/load balancers.
- */
+// No terminal process can be evicted to make room; mapped to 503 so clients see backpressure
+// rather than an OOM under sustained burst load.
 class ProcessManagerAtCapacityException(
     val maxProcesses: Int,
 ) : HomerException(
@@ -197,27 +133,16 @@ class ProcessManagerAtCapacityException(
             "processes are available for eviction; refusing new process",
     )
 
-/**
- * Raised when an LLM harness command (`!<claude>`/`!<codex>`) exited 0 but its stdout
- * cannot be interpreted as the harness's documented JSON event stream.
- * Fail-closed: a malformed output means we cannot trust the run, so the
- * surrounding process is marked FAILED rather than silently treated as success.
- */
+// A harness command that exited 0 but whose stdout is not its documented JSON event stream.
+// Fail-closed: the surrounding process is marked FAILED rather than treated as success.
 class MalformedLlmOutputException(
     val reason: String,
     cause: Throwable? = null,
 ) : HomerException("LLM output validation failed: $reason", cause)
 
-/**
- * Raised when [server.requireClaudeCodeVersion] is configured and the
- * `claude_code_version` reported by the Claude CLI's system event does not
- * match (or is absent). Operators pin the version they tested against so a
- * silent CLI upgrade cannot reshape stdout in ways the executor still parses
- * but the downstream agents do not expect. Distinct from
- * [MalformedLlmOutputException] because retrying cannot change the CLI
- * version — the executor rethrows this immediately without consuming retry
- * attempts.
- */
+// [server.requireClaudeCodeVersion] pinned and the reported claude_code_version differs or is
+// absent. Distinct from [MalformedLlmOutputException]: retrying cannot change the CLI version, so
+// the executor rethrows immediately without consuming retry attempts.
 class ClaudeCliVersionMismatchException(
     val expected: String,
     val actual: String?,
@@ -226,13 +151,8 @@ class ClaudeCliVersionMismatchException(
             "(set server.requireClaudeCodeVersion to the version you have validated, or null to disable)",
     )
 
-/**
- * Raised when an agent's `cooldown` has not elapsed since its previous run.
- * Homer bounds concurrency (`lockStrategy`, `maxParallelRuns`) and spend
- * (`costLimits`) but had no frequency bound, so an agent that fails fast could
- * be re-fired by the next cron tick against identical state, indefinitely.
- * Mapped to 429 Too Many Requests, like the other backpressure refusals.
- */
+// The agent's cooldown has not elapsed since its previous run. Maps to 429, like the other
+// backpressure refusals. See ADR-0051.
 class CooldownActiveException(
     val agentName: String,
     val retryAfterSec: Long,
@@ -241,27 +161,15 @@ class CooldownActiveException(
         "Agent '$agentName' is in cooldown ($reason); retry in ${retryAfterSec}s",
     )
 
-/**
- * Raised when an agent's `cooldown.key` cannot produce a usable key: a placeholder the
- * run's env and inputs do not resolve, or a rendered key that is empty, too long or
- * outside the allowed character set. Mapped to 400 Bad Request — the caller can fix the
- * inputs it supplied. Fail closed: a key that cannot be rendered is never replaced by a
- * shared or per-agent one, which would silently widen the bound to every subject.
- *
- * The message names the placeholder or the broken rule and never an env value, a
- * rendered key or the key itself. §12 rule 7, ADR-0106.
- */
+// A `cooldown.key` that does not resolve, or renders empty, too long or outside its charset.
+// Fail closed: never fall back to a shared or per-agent key, which would widen the bound to
+// every subject. §12 rule 7, ADR-0106.
 class CooldownKeyInvalidException(
     val agentName: String,
     reason: String,
 ) : HomerException("Agent '$agentName' has an unusable cooldown.key: $reason")
 
-/**
- * Raised when a Claude invocation would push the rolling cost window over a
- * configured cap (`server.costLimits.globalUsdPerMin` or per-agent
- * `costLimits.perAgentUsdPerDay`). Mapped to 429 Too Many Requests at the HTTP
- * boundary so callers/clients see backpressure rather than a generic 500.
- */
+// The rolling cost window would exceed a configured cap. Maps to 429 so callers see backpressure.
 class CostCapExceededException(
     val capName: String,
     val limitUsd: Double,
@@ -270,90 +178,59 @@ class CostCapExceededException(
         "Cost cap '$capName' exceeded: limit \$$limitUsd, current spend \$$currentUsd",
     )
 
-/**
- * A request-validation failure — query and path parameters, a body that does not decode,
- * headers, tag format and the like. StatusPages answers [httpStatusCode] (default 400) with
- * the message as is, unlike [ValidationException], which prefixes it.
- */
+// StatusPages answers [httpStatusCode] (default 400) with the message as is, unlike
+// [ValidationException], which prefixes it.
 class QueryParamValidationException(
     message: String,
     val httpStatusCode: io.ktor.http.HttpStatusCode = io.ktor.http.HttpStatusCode.BadRequest,
     val paramName: String? = null,
 ) : HomerException(message)
 
-/**
- * A validation failure answered as a bare `400` with no body: the contract of the SSE
- * stream endpoints (`/api/v1/stream/processes/{id}/logs` and `/llm-events`).
- */
+// Answered as a bare `400` with no body: the contract of the SSE stream endpoints.
 class BodylessBadRequestException : HomerException("Bad request")
 
-/**
- * Thrown when a request body is well-formed JSON but violates the agent's
- * `inputSchema`. Maps to 422 Unprocessable Entity.
- */
+// A body that is valid JSON but violates the agent's `inputSchema`. Maps to 422.
 class PayloadSchemaValidationException(
     message: String,
     val errors: List<String> = emptyList(),
 ) : HomerException(message)
 
-/**
- * Raised when a question id does not exist. Cross-process access through the
- * callback API also maps here on purpose — a question belonging to another
- * process is indistinguishable from a nonexistent one, so question ids cannot
- * be probed. Maps to 404 Not Found.
- */
+// A question id that does not exist; a question of another process maps here too, on purpose, so
+// ids cannot be probed. Maps to 404. §12 rule 3.
 class QuestionNotFoundException(
     val questionId: String,
 ) : HomerException("Question '$questionId' not found")
 
-/**
- * Raised when answering a question that is no longer OPEN (already answered
- * or expired). Maps to 409 Conflict.
- */
+// Answering a question no longer OPEN. Maps to 409.
 class QuestionNotOpenException(
     val questionId: String,
     val status: String,
 ) : HomerException("Question '$questionId' is $status, not OPEN")
 
-/**
- * Raised when a command asks a question for a process that is not accepting
- * them (terminal status, or never registered). Maps to 409 Conflict.
- */
+// A command asking for a process not accepting questions (terminal, or never registered). Maps to 409.
 class QuestionsClosedForProcessException(
     val processId: Int,
 ) : HomerException("Process $processId is not accepting questions")
 
-/**
- * Raised when a process already has `server.questions.maxOpenPerProcess`
- * open questions. Maps to 429 Too Many Requests.
- */
+// A process at `server.questions.maxOpenPerProcess`. Maps to 429.
 class TooManyOpenQuestionsException(
     val processId: Int,
     val maxOpen: Int,
 ) : HomerException("Process $processId already has $maxOpen open questions")
 
-/**
- * Raised when an operator message is sent to a run that has ended (or never existed).
- * Maps to 409 Conflict. See ADR-0097.
- */
+// An operator message sent to a run that ended (or never existed). Maps to 409. See ADR-0097.
 class RunNotAcceptingMessagesException(
     val processId: Int,
 ) : HomerException("Process $processId is no longer accepting messages")
 
-/**
- * Raised when a run already stores `server.messages.maxPerRun` messages. Maps to 429 Too Many Requests.
- */
+// A run already storing `server.messages.maxPerRun` messages. Maps to 429.
 class TooManyRunMessagesException(
     val processId: Int,
     val maxMessages: Int,
 ) : HomerException("Process $processId already has $maxMessages messages")
 
-/**
- * Raised when a process already holds `server.questions.maxConcurrentWaitsPerProcess`
- * concurrent answer-waits. Bounds the connections/coroutines a workspace
- * command can pin open (each hold can last up to `maxWaitSec`). Maps to
- * 429 Too Many Requests.
- */
+// Bounds the connections/coroutines a workspace command can pin open (each holds for up to
+// `maxWaitSec`). Maps to 429.
 class TooManyConcurrentWaitsException(
     val processId: Int,
     val maxWaits: Int,
@@ -392,18 +269,12 @@ open class DispatchGroupLimitException(
     message: String,
 ) : HomerException(message)
 
-/**
- * Raised when a dispatch group names more questions than `server.dispatch.maxGroupSize`.
- * Refused at create, before any row is written.
- */
+// More questions than `server.dispatch.maxGroupSize`, refused at create before any row is written.
 class DispatchGroupTooLargeException(
     val maxGroupSize: Int,
 ) : DispatchGroupLimitException("A dispatch group may hold at most $maxGroupSize questions")
 
-/**
- * Raised when a group's aggregated answers exceed the payload bound. The group settles
- * FAILED rather than staying PENDING on answers that can never be delivered.
- */
+// Aggregated answers over the payload bound: the group settles FAILED rather than staying PENDING.
 class DispatchGroupAnswersTooLargeException(
     val maxBytes: Int,
 ) : DispatchGroupLimitException("Aggregated dispatch-group answers exceed the $maxBytes-byte bound")
@@ -424,16 +295,9 @@ class TooManyPendingContinuationsException(
     val maxPending: Int,
 ) : HomerException("Already at the maximum of $maxPending pending continuations")
 
-/**
- * Raised when no runner claimed a queued run within its claim TTL. [reason] is what the
- * queue observed at expiry (a saturated runner, no matching tags, ...). See ADR-0066.
- *
- * [publicReason] is the same observation without a runner alias. The alias is admin-only on
- * the status API (ADR-0077), and this reason rides the run's stored failure reason, which
- * every caller who can see the run reads — so only the alias-free rendering may be stored.
- * Both are required, so a call site cannot forget the alias-free one and default into
- * storing the alias-bearing rendering.
- */
+// No runner claimed the run within its claim TTL. [publicReason] is [reason] without the runner
+// alias: the alias is admin-only (ADR-0077) and the reason rides the run's stored failure reason,
+// so both are required and a call site cannot default into storing the alias. See ADR-0066.
 class RunnerClaimTimeoutException(
     val timeout: Duration,
     val filter: RunnerFilter,
@@ -446,35 +310,22 @@ class ClaimQueueFullException(
     val maxPending: Int,
 ) : HomerException("Runner claim queue is full ($maxPending pending claims)")
 
-/**
- * Raised when the maintenance-mode start queue is at a bound
- * (`server.maintenance.maxQueuedStarts` or `…maxQueuedStartsPerPrincipal`); the start is
- * shed rather than accumulated. Maps to 429. §12 rules 4–5, ADR-0092.
- *
- * [perPrincipal] says which bound tripped: the queue's total cap (`false`) or this
- * caller's own share of it (`true`) — the shed log tells the two causes apart by it.
- */
+// The maintenance start queue is at a bound; the start is shed rather than accumulated.
+// [perPrincipal] says which bound tripped (the total cap or this caller's share). §12 rules 4–5, ADR-0092.
 class MaintenanceQueueFullException(
     val bound: Int,
     val perPrincipal: Boolean = false,
 ) : HomerException("Maintenance mode is on and the start queue is full (bound: $bound queued starts)")
 
-/**
- * Raised when a start queued in maintenance mode waited longer than
- * `server.maintenance.queueWaitSec` — or when the mode's queue was released on shutdown.
- * Maps to 503. §12 rule 5, ADR-0092.
- */
+// A queued start waited past `server.maintenance.queueWaitSec`, or the queue was released on
+// shutdown. Maps to 503. §12 rule 5, ADR-0092.
 class MaintenanceWaitTimeoutException(
     timeout: Duration,
 ) : HomerException("Maintenance mode is on and the start did not leave the queue within ${timeout.inWholeSeconds} s")
 
-/**
- * Raised when a start arrives while the shutdown drain is running and is not part of work the
- * drain already admitted — a `!<agent>` hop, a dispatch or a continuation fire whose
- * server-derived parent is still `WORKING`. A new top-level start is shed rather than queued:
- * the process is going away, so a parked start could only end `UNKNOWN`. Maps to 503. §12 rule 5,
- * ADR-0047 rule 5, ADR-0102.
- */
+// A start that is not part of work the drain already admitted; a new top-level start is shed
+// rather than queued, since a parked start could only end UNKNOWN. Maps to 503. §12 rule 5,
+// ADR-0047 rule 5, ADR-0102.
 class ServerDrainingException : HomerException("Server is shutting down and is not accepting new runs")
 
 /** A pull-mode runner instance announced something the domain does not accept (tag shape, `allowedTags`, `concurrency` cap). Maps to 422. */
@@ -496,21 +347,13 @@ class TooManyRunnerPollsException(
     concurrency: Int,
 ) : HomerException("Runner instance '$instance' already has $concurrency claim polls open")
 
-/**
- * Raised when a session already holds `ExternalRunnerSession.MAX_NEXT_POLLS`
- * concurrent `next` long-polls. Bounds the connections and coroutines one
- * authenticated instance can park on a single session. Maps to 429.
- */
+// Bounds the connections and coroutines one instance can park on a single session. Maps to 429.
 class TooManySessionPollsException(
     instance: String,
     maxPolls: Int,
 ) : HomerException("Runner instance '$instance' already has $maxPolls next polls open on this session")
 
-/**
- * A transfer request arrived while another one for the same op (for output: the
- * same op and stream) was still in flight on the session. Bounds the threads and
- * connections one instance can hold per transfer. Maps to 429.
- */
+// A second transfer for the same op while one is in flight. Maps to 429.
 class TooManyRunnerTransfersException(
     instance: String,
 ) : HomerException("Runner instance '$instance' already has this transfer in flight")
@@ -526,11 +369,8 @@ class RunnerTransferTooLargeException(
     maxBytes: Long,
 ) : HomerException("Transfer exceeds the domain limit of $maxBytes bytes")
 
-/**
- * A runner transfer handler (tar pack, tar extract, output chunk) outran the
- * domain's `transferTimeoutSec`. The handler owns this bound itself: the one in
- * `ExternalRunnerSession.await` is a different component's (§12 rule 4). Maps to 408.
- */
+// A transfer handler outran the domain's `transferTimeoutSec`. The handler owns this bound; the
+// one in `ExternalRunnerSession.await` is a different component's (§12 rule 4). Maps to 408.
 class RunnerTransferTimeoutException(
     domain: String,
     timeoutSec: Long,

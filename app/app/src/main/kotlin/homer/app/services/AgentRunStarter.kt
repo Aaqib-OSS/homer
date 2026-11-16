@@ -19,13 +19,7 @@ import io.opentelemetry.api.trace.Span
 import io.opentelemetry.api.trace.StatusCode
 import io.opentelemetry.context.Context
 
-/**
- * Call-independent core of starting an agent run: `agent_request` span,
- * invocation-chain cycle/depth checks, cost-cap preflight, and process
- * creation + launch. Shared by the HTTP route (`handleAgentExecution`) and
- * the MCP agent tools so caps, locks, and parallel-run limits apply
- * identically regardless of entry point.
- */
+/** Call-independent core of starting a run: span, cycle/depth checks, cost-cap preflight, create → launch. */
 internal class AgentRunStarter(
     private val serverId: String,
     private val processExecutor: ProcessExecutor,
@@ -34,37 +28,21 @@ internal class AgentRunStarter(
     private val costMeter: CostMeter,
     private val maxInvocationDepth: Int,
     private val cooldownGate: CooldownGate,
-    // The maintenance-mode admission gate. It sits above the claim queue, so every runner
-    // backend and every start source (HTTP, MCP, dispatch, continuation, `!agent`) queues
-    // identically while the mode is on — except a start from a run that is still `WORKING`,
-    // which is admitted. See ADR-0092.
+    // Admission gate above the claim queue: every start source queues here. See ADR-0092.
     private val maintenanceGate: MaintenanceModeService,
     // Read for the parent row's status: a start whose server-derived parent is still `WORKING`
     // is part of admitted work and does not park at the gate. See ADR-0092.
     private val processReads: ProcessRecordReads,
 ) {
-    /**
-     * Starts an agent run and returns the new process id.
-     *
-     * [RunStartRequest.resolveInputs] is invoked inside the span, after the cycle/depth/cost
-     * checks — preserving the HTTP handler's original exception ordering
-     * (cycle → depth → cost cap → input validation). Throws the same
-     * HomerExceptions the HTTP handler always did; callers map them to their
-     * own error surface (StatusPages for HTTP, isError results for MCP).
-     */
+    /** Starts a run; returns the new process id. Ordering: cycle → depth → cost cap → input resolution. */
     @Suppress("SuspendFunSwallowedCancellation") // records the span error and rethrows
     suspend fun start(
         request: RunStartRequest,
         extraAttributes: Attributes = Attributes.empty(),
-        // Non-empty only for a path replaying STORED inputs (dispatch and continuation
-        // fires): the target's `secret` flags may have changed since those values were
-        // collected, and the run must honour the flags in force then. See ADR-0052.
+        // Replay of stored inputs must honour the target's secret flags in force then. See ADR-0052.
         extraSecretInputKeys: Set<String> = emptySet(),
-        // True only for a path whose [RunStartRequest.parentProcessId] the server derived from a run
-        // it knows is live (a `!<agent>` hop, a dispatch, a continuation fire): it may admit this
-        // start without queueing when that parent row still reads `WORKING`. A caller-supplied or
-        // inherited parent link (HTTP parent header, retry, resume) leaves this false, so it
-        // never bypasses. ADR-0092.
+        // Set only where the server derived the parent from a run it knows is live; a
+        // caller-supplied parent link leaves it false. See ADR-0092.
         serverDerivedParent: Boolean = false,
     ): Int {
         val span = telemetryService.tracer.startAgentRootSpan(request.agent, "agent_request")
@@ -72,9 +50,8 @@ internal class AgentRunStarter(
         try {
             val context = Context.current().with(span)
             val admitted = admittedByLiveParent(serverDerivedParent, request.parentProcessId)
-            // Parks this start while maintenance mode is on, before any preflight: a released
-            // start re-runs the checks and resolves its inputs at dequeue, not at enqueue.
-            // See ADR-0092.
+            // Gate runs before preflight: a released start re-runs the checks and resolves
+            // inputs at dequeue, not enqueue. See ADR-0092.
             val processId =
                 maintenanceGate.gated(request.owner, admitted) {
                     startGated(
@@ -98,11 +75,7 @@ internal class AgentRunStarter(
         }
     }
 
-    /**
-     * The preflight, input resolution, record creation and launch of one admitted start —
-     * everything [start] does between the maintenance gate and the run's id, split out to
-     * keep [start]'s body inside the size rule (ADR-0083).
-     */
+    /** Preflight, input resolution, record creation and launch of one admitted start. */
     private suspend fun startGated(
         request: RunStartRequest,
         span: Span,
@@ -113,18 +86,14 @@ internal class AgentRunStarter(
     ): Int {
         val agent = request.agent
         val source = request.source
-        // A keyed cooldown is checked after the inputs are resolved, because its key is a
-        // template over them; a keyless one is refused by `checkPreflight`, before anything
-        // is resolved. Both keep cycle → depth → cost cap → cooldown. See ADR-0106.
+        // A keyed cooldown is checked after inputs resolve (its key is a template over them);
+        // a keyless one is refused by `checkPreflight`. See ADR-0106.
         val keyedCooldown = agent.cooldown?.key != null
         checkPreflight(agent, request.invocationChain, withCooldown = !keyedCooldown)
         val newChain = request.invocationChain + agent.name
         val queryParamsEnv = request.resolveInputs()
-        // Rendered here, before `create`: an unusable key fails the start with no process row
-        // to clean up, and the same value goes to the pre-flight gate and to the row, so the
-        // two cannot scope differently. A replay's stored-secret snapshot rides along, so a
-        // key naming an input that was secret when the source run stored its inputs is
-        // refused too. See ADR-0106.
+        // Rendered before `create`: an unusable key fails with no row to clean up, and one
+        // value goes to both the gate and the row. See ADR-0106.
         val cooldownKey = if (keyedCooldown) agent.renderCooldownKey(queryParamsEnv, extraSecretInputKeys) else null
         if (keyedCooldown) cooldownGate.check(agent, cooldownKey)
         // Current flags for a fresh run, unioned with a replay's snapshot.
@@ -163,20 +132,8 @@ internal class AgentRunStarter(
         return result.processId
     }
 
-    /**
-     * Whether this start is part of work the maintenance window — or the shutdown drain — already
-     * admitted: [serverDerivedParent] is set (the caller derived the link from a run it knows is
-     * live — a `!<agent>` hop, a dispatch, a continuation fire), the mode is on or the drain is
-     * running, **and** that run's own row still reads `WORKING`. A parent that is absent or already
-     * terminal is refused (drain) or parked (maintenance) as before.
-     *
-     * [information_disclosure / CWE-200] The status is read from the row, never taken from the caller's
-     * link, and a false flag short-circuits **before** the read: a caller-supplied parent admits nothing
-     * and probes nothing, so naming a parent cannot turn this into an existence check on a row the caller
-     * cannot see (root §12 rule 3). The in-memory mode/drain check runs before the read, so the steady
-     * state — neither set, the row's answer discarded anyway — pays no database round-trip.
-     * See ADR-0092, ADR-0102.
-     */
+    // Reads the parent's own row, never the caller's link; a false flag short-circuits before
+    // the read, so naming a parent admits and probes nothing. See ADR-0092, ADR-0102.
     private suspend fun admittedByLiveParent(
         serverDerivedParent: Boolean,
         parentProcessId: Int?,
@@ -186,14 +143,8 @@ internal class AgentRunStarter(
             (maintenanceGate.isEnabled() || maintenanceGate.isDraining()) &&
             processReads.getProcessStatus(parentProcessId) == ProcessStatus.WORKING
 
-    /**
-     * The request-boundary refusals, in order: invocation cycle, depth, cost cap,
-     * cooldown. Each throws the HomerException the caller maps to its error surface.
-     *
-     * [withCooldown] is false for an agent whose `cooldown.key` has to be rendered from the
-     * resolved inputs: the cycle, depth and cost-cap checks stay where they are, and the
-     * caller runs the cooldown check itself once the key exists. See ADR-0106.
-     */
+    // Request-boundary refusals in order: cycle, depth, cost cap, cooldown. [withCooldown]
+    // false leaves the cooldown check to the caller, once the key is rendered. See ADR-0106.
     private suspend fun checkPreflight(
         agent: Agent,
         invocationChain: List<String>,
@@ -205,18 +156,11 @@ internal class AgentRunStarter(
         if (invocationChain.size + 1 > maxInvocationDepth) {
             throw InvocationDepthExceededException(agent.name, maxInvocationDepth, invocationChain)
         }
-        // Pre-flight cost cap check at the request boundary so a refusal can
-        // surface to the caller. The same exception thrown later (inside the
-        // launched process) only marks the process FAILED — it cannot influence
-        // the already-sent response. Skip the check for agents that never run an
-        // LLM harness command (Claude or Codex); they cannot accrue or be bound
-        // by LLM spend caps.
+        // Cost cap is checked at the request boundary so a refusal reaches the caller; agents
+        // with no LLM command cannot accrue spend and are skipped. See ADR-0007.
         if (agent.commands.any { it is Command.LlmCommand }) {
             costMeter.checkCaps(agent.name)
         }
-        // Frequency bound, after the spend bound: both are pre-flight refusals at
-        // the request boundary, and a caller over its cost cap should hear about
-        // that first — it is the more consequential of the two.
         if (withCooldown) cooldownGate.check(agent)
     }
 
@@ -238,24 +182,14 @@ internal class AgentRunStarter(
             .put(SpanAttributes.REQUEST_SOURCE, source)
             .apply { parentProcessId?.let { put(SpanAttributes.PARENT_PROCESS_ID, it.toLong()) } }
             .apply { rootProcessId?.let { put(SpanAttributes.ROOT_PROCESS_ID, it.toLong()) } }
-            // Why this start did not wait at the maintenance gate: a boolean only, never a
-            // parent's inputs. True only for a start admitted while the mode was on; false for
-            // every parked start and every start that ran with the mode off.
+            // Boolean only, never a parent's inputs: true only for a start admitted while the mode was on.
             .put("maintenance.bypassed", admitted)
             .putAll(extraAttributes)
             .build()
 }
 
-/**
- * [information_disclosure / CWE-200] The flow-root id a write path may carry:
- * [candidate] only when the root row exists and [principal] can see it under
- * the read union (ADR-0037). Otherwise the id would reach the caller through
- * the new row, its `HMR_ROOT_PROCESS_ID` env and the `root.process.id` span
- * attribute — the disclosure the status responses already deny. A missing root
- * row fails closed (null). Shared by the routes' caller-attributed writes
- * (external parent header, retry, resume) and the fire paths' origin
- * derivation. §12.
- */
+// Flow-root id a write path may carry: [candidate] only when the root row exists and [principal]
+// can see it under the read union (ADR-0037); a missing root fails closed (null). §12.
 internal suspend fun ProcessManager.visibleRootProcessId(
     principal: String?,
     authorizer: Authorizer,
@@ -267,16 +201,8 @@ internal suspend fun ProcessManager.visibleRootProcessId(
             ?.id
     }
 
-/**
- * The flow's first run as seen from a run whose parent is [originProcessId]:
- * the origin's own root when it has one, else the origin itself. Null when the
- * origin row is unreadable — the child then reads as a root rather than being
- * linked to a guessed id. [principal] is the owner the new run will be
- * attributed to; a derived root that owner cannot see is dropped, never
- * replaced by the origin's id, so a foreign flow-root id reaches no row, env or
- * span. Shared by every internal start path (RunAgent, dispatch, continuation)
- * so they cannot drift. See ADR-0058. §12.
- */
+// The origin's own root when it has one, else the origin itself; a derived root the principal
+// cannot see is dropped, never replaced by the origin's id. See ADR-0058. §12.
 internal suspend fun ProcessManager.visibleOriginRootProcessId(
     originProcessId: Int,
     principal: String?,

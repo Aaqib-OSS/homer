@@ -15,9 +15,8 @@ import kotlin.io.path.writeText
  * commands run: the `homer-ask` shell helper (prepended to `PATH` when the
  * workspace env defines one) and a `.homer/mcp.json` for manual Claude wiring
  * via `HMR_MCP_CONFIG` (only when the MCP server is enabled). Lives under
- * `{projectRoot}/.homer/`, which is deleted together with `workdir/` when the
- * run ends with `cleanAfterFinish` (it is run tooling, not output). See
- * ADR-0019 and AGENT.md "Asking the operator questions".
+ * `{projectRoot}/.homer/`, deleted with the run when `cleanAfterFinish` (it is
+ * run tooling, not output). See ADR-0019, AGENT.md "Asking the operator questions".
  */
 class QuestionsWorkspaceSetup(
     private val mcpEnabled: Boolean,

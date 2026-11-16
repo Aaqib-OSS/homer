@@ -232,15 +232,12 @@ private fun visibleRootIdsTx(
 }
 
 /**
- * Groups [Processes.costUsd] by tag value for `key`. [screenTags] MUST be
- * applied per row before grouping — never in SQL — to honour the CWE-203
- * secret-screen invariant. The candidate query is bounded at [maxRows]
- * (production default [MAX_TAG_SCREENED_ROWS]; overridable only for tests),
- * newest runs first, and [CostByTagResult.truncated] reports whether more
- * candidates existed than fit that bound. See ADR-0062.
- *
- * Rows are read through [Processes.recordReadColumns]: [screenTags] sees tags, inputs and
- * the record-level columns, never `history`/`executions`/`runner_state` (read as empty).
+ * Groups [Processes.costUsd] by tag value for `key`. [screenTags] MUST be applied per row
+ * before grouping — never in SQL — to honour the CWE-203 secret-screen invariant. The
+ * candidate query is bounded at [maxRows] (default [MAX_TAG_SCREENED_ROWS]; overridable
+ * only for tests), newest runs first, and [CostByTagResult.truncated] reports whether more
+ * candidates existed than fit that bound. Rows are read through [Processes.recordReadColumns],
+ * so [screenTags] never sees `history`/`executions`/`runner_state`. See ADR-0062.
  */
 suspend fun ProcessRepository.costByTag(
     key: String,

@@ -10,20 +10,12 @@ import javax.crypto.spec.SecretKeySpec
 import kotlin.math.abs
 
 /**
- * Verifies inbound HMAC body signatures against a map of configured keys.
- * Pure function of (config, headers, body, clock); no Ktor types. The
- * Ktor auth provider reads the body once via `DoubleReceive` and hands it
- * here as a byte array.
- *
- * Iterates keys in declaration order. The first key whose `signatureHeader`
- * is present and whose MAC matches wins. Keys whose timestamp header is
- * missing or stale skip MAC computation (return null), letting the loop
- * fall through to the next key.
- *
- * When a [replayCache] is supplied and a matched key has a `timestampHeader`,
- * a signature already seen within its freshness window is rejected as a replay
- * (ADR-0010). The cache is the one piece of mutable state; verification is otherwise
- * a pure function of (config, headers, body, clock).
+ * Verifies inbound HMAC body signatures against a map of configured keys. A pure function of
+ * (config, headers, body, clock) with no Ktor types; the Ktor auth provider reads the body once via
+ * `DoubleReceive` and hands it here as a byte array. Iterates keys in declaration order: the first
+ * key whose `signatureHeader` is present and whose MAC matches wins, and a missing or stale timestamp
+ * header skips MAC computation (null), letting the loop fall through. With a [replayCache] and a
+ * `timestampHeader`, a signature already seen within its freshness window is a replay (ADR-0010); the cache is the one mutable state.
  */
 class HmacVerifier(
     private val clock: () -> Long = System::currentTimeMillis,

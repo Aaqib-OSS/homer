@@ -38,19 +38,12 @@ import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
 /**
- * Process lifecycle FSM (`CREATED → WORKING → FINISHED/FAILED/KILLED`, plus
- * `UNKNOWN` for runs interrupted by a restart). Durable state lives in SQLite
- * via [ProcessRepository] — SQLite is authoritative, there is no in-memory
- * cache. The only runtime-only piece is the live coroutine [Job], held in
- * [ProcessJobRegistry] and rebuilt empty on boot. See ADR-0020.
- *
- * The read-modify-write atomicity the old `Mutex` provided is now enforced by
- * the repository's `BEGIN IMMEDIATE` transactions (see `DatabaseService`).
- *
- * This class owns the transitions and the events they emit. The record reads, the retention
- * bookkeeping and the event-free run annotations are the repository's as stored, exposed by
- * delegation: [ProcessRecordReads], [ProcessRetentionRecords], [ProcessRunRecords].
- * [ActiveRunIds] is the Kubernetes startup sweep's port onto those reads (ADR-0083).
+ * Process lifecycle FSM (`CREATED → WORKING → FINISHED/FAILED/KILLED`, plus `UNKNOWN` for runs
+ * interrupted by a restart). Durable state lives in SQLite via [ProcessRepository], authoritative with
+ * no in-memory cache; read-modify-write atomicity comes from the repository's `BEGIN IMMEDIATE`
+ * transactions (`DatabaseService`). The only runtime-only piece is the live coroutine [Job] in
+ * [ProcessJobRegistry], rebuilt empty on boot. This class owns the transitions and their events;
+ * the record reads, retention bookkeeping and run annotations are the repository's, exposed by delegation. See ADR-0020.
  */
 class ProcessManager(
     private val repository: ProcessRepository,
@@ -89,15 +82,14 @@ class ProcessManager(
             .epochSeconds
             .toString()
 
-    // In-memory only, keyed by (processId, cmdIndex) — the actual artifact paths an
-    // executor wrote to, for a per-attempt `artifactNameTemplate` (see
-    // ArtifactNameResolver / AGENT.md). Deliberately NOT part of the serializable
-    // ExecutionInfo/ProcessInfo API: it exists purely to let LogTailService's live
-    // console tail follow a command's real file, and it is not durable — a restart
-    // loses it exactly like ProcessJobRegistry, which is fine since there is nothing
-    // left running to tail. Entries live for the process's lifetime (a finished
-    // command's post-hoc tail must still resolve), so they are cleared only in
-    // removeProcess, not on a command or process reaching a terminal status.
+    // In-memory only, keyed by (processId, cmdIndex) — the actual artifact paths an executor
+    // wrote to, for a per-attempt `artifactNameTemplate` (see ArtifactNameResolver / AGENT.md).
+    // Deliberately NOT part of the serializable ExecutionInfo/ProcessInfo API: it exists purely
+    // to let LogTailService's live console tail follow a command's real file, and it is not
+    // durable — a restart loses it exactly like ProcessJobRegistry, fine since nothing is left
+    // running to tail. Entries live for the process's lifetime (a finished command's post-hoc
+    // tail must still resolve), so they are cleared only in removeProcess, not when a command
+    // or process reaches a terminal status.
     private val commandArtifacts = ConcurrentHashMap<Int, ConcurrentHashMap<Int, CommandArtifactPaths>>()
 
     // Settled accountings whose step is not recorded yet, keyed by the pending accounting the
@@ -218,10 +210,9 @@ class ProcessManager(
         expected: Set<ProcessStatus>,
         new: ProcessStatus,
     ): Boolean =
-        // Guards terminal transitions against the race documented in audit #9:
-        // a concurrent killProcess() can move the record to KILLED between the
-        // moment ProcessExecutor finishes process.execute() and the moment it
-        // writes FINISHED. Returning false here preserves KILLED.
+        // Guards terminal transitions: a concurrent killProcess() can move the record to KILLED
+        // between process.execute() finishing and the FINISHED write; returning false here
+        // preserves KILLED (app/CLAUDE.md "Status precedence rules" rule 1).
         transitionStatus(processId, new, guard = expected)
 
     @OptIn(ExperimentalTime::class)
@@ -269,15 +260,12 @@ class ProcessManager(
     }
 
     /**
-     * Commits a step boundary — appends [executionInfo] and sets [nextLabel] as the
-     * current command (or clears it when null) — in ONE repository write transaction,
-     * emitting at most one [ProcessEvent.CurrentCommandChanged] for the boundary. When
-     * the row is gone (concurrent kill/eviction) nothing is written and no event is
-     * emitted; when it exists but has already reached a terminal status the execution is
-     * still recorded but the current command is left cleared, also with no event, so a
-     * boundary landing after a concurrent kill cannot resurrect a running command.
-     * See ADR-0020 and the SQLite rules in `app/CLAUDE.md`
-     * (one logical state change is one write transaction).
+     * Commits a step boundary — appends [executionInfo] and sets [nextLabel] as the current command (or
+     * clears it when null) — in ONE repository write transaction, emitting at most one
+     * [ProcessEvent.CurrentCommandChanged] for the boundary. When the row is gone (concurrent kill or
+     * eviction) nothing is written and no event is emitted; when it exists but has reached a terminal
+     * status the execution is still recorded but the current command is left cleared, also with no event,
+     * so a boundary landing after a concurrent kill cannot resurrect a running command. See ADR-0020 and app/CLAUDE.md SQLite rule 3.
      */
     override suspend fun completeStep(
         processId: Int,

@@ -21,11 +21,9 @@ import java.time.Instant
 
 /**
  * Payload of the HttpOnly session cookie issued by `POST /api/v1/auth/login`.
- *
  * The cookie is HMAC-signed (not encrypted) via `SessionTransportTransformerMessageAuthentication`,
- * so anything in here is readable by the holder — never put a real secret in.
- * `ver` future-proofs format migrations: bump it when the schema changes and the
- * provider can reject old payloads on sight.
+ * so anything in here is readable by the holder — never put a real secret in. `ver` future-proofs
+ * format migrations: bump it when the schema changes and the provider can reject old payloads.
  *
  * See ADR-0011 for the rationale.
  */
@@ -45,16 +43,11 @@ data class HomerSession(
 const val SESSION_PRINCIPAL_PREFIX = "session:"
 
 /**
- * `SessionTransportTransformer` that signs writes with `currentKey` and accepts
- * reads signed with either `currentKey` or `previousKey`. Ktor's built-in MAC
- * transformer is single-key; chaining two of them is composition (sign with A
- * then with B), not multi-key fallback. This wrapper does what zero-downtime
- * rotation actually requires: try each key on read until one verifies.
- *
- * Rotation flow:
- *  1. set `sessionSecretPrevious = <old>`, `sessionSecret = <new>`, deploy
- *  2. wait `sessionTtlMin`, drop `sessionSecretPrevious`
- *
+ * `SessionTransportTransformer` that signs writes with `currentKey` and accepts reads signed
+ * with either `currentKey` or `previousKey` (Ktor's built-in MAC transformer is single-key;
+ * chaining two is composition, not multi-key fallback). Rotation: set
+ * `sessionSecretPrevious = <old>` and `sessionSecret = <new>`, deploy, wait `sessionTtlMin`,
+ * then drop `sessionSecretPrevious`.
  * See ADR-0011.
  */
 internal class MultiKeyMacTransformer(
@@ -99,16 +92,11 @@ fun Application.installPasswordSessions(scheme: AuthConfig.Password) {
 
 /**
  * Register the `auth-session` provider inside the existing `install(Authentication)` block.
- * Shape mirrors the `auth-bearer` provider in AuthWiring.kt: authenticates only,
- * authorization (grants) is enforced at the route. See ADR-0037.
- *
- * Steps:
- * 1. Read `call.sessions.get<HomerSession>()`. Missing or unsigned → 401.
- * 2. Reject if `exp <= now` (cookie expired).
- * 3. Look up `users[session.username]` — absent (e.g. user revoked since login) → 401.
- *
- * Caller pushes `providerName` into the `authNames` list so the route wrapper
- * includes auth-session in `FirstSuccessful`.
+ * Authenticates only; grants are enforced at the route (ADR-0037). Steps: read
+ * `call.sessions.get<HomerSession>()` (missing/unsigned → 401); reject if `exp <= now`;
+ * look up `users[session.username]` — absent (e.g. revoked since login) → 401. The caller
+ * pushes `providerName` into `authNames` so the route wrapper includes auth-session in
+ * `FirstSuccessful`.
  */
 fun AuthenticationConfig.passwordSessionProvider(
     providerName: String,

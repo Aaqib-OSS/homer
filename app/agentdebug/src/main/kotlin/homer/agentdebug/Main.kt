@@ -17,7 +17,6 @@ import homer.agentdebug.commands.ValidateCommand
 
 /**
  * Root Clikt command. Parses --config/--env and delegates to subcommands.
- *
  * Usage:
  *   agentdebug --config server/config.yaml [--env vars.env] list
  *   agentdebug --config server/config.yaml [--env vars.env] validate <agentname>
