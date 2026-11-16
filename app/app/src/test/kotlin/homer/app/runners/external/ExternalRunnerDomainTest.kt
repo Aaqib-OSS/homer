@@ -15,6 +15,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.spyk
 import io.opentelemetry.context.Context
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.TestScope
@@ -455,6 +456,32 @@ class ExternalRunnerDomainTest {
                 "the parked run is failed promptly, not left claimed: ${failure.message}",
             )
             assertFalse(failure.message!!.contains("from-the-domain"), "the failure names no env value")
+        }
+
+    @Test
+    fun `deliverClaim fails the parked run when the delivery itself is cancelled`() =
+        runTest {
+            val d = envDomain()
+            val inst = d.register(RegisterInstanceRequest(name = "host-1", tags = listOf("gpu")))
+            // runCatching: the failure the claim delivers is what this test reads, not a thrown child.
+            val pending = async { runCatching { queue.awaitClaim(params(7), RunnerFilter.Tags(setOf("gpu")), 30.seconds) } }
+            runCurrent()
+            val request = spyk(queue.take(inst))
+            // Cancelling the delivering coroutine between the session opening and the claim being
+            // answered: the completion throws CancellationException with `delivered` still false.
+            every { request.complete(any()) } throws CancellationException("client went away")
+
+            assertFailsWith<CancellationException> { d.deliverClaim(inst, request) }
+
+            val failure = pending.await().exceptionOrNull()
+            assertIs<ExternalRunnerException>(failure)
+            assertTrue(
+                failure.message!!.contains("Runner instance 'host-1' disconnected before the claim completed"),
+                "the parked run is failed promptly, not left claimed: ${failure.message}",
+            )
+            val session = d.sessions().single()
+            assertNotNull(session.closedAt, "the cancelled delivery must still close the opened session")
+            assertEquals(0, inst.inUse)
         }
 
     @Test

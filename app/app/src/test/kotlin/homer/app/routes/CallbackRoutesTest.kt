@@ -14,9 +14,12 @@ import homer.app.fixtures.mountCallbackRoutes
 import homer.app.infra.SecretRedactor
 import homer.app.models.AskQuestionResponse
 import homer.app.models.CreateDispatchGroupResponse
+import homer.app.models.CreateJoinRequest
 import homer.app.models.CreateJoinResponse
+import homer.app.models.CreateRunRequest
 import homer.app.models.CreateRunResponse
 import homer.app.models.ErrorResponse
+import homer.app.models.JoinSubSpec
 import homer.app.models.NewRunRecord
 import homer.app.models.QuestionResponse
 import homer.app.models.QuestionsConfig
@@ -53,6 +56,7 @@ import io.ktor.server.testing.testApplication
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.slot
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -603,11 +607,12 @@ class CallbackRoutesTest {
         testApplication {
             val service = newService()
             val token = runBlocking { service.registerProcess(1, "agent-a") }
+            val request = slot<CreateRunRequest>()
             val deps =
                 mountCallbackRoutes {
                     every { questionsService } returns service
                     coEvery {
-                        continuationService.startWithContinuation(1, match { it.agent == "target" && it.params == mapOf("foo" to "bar") })
+                        continuationService.startWithContinuation(1, capture(request))
                     } returns CreateRunResponse(processId = 99)
                 }
 
@@ -615,12 +620,29 @@ class CallbackRoutesTest {
                 client.post("/api/v1/callback/runs") {
                     header(HttpHeaders.Authorization, "Bearer $token")
                     contentType(ContentType.Application.Json)
-                    setBody("""{"agent":"target","params":{"foo":"bar"}}""")
+                    val body =
+                        """{"agent":"target","params":{"foo":"bar"},"continueAgent":"parent",""" +
+                            """"continueThread":"t1","continueParams":{"decision":"approved"},""" +
+                            """"resultJsonPath":"$.result","ttlSec":600}"""
+                    setBody(body)
                 }
 
             assertEquals(HttpStatusCode.OK, response.status)
             assertEquals(99, apiJson.decodeFromString<CreateRunResponse>(response.bodyAsText()).processId)
-            coVerify { deps.continuationService.startWithContinuation(1, any()) }
+            coVerify(exactly = 1) { deps.continuationService.startWithContinuation(1, any()) }
+            assertEquals(
+                CreateRunRequest(
+                    agent = "target",
+                    params = mapOf("foo" to "bar"),
+                    continueAgent = "parent",
+                    continueThread = "t1",
+                    continueParams = mapOf("decision" to "approved"),
+                    resultJsonPath = "$.result",
+                    ttlSec = 600,
+                ),
+                request.captured,
+                "the route forwards the decoded request to the service",
+            )
         }
 
     @Test
@@ -714,9 +736,10 @@ class CallbackRoutesTest {
         testApplication {
             val service = newService()
             val token = runBlocking { service.registerProcess(1, "agent-a") }
+            val request = slot<CreateJoinRequest>()
             mountCallbackRoutes {
                 every { questionsService } returns service
-                coEvery { continuationService.startJoin(1, any()) } returns
+                coEvery { continuationService.startJoin(1, capture(request)) } returns
                     CreateJoinResponse(processIds = listOf(10, 11), continuationId = 12)
             }
 
@@ -724,13 +747,31 @@ class CallbackRoutesTest {
                 client.post("/api/v1/callback/joins") {
                     header(HttpHeaders.Authorization, "Bearer $token")
                     contentType(ContentType.Application.Json)
-                    setBody("""{"subs":[{"agent":"b","interruptId":"i1"}],"continueAgent":"parent"}""")
+                    val body =
+                        """{"subs":[{"agent":"b","params":{"k":"v"},"resultJsonPath":"$.r","interruptId":"i1"}],""" +
+                            """"continueAgent":"parent","continueThread":"t1",""" +
+                            """"continueParams":{"decision":"approved"},"ttlSec":300}"""
+                    setBody(body)
                 }
 
             assertEquals(HttpStatusCode.OK, response.status)
             assertEquals(
                 CreateJoinResponse(processIds = listOf(10, 11), continuationId = 12),
                 apiJson.decodeFromString<CreateJoinResponse>(response.bodyAsText()),
+            )
+            assertEquals(
+                CreateJoinRequest(
+                    subs =
+                        listOf(
+                            JoinSubSpec(agent = "b", params = mapOf("k" to "v"), resultJsonPath = "$.r", interruptId = "i1"),
+                        ),
+                    continueAgent = "parent",
+                    continueThread = "t1",
+                    continueParams = mapOf("decision" to "approved"),
+                    ttlSec = 300,
+                ),
+                request.captured,
+                "the route forwards the decoded request to the service",
             )
         }
 

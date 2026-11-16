@@ -20,7 +20,8 @@ import java.util.concurrent.ConcurrentHashMap
  * One `!<external>` alias: the token its instances authenticate with, the live
  * instance registry and the heartbeat sweep. Implements [Runner] only for the
  * facets `QueuedRunner` reads (`isRemote`, `runnerEnv`, `sysEnvBackedEnvNames`);
- * sessions are created by the claim route, never by [openSession]. See ADR-0066.
+ * sessions are created by [deliverClaim] when an instance's long-poll takes a
+ * request, never by [openSession]. See ADR-0066.
  */
 class ExternalRunnerDomain(
     override val alias: String,
@@ -37,7 +38,7 @@ class ExternalRunnerDomain(
     private val registerLock = Any()
 
     override suspend fun openSession(params: RunnerSessionParams): RunnerSession =
-        error("External runner '$alias' sessions are created by the claim route, never by openSession")
+        error("External runner '$alias' sessions are created by deliverClaim, never by openSession")
 
     fun register(request: RegisterInstanceRequest): ExternalRunnerInstance {
         val tags =

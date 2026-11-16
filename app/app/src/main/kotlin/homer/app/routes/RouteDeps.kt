@@ -8,7 +8,6 @@ import homer.app.infra.FileOperations
 import homer.app.infra.PasswordVerifier
 import homer.app.infra.TelemetryService
 import homer.app.models.AppConfig
-import homer.app.models.AuthConfig
 import homer.app.runners.RunnerRegistry
 import homer.app.runners.kubernetes.SweepStatus
 import homer.app.services.AgentFilesService
@@ -147,10 +146,9 @@ internal data class QuestionRouteDeps(
     val dispatchService: DispatchService,
 )
 
-/** What `UnsecuredRoutes.kt` needs: the drain flag and the password scheme the session handshake uses. */
+/** What `UnsecuredRoutes.kt` needs: the drain flag and the password verifier the session handshake uses. */
 internal data class UnsecuredDeps(
     val isDraining: AtomicBoolean,
-    val passwordScheme: AuthConfig.Password?,
     val passwordVerifier: PasswordVerifier,
 )
 
@@ -264,6 +262,5 @@ internal fun ApiDeps.questionRouteDeps(): QuestionRouteDeps =
 internal fun ApiDeps.unsecuredDeps(): UnsecuredDeps =
     UnsecuredDeps(
         isDraining = isDraining,
-        passwordScheme = passwordScheme,
         passwordVerifier = passwordVerifier,
     )
