@@ -46,12 +46,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * The wiring root of the API routes: every service and configuration value the route files need,
  * built once in `Application.apiDeps` and handed to the two aggregators (`apiV1Routes`,
- * `apiV1UnsecuredRoutes`) plus the routes mounted next to them.
- *
- * No route file takes this class directly — each builds the small per-file class it needs from
- * [RouteDeps] (`deps.callbackDeps()`, …), so a handler's `with(deps) { ... }` block names only the
- * surface of its own file. Fields stay here, and keep their names, so the builders and the
- * relaxed-mock test fixtures are unaffected.
+ * `apiV1UnsecuredRoutes`) plus the routes mounted next to them. No route file takes this class
+ * directly — each builds the small per-file class it needs from [RouteDeps], so a handler's
+ * `with(deps) { ... }` block names only the surface of its own file. Fields stay here, and keep
+ * their names, so the builders and the relaxed-mock test fixtures are unaffected.
  */
 internal data class ApiDeps(
     val config: AppConfig,
