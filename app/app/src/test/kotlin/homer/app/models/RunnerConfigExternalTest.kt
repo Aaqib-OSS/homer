@@ -284,8 +284,8 @@ class RunnerConfigExternalTest {
 
     @Test
     fun `AppConfig init rejects external env naming the alias`() {
-        // Same rule as the direct case above, but reached through the construction an
-        // operator's config file goes through, and each violation names the alias.
+        // The HMR_ case above reaches this same validator through the same helper; this
+        // loop adds the blank key and pins that each refusal names the alias.
         for (env in listOf("""{ HMR_X: "1" }""", """{ "": "1" }""")) {
             val ex =
                 assertThrows<IllegalArgumentException>(env) {
