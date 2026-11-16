@@ -434,6 +434,21 @@ class AppConfigSerializerTest {
             """.trimIndent()
         val cfg = json.decodeFromString(AppConfig.serializer(), input)
         assertEquals(LangfuseConfig(), cfg.langfuse)
+        assertEquals(listOf("PATH", "HOME", "LANG", "TZ"), cfg.parentEnvAllowlist)
+    }
+
+    @Test
+    fun `AppConfig defaults the parent env allowlist to PATH, HOME, LANG and TZ`() {
+        // The allowlist decides which host variables reach the built-in local
+        // runner's child processes; an empty default would drop PATH and break
+        // every agent. See ADR-0065.
+        val cfg =
+            AppConfig(
+                agentsSearchPath = "/agents",
+                workspaceRootPath = "/workspaces",
+                databasePath = "/var/lib/homer/homer.db",
+            )
+        assertEquals(listOf("PATH", "HOME", "LANG", "TZ"), cfg.parentEnvAllowlist)
     }
 
     // ===== LangGraph state dir resolution =====
@@ -470,6 +485,37 @@ class AppConfigSerializerTest {
         assertEquals("/srv/checkpoints/bob", config.resolveLangGraphStateDir("bob"))
         assertEquals("/srv/checkpoints/_unowned", config.resolveLangGraphStateDir(null))
         assertEquals("/srv/checkpoints/_unowned", config.resolveLangGraphStateDir(""))
+    }
+
+    @Test
+    fun `resolveLangGraphStateDir keeps a 64-character owner verbatim and hashes 65`() {
+        val config = appConfig(databasePath = "/var/lib/homer/homer.db", stateDir = "/srv/checkpoints")
+        val atLimit = "a".repeat(64)
+        assertEquals("/srv/checkpoints/$atLimit", config.resolveLangGraphStateDir(atLimit))
+        val overLimit = config.resolveLangGraphStateDir("a".repeat(65)).removePrefix("/srv/checkpoints/")
+        assertTrue(overLimit.startsWith("_h-"), "a 65-character owner must be hashed: $overLimit")
+    }
+
+    @Test
+    fun `resolveLangGraphStateDir keeps the edge character of every allowed class verbatim`() {
+        val config = appConfig(databasePath = "/var/lib/homer/homer.db", stateDir = "/srv/checkpoints")
+        // 'a'/'z' and '0'/'9' are the ends of the two allowed ranges; '.', '_' and '-'
+        // are the allowed punctuation, accepted mid-name but never leading.
+        for (owner in listOf("a", "z", "0", "9", "-", "a.z", "a_z", "a-z", "az09._-")) {
+            assertEquals("/srv/checkpoints/$owner", config.resolveLangGraphStateDir(owner), "owner '$owner'")
+        }
+    }
+
+    @Test
+    fun `resolveLangGraphStateDir hashes the characters just outside the allowed classes`() {
+        val config = appConfig(databasePath = "/var/lib/homer/homer.db", stateDir = "/srv/checkpoints")
+        // 'A' sits one above 'a'..'z', '`' one below; ':' one above '0'..'9' and '/'
+        // one below; a leading '_' or '.' would spell the reserved or a traversal
+        // segment. None of them may reach the filesystem verbatim.
+        for (owner in listOf("A", "`", "aA", "a`", ":", "/", "a:", "a/", "a{", "a b", "_a", ".a")) {
+            val segment = config.resolveLangGraphStateDir(owner).removePrefix("/srv/checkpoints/")
+            assertTrue(segment.startsWith("_h-"), "owner '$owner' must be hashed: $segment")
+        }
     }
 
     @Test
