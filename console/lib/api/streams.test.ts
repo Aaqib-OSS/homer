@@ -52,6 +52,10 @@ describe('useLlmEventStream', () => {
   beforeEach(() => {
     openStreamMock.mockReset();
     openStreamMock.mockReturnValue(closeMock);
+    // RTL's auto-cleanup unmounts each test's hooks, so without this the close
+    // spy carries stale calls into the next test and an assertion on it passes
+    // vacuously.
+    closeMock.mockClear();
   });
 
   it('appends frames in order and dedupes a replayed frame', async () => {
@@ -740,8 +744,8 @@ describe('boundedStringSize', () => {
     const cap = 10;
     const lengths = [cap - 2, cap - 1, cap, cap + 1];
     const sizes = lengths.map((n) => boundedStringSize('y'.repeat(n), cap));
-    // s.length + 2 below the boundary, cap + 1 from cap - 1 units up — a length
-    // of exactly cap is where the fast path stops adding the quotes.
+    // Plain lengths up to cap - 2 are sized s.length + 2; from length cap - 1 up
+    // — where cap - 1 + 2 already reaches cap + 1 — the result is cap + 1.
     expect(sizes).toEqual([cap, cap + 1, cap + 1, cap + 1]);
     expect(sizes).toEqual(lengths.map((n) => walkedStringSize('y'.repeat(n), cap)));
   });
@@ -752,7 +756,7 @@ describe('boundedStringSize', () => {
       `"${'y'.repeat(cap - 3)}"`, // cap - 1 units, escapes at both ends
       `"${'y'.repeat(cap - 2)}"`, // cap units
       `"${'y'.repeat(cap - 1)}"`, // cap + 1 units
-      `${'y'.repeat(cap - 1)}"`, // escape on the last unit the fast path inspects
+      `${'y'.repeat(cap - 1)}"`, // escape just past the prefix the fast path inspects, so it is missed
       `${'y'.repeat(cap - 2)}"y`, // escape on the last unit that still forces the walk
     ];
     for (const s of cases) {
