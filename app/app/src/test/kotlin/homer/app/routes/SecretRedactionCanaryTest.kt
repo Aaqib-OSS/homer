@@ -3,6 +3,7 @@ package homer.app.routes
 import homer.app.ResetDrainingExtension
 import homer.app.configureServer
 import homer.app.fixtures.eventually
+import homer.app.fixtures.send
 import homer.app.infra.PasswordVerifier
 import homer.app.infra.SecretRedactor
 import homer.app.infra.WorkspaceConfigFactory
@@ -28,14 +29,8 @@ import homer.app.services.ProcessManager
 import homer.app.services.QuestionsService
 import io.ktor.client.request.header
 import io.ktor.client.request.prepareGet
-import io.ktor.client.request.prepareRequest
-import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
-import io.ktor.client.statement.bodyAsText
-import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpMethod
-import io.ktor.http.contentType
 import io.ktor.server.application.Application
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
@@ -44,7 +39,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -66,7 +63,10 @@ import homer.app.models.Workspace as WorkspaceAgentConfig
  *
  * The payloads come from [CANARY_ROUTES], one row per registered route, so a new response type is
  * either covered here or fails `` `every registered route has exactly one canary row and every row
- * names a registered route` `` (app/CLAUDE.md, "Adding a new HTTP endpoint"). Removing a redaction
+ * names a registered route` `` (app/CLAUDE.md, "Adding a new HTTP endpoint"). A new JSON or raw-body
+ * response type is covered by adding its row; a new SSE stream also needs its stop marker in
+ * [sseStop], a driver event in [drive] when it is a broadcast stream, and an entry in the exact
+ * stream list of `no SSE frame of the four streams carries either canary`. Removing a redaction
  * call must fail this test: the two sites it exercises per request are `redactInputParams` (the
  * run's stored inputs, `ResponseMapping.kt`) and `redactStoredParams` (a dispatch's and a
  * continuation's stored params, `DispatchContinuationRoutes.kt`).
@@ -189,7 +189,8 @@ class SecretRedactionCanaryTest {
             assertEquals(setOf("CANARY_IN"), info.secretInputKeys, "the run's secret-input snapshot is taken at start")
             assertTrue(
                 info.tags.any { secretCanary in it },
-                "the stored run must carry the canary in a tag, or the screen has nothing to drop: ${info.tags}",
+                "the stored run must carry the canary in a tag, or the screen has nothing to drop: " +
+                    preview(info.tags.toString()),
             )
 
             // The SYSENV canary reaches no route of its own: its only surface is the run's env, so
@@ -239,9 +240,7 @@ class SecretRedactionCanaryTest {
             )
         assertEquals(200, started.first, "the canary run must start: ${preview(started.second.orEmpty())}")
         val processId =
-            json
-                .parseToJsonElement(started.second!!)
-                .jsonObject
+            parseJsonObject("the canary run's start", started.second!!)
                 .getValue("processId")
                 .jsonPrimitive.int
         awaitStatus(processId, ProcessStatus.FINISHED)
@@ -311,9 +310,7 @@ class SecretRedactionCanaryTest {
             assertEquals(200, code, "the canary run's status must be readable")
             assertEquals(
                 status.name,
-                json
-                    .parseToJsonElement(body!!)
-                    .jsonObject
+                parseJsonObject("the canary run's status", body!!)
                     .getValue("status")
                     .jsonPrimitive.content,
             )
@@ -347,11 +344,24 @@ class SecretRedactionCanaryTest {
 
     /** The run a start response's [body] reports. */
     private fun startedProcessId(body: String): Int =
-        json
-            .parseToJsonElement(body)
-            .jsonObject
+        parseJsonObject("a run-start response", body)
             .getValue("processId")
             .jsonPrimitive.int
+
+    /**
+     * [body] as a JSON object, for a caller that asserts on its fields. A non-JSON answer is
+     * rethrown with the parse error alone: its message embeds the raw body, and a failure message
+     * names the route, never the value ([preview]).
+     */
+    private fun parseJsonObject(
+        route: String,
+        body: String,
+    ): JsonObject =
+        try {
+            json.parseToJsonElement(body).jsonObject
+        } catch (e: SerializationException) {
+            throw AssertionError("$route answered something other than JSON: ${preview(e.message.orEmpty())}")
+        }
 
     /** What is wrong with [row]'s stream, or null when it ended on its own marker and carried no canary. */
     private suspend fun ApplicationTestBuilder.sseProbe(
@@ -444,28 +454,6 @@ class SecretRedactionCanaryTest {
         }
 
     // ---------- requests, samples and config ----------
-
-    /** The status of [method] [target] sent with the admin bearer, and the body. */
-    private suspend fun ApplicationTestBuilder.send(
-        method: String,
-        target: String,
-        bearer: String,
-        body: String? = null,
-        readBody: Boolean = false,
-    ): Pair<Int, String?> =
-        client
-            .prepareRequest(target) {
-                this.method = HttpMethod.parse(if (method == "*") "GET" else method)
-                header(HttpHeaders.Accept, "application/json, text/event-stream")
-                header(HttpHeaders.Authorization, "Bearer $bearer")
-                body?.let {
-                    contentType(ContentType.Application.Json)
-                    setBody(it)
-                }
-            }.execute { response ->
-                val status = response.status.value
-                status to (if (readBody || status != 200) response.bodyAsText() else null)
-            }
 
     /** [template] with every placeholder the canary run fills; an unfilled one is a broken row. */
     private fun fill(
