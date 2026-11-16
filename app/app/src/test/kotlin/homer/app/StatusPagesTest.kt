@@ -61,8 +61,9 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * L2 (ADR-0002): 5xx responses must not leak internal detail (paths, command
- * strings, config) to the client; 4xx messages stay actionable.
+ * 5xx responses must not leak internal detail (paths, command strings, config) to
+ * the client (root CLAUDE.md §12 rule 7); 4xx messages stay actionable, which is
+ * the unified error model's contract at the HTTP boundary (ADR-0002).
  */
 class StatusPagesTest {
     @Test

@@ -10,8 +10,8 @@ if [ "$(id -u)" = "0" ]; then
     # Only chown when the top-level dir is NOT already homer-owned: a normal restart
     # (tree already homer-owned, since homer created it) then skips the recursive
     # chown entirely, collapsing the root window to this ownership check plus the
-    # su-exec drop — no attacker-influenceable recursive op runs as root. See
-    # ADR-0047.
+    # su-exec drop — no attacker-influenceable recursive op runs as root (root
+    # CLAUDE.md §12 rule 2: the workspace tree is agent-writable).
     if [ "$(stat -c '%U' /app/workspace 2>/dev/null)" != "homer" ]; then
         chown -R homer:homer /app/workspace 2>/dev/null || true
     fi

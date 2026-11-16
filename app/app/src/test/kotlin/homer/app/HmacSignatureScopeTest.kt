@@ -21,11 +21,11 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
- * M3/M4 (ADR-0037), re-expressed on grants: an HMAC key whose signature does not
- * bind the request path while its grants reach more than one agent (`role: admin`,
- * a grant whose `agents` contains a `*` pattern, or grants naming two or more
- * distinct exact agents) is replayable across those agents, so it must fail
- * startup rather than run.
+ * An HMAC key whose signature does not bind the request path (ADR-0010 keeps signing
+ * scope per-key config rather than canonical-request signing) while its grants reach
+ * more than one agent (`role: admin`, a grant whose `agents` contains a `*` pattern,
+ * or grants naming two or more distinct exact agents — re-expressed on grants per
+ * ADR-0037) is replayable across those agents, so it must fail startup rather than run.
  */
 class HmacSignatureScopeTest {
     private fun configWith(apiAuth: AuthConfig) =
@@ -287,7 +287,7 @@ class HmacSignatureScopeTest {
         validateSessionSecretStrength(configWith(AuthConfig.Unsecured))
     }
 
-    // ---- validateLangfuseServerUrl (M12) ----
+    // ---- validateLangfuseServerUrl ----
 
     private fun configWithLangfuse(
         url: String,

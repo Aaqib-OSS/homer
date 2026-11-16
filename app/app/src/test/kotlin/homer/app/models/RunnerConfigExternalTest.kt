@@ -263,6 +263,60 @@ class RunnerConfigExternalTest {
     }
 
     @Test
+    fun `AppConfig init rejects external extraUploads naming the alias`() {
+        // Only the duplicate-remote rule is broken, so the refusal can come from
+        // nothing but the extraUploads validator AppConfig's init reaches. ADR-0042.
+        val ex =
+            assertThrows<IllegalArgumentException> {
+                config(
+                    """
+                  workers: !<external>
+                    token: secret-1
+                    extraUploads:
+                      - { local: /a, remote: scripts }
+                      - { local: /b, remote: scripts }
+                    """,
+                )
+            }
+        assertEquals(true, ex.message!!.contains("runner 'workers'"), ex.message)
+        assertEquals(true, ex.message!!.contains("duplicate remote paths"), ex.message)
+    }
+
+    @Test
+    fun `AppConfig init rejects external env naming the alias`() {
+        // The HMR_ case above reaches this same validator through the same helper; this
+        // loop adds the blank key and pins that each refusal names the alias.
+        for (env in listOf("""{ HMR_X: "1" }""", """{ "": "1" }""")) {
+            val ex =
+                assertThrows<IllegalArgumentException>(env) {
+                    config(
+                        """
+                      workers: !<external>
+                        token: secret-1
+                        env: $env
+                        """,
+                    )
+                }
+            assertEquals(true, ex.message!!.contains("runner 'workers'"), ex.message)
+        }
+    }
+
+    @Test
+    fun `AppConfig init rejects external facets naming the alias`() {
+        val ex =
+            assertThrows<IllegalArgumentException> {
+                config(
+                    """
+                  workers: !<external>
+                    token: secret-1
+                    allowedTags: ["bad tag"]
+                    """,
+                )
+            }
+        assertEquals(true, ex.message!!.contains("runner 'workers' allowedTags"), ex.message)
+    }
+
+    @Test
     fun `toString lists extraUploads by remote path only`() {
         val s =
             RunnerConfig

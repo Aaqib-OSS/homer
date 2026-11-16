@@ -11,7 +11,8 @@ export interface AppConfig {
      * Operator allowlist of backend origins the console may target
      * (`CONSOLE_ALLOWED_API_ORIGINS`). Empty = unrestricted (any endpoint can be
      * entered at login). When non-empty, the login endpoint field is restricted
-     * to these and the CSP `connect-src` is pinned to them. See ADR-0047.
+     * to these and the CSP `connect-src` is pinned to them. See
+     * `console/CLAUDE.md` § Content-Security-Policy.
      */
     allowedOrigins: string[];
   };
@@ -32,7 +33,7 @@ export interface AppConfig {
      * Whether the login screen offers bearer (token) mode. Defaults to `false`
      * so the console is cookie-only unless the operator opts in via
      * `CONSOLE_ALLOW_BEARER=true`. Bearer tokens live in `localStorage` and are
-     * exfiltratable by any XSS foothold; cookie mode is `HttpOnly`. See ADR-0047.
+     * exfiltratable by any XSS foothold; cookie mode is `HttpOnly`. See ADR-0011.
      */
     allowBearer: boolean;
     tokenKey: string;

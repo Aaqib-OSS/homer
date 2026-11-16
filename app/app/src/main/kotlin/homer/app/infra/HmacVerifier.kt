@@ -22,7 +22,7 @@ import kotlin.math.abs
  *
  * When a [replayCache] is supplied and a matched key has a `timestampHeader`,
  * a signature already seen within its freshness window is rejected as a replay
- * (M13). The cache is the one piece of mutable state; verification is otherwise
+ * (ADR-0010). The cache is the one piece of mutable state; verification is otherwise
  * a pure function of (config, headers, body, clock).
  */
 class HmacVerifier(
