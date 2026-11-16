@@ -75,9 +75,9 @@ touched:
    runner-protocol endpoints, the MCP JSON-RPC transport (the canary run is driven over HTTP, and
    the run tools the transport fronts are covered by their own tool tests), and the
    LangGraph/debug/cron surfaces the canary agent does not declare.
-4. **Method-mismatch** — the route registers a single method and the probe reaches it with another,
-   so it answers `405` with no body: the `GET`/`DELETE` rows of the POST-only MCP endpoints. No
-   body, no run data.
+4. **Static-405** — every method but the data-carrying one is a registered handler whose only
+   answer is a static `405` error body: the `GET`/`DELETE` rows of the POST-only MCP endpoints
+   respond with a fixed "Method not allowed" error message and no run data.
 
 **The risk this accepts** is the one an exemption always carries: a route that later starts
 serializing run data keeps its exemption and the sweep stays green. The class-2 rows are the ones
