@@ -25,13 +25,13 @@ import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 
 // The read-only queries over many process rows: the paged, filtered list behind `GET /status/all`,
-// the cost-by-tag fold, and the batched id reads. Every one runs on the reader handle (`db.read`).
+// the cost-by-tag fold, and the batched id reads. Every one runs on the reader handle (`read { }`).
 
 /**
  * One page of [listQuery]'s rows. Fails closed on a tag filter without `screenTags` and on a
  * `rootProcessId` without `canSeeRoot` (see [ProcessListQuery]).
  */
-suspend fun ProcessRepository.getAll(listQuery: ProcessListQuery): ProcessListResult {
+suspend fun ProcessRepository.getAllProcesses(listQuery: ProcessListQuery): ProcessListResult {
     requireListGuards(listQuery)
     // AND semantics for repeated ?tag=: a row must carry ALL de-duplicated
     // tags, matched in SQL by carriesAllTags (GROUP BY ... HAVING COUNT = n):
@@ -44,7 +44,7 @@ suspend fun ProcessRepository.getAll(listQuery: ProcessListQuery): ProcessListRe
     val offset = listQuery.offset
     val limit = listQuery.limit
     val canSeeRoot = listQuery.canSeeRoot
-    return db.read {
+    return read {
         // [information_disclosure / CWE-200] An invisible or missing root reads exactly
         // like an empty flow, never like "no filter". §12.
         val rootProcessId = listQuery.rootProcessId
@@ -82,7 +82,7 @@ suspend fun ProcessRepository.getAll(listQuery: ProcessListQuery): ProcessListRe
 }
 
 /**
- * [getAll]'s fail-closed argument checks: a tag-filtered read without a screen cannot honour the
+ * [getAllProcesses]'s fail-closed argument checks: a tag-filtered read without a screen cannot honour the
  * display redaction, so the call never leads to a `?tag=` oracle (ADR-0060); an
  * ungated `?rootProcessId=` lists the visible rows of a hidden flow, an existence oracle for its
  * root (CWE-200, ADR-0058).
@@ -96,7 +96,7 @@ private fun requireListGuards(listQuery: ProcessListQuery) {
     }
 }
 
-/** [getAll]'s column predicates, ANDed onto `TRUE` in this order. */
+/** [getAllProcesses]'s column predicates, ANDed onto `TRUE` in this order. */
 private fun rowFilter(listQuery: ProcessListQuery): Op<Boolean> {
     val filterStatuses = listQuery.filterStatuses
     val agentName = listQuery.agentName
@@ -121,7 +121,7 @@ private fun rowFilter(listQuery: ProcessListQuery): Op<Boolean> {
     return cond
 }
 
-/** [cond] with [getAll]'s tag match and visibility rule ANDed on, in that order. */
+/** [cond] with [getAllProcesses]'s tag match and visibility rule ANDed on, in that order. */
 private fun withAccessFilter(
     cond: Op<Boolean>,
     dedupedTags: List<String>,
@@ -247,7 +247,7 @@ suspend fun ProcessRepository.costByTag(
     screenTags: (ProcessInfo) -> List<String>,
     maxRows: Int = MAX_TAG_SCREENED_ROWS,
 ): CostByTagResult =
-    db.read {
+    read {
         val prefix = "$key:"
         // Range bound instead of `LIKE`: every character TagValidation allows in a
         // key or value sorts strictly between ':' (0x3A) and ';' (0x3B), so this
@@ -324,7 +324,7 @@ private fun hasTagPrefix(
  */
 suspend fun ProcessRepository.createdRunsOf(agentNames: Collection<String>): List<Pair<Int, String>> {
     if (agentNames.isEmpty()) return emptyList()
-    return db.read {
+    return read {
         Processes
             .select(Processes.id, Processes.agentName)
             .where { (Processes.status eq ProcessStatus.CREATED.name) and (Processes.agentName inList agentNames) }
@@ -337,9 +337,9 @@ suspend fun ProcessRepository.createdRunsOf(agentNames: Collection<String>): Lis
  * on the primary key of only the columns a LangGraph `subs` entry shows. An evicted or purged
  * id is simply absent. See ADR-0044.
  */
-suspend fun ProcessRepository.subRunProgress(ids: Collection<Int>): Map<Int, SubRunProgress> {
+suspend fun ProcessRepository.getSubRunProgress(ids: Collection<Int>): Map<Int, SubRunProgress> {
     if (ids.isEmpty()) return emptyMap()
-    return db.read {
+    return read {
         val byId = mutableMapOf<Int, SubRunProgress>()
         for (chunk in ids.distinct().chunked(SQLITE_PARAM_CHUNK)) {
             Processes
@@ -360,7 +360,7 @@ suspend fun ProcessRepository.subRunProgress(ids: Collection<Int>): Map<Int, Sub
 }
 
 suspend fun ProcessRepository.activeProcessIds(): Set<Int> =
-    db.read {
+    read {
         Processes
             .select(Processes.id)
             .where { Processes.status inList ACTIVE_STATUS_NAMES }

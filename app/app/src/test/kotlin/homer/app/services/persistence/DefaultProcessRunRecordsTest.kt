@@ -32,7 +32,7 @@ class DefaultProcessRunRecordsTest {
             records.setRunnerState(id) { RunnerState("local", podPhase = PodPhase.READY) }
             records.addCost(id, 0.25, CostSource.SESSION)
 
-            val info = repository.getInfo(id)
+            val info = repository.getProcessInfo(id)
             assertEquals("0af7651916cd43dd8448eb211c80319c", info?.traceId)
             assertEquals(Path.of("/ws/1/artifacts"), info?.artifactsDir)
             assertEquals(PodPhase.READY, info?.runner?.podPhase)
@@ -47,7 +47,7 @@ class DefaultProcessRunRecordsTest {
 
             records.addCost(id, 0.0, CostSource.SESSION)
 
-            assertEquals(CostSource.CLI.wire, repository.getInfo(id)?.costSource)
+            assertEquals(CostSource.CLI.wire, repository.getProcessInfo(id)?.costSource)
         }
 
     @Test
@@ -69,7 +69,7 @@ class DefaultProcessRunRecordsTest {
 
             assertTrue(records.setFailureReason(id, "Lock skip (SKIP_CURRENT)", 999))
 
-            val info = repository.getInfo(id)
+            val info = repository.getProcessInfo(id)
             assertEquals("Lock skip (SKIP_CURRENT)", info?.failureReason)
             assertEquals(999, info?.failureReasonRunId)
         }
@@ -82,8 +82,8 @@ class DefaultProcessRunRecordsTest {
 
             records.setStop(id, stop)
 
-            assertEquals(stop, repository.getInfo(id)?.stop)
+            assertEquals(stop, repository.getProcessInfo(id)?.stop)
             // A run nobody stopped reads as not stopped, not as a stop with empty fields.
-            assertNull(repository.getInfo(repository.obtainProcessId(NewRunRecord("b"), 100).processId)?.stop)
+            assertNull(repository.getProcessInfo(repository.obtainProcessId(NewRunRecord("b"), 100).processId)?.stop)
         }
 }

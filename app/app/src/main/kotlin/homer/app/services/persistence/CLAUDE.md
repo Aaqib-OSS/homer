@@ -56,7 +56,12 @@ See ADR-0020.
   subject filter they share), `ProcessRetention.kt` (purge times, both sweeps,
   the shared-dir guard, record purge, eviction), `ProcessStepRecords.kt` (step
   boundaries, runner state, cost), `ProcessRunTags.kt` (run-time tags) — over
-  the row mapping and column codecs in `ProcessRows.kt`. The part of `ProcessManager`'s API that emits no
+  the row mapping and column codecs in `ProcessRows.kt`. Those extensions reach the database only
+  through `ProcessRepository.query { }` / `read { }`, the class's pass-throughs to
+  `DatabaseService`: `db` is private, so the write handle cannot be opened outside
+  `ProcessRepository.kt`. An operation carries one name across the layers — the extension, the
+  repository member and the port method that exposes it are named the same, so a search for one
+  finds every caller. The part of `ProcessManager`'s API that emits no
   event is these records as stored, exposed by interface delegation from here:
   `ProcessRecordReads`, `ProcessRetentionRecords`, `ProcessRunRecords`.
   `DispatchRepository` owns the `dispatches` table
@@ -185,7 +190,7 @@ none (v1, v9, v11, v28), the table's phrase is all there is.
   checks that the step's raw SQL and the `Tables.kt` declaration define each index
   identically, and pins every planned shape (`v24LookupShapes`) at 150 000 rows
   with and without `sqlite_stat1`. An `OR` stays indexable only while both sides
-  are, so one unindexed column in `getAll`'s predicate turns its `COUNT(*)` back
+  are, so one unindexed column in `getAllProcesses`'s predicate turns its `COUNT(*)` back
   into a scan: a new list filter gets its index and its pinned plan in the same
   change (ADR-0020).
 - **A settled set is an `IN` list of the remaining statuses, never `NOT IN`**, so

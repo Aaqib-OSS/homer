@@ -30,7 +30,7 @@ suspend fun ProcessRepository.setPurgeAt(
     recordPurgeAt: Long = purgeAt,
     retainArtifacts: List<String> = emptyList(),
 ) {
-    db.query {
+    query {
         Processes.update({ Processes.id eq processId }) {
             it[Processes.purgeAt] = purgeAt
             it[Processes.recordPurgeAt] = recordPurgeAt
@@ -51,7 +51,7 @@ suspend fun ProcessRepository.setPurgeAt(
  * kept `artifacts_dir` set because files were retained — see [markWorkspacePurged].
  * See ADR-0053.
  */
-suspend fun ProcessRepository.getWorkspacePurgeable(
+suspend fun ProcessRepository.getWorkspacePurgeableProcesses(
     statuses: Set<ProcessStatus>,
     nowSec: Long,
 ): List<ProcessInfo> =
@@ -72,7 +72,7 @@ suspend fun ProcessRepository.getWorkspacePurgeable(
  * to keep resolving through the artifact routes (retained case, ADR-0053), with
  * nothing left pointing at either.
  */
-suspend fun ProcessRepository.getRecordPurgeable(
+suspend fun ProcessRepository.getRecordPurgeableProcesses(
     statuses: Set<ProcessStatus>,
     nowSec: Long,
 ): List<ProcessInfo> =
@@ -92,7 +92,7 @@ private suspend fun ProcessRepository.purgeable(
     statuses: Set<ProcessStatus>,
     due: () -> Op<Boolean>,
 ): List<ProcessInfo> =
-    db.read {
+    read {
         Processes
             .select(Processes.recordReadColumns)
             .where { (Processes.status inList statuses.map { it.name }) and Processes.purgeAt.isNotNull() and due() }
@@ -110,7 +110,7 @@ suspend fun ProcessRepository.clearArtifactsDir(
     processId: Int,
     retainedTruncated: Boolean? = null,
 ) {
-    db.query {
+    query {
         Processes.update({ Processes.id eq processId }) {
             it[artifactsDir] = null
             if (retainedTruncated != null) {
@@ -129,7 +129,7 @@ suspend fun ProcessRepository.markWorkspacePurged(
     processId: Int,
     retainedTruncated: Boolean,
 ) {
-    db.query {
+    query {
         Processes.update({ Processes.id eq processId }) {
             it[workspacePurgedAt] = System.currentTimeMillis() / 1000
             it[Processes.retainedTruncated] = retainedTruncated
@@ -149,7 +149,7 @@ suspend fun ProcessRepository.isArtifactsDirShared(
     excludeProcessId: Int,
     activeOnly: Boolean = false,
 ): Boolean =
-    db.read {
+    read {
         Processes
             .select(Processes.id)
             .where {
@@ -160,13 +160,13 @@ suspend fun ProcessRepository.isArtifactsDirShared(
     }
 
 /** The cleanup guard's liveness predicate — [isArtifactsDirShared] restricted to live siblings. */
-suspend fun ProcessRepository.isArtifactsDirSharedWithActiveRun(
+suspend fun ProcessRepository.isWorkspaceSharedWithActiveRun(
     artifactsDir: String,
     excludeProcessId: Int,
 ): Boolean = isArtifactsDirShared(artifactsDir, excludeProcessId, activeOnly = true)
 
 suspend fun ProcessRepository.remove(processId: Int) {
-    db.query { deleteProcessRowsTx(processId) }
+    query { deleteProcessRowsTx(processId) }
 }
 
 /**

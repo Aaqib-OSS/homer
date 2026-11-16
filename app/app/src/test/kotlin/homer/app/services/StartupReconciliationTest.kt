@@ -94,7 +94,7 @@ class StartupReconciliationTest {
 
             h.reconciliation.reconcile()
 
-            assertEquals(ProcessStatus.UNKNOWN, h.processRepository.getStatus(interrupted))
+            assertEquals(ProcessStatus.UNKNOWN, h.processRepository.getProcessStatus(interrupted))
             assertEquals(Triple(999L + day, 999L + 7 * day, "[\"decision.json\"]"), h.purgeColumns(interrupted))
         }
 
@@ -147,10 +147,10 @@ class StartupReconciliationTest {
 
             h.reconciliation.reconcile()
 
-            assertEquals(ProcessStatus.UNKNOWN, h.processRepository.getStatus(working))
-            assertEquals(ProcessStatus.FINISHED, h.processRepository.getStatus(finished))
+            assertEquals(ProcessStatus.UNKNOWN, h.processRepository.getProcessStatus(working))
+            assertEquals(ProcessStatus.FINISHED, h.processRepository.getProcessStatus(finished))
             assertEquals(QuestionStatus.EXPIRED, h.questionsService.get(question.id)?.status)
-            assertEquals(999L to ProcessStatus.UNKNOWN, h.processRepository.getHistory(working).last())
+            assertEquals(999L to ProcessStatus.UNKNOWN, h.processRepository.getProcessHistory(working).last())
         }
 
     @Test
@@ -212,7 +212,7 @@ class StartupReconciliationTest {
 
             h.reconciliation.reconcile()
 
-            assertEquals(ProcessStatus.FINISHED, h.processRepository.getStatus(finished))
+            assertEquals(ProcessStatus.FINISHED, h.processRepository.getProcessStatus(finished))
         }
 
     @Test

@@ -86,12 +86,12 @@ internal class DefaultProcessRetentionRecords(
     override suspend fun getWorkspacePurgeableProcesses(
         statuses: Set<ProcessStatus>,
         nowSec: Long,
-    ): List<ProcessInfo> = repository.getWorkspacePurgeable(statuses, nowSec)
+    ): List<ProcessInfo> = repository.getWorkspacePurgeableProcesses(statuses, nowSec)
 
     override suspend fun getRecordPurgeableProcesses(
         statuses: Set<ProcessStatus>,
         nowSec: Long,
-    ): List<ProcessInfo> = repository.getRecordPurgeable(statuses, nowSec)
+    ): List<ProcessInfo> = repository.getRecordPurgeableProcesses(statuses, nowSec)
 
     override suspend fun clearArtifactsDir(
         processId: Int,
@@ -108,5 +108,5 @@ internal class DefaultProcessRetentionRecords(
     override suspend fun isWorkspaceSharedWithActiveRun(
         artifactsDir: Path,
         excludeProcessId: Int,
-    ): Boolean = repository.isArtifactsDirSharedWithActiveRun(artifactsDir.toString(), excludeProcessId)
+    ): Boolean = repository.isWorkspaceSharedWithActiveRun(artifactsDir.toString(), excludeProcessId)
 }
