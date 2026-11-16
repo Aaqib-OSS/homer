@@ -23,11 +23,13 @@ import kotlinx.serialization.json.putJsonArray
 
 /**
  * The DTOs console/types/homer.ts mirrors, for the `dto-contract` check (ADR-0082). Only the roots are
- * listed; every class reachable from one is exported too. A class the console mirrors must be reachable
- * from here — tools/quality/dto-contract.mjs reports a TS type with no exported counterpart.
+ * listed; every class reachable from one is exported too. Every `@Serializable` type a route responds
+ * with must be a root here or listed in [routeBodiesNotMirrored] — `DtoContractRootsTest` fails on one
+ * that is neither — and a class the console mirrors must be reachable from a root, or
+ * tools/quality/dto-contract.mjs reports a TS type with no exported counterpart.
  */
 internal object DtoContract {
-    /** Bodies the backend sends: the console's `homerApi` responses and the `llm.event` SSE payload. */
+    /** Bodies the backend sends: the console's `homerApi` responses and every SSE frame payload. */
     val responses: List<KSerializer<*>> =
         listOf(
             ProcessListResponse.serializer(),
@@ -58,6 +60,15 @@ internal object DtoContract {
             SchemaErrorResponse.serializer(),
             LoginResponse.serializer(),
             MeResponse.serializer(),
+            ArtifactListingResponse.serializer(),
+            ErrorResponse.serializer(),
+            ProcessStatusFrame.serializer(),
+            ProcessCmdFrame.serializer(),
+            QuestionAskedFrame.serializer(),
+            QuestionFrame.serializer(),
+            RunMessageFrame.serializer(),
+            LogChunkFrame.serializer(),
+            LlmStreamFrame.serializer(),
             LlmEvent.serializer(),
         )
 
@@ -67,6 +78,28 @@ internal object DtoContract {
             DebugAgentRequest.serializer(),
             LoginRequest.serializer(),
             SendRunMessageRequest.serializer(),
+            CreateAgentRequest.serializer(),
+            AgentFileWriteRequest.serializer(),
+        )
+
+    /**
+     * `@Serializable` bodies a route in `routes/` responds with that the console has no mirror of, and
+     * why. Each is a deliberate hole in the contract: the caller is an agent-side helper, an external
+     * runner or an operator probe, so console/types/homer.ts never reads it.
+     */
+    val routeBodiesNotMirrored: Map<String, String> =
+        mapOf(
+            "AskQuestionResponse" to "callback body: POST /api/v1/callback/questions, read by homer-ask",
+            "CreateDispatchGroupResponse" to "callback body: POST /api/v1/callback/dispatch-groups",
+            "CreateDispatchResponse" to "callback body: POST /api/v1/callback/dispatches",
+            "CreateJoinResponse" to "callback body: POST /api/v1/callback/joins",
+            "CreateRunResponse" to "callback body: POST /api/v1/callback/runs",
+            "DeclareTagResponse" to "callback body: POST /api/v1/callback/tags",
+            "DispatchListResponse" to "GET /dispatches page: the console only cancels a dispatch by id",
+            "LivenessResponse" to "ops probe GET /api/v1/livez, not a console response",
+            "ReadinessResponse" to "ops probe GET /api/v1/readyz, not a console response",
+            "TakeRunMessagesResponse" to "callback body: POST /api/v1/callback/messages/take",
+            "WhoamiResponse" to "callback body: GET /api/v1/callback/whoami",
         )
 
     /**

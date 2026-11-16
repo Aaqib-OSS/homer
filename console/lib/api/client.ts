@@ -17,7 +17,12 @@ import type {
   AgentReloadResult,
   AgentFileListResponse,
   AgentFileContentResponse,
+  AgentFileWriteRequest,
   AgentFileWriteResponse,
+  ArtifactContent,
+  ArtifactDownload,
+  ArtifactListing,
+  CreateAgentRequest,
   CreateAgentResponse,
   DebugAgentRequest,
   LoginRequest,
@@ -71,18 +76,6 @@ export function agentExecutionPath(
   });
   const queryString = qs.toString();
   return `/api/v1/agent/${encodeURIComponent(agentName)}${queryString ? `?${queryString}` : ''}`;
-}
-
-export interface ArtifactEntry {
-  path: string;
-  size: number;
-  modified: number;
-}
-
-export interface ArtifactListing {
-  processId: number;
-  artifactsDir: string;
-  files: ArtifactEntry[];
 }
 
 /**
@@ -307,8 +300,8 @@ class HomerApiClient {
     });
   }
 
-  async retryProcess(id: number): Promise<{ processId: number }> {
-    return this.request<{ processId: number }>(
+  async retryProcess(id: number): Promise<AgentExecutionResponse> {
+    return this.request<AgentExecutionResponse>(
       `/api/v1/processes/${id}/retry`,
       { method: 'POST' },
     );
@@ -330,8 +323,8 @@ class HomerApiClient {
     return this.request<LangGraphRunStatus>(`/api/v1/processes/${id}/langgraph${qs}`);
   }
 
-  async resumeProcess(id: number): Promise<{ processId: number }> {
-    return this.request<{ processId: number }>(
+  async resumeProcess(id: number): Promise<AgentExecutionResponse> {
+    return this.request<AgentExecutionResponse>(
       `/api/v1/processes/${id}/resume`,
       { method: 'POST' },
     );
@@ -429,12 +422,7 @@ class HomerApiClient {
     return this.request<ArtifactListing>(`/api/v1/artifacts/list?${params.toString()}`);
   }
 
-  async downloadArtifact(processId: number, artifactPath: string): Promise<{
-    blob: Blob;
-    filename: string;
-    isComplete: boolean;
-    processStatus: string;
-  }> {
+  async downloadArtifact(processId: number, artifactPath: string): Promise<ArtifactDownload> {
     const params = new URLSearchParams({
       processId: String(processId),
       path: artifactPath,
@@ -473,7 +461,7 @@ class HomerApiClient {
       agentFilePath(agentName, path),
       {
         method: 'PUT',
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content } satisfies AgentFileWriteRequest),
       },
     );
   }
@@ -488,7 +476,7 @@ class HomerApiClient {
   async createAgent(name: string): Promise<CreateAgentResponse> {
     return this.request<CreateAgentResponse>('/api/v1/agents', {
       method: 'POST',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name } satisfies CreateAgentRequest),
     });
   }
 
@@ -524,12 +512,7 @@ class HomerApiClient {
     return this.request<MeResponse>('/api/v1/auth/me');
   }
 
-  async fetchArtifactContent(processId: number, artifactPath: string): Promise<{
-    content: string;
-    isComplete: boolean;
-    processStatus: string;
-    filename: string;
-  }> {
+  async fetchArtifactContent(processId: number, artifactPath: string): Promise<ArtifactContent> {
     const params = new URLSearchParams({
       processId: String(processId),
       path: artifactPath,

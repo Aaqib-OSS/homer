@@ -3,8 +3,14 @@ package homer.app.routes
 import homer.app.callerKey
 import homer.app.exceptions.BodylessBadRequestException
 import homer.app.infra.SseConnectionLimiter
-import homer.app.models.LlmEvent
 import homer.app.models.LlmEventJson
+import homer.app.models.LlmStreamFrame
+import homer.app.models.LogChunkFrame
+import homer.app.models.ProcessCmdFrame
+import homer.app.models.ProcessStatusFrame
+import homer.app.models.QuestionAskedFrame
+import homer.app.models.QuestionFrame
+import homer.app.models.RunMessageFrame
 import homer.app.services.Authorizer
 import homer.app.services.LlmEventStreamService
 import homer.app.services.LlmStreamEvent
@@ -32,7 +38,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.SerializationStrategy
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -212,6 +218,15 @@ internal data class SseFrame(
     val id: String? = null,
 )
 
+/**
+ * The `data:` JSON of one frame payload. [LlmEventJson] is compact and writes explicit nulls, so the
+ * bytes match the `buildJsonObject` form this replaced — a nullable field is `null`, never absent.
+ */
+private fun <T> frameData(
+    serializer: SerializationStrategy<T>,
+    payload: T,
+): String = LlmEventJson.encodeToString(serializer, payload)
+
 /** The process a `/stream/processes` [event] is about; null for an event that stream does not carry. */
 internal fun streamedProcessId(event: ProcessEvent): Int? =
     when (event) {
@@ -229,53 +244,35 @@ internal fun processEventFrame(event: ProcessEvent): SseFrame? =
         is ProcessEvent.StatusChanged -> {
             SseFrame(
                 PROCESS_STATUS_SSE_EVENT,
-                buildJsonObject {
-                    put("processId", JsonPrimitive(event.processId))
-                    put("status", JsonPrimitive(event.status.name))
-                    put("agentName", JsonPrimitive(event.agentName))
-                }.toString(),
+                frameData(ProcessStatusFrame.serializer(), ProcessStatusFrame(event.processId, event.status.name, event.agentName)),
             )
         }
 
         is ProcessEvent.CurrentCommandChanged -> {
             SseFrame(
                 "process.cmd",
-                buildJsonObject {
-                    put("processId", JsonPrimitive(event.processId))
-                    put("label", event.label?.let(::JsonPrimitive) ?: JsonNull)
-                    put("startedAt", event.startedAt?.let(::JsonPrimitive) ?: JsonNull)
-                }.toString(),
+                frameData(ProcessCmdFrame.serializer(), ProcessCmdFrame(event.processId, event.label, event.startedAt)),
             )
         }
 
         is ProcessEvent.QuestionAsked -> {
             SseFrame(
                 "question.asked",
-                buildJsonObject {
-                    put("processId", JsonPrimitive(event.processId))
-                    put("questionId", JsonPrimitive(event.questionId))
-                    put("agentName", JsonPrimitive(event.agentName))
-                }.toString(),
+                frameData(QuestionAskedFrame.serializer(), QuestionAskedFrame(event.processId, event.questionId, event.agentName)),
             )
         }
 
         is ProcessEvent.QuestionAnswered -> {
             SseFrame(
                 "question.answered",
-                buildJsonObject {
-                    put("processId", JsonPrimitive(event.processId))
-                    put("questionId", JsonPrimitive(event.questionId))
-                }.toString(),
+                frameData(QuestionFrame.serializer(), QuestionFrame(event.processId, event.questionId)),
             )
         }
 
         is ProcessEvent.QuestionExpired -> {
             SseFrame(
                 "question.expired",
-                buildJsonObject {
-                    put("processId", JsonPrimitive(event.processId))
-                    put("questionId", JsonPrimitive(event.questionId))
-                }.toString(),
+                frameData(QuestionFrame.serializer(), QuestionFrame(event.processId, event.questionId)),
             )
         }
 
@@ -290,11 +287,7 @@ private class MessageEvent(
     val processId: Int,
     val messageId: String,
 ) {
-    fun payload(): String =
-        buildJsonObject {
-            put("processId", JsonPrimitive(processId))
-            put("messageId", JsonPrimitive(messageId))
-        }.toString()
+    fun payload(): String = frameData(RunMessageFrame.serializer(), RunMessageFrame(processId, messageId))
 }
 
 private fun messageEvent(event: ProcessEvent): MessageEvent? =
@@ -319,10 +312,7 @@ internal fun logEventFrame(event: LogTailService.LogEvent): SseFrame =
         is LogTailService.LogEvent.Chunk -> {
             SseFrame(
                 name = "log.chunk",
-                data =
-                    buildJsonObject {
-                        put("content", JsonPrimitive(event.content))
-                    }.toString(),
+                data = frameData(LogChunkFrame.serializer(), LogChunkFrame(event.content)),
                 id = event.offset.toString(),
             )
         }
@@ -352,12 +342,15 @@ internal fun llmEventFrame(
         is LlmStreamEvent.Event -> {
             SseFrame(
                 "llm.event",
-                buildJsonObject {
-                    put("processId", JsonPrimitive(processId))
-                    put("cmdIndex", JsonPrimitive(event.cmdIndex))
-                    put("attemptIndex", JsonPrimitive(event.attemptIndex))
-                    put("event", LlmEventJson.encodeToJsonElement(LlmEvent.serializer(), event.event))
-                }.toString(),
+                frameData(
+                    LlmStreamFrame.serializer(),
+                    LlmStreamFrame(
+                        processId = processId,
+                        cmdIndex = event.cmdIndex,
+                        attemptIndex = event.attemptIndex,
+                        event = event.event,
+                    ),
+                ),
                 id = StreamCursor(event.cmdIndex, event.attemptIndex, event.lineOffset, event.eventIndex).id,
             )
         }

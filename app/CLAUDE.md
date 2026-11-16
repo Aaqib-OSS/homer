@@ -281,6 +281,8 @@ The layering rule reads a file's layer from the diagram row naming a type the fi
 
 `DtoContractTest` (in `:app:test`) writes the serial shape of every DTO the console mirrors in `console/types/homer.ts` to `app/app/build/reports/dto-contract/backend-dtos.json`; the `dto-contract` check compares it with the TS mirror (ADR-0082, [`console/CLAUDE.md`](../console/CLAUDE.md) § Types & backend coupling). The roots are listed in `DtoContract.kt` next to it, and everything reachable from them is exported. A new response DTO the console reads goes into that list, or the check reports its TS mirror as having no backend DTO. A DTO's simple name is its key: two exported classes with one name fail the test.
 
+Every `@Serializable` type a route in `routes/` responds with is a root, or reachable from one, or listed in `DtoContract.routeBodiesNotMirrored` with the reason the console never reads it — `DtoContractRootsTest` fails on one that is none of the three, and on an exemption that names no class. A new SSE frame payload is a `@Serializable` class in `models/` (`StreamFrames.kt`) and a root of its own: the check then compares it with its TS mirror like any other body.
+
 ## Gotchas
 
 - **A test that reads a repo file the test task does not already take as an input — outside `:app`, or inside it but not compiled (a `.md` next to the sources) — must declare it in `guardedRepoFiles`** in `app/app/build.gradle.kts` — otherwise the build cache replays a pass when only that file changes.

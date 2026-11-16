@@ -339,6 +339,21 @@ export interface SchemaErrorResponse {
   errors: string[];
 }
 
+export interface CreateAgentRequest {
+  name: string;
+}
+
+export interface AgentFileWriteRequest {
+  content: string;
+}
+
+// The body of every non-2xx JSON response (ADR-0002). `err` is the backend's
+// coarse code, `msg` the sentence the console surfaces.
+export interface ErrorResponse {
+  err: number;
+  msg: string;
+}
+
 export interface DebugAgentRequest {
   commandIndex: number;
   env?: Record<string, string>;
@@ -428,6 +443,37 @@ export interface ProcessStatusResponse {
 export interface HeartbeatResponse {
   status: string;
   version?: string;
+}
+
+// Artifact listing (GET /api/v1/processes/{id}/artifacts). `truncated` marks a
+// capped listing: `files` then omits some of the directory's entries.
+export interface ArtifactEntry {
+  path: string;
+  size: number;
+  modified: number;
+}
+
+export interface ArtifactListing {
+  processId: number;
+  artifactsDir: string;
+  files: ArtifactEntry[];
+  truncated: boolean;
+}
+
+// Console-built views of the artifact endpoints: the client assembles these from
+// a response body plus its headers, so no backend DTO mirrors them.
+export interface ArtifactDownload {
+  blob: Blob;
+  filename: string;
+  isComplete: boolean;
+  processStatus: string;
+}
+
+export interface ArtifactContent {
+  content: string;
+  isComplete: boolean;
+  processStatus: string;
+  filename: string;
 }
 
 // Runner Summary (health endpoint)
@@ -611,6 +657,24 @@ export interface MeResponse {
   role: Role;
   grants: Grant[];
 }
+
+// ── SSE frame payloads ──────────────────────────────────────────────
+// The `data:` object of each frame the backend streams, mirrored from
+// app/src/main/kotlin/homer/app/models/StreamFrames.kt. A frame's `id:` (a log
+// offset, an LLM stream cursor) is part of the frame, not of the payload.
+// `agent.reload`, `log.end` and `llm.end` carry no payload; the `llm.event`
+// payload is `LlmStreamFrame` below.
+
+export interface ProcessStatusFrame { processId: number; status: ProcessStatus; agentName: string }
+/** The command that started (`startedAt`); both null when nothing runs now. */
+export interface ProcessCmdFrame { processId: number; label: string | null; startedAt: number | null }
+export interface QuestionAskedFrame { processId: number; questionId: string; agentName: string }
+/** `question.answered` and `question.expired`. */
+export interface QuestionFrame { processId: number; questionId: string }
+/** `message.queued`, `message.delivered` and `message.undelivered`. */
+export interface RunMessageFrame { processId: number; messageId: string }
+/** `log.chunk`: the bytes since the previous chunk; the end offset rides the frame's `id:`. */
+export interface LogChunkFrame { content: string }
 
 // ── Canonical LLM events ────────────────────────────────────────────
 // Mirror of app/src/main/kotlin/homer/app/models/LlmEvent.kt, streamed

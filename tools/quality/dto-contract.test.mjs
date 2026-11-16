@@ -169,6 +169,67 @@ test('the shipped tables name each TS type at most once', () => {
   assert.deepEqual(overlap, []);
 });
 
+test('no shipped table exempts a type the backend now mirrors', () => {
+  // A CONSOLE_ONLY key naming a Kotlin DTO skips that type's comparison silently.
+  // LlmStreamFrame was exactly that entry: the console mirrored the `llm.event`
+  // payload while the backend built it by hand, and StreamFrames.kt exports it now.
+  const kotlinNames = new Set(Object.values(RENAMES));
+  const exempted = Object.keys(CONSOLE_ONLY).filter((name) => kotlinNames.has(name) || name.endsWith('Frame'));
+  assert.deepEqual(exempted, []);
+});
+
+test('the artifact listing mirror is compared field for field through RENAMES', () => {
+  const result = compare(
+    backend({
+      ArtifactEntry: response([kField('path', S), kField('size', N), kField('modified', N)]),
+      ArtifactListingResponse: response([
+        kField('processId', N),
+        kField('artifactsDir', S),
+        kField('files', { kind: 'list', of: { kind: 'class', class: 'ArtifactEntry' } }),
+        kField('capped', { kind: 'boolean' }),
+      ]),
+    }),
+    consoleOf({
+      ArtifactEntry: { line: 1, kind: 'object', fields: [tField('path', S, 2), tField('size', N, 3), tField('modified', N, 4)] },
+      ArtifactListing: {
+        line: 5,
+        kind: 'object',
+        fields: [
+          tField('processId', N, 6),
+          tField('artifactsDir', S, 7),
+          tField('files', { kind: 'list', of: { kind: 'ref', name: 'ArtifactEntry' } }, 8),
+          tField('truncated', { kind: 'boolean' }, 9),
+        ],
+      },
+    }),
+    { ...NO_TABLES, renames: { ArtifactListing: 'ArtifactListingResponse' } },
+  );
+  // A field renamed on the backend is one finding per side: the console lacks the
+  // new name and still carries the old one.
+  assert.deepEqual(messages(result), [
+    '5 minor ArtifactListing lacks capped, which Kotlin ArtifactListingResponse has',
+    '9 major ArtifactListing.truncated has no field in Kotlin ArtifactListingResponse',
+  ]);
+});
+
+test('an SSE frame payload is compared like any other response DTO', () => {
+  const result = compare(
+    backend({
+      LogChunkFrame: response([kField('content', S)]),
+      ProcessCmdFrame: response([kField('processId', N), kField('label', S, { nullable: true }), kField('startedAt', N, { nullable: true })]),
+    }),
+    consoleOf({
+      LogChunkFrame: { line: 1, kind: 'object', fields: [tField('content', S, 2), tField('offset', N, 3, { optional: true })] },
+      ProcessCmdFrame: { line: 4, kind: 'object', fields: [tField('processId', N, 5), tField('label', S, 6), tField('startedAt', { kind: 'number', nullable: true }, 7)] },
+    }),
+    NO_TABLES,
+  );
+  assert.deepEqual(messages(result), [
+    '3 major LogChunkFrame.offset has no field in Kotlin LogChunkFrame',
+    '6 major ProcessCmdFrame.label does not allow null, but Kotlin ProcessCmdFrame.label is nullable',
+  ]);
+});
+
 test('main writes the contract files and fails on a missing input', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dto-contract-'));
   const backendFile = path.join(dir, 'b.json');
