@@ -92,7 +92,7 @@ check in full.
 | --- | --- | --- | --- | --- |
 | `crap` | required | functions that are complex *and* under-tested: CRAP = cc² × (1 − cov)³ + cc over `crap.threshold` (8, the target) | Kotlin PSI + Kover; TypeScript compiler API + V8 coverage (ADR-0081) | `app/gradlew -p app crapReport`; `cd console && npm run test:coverage && npm run crap` |
 | `kotlin-warnings` | required | any Kotlin compiler warning; compilation also fails on one (`allWarningsAsErrors`) | Kotlin compiler, CI Gradle log | any Gradle build |
-| `architecture-backend` | required | documented backend conventions: tests mirror packages, every service and executor has a test, executor naming, no inline 400 responses, `Route` builders in `routes/`, layering imports, no package cycles, DTO placement, `TelemetryService` interface, MockK only, **every secured `/api/v1` handler calls the `Authorizer`**, file ≤ 600 / class ≤ 400 / function ≤ 60 lines, test file ≤ 3,300 lines, ≤ 13 parameters per function or non-`data` constructor, no run of more than 8 consecutive comment lines (KDoc included) and no past-implementation comment narration (`previous implementation`, a bare `previously`, `used to` with a stative verb, the past-audit form), full layer order (HTTP → Services → Execution → Executors → Infra, ADR-0083) | Konsist module `app/architecture` | `app/gradlew -p app :architecture:test` |
+| `architecture-backend` | required | documented backend conventions: tests mirror packages, every service and executor has a test, every `infra/` `*Parser`/`*Validator`/`*Builder` has a property-based test, executor naming, no inline 400 responses, `Route` builders in `routes/`, layering imports, no package cycles, DTO placement, `TelemetryService` interface, MockK only, **every secured `/api/v1` handler calls the `Authorizer`**, file ≤ 600 / class ≤ 400 / function ≤ 60 lines, test file ≤ 3,300 lines, ≤ 13 parameters per function or non-`data` constructor, no run of more than 8 consecutive comment lines (KDoc included) and no past-implementation comment narration (`previous implementation`, a bare `previously`, `used to` with a stative verb, the past-audit form), full layer order (HTTP → Services → Execution → Executors → Infra, ADR-0083) | Konsist module `app/architecture` | `app/gradlew -p app :architecture:test` |
 | `eslint-warnings` | required | ESLint warnings, including console architecture rules: backend calls only through `homerApi`, no native `EventSource`, `CONSOLE_*` env read only in layout/middleware, `queryKeys` registry, SSE never writes cache, no body font, lucide icons only, `dark:` only with a stated reason | ESLint, rules from `console/CLAUDE.md` | `cd console && npm run lint` |
 | `architecture-console` | required | layering (`lib` ↛ `components`/`app`, `components` ↛ `app`, `components/ui` is a leaf, `types/homer.ts` imports nothing), no circular imports | dependency-cruiser | `cd console && npm run quality:report` |
 | `unused-console` | required | unused files, exports and dependencies | knip | `cd console && npm run quality:report` |
@@ -169,7 +169,10 @@ table CI does, once the reports exist.
 
 ## Open backlog and next steps
 
-The counts below are a snapshot, last refreshed when `detekt` became required (2026-10-14). For the current numbers, look at the `quality-gate` job's table and its report artifacts.
+The rows below are a hand-maintained backlog snapshot, not a live status — the
+newest of them dates from 2026-11-14, when the nightly image scan joined it. For
+the current numbers, look at the `quality-gate` job's table and its report
+artifacts.
 
 | Item | State | Next step |
 | --- | --- | --- |
