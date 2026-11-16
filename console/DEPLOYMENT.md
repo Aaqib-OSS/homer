@@ -246,9 +246,12 @@ labels:
 ### Optional Variables
 
 This table is the canonical reference for the console's environment: the other
-docs link here rather than repeat it. Every variable below is read per request,
-so changing one needs no rebuild; `PORT` is the exception — the server reads it
-when it starts.
+docs link here rather than repeat it. Only the `CONSOLE_*` variables below are
+read per request (the root layout runs `force-dynamic`), so changing one needs
+no rebuild. `PORT` and `HOSTNAME` are read once when the server starts —
+changing one needs a restart, not a rebuild — and `NODE_ENV` is a build-mode
+flag: the standalone bundle is built in production mode, so changing it needs a
+rebuild.
 
 | Variable | Description | Default |
 |----------|-------------|---------|

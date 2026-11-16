@@ -3,6 +3,7 @@
 This document provides comprehensive documentation for creating Homer agents.
 
 <!-- toc -->
+<!-- Hand-maintained Contents: no tool generates this block — when a heading changes, update the list below from the ##/### headings (GitHub-slugger anchors) in the same commit. -->
 ## Contents
 
 - [Introduction](#introduction)

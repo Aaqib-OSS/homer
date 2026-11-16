@@ -462,7 +462,8 @@ bundled skill and schema ride in the same release as the format).
 - `example/` — example config and agents for the compose stack, plus example
   console plugins
 - `docs/` — ADRs, the feature atlas, the quality-check guide
-  (`quality-checks.md`) and the case studies (`case-studies/`)
+  (`quality-checks.md`), the glossary (`glossary.md`) and the case studies
+  (`case-studies/`)
 - `site/` — VitePress documentation site: `.vitepress/` config and theme,
   `pages/`, and the `scripts/` that assemble the published docs and schemas
 - `tools/` — repository tooling: the PR policy check (`pr-policy/`), the
