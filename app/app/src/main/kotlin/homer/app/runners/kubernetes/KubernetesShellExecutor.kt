@@ -53,7 +53,7 @@ class KubernetesShellExecutor(
     private val stopReasonPollMs: Long = STOP_REASON_POLL_MS,
     private val stopReasonBudgetMs: Long = STOP_REASON_BUDGET_MS,
     /** Slack added to the grace for the signalling exec's own bound. */
-    private val signalExecSlackMs: Long = SIGNAL_EXEC_SLACK_MS,
+    signalExecSlackMs: Long = SIGNAL_EXEC_SLACK_MS,
     private val onTermination: suspend (PodTermination) -> Unit = {},
 ) : ShellExecutor {
     private val podControl = PodProcessControl(execClient, namespace, podName, signalExecSlackMs)

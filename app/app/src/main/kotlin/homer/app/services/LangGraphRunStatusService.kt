@@ -110,8 +110,8 @@ class LangGraphRunStatusService(
     private val processManager: ProcessManager,
     private val timeout: Duration = 15.seconds,
     private val stateCacheTtl: Duration = 4.seconds,
-    private val maxCachedStates: Int = 64,
-    private val maxConcurrentStateRuns: Int = 4,
+    maxCachedStates: Int = 64,
+    maxConcurrentStateRuns: Int = 4,
     private val maxQueueWait: Duration = 5.seconds,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {

@@ -1,7 +1,6 @@
 package homer.app
 
 import homer.app.infra.PasswordVerifier
-import homer.app.models.AppConfig
 import homer.app.models.AuthConfig
 import homer.app.models.HmacKeyConfig
 import io.ktor.client.request.header
@@ -21,8 +20,6 @@ import javax.crypto.spec.SecretKeySpec
 import kotlin.test.assertEquals
 
 class AuthWiringTest {
-    private val config = AppConfig(agentsSearchPath = "/agents", workspaceRootPath = "/workspace", databasePath = "/homer.db")
-
     private fun hexSha256(
         secret: String,
         body: String,
@@ -39,7 +36,7 @@ class AuthWiringTest {
             val scheme = AuthConfig.Hmac(keys = mapOf("vikunja" to HmacKeyConfig(secret = secret)))
             var authNames = emptyList<String>()
             application {
-                authNames = configureAuth(config, listOf(scheme), PasswordVerifier()).authNames
+                authNames = configureAuth(listOf(scheme), PasswordVerifier()).authNames
                 routing {
                     authenticate(*authNames.toTypedArray()) {
                         post("/api/v1/agent/example") {

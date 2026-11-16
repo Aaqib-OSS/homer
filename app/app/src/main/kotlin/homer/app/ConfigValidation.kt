@@ -82,7 +82,7 @@ internal fun resolveRunnerEnvs(
     runners: Map<String, RunnerConfig>,
     sysEnvResolver: SysEnvResolver,
 ): Map<String, RunnerConfig> =
-    runners.mapValues { (alias, runner) ->
+    runners.mapValues { (_, runner) ->
         when (runner) {
             is RunnerConfig.Ssh -> {
                 runner.copy(env = sysEnvResolver.resolveMapValues(runner.env))

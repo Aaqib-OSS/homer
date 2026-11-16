@@ -36,8 +36,8 @@ import kotlin.time.Duration
  * disconnect a peer that stops answering.
  */
 class WorkspaceSync(
-    private val session: ClientSession,
-    private val transferTimeout: Duration? = null,
+    session: ClientSession,
+    transferTimeout: Duration? = null,
     private val maxDirEntries: Int = DEFAULT_MAX_DIR_ENTRIES,
     // Test seam: runs after a file's link checks and before its open, so a test can
     // swap the file for a symlink inside that window deterministically.

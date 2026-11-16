@@ -355,3 +355,11 @@ born with no finding.
 The parameter cap (13) came in `required` after GH #257's parameter objects, at the widest signatures
 then left (`createWorkspaceConfig`, `handleResume`, `AgentExecutor`'s constructor); it may only be
 lowered.
+
+*Amended (2026-11-16):* `detekt` also runs its unused-code rules (GH #297): `UnusedParameter`,
+`UnusedPrivateClass`, `UnusedPrivateFunction`, `UnusedPrivateProperty` and `UnusedVariable`. The backend
+had no dead-code check, while the console has knip, and the compiler reports neither unused private
+members nor unused parameters. Every other rule of the `style` set stays off, listed in
+`app/config/detekt/detekt.yml`. The 23 findings at introduction were fixed in the same change: 13
+constructor properties read only while the object is built became plain parameters, and 4 parameters and
+6 destructured variables nothing read were removed.

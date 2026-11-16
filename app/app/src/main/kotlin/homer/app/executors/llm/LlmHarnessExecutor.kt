@@ -39,11 +39,11 @@ import kotlin.random.Random
 class LlmHarnessExecutor<C>(
     private val harness: LlmHarness<C>,
     private val langfuseClient: LangfuseClient,
-    private val telemetry: LlmStepTelemetry,
+    telemetry: LlmStepTelemetry,
     private val stepRecords: StepRecords,
-    private val costRecorder: CostRecorder,
+    costRecorder: CostRecorder,
     /** Where a session lookup settles after the attempt returned; outlives the run (ADR-0089). */
-    private val settlementScope: CoroutineScope,
+    settlementScope: CoroutineScope,
     llmCostResolver: LlmCostResolver = LlmCostResolver.DISABLED,
     private val random: Random = Random.Default,
 ) : CommandExecutor<C> where C : Command, C : Command.LlmCommand {
