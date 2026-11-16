@@ -461,18 +461,20 @@ bundled skill and schema ride in the same release as the format).
 - `clients/` — Python `homer_langgraph` runtime behind `!<langgraph>`
 - `example/` — example config and agents for the compose stack, plus example
   console plugins
-- `docs/` — ADRs and the feature atlas
+- `docs/` — ADRs, the feature atlas, the quality-check guide
+  (`quality-checks.md`), the glossary (`glossary.md`) and the case studies
+  (`case-studies/`)
 - `site/` — VitePress documentation site: `.vitepress/` config and theme,
   `pages/`, and the `scripts/` that assemble the published docs and schemas
-- `tools/` — repository tooling: the PR policy check (`pr-policy/`) and the
-  quality gates (`quality/`)
+- `tools/` — repository tooling: the PR policy check (`pr-policy/`), the
+  quality gates (`quality/`) and the release notes script (`release/`)
 - `plugins/`, `.claude-plugin/` — the `homer-authoring` Claude Code plugin and
   its marketplace manifest
 
 ## Contributing
 
 Contributions are welcome! [`CONTRIBUTING.md`](CONTRIBUTING.md) covers the
-toolchain (JDK 25 for the backend, Node for the console), the verify commands,
+toolchain (JDK 25 for the backend, Node 24 for the console), the verify commands,
 and the commit, changelog and ADR conventions. Questions and help belong in
 [GitHub Discussions](https://github.com/livesport/homer/discussions/categories/q-a).
 Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md). The

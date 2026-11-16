@@ -245,9 +245,17 @@ labels:
 
 ### Optional Variables
 
+This table is the canonical reference for the console's environment: the other
+docs link here rather than repeat it. Only the `CONSOLE_*` variables below are
+read per request (the root layout runs `force-dynamic`), so changing one needs
+no rebuild. `PORT` and `HOSTNAME` are read once when the server starts —
+changing one needs a restart, not a rebuild — and `NODE_ENV` is a build-mode
+flag: the standalone bundle is built in production mode, so changing it needs a
+rebuild.
+
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `CONSOLE_HOMER_API_URL` | Homer backend API URL | `api.baseUrl` from `config/default.json` (`http://localhost:8080`) |
+| `CONSOLE_HOMER_API_URL` | Homer backend API URL, as reached from the browser | `api.baseUrl` from `config/default.json` (`http://localhost:8080`) |
 | `CONSOLE_AUTH_ENABLED` | Enable authentication | `false` |
 | `CONSOLE_ALLOW_BEARER` | Offer bearer (token) login. Off = cookie-only (recommended; bearer tokens live in `localStorage` and are XSS-exfiltratable). Set `true` only for a bearer-only backend; it also makes **Token** the mode the login form opens in, since such a backend cannot accept a password. | `false` |
 | `CONSOLE_ALLOWED_API_ORIGINS` | Comma-separated backend origins the console may connect to. When set, the CSP `connect-src` is pinned to `'self'` + these (a genuinely strict CSP), and the login endpoint field is restricted to them. When unset, `connect-src` stays open so any backend can be entered at login. | *(unset)* |
