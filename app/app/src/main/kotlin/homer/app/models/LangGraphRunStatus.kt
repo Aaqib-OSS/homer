@@ -16,21 +16,12 @@ data class LangGraphRunIdentity(
 )
 
 /**
- * Per-run LangGraph status, as returned by
- * `GET /api/v1/processes/{id}/langgraph`. [topology]/[mermaid]/[nodes]/[errors]
- * are only populated when the caller requested the live graph; [error] carries either
- * a `homer_langgraph state` failure or the reason status could not be read.
- * [topology] is the run's workflow graph as nodes and edges; null when the
- * runtime did not report it or it exceeded `LangGraphTopologyLimits`; [mermaid]
- * is deprecated (ADR-0073). [subs] enriches parked fan-out nodes with the
- * sub-run progress behind each pending interrupt id, keyed by node; sparse
- * (unmatched interrupt ids and nodes with no matches at all are omitted) and
- * null when the runtime does not report interrupts or enrichment fails.
- * [subsTruncated] names the nodes whose interrupt history hit the runtime's
- * per-node cap, so their [subs] list may be missing its oldest entries.
- * [traversed] is the workflow edges this run has actually taken, limited to
- * edges of [topology]; null when the topology is unavailable or the runtime
- * did not report it. See ADR-0044, ADR-0075.
+ * Per-run LangGraph status, as returned by `GET /api/v1/processes/{id}/langgraph`.
+ * The graph fields are populated only when the caller requested the live graph;
+ * [mermaid] is deprecated (ADR-0073). [subs] enriches parked fan-out nodes with the
+ * sub-run progress behind each pending interrupt id, keyed by node — sparse, null
+ * when unreported or enrichment fails; [subsTruncated] names nodes whose interrupt
+ * history hit the per-node cap; [traversed] is edges taken, limited to [topology]. See ADR-0044, ADR-0075.
  */
 @Serializable
 data class LangGraphRunStatus(

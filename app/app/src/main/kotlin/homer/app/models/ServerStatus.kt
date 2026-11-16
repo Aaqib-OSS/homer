@@ -256,12 +256,9 @@ data class AgentInfo(
 ) {
     companion object {
         /**
-         * Maps a loaded [Agent] to its API summary. Single source of truth for
-         * the `GET /agents` mapping so route and tests can't drift (this mapping
-         * previously omitted `inputs`, hiding params for `inputs:`-style agents).
-         *
-         * A secret input's `default` and `values` are dropped, not masked:
-         * any grant-holder reads this summary. See ADR-0071.
+         * Maps a loaded [Agent] to its API summary: the single source of truth for the `GET /agents`
+         * mapping, so route and tests can't drift. A secret input's `default` and `values` are dropped,
+         * not masked — any grant-holder reads this summary. See ADR-0071.
          */
         fun from(
             name: String,

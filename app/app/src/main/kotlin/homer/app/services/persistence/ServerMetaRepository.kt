@@ -18,16 +18,12 @@ class ServerMetaRepository(
     private val logger: Logger,
 ) {
     /**
-     * The stable per-instance identifier, created and persisted on first call.
-     *
-     * Unlike `HMR_SERVER_ID` (regenerated every boot) this survives restarts, so
-     * the Kubernetes startup sweep can reap *this* instance's own orphan pods
-     * after an unclean restart while never matching another instance's pods —
-     * they carry a different id and live in a different database. See ADR-0033.
-     *
-     * Blocking and startup-only: resolved synchronously while the runner registry
-     * is built, before traffic, so it does not go through the suspend [DatabaseService.query]
-     * path. Requires [DatabaseService.migrate] to have created the `server_meta` table first.
+     * The stable per-instance identifier, created and persisted on first call. Unlike
+     * `HMR_SERVER_ID` (regenerated every boot) it survives restarts, so the Kubernetes startup
+     * sweep can reap *this* instance's own orphan pods after an unclean restart while never
+     * matching another instance's pods. See ADR-0033. Blocking and startup-only: resolved
+     * synchronously while the runner registry is built, before traffic, so it does not go through
+     * the suspend [DatabaseService.query] path; [DatabaseService.migrate] must have created `server_meta`.
      */
     fun getOrCreateInstanceId(): String =
         transaction(db.database) {

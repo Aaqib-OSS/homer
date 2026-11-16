@@ -15,10 +15,9 @@ import kotlin.time.ExperimentalTime
  * Mints and resolves capability tokens for read-by-reference fetch of large
  * continuation results. A token is scoped to one (watched process, artifact
  * path) and audience-bound to the continuation's target agent, and is reusable
- * within its TTL — a resumed graph re-runs the node and re-fetches idempotently
- * (every resume segment runs the same target agent, so the binding holds). The
- * token's lifetime is independent of the continuation row that minted it (it
- * lives in its own table). See ADR-0025.
+ * within its TTL (a resumed graph re-runs the node and re-fetches idempotently).
+ * Its lifetime is independent of the continuation row that minted it (it lives
+ * in its own table). See ADR-0025.
  */
 @OptIn(ExperimentalTime::class)
 internal class ResultTokenService(

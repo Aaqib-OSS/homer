@@ -7,25 +7,7 @@ import org.slf4j.Logger
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
-/**
- * Boot-time reconciliation of state left behind by a previous (possibly
- * unclean) shutdown. Durable process rows survive a restart, but the coroutines
- * that were driving any still-active run do not — so every process still
- * `CREATED`/`WORKING` is marked `UNKNOWN` (with a history entry) and its OPEN
- * questions are expired (preserving the "questions die with their process"
- * invariant — waiters that reconnect see EXPIRED, not a perpetual OPEN). Every
- * message still QUEUED on a run that is no longer active becomes UNDELIVERED
- * (ADR-0097).
- *
- * `UNKNOWN` is treated as terminal, so these rows never block on a resume that
- * can't happen. The run's own coroutine would have stamped its purge times on
- * the way out; it died with the server, so every UNKNOWN row still missing them
- * — this boot's and any an earlier boot left — is stamped here from its agent's
- * current `workspace` config (the model defaults when the agent is gone),
- * counted from now, and `WorkspacePurgeService` then sweeps it like any other
- * terminal run. Runs once, before traffic is accepted, alongside the Kubernetes
- * orphan-pod sweep. See ADR-0020 and ADR-0048 (2026-10-01 amendment).
- */
+/** Boot-time reconciliation of state left by an unclean shutdown: `CREATED`/`WORKING` runs become `UNKNOWN`, their OPEN questions expire, their QUEUED messages become UNDELIVERED (ADR-0097), and every `UNKNOWN` row still missing purge times is stamped from its agent's current `workspace`. Runs once before traffic. See ADR-0020, ADR-0048. */
 @OptIn(ExperimentalTime::class)
 internal class StartupReconciliation(
     private val processRepository: ProcessRepository,
@@ -71,10 +53,9 @@ internal class StartupReconciliation(
         // watched process reached a terminal state before this boot (the live hook never ran).
         continuationService.failOrphanedDispatching()
         continuationService.refirePendingTerminal()
-        // Same again for hooks: fail any left mid-fire, fire the rows the UNKNOWN writes above
-        // recorded, then replay whatever else is still PENDING — a server that stopped between
-        // a transition's commit and its fire. The claim CAS keeps a replay from double-firing
-        // against a row a live transition is firing concurrently. See ADR-0107.
+        // Same again for hooks: fail any left mid-fire, fire the rows the UNKNOWN writes recorded,
+        // then replay what is still PENDING — a server that stopped between a transition's commit
+        // and its fire. The claim CAS stops a replay double-firing a live row. See ADR-0107.
         hookService.failOrphanedDispatching()
         hookService.onRowsRecorded(interrupted.hooks)
         hookService.refirePending()

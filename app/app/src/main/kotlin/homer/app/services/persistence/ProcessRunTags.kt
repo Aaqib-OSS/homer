@@ -8,14 +8,12 @@ import org.jetbrains.exposed.v1.jdbc.select
 // `fromInputs` tags are written by [ProcessRepository.obtainProcessId] itself. See ADR-0060.
 
 /**
- * Appends a run-time tag written through the callback route, after the INSERT
- * transaction. Idempotent by the `(process_id, tag)` primary key: an exact
- * duplicate collapses (`INSERT OR IGNORE`), matching the tag set's set semantics.
- * Enforces the per-run ceiling atomically with the write.
- *
- * The ceiling bounds runtime-declared tags only, so `fromInputs` tags — which
- * share this table but have keys disjoint from the runtime keys (enforced at agent
- * load) — are excluded from the count via [fromInputsKeys]. See ADR-0060.
+ * Appends a run-time tag written through the callback route, after the INSERT transaction.
+ * Idempotent by the `(process_id, tag)` primary key: an exact duplicate collapses (`INSERT OR
+ * IGNORE`), matching the tag set's set semantics. Enforces the per-run ceiling atomically with
+ * the write. The ceiling bounds runtime-declared tags only, so `fromInputs` tags — keys disjoint
+ * from the runtime keys, enforced at agent load — are excluded from the count via
+ * [fromInputsKeys]. See ADR-0060.
  */
 suspend fun ProcessRepository.insertRuntimeTag(
     processId: Int,

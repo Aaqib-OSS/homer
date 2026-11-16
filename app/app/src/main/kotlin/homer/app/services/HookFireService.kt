@@ -16,12 +16,11 @@ internal const val MAX_HOOK_TAGS_CHARS = 1024
 
 /**
  * Fires one pending agent-level hook: claims the row (PENDING→DISPATCHING CAS) so a live
- * transition, the boot replay and the retry sweep fire it once, re-checks that the target
- * agent still exists and that the triggering run's owner may still start it, then starts the
- * target with the triggering run's `HMR_HOOK_*` metadata, and settles the row DISPATCHED,
- * deferred for a retry, or FAILED. The start's own failures are contained here; the row
- * writes around it are not, so [HookService] isolates every call into this service from the
- * status write that triggered it. See ADR-0107, ADR-0023.
+ * transition, the boot replay and the retry sweep fire it once, re-checks that the target agent
+ * still exists and that the triggering run's owner may still start it, then starts the target
+ * with the triggering run's `HMR_HOOK_*` metadata, and settles the row DISPATCHED, deferred for
+ * a retry, or FAILED. The start's own failures are contained here; the row writes around it are
+ * not, so [HookService] isolates every call here from the status write. See ADR-0107, ADR-0023.
  */
 internal class HookFireService(
     private val repository: HookRepository,
@@ -196,14 +195,12 @@ internal class HookFireService(
     }
 
     /**
-     * How deep the run this fire starts will be: one more than the [EnvConstants.HOOK_DEPTH]
-     * the triggering run's row stores. Fails closed — drops [hook] and returns null — when
-     * the bound cannot be read off that row: the run is unreadable (purged, evicted, a read
-     * error), or its stored depth is present but not a number. The stored depth is what
-     * carries the chain bound across a restart, so a fire that cannot read it must not
-     * restart the chain at depth 1: a chain whose middle run was purged would spawn without
-     * limit. Neither state heals on a retry, so the hook is dropped, not deferred. Only a
-     * readable run with no depth key counts as depth 0. See ADR-0107, §12 (CWE-400, CWE-755).
+     * How deep the run this fire starts will be: one more than the [EnvConstants.HOOK_DEPTH] the
+     * triggering run's row stores. Fails closed — drops [hook], returns null — when the bound cannot
+     * be read off that row: the run is unreadable (purged, evicted, read error), or its stored depth
+     * is present but not a number. That depth carries the chain bound across a restart, so a fire that
+     * cannot read it must not restart the chain at depth 1 — a purged middle run would spawn without
+     * limit. Neither state heals on retry, so the hook is dropped, not deferred; a run with no depth key is depth 0. See ADR-0107, §12.
      */
     private suspend fun nextDepthOrDrop(
         hook: PendingHook,

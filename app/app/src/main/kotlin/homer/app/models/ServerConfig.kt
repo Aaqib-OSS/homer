@@ -11,128 +11,43 @@ data class RateLimitConfig(
 @Serializable
 data class Server(
     val port: Int = 8080,
-    /**
-     * API authentication. Required: `null` means the config omitted it, and startup
-     * fails — running without auth needs an explicit `apiAuth: !<unsecured>` opt-in
-     * (see ADR-0036).
-     */
+    /** Required: `null` means the config omitted it and startup fails; running without auth needs an explicit
+     * `apiAuth: !<unsecured>` opt-in. See ADR-0036. */
     val apiAuth: AuthConfig? = null,
     val rateLimit: RateLimitConfig = RateLimitConfig(),
     val perCallerRateLimit: RateLimitConfig = RateLimitConfig(limit = 300, refillPeriod = 60),
     val loginRateLimit: RateLimitConfig = RateLimitConfig(limit = 5, refillPeriod = 60),
     val corsAllowedOrigins: List<String> = emptyList(),
-    /**
-     * Maximum allowed depth of nested RunAgent invocations. The root API call is
-     * depth 1; an agent that runs another agent makes that child depth 2, and so
-     * on. A misconfigured agent that calls itself (directly or transitively)
-     * would otherwise burn unbounded tokens before anyone notices. 5 is generous
-     * for legitimate composition (A → B → C → D → E); raise it explicitly if
-     * deeper chains are needed.
-     */
+    /** Maximum depth of nested RunAgent invocations (the root API call is depth 1); a self-calling agent would
+     * otherwise burn unbounded tokens. Raise it explicitly for deeper chains. */
     val maxAgentInvocationDepth: Int = 5,
-    /**
-     * Maximum number of process rows retained. At the cap a new run evicts the
-     * oldest *terminal* row (deleting its workspace); if none can be evicted the
-     * run is refused with 503. This is the hard ceiling on retention: raising
-     * `workspace.retain.recordFor` only keeps records until the cap forces them
-     * out, so raise this too when you want a long record history.
-     */
+    /** Maximum process rows retained; at the cap a new run evicts the oldest *terminal* row (deleting its
+     * workspace), or is refused with 503 when none can be evicted. Raise this too for a longer record history. */
     val maxProcesses: Int = 10_000,
-    /**
-     * Maximum accepted HTTP request body size in bytes for all endpoints.
-     * Bodies over the cap are rejected with 413 before being read into
-     * memory. Closes audit 2026-07-11 H1 (unbounded `receiveText`).
-     */
+    /** Maximum accepted HTTP request body size in bytes; over-cap bodies are rejected with 413 before being read into memory. */
     val maxRequestBodyBytes: Long = 10L * 1024 * 1024,
-    /**
-     * Maximum seconds to wait for in-flight ProcessExecutor jobs to
-     * complete before the HTTP engine stops. Closes audit P0 #3. The
-     * shutdown sequence: stop accepting cron + sweep work, wait for the
-     * application coroutine scope's children up to this many seconds,
-     * then stop the Ktor engine. Set higher if your agents commonly run
-     * longer than 30s; set lower for ephemeral debug containers.
-     */
     val shutdownDrainSec: Int = 30,
-    /**
-     * If set, every successful Claude run must report this exact value in
-     * its `system` event's `claude_code_version` field. A mismatch (or a
-     * missing field when the pin is set) fails the run with
-     * `ClaudeCliVersionMismatchException` and is *not* retried — a CLI
-     * upgrade between attempts cannot fix it. Leave null to skip the
-     * check. Closes audit P1 #15.
-     */
+    /** If set, every successful Claude run must report this exact `claude_code_version`; a mismatch (or a missing
+     * field when the pin is set) fails the run and is *not* retried. Leave null to skip the check. */
     val requireClaudeCodeVersion: String? = null,
-    /**
-     * `system`-event subtypes dropped from a Claude step's stdout before it is
-     * written. Entries must match `^[a-zA-Z0-9_]+$`; `init` is refused (it carries
-     * `claude_code_version`). `[]` disables. See ADR-0063.
-     */
+    /** `system`-event subtypes dropped from a Claude step's stdout; entries must match `^[a-zA-Z0-9_]+$`, and
+     * `init` is refused (it carries `claude_code_version`). See ADR-0063. */
     val claudeDropSystemSubtypes: List<String> = listOf("thinking_tokens"),
-    /**
-     * Maximum size in bytes of a single artifact file served by
-     * `GET /api/v1/artifacts`. Files larger than this are rejected with
-     * `413 Payload Too Large` before any bytes are sent, so a misbehaving
-     * agent that fills its artifacts directory with a multi-GB file
-     * cannot turn an artifact fetch into a sustained bandwidth/time DoS.
-     * The check is pre-flight `Files.size()` only — Range support for
-     * partial downloads of legitimately-large files is not implemented;
-     * raise this value (or split the artifact at the agent) if a real
-     * use case needs >100 MiB downloads. Audit P1 #18.
-     */
+    /** Maximum size in bytes of a single artifact served by `GET /api/v1/artifacts`; larger files are rejected
+     * with 413 before any bytes are sent. */
     val maxArtifactBytes: Long = 100L * 1024 * 1024,
-    /**
-     * Per-run byte cap on artifacts retained past the workspace purge
-     * (`workspace.retain.artifacts`). The retained set is agent-written and
-     * lives until the record dies, so the operator's disk ceiling is
-     * `maxProcesses` x this value. Overflow keeps what fits in declared-glob
-     * order and flags the record `retainedTruncated`. See ADR-0053.
-     */
+    /** Per-run byte cap on artifacts retained past the workspace purge; overflow keeps declared-glob order and
+     * flags the record `retainedTruncated`. See ADR-0053. */
     val maxRetainedArtifactBytes: Long = 16L * 1024 * 1024,
-    /**
-     * Maximum size in bytes of a single agent definition file (`agent.json`
-     * / `agent.yaml`), agent-directory file accessed via the files API,
-     * or the top-level Homer config file (`homer-config.{json,yaml}`).
-     * Files larger than this are rejected pre-flight, before kaml /
-     * kotlinx.serialization parse them. Default 1 MiB — real agent
-     * definitions are kilobytes; this cap exists to bound DoS exposure
-     * from a pathological YAML (oversized strings, huge anchor lists)
-     * regardless of what the underlying parser allows. Note: the kaml
-     * parser is built on snakeyaml-engine 2.7, which already enforces
-     * `nestingDepthLimit=50` and `maxAliasesForCollections=50` by
-     * default, so the classic billion-laughs / deep-nesting vectors
-     * are bounded; this cap is the missing piece for total input
-     * size. Audit P1 #14.
-     */
+    /** Maximum size in bytes of an agent definition file, an agent-directory file accessed via the files API, or
+     * the top-level Homer config file; rejected pre-flight, before parsing. */
     val maxConfigFileBytes: Long = 1L * 1024 * 1024,
-    /** Claim-queue facets of the built-in `local` runner. See ADR-0066. */
     val localRunner: LocalRunnerConfig = LocalRunnerConfig(),
-    /** Default seconds a run waits for a runner to claim it; agents may override. See ADR-0066. */
     val runnerClaimTimeoutSec: Int = DEFAULT_RUNNER_CLAIM_TIMEOUT_SEC,
-    /** Local bound on pending claims; a run arriving at the bound fails at once. See ADR-0066. */
     val maxPendingRunnerClaims: Int = DEFAULT_MAX_PENDING_RUNNER_CLAIMS,
-    /**
-     * Maximum size in bytes of a single command's stdout file
-     * (`cmd_N.out`) and stderr file (`cmd_N.err`) — each stream is
-     * capped independently at this value. When either file's size
-     * exceeds the cap, the command is killed via the same
-     * `destroyForcibly`+descendants path used for TTL timeouts, an
-     * `[HOMER] Output cap exceeded ($cap bytes)` line is appended to
-     * the stderr file, and the executor throws
-     * `OutputCapExceededException`. The per-command
-     * `ExecutionInfo.outputTruncated` flag surfaces the kill reason
-     * over the API. Default 10 MiB (`10485760`). The cap is enforced
-     * inside the existing 1-second polling loop, so the effective
-     * on-disk size at kill time may exceed the cap by one polling
-     * window's worth of writes — treat it as a soft ceiling.
-     * Audit P1 #17.
-     */
+    /** Maximum size in bytes of a single command's `cmd_N.out` / `cmd_N.err` stream; exceeding it kills the
+     * command and surfaces `ExecutionInfo.outputTruncated`. Enforced by the 1-second poll, so it is a soft ceiling. */
     val maxOutputBytes: Long = 10L * 1024 * 1024,
-    /**
-     * Polling interval in milliseconds for the file poll behind
-     * `GET /api/v1/stream/processes/{id}/llm-events`. Lower =
-     * lower first-event latency, higher = less CPU. Coerced to 50..2000 at
-     * startup. Default 150 (~6 polls/sec; invisible latency to humans).
-     */
     val claudeStreamPollMs: Int = 150,
     val mcp: McpServerConfig = McpServerConfig(),
     val questions: QuestionsConfig = QuestionsConfig(),
@@ -141,11 +56,7 @@ data class Server(
     val hooks: HookConfig = HookConfig(),
     val langGraph: LangGraphConfig = LangGraphConfig(),
     val maintenance: MaintenanceConfig = MaintenanceConfig(),
-    /**
-     * Per-agent grants keyed by agent name: which target agents (and actions)
-     * that agent's own dispatches (e.g. RunAgent, ask-and-dispatch) may reach.
-     * See ADR-0037.
-     */
+    /** Per-agent grants keyed by agent name: which target agents (and actions) that agent's dispatches may reach. See ADR-0037. */
     val agentGrants: Map<String, List<Grant>> = emptyMap(),
 ) {
     init {
@@ -166,27 +77,18 @@ data class Server(
     companion object {
         private val SYSTEM_SUBTYPE_PATTERN = Regex("^[a-zA-Z0-9_]+$")
 
-        /**
-         * Default [maxPendingRunnerClaims], and the bound a `RunnerRegistry` built without an
-         * explicit queue uses: the two must not drift, so the registry reads this rather than
-         * repeating the number. See ADR-0066.
-         */
+        /** Default [maxPendingRunnerClaims], and the bound a `RunnerRegistry` built without an explicit queue
+         * uses — the two must not drift. See ADR-0066. */
         const val DEFAULT_MAX_PENDING_RUNNER_CLAIMS = 1000
 
-        /**
-         * Default [runnerClaimTimeoutSec], and the claim timeout a `RunnerRegistry` built without an
-         * explicit one uses: the two must not drift, so the registry reads this rather than
-         * repeating the number. See ADR-0066.
-         */
+        /** Default [runnerClaimTimeoutSec], and the claim timeout a `RunnerRegistry` built without an explicit
+         * one uses — the two must not drift. See ADR-0066. */
         const val DEFAULT_RUNNER_CLAIM_TIMEOUT_SEC = 300
     }
 }
 
-/**
- * Admin maintenance mode: while it is on, cron fires are skipped and every other
- * agent start waits for it to go off. The wait is a config value, not a constant,
- * because it has to outlive an operator's deployment window. See ADR-0092.
- */
+/** Admin maintenance mode: while on, cron fires are skipped and every other agent start waits for it to go off.
+ * See ADR-0092. */
 @Serializable
 data class MaintenanceConfig(
     /** Starts that may wait at once; a start arriving at the bound is shed with 429. §12 rule 4. */
@@ -210,34 +112,20 @@ data class MaintenanceConfig(
     }
 }
 
-/**
- * LangGraph runtime configuration. `stateDir` is the durable directory for
- * SQLite checkpoints, which must live OUTSIDE the ephemeral per-process
- * workspace so continuations survive across runs. When null, the effective
- * directory is derived beside `databasePath` — see [AppConfig.resolveLangGraphStateDir].
- */
+/** LangGraph runtime config. `stateDir` is the durable directory for SQLite checkpoints, which must live OUTSIDE
+ * the ephemeral per-process workspace so continuations survive across runs; null derives it beside `databasePath`. */
 @Serializable
 data class LangGraphConfig(
     val stateDir: String? = null,
 )
 
-/**
- * Streamable HTTP MCP endpoint at `/mcp`. Disabled by default; when enabled,
- * agents with `mcp.enabled: true` are exposed as MCP tools alongside the
- * run-management tools. See ADR-0018.
- */
+/** Streamable HTTP MCP endpoint at `/mcp`; disabled by default. See ADR-0018. */
 @Serializable
 data class McpServerConfig(
     val enabled: Boolean = false,
-    /**
-     * Upper bound (seconds) for the per-call `_wait` argument on agent tools.
-     * Requested waits are clamped to `0..maxWaitSec`.
-     */
+    /** Upper bound (seconds) for the per-call `_wait` argument; requested waits are clamped to `0..maxWaitSec`. */
     val maxWaitSec: Int = 300,
-    /**
-     * Maximum artifact size (bytes) the `get_artifact` tool inlines into the
-     * tool result. Larger files are truncated to this many bytes.
-     */
+    /** Maximum artifact size (bytes) the `get_artifact` tool inlines; larger files are truncated to this many bytes. */
     val maxInlineArtifactBytes: Long = 65_536,
 ) {
     init {
@@ -248,15 +136,10 @@ data class McpServerConfig(
     }
 }
 
-/**
- * Per-run inbox: operator messages sent to a running run, which the run takes through a hook or
- * the MCP tool. See ADR-0097.
- */
+/** Per-run inbox: operator messages sent to a running run. See ADR-0097. */
 @Serializable
 data class RunMessagesConfig(
-    /** Maximum length (characters) of one message; longer text is rejected with 400. */
     val maxTextLength: Int = 10_000,
-    /** Maximum messages stored per run, in any state; further sends are rejected with 429. */
     val maxPerRun: Int = 100,
 ) {
     init {
@@ -265,38 +148,17 @@ data class RunMessagesConfig(
     }
 }
 
-/**
- * Human-in-the-loop questions: running commands ask the operator via the
- * injected `homer-ask` helper or the MCP question tools and wait for an
- * answer. See ADR-0019.
- */
+/** Human-in-the-loop questions asked by running commands. See ADR-0019. */
 @Serializable
 data class QuestionsConfig(
-    /**
-     * Upper bound (seconds) for a single answer-wait. Caller-supplied waits
-     * (REST `waitSec`, helper `--wait`/`--ttl`) are clamped to this value.
-     * Waits are resumable — timing out returns the still-open question id and
-     * the caller waits again — so this caps one HTTP hold, not the total time
-     * a question may stay open. Default 86400 (1 day).
-     */
+    /** Upper bound (seconds) for a single answer-wait; caller-supplied waits are clamped to it. Waits are
+     * resumable, so this caps one HTTP hold, not the question's total lifetime. */
     val maxWaitSec: Int = 86_400,
-    /** Maximum simultaneously open questions per process; further asks are rejected. */
     val maxOpenPerProcess: Int = 10,
-    /**
-     * Maximum length (characters) of the question text and of each option.
-     * Question payloads come from semi-trusted workspace commands and are held
-     * in server memory until purge, so they are size-capped like every other
-     * workspace-controlled input (`maxOutputBytes`, `maxArtifactBytes`, ...).
-     */
     val maxTextLength: Int = 10_000,
-    /** Maximum number of options per question. */
     val maxOptions: Int = 20,
-    /**
-     * Maximum simultaneously held answer-waits per process. Each wait pins a
-     * connection and a coroutine for up to [maxWaitSec], so without a cap a
-     * workspace command could exhaust the server by piling up long-polls.
-     * Further waits are rejected with 429.
-     */
+    /** Maximum simultaneously held answer-waits per process; each pins a connection and a coroutine, so further
+     * waits are rejected with 429. */
     val maxConcurrentWaitsPerProcess: Int = 32,
 ) {
     init {
@@ -312,42 +174,21 @@ data class QuestionsConfig(
     }
 }
 
-/**
- * ask-and-dispatch: a running command registers a question + a target agent;
- * answering starts that agent with the params and the answer. See the
- * ask-and-dispatch ADR.
- */
+/** ask-and-dispatch: a question plus a target agent, fired after the operator answers. See ADR-0021. */
 @Serializable
 data class DispatchConfig(
-    /** Global cap on PENDING dispatches; creating past this returns 429. */
     val maxPending: Int = 100,
-    /** Default TTL (seconds) when the caller omits one; null = no expiry. */
     val defaultTtlSec: Int? = null,
-    /** TTL sweep cadence (seconds). */
     val sweepIntervalSec: Int = 60,
-    /**
-     * How long (seconds, from creation) a settled dispatch or continuation — any status but
-     * PENDING and DISPATCHING — is kept before the sweeps delete it. Floored at one hour.
-     */
+    /** How long (seconds, from creation) a settled dispatch or continuation is kept before the sweeps delete it;
+     * floored at one hour. */
     val settledRetentionSec: Long = 604_800,
-    /**
-     * TTL (seconds) for read-by-reference result tokens minted when a watched
-     * sub-process's result exceeds the inline cap. Floored at 60 s so a token
-     * always outlives the continuation's immediate dispatch and the resumed
-     * parent's first segment. See ADR-0025.
-     */
+    /** TTL (seconds) for read-by-reference result tokens; floored at 60 s so a token outlives the continuation's
+     * dispatch and the resumed parent's first segment. See ADR-0025. */
     val resultTokenTtlSec: Int = 3600,
-    /**
-     * Max sub-agents a single `/callback/joins` request may fan out to. Caps the
-     * synchronous per-request fan-out (each sub starts a process immediately); a
-     * request over this is rejected with 400.
-     */
     val maxJoinSubs: Int = 32,
-    /**
-     * Max questions one grouped ask-and-dispatch may hold. A group registers all of its
-     * questions in one call, so this is the bound on that multiplication; a request over
-     * it is rejected with 400 before any row is written. See ADR-0109.
-     */
+    /** Max questions one grouped ask-and-dispatch may hold; over this is rejected with 400 before any row is
+     * written. See ADR-0109. */
     val maxGroupSize: Int = 8,
 ) {
     init {
@@ -367,29 +208,16 @@ data class DispatchConfig(
     }
 }
 
-/**
- * Agent-level status hooks: the local bounds on the durable hook rows a run's status
- * transitions can queue, and on how deep a chain of hook-started runs may go. See ADR-0107.
- */
+/** Agent-level status hooks: the local bounds on durable hook rows and chain depth. See ADR-0107. */
 @Serializable
 data class HookConfig(
-    /**
-     * Global cap on PENDING hook rows. A status transition that would push the table past
-     * it drops the excess with a log line rather than failing the transition — a burst of
-     * runs cannot queue unbounded rows behind one busy target. §12 rule 4.
-     */
+    /** Global cap on PENDING hook rows; a transition that would exceed it drops the excess with a log line
+     * rather than failing the transition. */
     val maxPending: Int = 200,
-    /**
-     * Longest chain of hook-started runs Homer will follow: a hook whose triggering run is
-     * already at this depth is dropped with a log line. Complements the load-time cycle
-     * rejection, which cannot see a hook agent reloaded after the declaring agent loaded.
-     */
+    /** Longest chain of hook-started runs; a hook whose triggering run is already at this depth is dropped with
+     * a log line. */
     val maxChainDepth: Int = 8,
-    /**
-     * How long (seconds, from creation) a settled hook — any status but PENDING and
-     * DISPATCHING — is kept before the sweep deletes it. Floored at one hour, like
-     * `server.dispatch.settledRetentionSec`.
-     */
+    /** How long (seconds, from creation) a settled hook is kept before the sweep deletes it; floored at one hour. */
     val settledRetentionSec: Long = 604_800,
 ) {
     init {

@@ -27,16 +27,12 @@ import homer.app.services.RunMessage
 import java.net.URI
 
 /**
- * Converts ProcessInfo to ProcessInfoResponse for JSON serialization.
- * [openQuestions] is the per-process open-question count: `/status/all` reads
- * it with its page (`ProcessListResult.openQuestions`), `/status/{id}` from
- * `QuestionsService.openCountByProcess()`, once per request. [agent] is the
- * current agent definition (null if gone since the run); secret input values
- * are redacted per [redactInputParams].
- * [rootVisible] gates [ProcessInfoResponse.rootProcessId]: the id names a run
- * owned by another principal, so it is dropped unless the caller can see that
- * root (the same visibility union the row itself passed) — existence of a
- * foreign flow root is not leaked. See ADR-0058.
+ * Converts ProcessInfo to ProcessInfoResponse for JSON serialization. [openQuestions] is
+ * the per-process open-question count, read once per request (`/status/all` with its page,
+ * `/status/{id}` via `openCountByProcess()`). [agent] is the current agent definition (null
+ * if gone since the run); secret input values are redacted per [redactInputParams].
+ * [rootVisible] gates [rootProcessId]: dropped unless the caller can see that root (the
+ * row's own visibility union), so a foreign flow root is not leaked. See ADR-0058.
  */
 fun ProcessInfo.toResponse(
     openQuestions: Int = 0,

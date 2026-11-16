@@ -91,13 +91,10 @@ internal fun HookRecording?.record(
 /**
  * INSERTs one row per entry of [hooks] **inside the caller's transaction**, stopping at the
  * global PENDING cap [maxPending] and returning the ids it wrote plus the entries it shed. A
- * hook over the cap is dropped, never queued: the status transition it rides must not fail, and
- * the cap is what keeps a burst of runs from queueing unbounded rows behind one busy target.
- * The caller logs each shed entry after the commit, from [RecordedHooks.shed]. §12 rule 4.
- *
- * A free function, not a [HookRepository] member, because `ProcessRepository` records hook
- * rows inside its own status-transition transactions and must not gain a second database
- * handle to do it.
+ * hook over the cap is dropped, never queued: the status transition it rides must not fail.
+ * The caller logs each shed entry after the commit, from [RecordedHooks.shed]. §12 rule 4. A
+ * free function, not a [HookRepository] member: `ProcessRepository` records hook rows inside
+ * its own status-transition transactions and must not gain a second database handle to do it.
  */
 internal fun insertPendingHooksTx(
     hooks: List<NewPendingHook>,

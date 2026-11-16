@@ -177,11 +177,9 @@ different backends at runtime (dev laptop vs Docker vs prod). Path:
 
 1. `app/layout.tsx` has `export const dynamic = 'force-dynamic'` so
    `process.env` is read **per request**, not baked at build time.
-2. Root layout reads the `CONSOLE_*` runtime vars (`CONSOLE_HOMER_API_URL`,
-   `CONSOLE_AUTH_ENABLED`, `CONSOLE_ALLOW_BEARER`,
-   `CONSOLE_ALLOWED_API_ORIGINS`, `CONSOLE_PLUGINS`, `CONSOLE_THEMES`,
-   `CONSOLE_THEME_MODES`; see the `DEPLOYMENT.md` env table) and
-   serializes them into `window.__HOMER_CONFIG__` via an
+2. Root layout reads the `CONSOLE_*` runtime vars — the canonical table is
+   [`DEPLOYMENT.md` § Environment Configuration](DEPLOYMENT.md#environment-configuration)
+   — and serializes them into `window.__HOMER_CONFIG__` via an
    inline `<script>` (with `<` escaping as defense-in-depth against
    injection).
 3. Client-side `lib/config/app-config.ts` reads the global (the root
@@ -303,7 +301,7 @@ nonce its own scripts.
   (cookie/bearer) is shown **only** when `appConfig.auth.allowBearer` is on
   (`CONSOLE_ALLOW_BEARER=true`); otherwise the console is cookie-only and any
   `?mode=bearer` in the URL is ignored (bearer tokens in `localStorage` are
-  XSS-exfiltratable — see the 2026-07-12 review, H3). With bearer allowed the
+  XSS-exfiltratable — see ADR-0047). With bearer allowed the
   form also **opens** in Token mode (URL `?mode=`, then the active instance's
   saved mode, win over that default), and `seedDefault` seeds the default
   instance `mode: 'bearer'` for the same reason — a bearer-only backend cannot
@@ -506,10 +504,9 @@ CONSOLE_HOMER_API_URL=http://localhost:8080
 CONSOLE_AUTH_ENABLED=false
 ```
 
-The same vars drive the Docker runtime, alongside the optional
-`CONSOLE_ALLOW_BEARER`, `CONSOLE_ALLOWED_API_ORIGINS`, `CONSOLE_PLUGINS`,
-`CONSOLE_THEMES` and `CONSOLE_THEME_MODES` (see the env table in
-`DEPLOYMENT.md`, and `/DOCKER.md`).
+The same vars drive the Docker runtime. The canonical table of every
+`CONSOLE_*` variable, with its default and its trust notes, is
+[`DEPLOYMENT.md` § Environment Configuration](DEPLOYMENT.md#environment-configuration).
 
 ## Gotchas
 

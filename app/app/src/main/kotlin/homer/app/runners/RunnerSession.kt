@@ -5,116 +5,51 @@ import homer.app.models.ExtraUploadSpec
 import org.slf4j.LoggerFactory
 import java.nio.file.Path
 
-/**
- * How [RunnerSession.download] reconciles remote content with what already
- * exists at the local target.
- */
 enum class DownloadMode {
-    /** Keep local files that already exist; only entries missing locally are pulled. */
     OVERLAY,
 
-    /** Remote content replaces existing local files; local-only extras are kept. */
     OVERWRITE,
 
-    /**
-     * OVERWRITE, plus local extras absent from the remote listing are deleted —
-     * but only after a fully successful download; a partial/failed transfer or a
-     * missing remote path leaves the local target untouched. Single-file downloads
-     * have no extras scope and are treated as OVERWRITE. See ADR-0055.
-     */
+    /** Local extras absent remotely are deleted only after a fully successful download; a partial transfer or
+     * missing remote path leaves the target untouched. Single-file downloads have no extras scope (OVERWRITE). See ADR-0055. */
     MIRROR,
 }
 
-/**
- * A run's soft and hard wall-clock deadlines in epoch seconds: at [softEpochSec] the
- * run must stop gracefully (interrupt the running step, then run its stop steps), at
- * [hardEpochSec] the backend kills it outright. See ADR-0108.
- */
+/** A run's soft and hard wall-clock deadlines in epoch seconds: at [softEpochSec] the run must stop gracefully
+ * (interrupt the step, then run its stop steps); at [hardEpochSec] the backend kills it. See ADR-0108. */
 data class RunDeadline(
     val softEpochSec: Long,
     val hardEpochSec: Long,
 )
 
-/**
- * A live execution session produced by a Runner. Owns the shell used
- * for command execution and any backing resources (pod, connection, ...)
- * that must be released when the session ends.
- *
- * The workspace/transfer methods are mechanism primitives with no-op
- * defaults: a backend whose execution filesystem is the server's own
- * (local) implements nothing; ssh and external implement createWorkspace,
- * upload, download and cleanWorkspace, kubernetes all but cleanWorkspace
- * (its emptyDir dies with the pod, ADR-0043). Sync
- * *policy* — what to transfer and when — belongs to the orchestrator
- * (AgentExecutor), not to sessions. See ADR-0033.
- *
- * close() is idempotent and safe to call from cancellation paths.
- */
+/** Owns the shell and any backing resource (pod, connection, ...) released when the session ends; [close] is
+ * idempotent and safe to call from cancellation paths. */
 interface RunnerSession : AutoCloseable {
     val shell: ShellExecutor
 
-    /**
-     * The wall-clock deadlines the backend imposes on this run, in epoch seconds:
-     * the soft one is when the run must stop gracefully, the hard one when the
-     * backend kills it. Null when the backend imposes none (local, ssh, external),
-     * so callers must branch on null. Only the Kubernetes runner reports one, from
-     * `gracefulStopSeconds`. See ADR-0108.
-     */
+    /** Null when the backend imposes none, so callers must branch on null; only Kubernetes reports one, from
+     * `gracefulStopSeconds`. See ADR-0108. */
     val runDeadline: RunDeadline?
         get() = null
 
-    /**
-     * Alias of the runner that produced this session, used to annotate
-     * command-execution spans with the backend the command ran on.
-     */
     val runnerAlias: String
 
-    /**
-     * Additional environment variables contributed by this session. Merged
-     * into the workspace env before commands run (e.g. HMR_API_URL for the
-     * kubernetes runner, so in-pod RunAgent calls reach Homer's Service).
-     */
+    /** Merged into the workspace env before commands run (e.g. kubernetes contributes HMR_API_URL). */
     val env: Map<String, String>
         get() = emptyMap()
 
-    /**
-     * Backend-specific facts about this session's execution resource
-     * (e.g. [homer.app.SpanAttributes.POD_NAME] for kubernetes). Stamped onto
-     * command-execution spans by AgentExecutor.
-     */
     val metadata: Map<String, String>
         get() = emptyMap()
 
-    /**
-     * Operator-declared extra uploads this runner requires in every workspace
-     * (ADR-0042). Mechanism only — the executors own when to upload them:
-     * AgentExecutor alongside the workspace + agent-dir upload,
-     * RunnerCmdExecutor after createWorkspace() and before checks.
-     */
+    /** Mechanism only — the executors own when to upload them: `AgentExecutor` with the workspace,
+     * `RunnerCmdExecutor` after `createWorkspace()` and before checks. See ADR-0042. */
     val extraUploads: List<ExtraUploadSpec>
         get() = emptyList()
 
-    /**
-     * Create the backend-side workspace root. Returns env overrides that
-     * make the workspace usable there (e.g. HMR_* paths translated to the
-     * remote layout); empty when the backend shares the server filesystem.
-     */
     suspend fun createWorkspace(): Map<String, String> = emptyMap()
 
-    /**
-     * Copy a local file or directory (recursive) into the backend
-     * workspace. [remoteRelative] is resolved against the backend's
-     * workspace root ("." = the root itself).
-     *
-     * [excludes] are paths relative to [local] that must not be transferred,
-     * using the same bare-name/leading-`/` matching every backend's walk
-     * already implements. The one caller that needs them is the agent-dir
-     * upload: a parent agent's `HMR_AGENT_DIR` must not carry a nested agent's
-     * directory to the runner (ADR-0068, ADR-0047). **An override that
-     * transfers anything must honour [excludes]** — dropping them silently
-     * ships the ADR-0047 parent/child leak. The no-op default here copies
-     * nothing (the local runner shares the filesystem), so it only warns.
-     */
+    /** [excludes] are paths relative to [local] a copy must not transfer; an override that transfers anything
+     * must honour them — dropping them silently ships the ADR-0047 parent/child leak. */
     suspend fun upload(
         local: Path,
         remoteRelative: String,
@@ -129,11 +64,6 @@ interface RunnerSession : AutoCloseable {
         }
     }
 
-    /**
-     * Copy a backend workspace file or directory (recursive) back to [local].
-     * [mode] controls how remote content reconciles with what's already at
-     * [local] — see [DownloadMode]. Defaults to [DownloadMode.OVERLAY].
-     */
     suspend fun download(
         remoteRelative: String,
         local: Path,
@@ -141,18 +71,13 @@ interface RunnerSession : AutoCloseable {
     ) {
     }
 
-    /** Remove the backend-side workspace root recursively. */
     suspend fun cleanWorkspace() {
     }
 
-    /**
-     * Mark this session's run as failed before close(). Lets backends with a
-     * keep-on-failure debugging mode (kubernetes keepPodOnFailure) retain the
-     * execution resource. Kills are not failures — the caller decides.
-     */
+    /** Call before [close]; lets a keep-on-failure backend (kubernetes `keepPodOnFailure`) retain the resource.
+     * Kills are not failures — the caller decides. */
     fun markFailed() {
     }
 
-    /** Release the backing resource (close connection, delete pod). */
     override fun close()
 }

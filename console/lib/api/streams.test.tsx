@@ -29,15 +29,19 @@ describe('useProcessStatusStream', () => {
   // The callbacks scheduled but not yet run — what a browser would call on the next
   // tick, whether or not the component is still mounted.
   const pendingFrames = () => [...frames.values()];
+  // The ids of those frames, so a test can name the one a cleanup must cancel.
+  const pendingFrameIds = () => [...frames.keys()];
+  const cancelAnimationFrameMock = vi.fn((id: number) => frames.delete(id));
 
   beforeEach(() => {
     openStreamMock.mockReset();
+    cancelAnimationFrameMock.mockClear();
     frames.clear();
     vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
       frames.set(++lastFrameId, cb);
       return lastFrameId;
     });
-    vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+    vi.stubGlobal('cancelAnimationFrame', cancelAnimationFrameMock);
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -71,9 +75,10 @@ describe('useProcessStatusStream', () => {
 
   function mountWithSpy() {
     let captured: { onEvent: (n: string, d: unknown) => void } | undefined;
+    const close = vi.fn();
     openStreamMock.mockImplementation((_p: string, h: { onEvent: (n: string, d: unknown) => void }) => {
       captured = h;
-      return () => {};
+      return close;
     });
     const qc = new QueryClient();
     const invalidate = vi.spyOn(qc, 'invalidateQueries');
@@ -89,6 +94,7 @@ describe('useProcessStatusStream', () => {
       keys,
       count: (key: readonly unknown[]) => keys().filter((k) => JSON.stringify(k) === JSON.stringify(key)).length,
       unmount,
+      close,
     };
   }
 
@@ -133,6 +139,22 @@ describe('useProcessStatusStream', () => {
 
     expect(keys()).toEqual([]);
     expect(frames.size).toBe(0);
+  });
+
+  it('cancels the pending frame and closes the stream on unmount', () => {
+    const { emit, unmount, close } = mountWithSpy();
+
+    emit('process.status', { processId: 7, status: 'WORKING' });
+    const [pendingId] = pendingFrameIds();
+
+    unmount();
+
+    // The flush the burst scheduled is cancelled by its own id, and the SSE
+    // subscription is torn down — a hidden tab would otherwise keep a frame
+    // callback alive against a closed stream.
+    expect(cancelAnimationFrameMock).toHaveBeenCalledWith(pendingId);
+    expect(frames.size).toBe(0);
+    expect(close).toHaveBeenCalledTimes(1);
   });
 
   it('question events invalidate question + process views', () => {
@@ -325,6 +347,38 @@ describe('useProcessLogStream', () => {
     emit('log.chunk', { offset: 5, content: 'hello' });
     expect(read().content).toBe('hello');
     expect(read().offset).toBe(5);
+  });
+
+  it('drops a chunk whose offset is exactly our buffer offset even when its content differs', async () => {
+    const { emit, read } = mountAndCapture();
+    emit('log.chunk', { offset: 5, content: 'hello' });
+    await waitFor(() => expect(read().offset).toBe(5));
+
+    // The reconnect re-delivered a window ending at the same byte offset, so no
+    // bytes are missing: the buffer must be left exactly as it was, not replaced
+    // by the re-delivered window (which the identical-content echo above cannot
+    // tell apart from a drop).
+    emit('log.chunk', { offset: 5, content: 'HELLO' });
+
+    expect(read().content).toBe('hello');
+    expect(read().offset).toBe(5);
+  });
+
+  it('appends a chunk with no numeric offset as a best-effort continuation', async () => {
+    const { emit, read } = mountAndCapture();
+    emit('log.chunk', { offset: 5, content: 'hello' });
+    await waitFor(() => expect(read().offset).toBe(5));
+
+    // A legacy payload shape (`{ content }` only) carries no offset to compare,
+    // so it is appended and the offset advances by the chunk's UTF-8 byte
+    // length — 3 for 'abc', 2 for 'é'.
+    emit('log.chunk', { content: 'abc' });
+    expect(read().content).toBe('helloabc');
+    expect(read().offset).toBe(8);
+
+    emit('log.chunk', { content: 'é' });
+    expect(read().content).toBe('helloabcé');
+    expect(read().offset).toBe(10);
   });
 
   it('after a reconnect, when the file has grown, replaces buffer with the new snapshot', async () => {

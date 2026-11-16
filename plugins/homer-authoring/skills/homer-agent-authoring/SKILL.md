@@ -16,6 +16,16 @@ This skill is a cheat-sheet for the common case. Full reference:
 [`reference/AGENT.md`](reference/AGENT.md). Contract:
 [`../../schemas/homer-agent.schema.json`](../../schemas/homer-agent.schema.json).
 
+`reference/AGENT.md` is about 4,900 lines, so read it one section at a time:
+open its [Contents list](reference/AGENT.md#contents), pick the heading you
+need, and read only that section — grep for the heading and read from there, or
+read the file with an offset and a limit. Never read the whole file.
+
+The Contents list is hand-maintained: no tool generates it, so a heading
+change updates it in the same commit. Generating it in the plugin sync task
+was considered and rejected — the task is a plain copy, and a Markdown parser
+in the build for a list that only moves with headings was not worth it.
+
 ## Workflow
 
 1. **Copy the closest pattern** from the cheat-sheet below (or from

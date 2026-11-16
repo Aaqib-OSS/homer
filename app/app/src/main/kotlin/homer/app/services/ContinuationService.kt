@@ -49,14 +49,12 @@ data class JoinWatch(
 )
 
 /**
- * A registered completion continuation: the target agent to start once a watched
- * sub-process reaches a terminal state, carrying that process's result under
- * [resumeParam]. The continuation outlives both the origin and watched processes.
- * See ADR-0023.
- *
- * For [ContinuationKind.JOIN] continuations [watchedProcessId] is the sentinel `0`
- * (real process ids start at 1) so the single-watch trigger never matches them; the
- * watched set lives in [watches] instead. See ADR-0026.
+ * A registered completion continuation: the target agent to start once a watched sub-process
+ * reaches a terminal state, carrying that process's result under [resumeParam]. The
+ * continuation outlives both the origin and watched processes. See ADR-0023.
+ * For [ContinuationKind.JOIN] continuations [watchedProcessId] is the sentinel `0` (real
+ * process ids start at 1) so the single-watch trigger never matches them; the watched set
+ * lives in [watches] instead. See ADR-0026.
  */
 data class Continuation(
     val id: Int,
@@ -322,10 +320,9 @@ internal class ContinuationService(
      * The completion trigger. Fires every PENDING continuation watching [processId] now that it
      * has reached [status] (any terminal status — the parked workflow must always wake). Each is
      * claimed (PENDING→DISPATCHING CAS) before its run starts so a crash between run-start and
-     * markDispatched cannot double-fire; the claim makes this idempotent against concurrent calls
-     * and boot-time replay. Never throws into the caller — every failure marks the continuation
-     * FAILED and is logged, so a hook failure can never corrupt the watched process's terminal
-     * status. See ADR-0023.
+     * markDispatched cannot double-fire; the claim makes it idempotent against concurrent calls
+     * and boot replay. Never throws into the caller — a failure marks the continuation FAILED and
+     * is logged, so it can never corrupt the watched process's terminal status. See ADR-0023.
      */
     suspend fun onProcessTerminal(
         processId: Int,

@@ -50,15 +50,10 @@ import java.nio.file.Path
 private val logger = LoggerFactory.getLogger("homer.app.routes.CallbackRoutes")
 
 /**
- * Question callback routes for running commands, authenticated by the
- * per-process `HMR_CALLBACK_TOKEN` — never by operator credentials.
- *
- * Mounted OUTSIDE `authenticate(...)` on purpose, next to the other
- * unsecured routes: this is a structural trust boundary (ADR-0019).
- * Operator auth schemes can never satisfy these routes and the callback
- * token can never satisfy operator routes, regardless of how either is
- * configured. Token extraction + constant-time resolution happen here at
- * the route level.
+ * Question callback routes for running commands, authenticated by the per-process
+ * `HMR_CALLBACK_TOKEN` — never by operator credentials. Mounted OUTSIDE `authenticate(...)` on
+ * purpose: a structural trust boundary (ADR-0019) where neither auth scheme can satisfy the
+ * other's routes; token extraction and constant-time resolution happen here, at the route level.
  */
 internal fun Route.callbackRoutes(deps: CallbackDeps) {
     callbackQuestionRoutes(deps)

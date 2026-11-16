@@ -22,12 +22,11 @@ private val logger = LoggerFactory.getLogger("homer.app.Application")
 
 /**
  * Resolves `@SYSENV:VAR` placeholders inside every secret-bearing field of an
- * [AuthConfig] tree. Recurses into [AuthConfig.Combined] so each inner scheme
- * is resolved. Every variant that carries operator-provided secrets must be
- * covered here — adding a new field with a `@SYSENV`-style placeholder
- * elsewhere in the model and forgetting to resolve it here would silently
- * pass the literal `"@SYSENV:..."` string to the consumer (bcrypt, HMAC,
- * bearer comparison) and look like "invalid credentials" at runtime.
+ * [AuthConfig] tree. Recurses into [AuthConfig.Combined] so each inner scheme is
+ * resolved. Every variant carrying operator-provided secrets must be covered here —
+ * a field with a `@SYSENV`-style placeholder left unresolved passes the literal
+ * `"@SYSENV:..."` to the consumer (bcrypt, HMAC, bearer comparison) and looks like
+ * "invalid credentials" at runtime.
  */
 internal fun resolveAuth(
     auth: AuthConfig,
@@ -220,15 +219,12 @@ internal fun validateExplicitApiAuth(config: AppConfig) {
 }
 
 /**
- * A runner-domain token and an operator `apiAuth` credential are distinct principal
- * classes (ADR-0066): the runner routes accept only the former, every other route
- * only the latter. Equal values would let one credential satisfy both boundaries, so
- * the collision is refused at startup. The message names the alias, never the value.
- *
- * Every secret an `apiAuth` scheme accepts as proof counts, not just bearer tokens:
- * an HMAC key secret signs arbitrary requests, and a session signing secret (current
- * or rotated-out) mints a valid cookie for any configured user. A password hash is
- * deliberately absent — it is never presented as a credential.
+ * A runner-domain token and an operator `apiAuth` credential are distinct principal classes
+ * (ADR-0066): the runner routes accept only the former, every other route only the latter.
+ * Equal values would let one credential satisfy both boundaries, so the collision is refused
+ * at startup; the message names the alias, never the value. Every secret an `apiAuth` scheme
+ * accepts as proof counts — an HMAC key secret signs arbitrary requests, a session signing
+ * secret mints a valid cookie — but a password hash is never presented as a credential.
  */
 internal fun validateRunnerDomainTokens(config: AppConfig) {
     val apiAuthSecrets =
@@ -266,15 +262,12 @@ internal fun validateCorsForCookieAuth(config: AppConfig) {
 }
 
 /**
- * Fail-fast on an HMAC key whose signature does not bind the request path while
- * its grants reach more than one agent — via `role: admin`, a grant whose
- * `agents` contains a `*` pattern, or grants naming two or more distinct exact
- * agents. Such a signature is portable: a request captured for one agent replays
- * against every other agent the key can reach. The signature scheme itself is
- * unchanged (existing valid signatures still verify), so this only rejects the
- * genuinely-dangerous config at startup; the operator narrows the key's grants
- * or binds the path. See M3/M4 in the 2026-07-12 security review, re-expressed on
- * grants per ADR-0037.
+ * Fail-fast on an HMAC key whose signature does not bind the request path while its
+ * grants reach more than one agent — via `role: admin`, a `*` agent pattern, or grants
+ * naming two or more distinct exact agents. Such a signature is portable: a request
+ * captured for one agent replays against every other agent the key can reach. The scheme
+ * is unchanged (existing signatures still verify), so this only rejects the dangerous
+ * config at startup; the operator narrows the grants or binds the path (ADR-0037).
  */
 internal fun validateHmacSignatureScope(config: AppConfig) {
     flattenAuthSchemes(config.server.apiAuth)
@@ -299,13 +292,12 @@ internal fun validateHmacSignatureScope(config: AppConfig) {
 }
 
 /**
- * Fail-fast on a session signing secret shorter than [MIN_SESSION_SECRET_LEN]
- * characters. `sessionSecret` (and the rotation key `sessionSecretPrevious`) is
- * used raw as the HMAC-SHA256 key for the session cookie; a short secret is
- * brute-forceable, letting an attacker forge session cookies. Runs on the
- * *resolved* config (after `@SYSENV` substitution), so an operator referencing a
- * strong secret via a short `@SYSENV:VAR` placeholder is fine — only the actual
- * value's length is checked.
+ * Fail-fast on a session signing secret shorter than [MIN_SESSION_SECRET_LEN] characters.
+ * `sessionSecret` (and the rotation key `sessionSecretPrevious`) is used raw as the
+ * HMAC-SHA256 key for the session cookie; a short secret is brute-forceable, letting an
+ * attacker forge cookies. Runs on the *resolved* config (after `@SYSENV` substitution),
+ * so a short `@SYSENV:VAR` placeholder referencing a strong secret is fine — only the
+ * actual value's length is checked.
  */
 internal fun validateSessionSecretStrength(config: AppConfig) {
     flattenAuthSchemes(config.server.apiAuth)
@@ -351,7 +343,7 @@ private const val MIN_RUNNER_TOKEN_LEN = 32
  * Fail-fast when Langfuse export is enabled but `serverUrl` is plaintext `http://`
  * to a non-loopback host: the OTLP export carries the Langfuse public+secret keys
  * and (non-secret) prompt/tool content, so cleartext to a remote host leaks them.
- * Loopback `http://` is allowed (local collector). See M12.
+ * Loopback `http://` is allowed (local collector). See `app/SERVER.md` § Langfuse Configuration.
  */
 internal fun validateLangfuseServerUrl(config: AppConfig) {
     if (config.openTelemetryExport != OpenTelemetryExport.LANGFUSE) return
@@ -361,7 +353,7 @@ internal fun validateLangfuseServerUrl(config: AppConfig) {
         throw ConfigurationException(
             "langfuse.serverUrl uses plaintext http:// to a non-loopback host ($url); the OTLP export " +
                 "carries the Langfuse public+secret keys and prompt content. Use https:// (or a localhost " +
-                "collector). See the 2026-07-12 security review (M12).",
+                "collector).",
         )
     }
 }
@@ -369,7 +361,7 @@ internal fun validateLangfuseServerUrl(config: AppConfig) {
 /**
  * Startup WARN for each HMAC key without a `timestampHeader`: with no freshness
  * window a captured signature replays indefinitely. Non-fatal — some webhook
- * senders (e.g. Vikunja) sign no timestamp — but the operator should know. See M13.
+ * senders (e.g. Vikunja) sign no timestamp — but the operator should know. See ADR-0010.
  */
 internal fun warnOnHmacReplayWindow(
     config: AppConfig,
@@ -394,9 +386,9 @@ internal fun warnOnHmacReplayWindow(
  * Startup WARN for each HMAC key that can run an agent reading inputs from the
  * query string while its `payloadTemplate` omits `{{query}}`: a captured
  * signature then replays with altered query parameters, tampering with those
- * inputs. Non-fatal — query signing is opt-in (M3 in the 2026-07-12 review), so
- * whether to bind it is the operator's choice — but the operator should know the
- * exposure.
+ * inputs. Non-fatal — signing scope is per-key config, not canonical-request signing
+ * (ADR-0010), so whether to bind it is the operator's choice — but the operator should
+ * know the exposure.
  */
 internal fun warnOnUnsignedQueryInputs(
     config: AppConfig,

@@ -25,21 +25,12 @@ val LlmOutputJson: Json =
     }
 
 /**
- * Splits a harness CLI's NDJSON stdout (one JSON event per line) into one [JsonObject]
- * per non-blank line.
- *
- * Throws [MalformedLlmOutputException] on the first line that is not a valid JSON
- * object. This is a deliberate tightening over a whole-array parse: a truncated/garbled
- * stream fails the post-mortem read rather than silently dropping events. Each event
- * must be a JSON object — `isLenient` would otherwise accept a bare unquoted token
- * (e.g. a truncated line) as a string primitive, which is not a usable event. The
- * caller owns the empty-output check (callers report it differently).
- *
- * Prefer the [Sequence] overload with `Path.useLines` so a large (up to
- * `maxOutputBytes`) stdout is read line-by-line rather than materialized as one
- * String alongside the parsed list — halving peak heap under `maxParallelRuns`
- * (2026-07-12 security review, L4). The [String] overload remains for callers
- * that already hold the text (e.g. tests).
+ * Splits a harness CLI's NDJSON stdout (one JSON event per line) into one [JsonObject] per non-blank
+ * line. Throws [MalformedLlmOutputException] on the first line that is not a valid JSON object — a
+ * deliberate tightening over a whole-array parse, so a truncated/garbled stream fails the read rather
+ * than silently dropping events (each event must be an object; `isLenient` would accept a bare token as
+ * a string primitive). The caller owns the empty-output check. Prefer the [Sequence] overload with
+ * `Path.useLines` so a large stdout is read line-by-line, not materialized whole (ADR-0047 rules 4–5).
  */
 fun parseNdjson(lines: Sequence<String>): List<JsonObject> =
     lines
@@ -122,18 +113,12 @@ data class LenientParse(
 )
 
 /**
- * Lenient sibling of [parseNdjson]: blank, unparseable and non-object lines are skipped
- * instead of throwing, exactly as [scanLlmAccounting] reads the same file. Used for the
- * telemetry hand-off of a non-zero exit, where a killed or truncated stream (a trailing
- * partial line differs by runner, ADR-0063) must still keep its tool and message spans.
- * The exit-0 success path keeps the strict [parseNdjson] validation.
- *
- * [maxEvents] bounds the returned event list (CWE-400): once it is reached the parse
- * stops — later lines are neither read nor counted, and [LenientParse.truncated] says
- * so. Every kind of unusable line — unparseable, or a valid JSON value that is not an
- * object, both under `isLenient` — increments [LenientParse.skippedLines], so a garbage
- * flood is counted, never silently dropped. Default null keeps the unbounded shape the
- * strict callers rely on.
+ * Lenient sibling of [parseNdjson]: blank, unparseable and non-object lines are skipped instead
+ * of throwing. Used for the telemetry hand-off of a non-zero exit, where a killed or truncated
+ * stream (a trailing partial line differs by runner, ADR-0063) must still keep its tool and
+ * message spans; the exit-0 path keeps strict [parseNdjson]. [maxEvents] bounds the returned
+ * list (CWE-400): once reached the parse stops (later lines neither read nor counted, and
+ * [LenientParse.truncated] says so), and every unusable line increments [LenientParse.skippedLines].
  */
 fun parseNdjsonLenient(
     lines: Sequence<String>,
@@ -225,16 +210,12 @@ private const val MALFORMED_PREVIEW_LINES = 5
 private const val RAW_EVENT_PREVIEW_LENGTH = 500
 
 /**
- * Lenient per-attempt scan: unparseable lines are skipped. An attempt can end more than one
- * turn (Claude: a background subagent finishing after the first `result`), so the cost is the
- * highest one reported — it is cumulative — and the usage is summed, being per turn (see
- * [LlmEvent.TurnEnd] and ADR-0074). Reads only the harness-neutral events [translate] produces — no
- * per-harness raw-field fallback. This function is shared by every harness's accounting
- * (Codex included), so any leniency a specific CLI's dialect needs (e.g. a `system` line with
- * no `model`, or a cost field the CLI sometimes can't format as a number) belongs in that
- * harness's own `translate`, never here. `sessionId` is gated with [gateSessionId] regardless
- * of what the adapter returns, so a future harness that forgets to gate its own session id
- * cannot leak an unvalidated one into storage. See ADR-0061.
+ * Lenient per-attempt scan: unparseable lines are skipped. An attempt can end more than one turn
+ * (Claude: a background subagent finishing after the first `result`), so the cost is the highest
+ * reported — cumulative — and the usage is summed, being per turn (ADR-0074). Reads only the
+ * harness-neutral events [translate] produces, never a per-harness raw field: dialect leniency
+ * belongs in that harness's own `translate`. `sessionId` is gated with [gateSessionId] regardless
+ * of what the adapter returns, so a harness that forgets to gate cannot leak an unvalidated one (ADR-0061).
  */
 fun scanLlmAccounting(
     lines: Sequence<String>,

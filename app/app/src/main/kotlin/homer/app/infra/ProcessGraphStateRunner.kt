@@ -26,13 +26,11 @@ sealed class GraphStateResult {
 
 /**
  * Host-local implementation: spawns `<python> -m homer_langgraph state --module
- * <module> --thread <threadId>` on the server host and captures stdout (JSON) /
- * stderr (error). Like `ProcessGraphInspectRunner`, this inherits the server
- * process environment so `python` and the `homer_langgraph` package resolve,
- * then overlays the agent's declared `env` (e.g. `PYTHONPATH`,
- * `HOMER_LG_STATE_DIR`) so the agent's own module and checkpoint store resolve
- * exactly as in a real run. This is server-host introspection, not sandboxed
- * agent execution. See ADR-0044.
+ * <module> --thread <threadId>` on the server host, inheriting the server
+ * process environment so `python` and `homer_langgraph` resolve, then overlays
+ * the agent's declared `env` (e.g. `PYTHONPATH`, `HOMER_LG_STATE_DIR`) so the
+ * agent's module and checkpoint store resolve as in a real run. Server-host
+ * introspection, not sandboxed agent execution. See ADR-0044.
  */
 class ProcessGraphStateRunner : GraphStateRunner {
     override suspend fun run(

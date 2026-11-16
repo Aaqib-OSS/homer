@@ -7,18 +7,11 @@ import kotlinx.serialization.json.JsonObject
 
 /**
  * The Claude Code `--output-format stream-json` events, modelled **only where Homer
- * reads them** (ADR-0057).
- *
- * A field with no reader is deliberately not declared. `ignoreUnknownKeys` tolerates a
- * key the CLI *adds*, not one it *retypes*: a known key of the wrong type fails the whole
- * event, and its handler never runs — so an unread field can delete telemetry that is
- * read. CLI 2.1.x did exactly that twice, on `system.plugins` and
- * `result.permission_denials`, neither of which Homer ever consumed. Every field that is
- * declared carries a default, so a missing one costs an attribute rather than the event.
- *
- * The `system` event has no type here at all: it is read untyped in
- * [homer.app.executors.llm.ClaudeHarness], through accessors that cannot throw. A
- * reader added later has to do the same.
+ * reads them** (ADR-0057). A field with no reader is deliberately not declared:
+ * `ignoreUnknownKeys` tolerates a key the CLI *adds*, not one it *retypes* — a known
+ * key of the wrong type fails the whole event, and its handler never runs, so an
+ * unread field can delete telemetry that is read. The `system` event has no type here:
+ * it is read untyped in [homer.app.executors.llm.ClaudeHarness], via non-throwing accessors.
  */
 @Serializable
 sealed interface ClaudeEvent {

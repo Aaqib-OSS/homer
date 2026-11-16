@@ -288,6 +288,7 @@ Two related rules:
 | Console deployment | [`console/DEPLOYMENT.md`](console/DEPLOYMENT.md) |
 | Console testing | [`console/TESTING.md`](console/TESTING.md) |
 | Contributor verify commands (mirror of §5) | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
+| Release procedure (version bump, release commit, tag, what the tag publishes) | [`CONTRIBUTING.md`](CONTRIBUTING.md#releasing) |
 | Docker topology | [`/DOCKER.md`](DOCKER.md) |
 | Feature atlas (single-page overview of every user-visible feature; published on the documentation site) | [`docs/homer-feature-atlas.html`](docs/homer-feature-atlas.html) |
 | Documentation site (which docs it publishes, versions, landing page) | [`site/`](site/), [ADR-0087](docs/adr/0087-versioned-documentation-site.md) |

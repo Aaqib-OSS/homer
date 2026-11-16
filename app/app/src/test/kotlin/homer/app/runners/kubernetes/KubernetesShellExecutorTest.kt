@@ -126,7 +126,7 @@ class KubernetesShellExecutorTest {
 
         val executor = KubernetesShellExecutor(client, api, "homer", "pod-1")
         val err = tmp.resolve("err")
-        // Audit #8: timeout must propagate so callers fail fast.
+        // Timeout must propagate so callers fail fast.
         var thrown: Throwable? = null
         try {
             executor.cmd(

@@ -95,15 +95,12 @@ class ResultToEnvMapper(
     }
 
     /**
-     * Builds a JsonPath document from a command's stdout/stderr.
-     *
-     * Plain single-document JSON (object or array) is handed to JsonPath as-is.
-     * Claude's `--output-format stream-json` stdout is NDJSON — one JSON object
-     * per line — which is not a single JSON document. We re-assemble those lines
-     * into a JSON array so `jsonPath` transformers evaluate against the whole
-     * event stream, the same shape the pre-streaming `--output-format json`
-     * output had (e.g. `$[?(@.type=='result')].total_cost_usd`). Returns null
-     * when neither interpretation parses, so extraction degrades gracefully.
+     * Builds a JsonPath document from a command's stdout/stderr. Plain
+     * single-document JSON is handed to JsonPath as-is; Claude's
+     * `--output-format stream-json` stdout is NDJSON (one object per line), so
+     * those lines are re-assembled into a JSON array for `jsonPath` transformers
+     * to evaluate against the whole event stream. Returns null when neither
+     * interpretation parses, so extraction degrades gracefully.
      */
     private fun parseJsonPathDocument(content: String): DocumentContext? {
         if (content.isBlank()) return null

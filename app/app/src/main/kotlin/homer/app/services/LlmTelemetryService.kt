@@ -319,10 +319,8 @@ class LlmTelemetryService(
 
     /**
      * Most authoritative first: what the harness reported (session start, then the first
-     * main-agent message), then the turn-end event's own model accounting, then what the
-     * step asked for. Losing any single event therefore degrades the answer instead of
-     * erasing it.
-     *
+     * main-agent message), then the turn-end event's own model accounting, then what the step
+     * asked for. Losing any single event degrades the answer instead of erasing it.
      * The step's configured model is deliberately last — it is what was requested, not what
      * ran: it may be an alias (`sonnet`, `opusplan`), and a `fallbackModel` may have served
      * the run instead.

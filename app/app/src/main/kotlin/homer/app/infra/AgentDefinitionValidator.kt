@@ -82,11 +82,10 @@ internal class AgentDefinitionValidator(
 
     /**
      * Rejects a graceful-stop declaration that cannot work: `onTimeout: stop` with no `onStop:`
-     * steps to run, a stop step that is itself `onTimeout: stop` (a stop step is the run's last
-     * chance, so it may not hand the run back to a stop phase), an interrupt grace outside
-     * `0..MAX_INTERRUPT_GRACE_SECONDS`, and more stop steps than [MAX_ON_STOP_STEPS].
-     *
-     * A bare `onStop:` is valid — an agent may declare stop steps while keeping the default
+     * steps, a stop step that is itself `onTimeout: stop` (a stop step is the run's last chance,
+     * so it may not hand the run back to a stop phase), an interrupt grace outside
+     * `0..MAX_INTERRUPT_GRACE_SECONDS`, and more stop steps than [MAX_ON_STOP_STEPS]. A bare
+     * `onStop:` is valid — an agent may declare stop steps while keeping the default
      * `onTimeout: fail` and be stopped only by the run's deadline. See ADR-0108.
      */
     private fun checkStopPolicy(

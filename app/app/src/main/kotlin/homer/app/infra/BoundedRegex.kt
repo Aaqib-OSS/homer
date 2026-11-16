@@ -11,21 +11,12 @@ import java.util.concurrent.TimeoutException
 import java.util.regex.PatternSyntaxException
 
 /**
- * Runs author-supplied regexes with a wall-clock bound so a
- * catastrophic-backtracking pattern (ReDoS) evaluated against
- * attacker-influenceable input cannot pin a CPU indefinitely.
- *
- * The match runs on a pooled worker thread reading an [InterruptibleCharSequence];
- * on timeout the worker is interrupted (its next `charAt` throws), the match
- * unwinds, and [RegexTimeoutException] is raised to the caller. Capping input
- * size alone does not bound backtracking, which is why this exists.
- *
- * The pool is bounded too: callers multiply matches, so an unbounded pool would
- * let a burst of stuck matches spawn a thread each. Past the pool and its queue a
- * submission is shed — never accumulated — as [RegexShedException], a distinct
- * subclass of [RegexTimeoutException] so callers failing closed on either still
- * work while an operator can tell a slow pattern from pool saturation.
- * See ADR-0047 rules 4–5.
+ * Runs author-supplied regexes with a wall-clock bound so a catastrophic-backtracking pattern (ReDoS)
+ * evaluated against attacker-influenceable input cannot pin a CPU indefinitely. The match runs on a
+ * pooled worker thread reading an [InterruptibleCharSequence]; on timeout the worker is interrupted
+ * (its next `charAt` throws) and [RegexTimeoutException] is raised. The pool is bounded too: past it
+ * and its queue a submission is shed, never accumulated, as [RegexShedException], a distinct
+ * [RegexTimeoutException] subclass so callers failing closed on either still work. See ADR-0047 rules 4–5.
  */
 internal object BoundedRegex {
     const val DEFAULT_TIMEOUT_MS = 1000L
@@ -70,13 +61,12 @@ internal object BoundedRegex {
     ): Boolean = run(timeoutMs) { regex.matches(InterruptibleCharSequence(input)) }
 
     /**
-     * Compiles [pattern] and finds it in [input] under [DEFAULT_TIMEOUT_MS], returning
-     * `null` — omit the value — when the match exceeds the bound, is shed by pool
-     * saturation, or the pattern does not compile. Only [envName] is logged: [input] may
-     * hold a resolved secret (§12 rule 7). The log says which of the three happened.
-     *
-     * [onTimeout] runs when the match was shed (by the bound or by saturation) rather than
-     * matched, so a caller bounding a whole sequence of matches can stop submitting the rest.
+     * Compiles [pattern] and finds it in [input] under [DEFAULT_TIMEOUT_MS], returning `null`
+     * — omit the value — when the match exceeds the bound, is shed by pool saturation, or the
+     * pattern does not compile. Only [envName] is logged: [input] may hold a resolved secret
+     * (§12 rule 7). The log says which of the three happened. [onTimeout] runs when the match
+     * was shed (by the bound or by saturation) rather than matched, so a caller bounding a
+     * whole sequence of matches can stop submitting the rest.
      */
     fun findOrOmit(
         pattern: String,

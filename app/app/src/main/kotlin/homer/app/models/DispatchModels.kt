@@ -44,13 +44,10 @@ data class CreateDispatchGroupResponse(
 /**
  * Body of `POST /api/v1/callback/runs` (fire-and-forget script-driven dispatch).
  * The optional `continueAgent` block registers a completion continuation that
- * resumes the parent once the started sub-process reaches a terminal state.
- * See ADR-0023.
- *
- * `params` go to the dispatched sub-agent; `continueParams` go to the
- * continuation run (the resumed parent) — e.g. the LangGraph interrupt id,
- * which must reach the resumed parent, not the sub. Ignored without
- * `continueAgent`.
+ * resumes the parent once the started sub-process reaches a terminal state
+ * (ADR-0023). `params` go to the dispatched sub-agent; `continueParams` go to
+ * the continuation run (the resumed parent) — e.g. the LangGraph interrupt id,
+ * which must reach the resumed parent, not the sub. Ignored without `continueAgent`.
  */
 @Serializable
 data class CreateRunRequest(
@@ -75,7 +72,6 @@ data class CreateRunResponse(
  * Body of `POST /api/v1/callback/joins` (parallel fan-out join). Starts every sub in [subs] and
  * registers ONE join continuation that resumes [continueAgent] a single time after the last sub
  * reaches a terminal state, carrying all results keyed by interrupt id. See ADR-0026.
- *
  * `subs[*].params` go to each dispatched sub; `continueParams` (plus the thread id) go to the
  * continuation run — the resumed parent. The comma-joined interrupt ids ride in `continueParams`
  * as `HMR_LG_INTERRUPT`, signalling the runtime to resume with the full result map.

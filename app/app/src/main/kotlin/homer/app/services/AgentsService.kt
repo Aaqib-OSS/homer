@@ -73,19 +73,11 @@ class AgentsService(
 
     /**
      * Rescan agent definitions on disk and atomically swap in the new state.
-     *
-     * Disk I/O (`scanner.scan()`) runs outside any lock so concurrent callers can
-     * scan in parallel; the new state is published via `compareAndSet` against
-     * the snapshot the scan was based on. If another writer wins the race we
-     * rescan and retry — both the scan AND the diff must be recomputed against
-     * the now-current state, otherwise a stale scan can attribute "removed" to
+     * Disk I/O (`scanner.scan()`) runs outside any lock so concurrent callers can scan in
+     * parallel; the new state is published via `compareAndSet` against the snapshot the scan
+     * was based on. On a lost race we rescan and retry — both the scan AND the diff must be
+     * recomputed against the now-current state, or a stale scan attributes "removed" to
      * directories the winning writer just legitimately added.
-     *
-     * The previous implementation was `@Synchronized` and serialized the entire
-     * method (including disk I/O) on the AgentsService instance. Two simultaneous
-     * reloads would queue; with @Synchronized removed but no atomic swap, a
-     * naive get-then-set could let two concurrent reloads clobber each other's
-     * additions/removals. This compareAndSet loop is the minimal fix.
      */
     fun reload(): AgentReloadResult {
         var attempt = 0

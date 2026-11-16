@@ -46,10 +46,8 @@ suspend fun ProcessRepository.setPurgeAt(
  * Terminal rows whose *directory* is due for deletion and still have one recorded.
  * `artifacts_dir IS NOT NULL` is the "not yet swept" marker: the sweep nulls it after
  * deleting, so a row kept for its record does not come back round every minute.
- *
- * `workspace_purged_at IS NULL` excludes rows the sweep already handled but which
- * kept `artifacts_dir` set because files were retained — see [markWorkspacePurged].
- * See ADR-0053.
+ * `workspace_purged_at IS NULL` excludes rows the sweep already handled but which kept
+ * `artifacts_dir` set because files were retained — see [markWorkspacePurged]. ADR-0053.
  */
 suspend fun ProcessRepository.getWorkspacePurgeable(
     statuses: Set<ProcessStatus>,
@@ -62,15 +60,12 @@ suspend fun ProcessRepository.getWorkspacePurgeable(
     }
 
 /**
- * Terminal rows whose *record* is due for deletion. A null `record_purge_at` (rows
- * written before v12) falls back to `purge_at`, i.e. the pre-split behaviour.
- *
- * The marker for "the workspace sweep already dealt with this row" is
- * `artifacts_dir IS NULL` **or** `workspace_purged_at IS NOT NULL` — load-bearing,
- * not an optimisation: deleting the record first would orphan a directory whose
- * delete is still failing (nothing-retained case) or whose retained files are meant
- * to keep resolving through the artifact routes (retained case, ADR-0053), with
- * nothing left pointing at either.
+ * Terminal rows whose *record* is due for deletion. A null `record_purge_at` (rows written
+ * before v12) falls back to `purge_at`. The marker for "the workspace sweep already dealt
+ * with this row" is `artifacts_dir IS NULL` **or** `workspace_purged_at IS NOT NULL` —
+ * load-bearing, not an optimisation: deleting the record first would orphan a directory whose
+ * delete is still failing, or whose retained files are meant to keep resolving through the
+ * artifact routes, with nothing left pointing at either. See ADR-0053.
  */
 suspend fun ProcessRepository.getRecordPurgeable(
     statuses: Set<ProcessStatus>,

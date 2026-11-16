@@ -156,20 +156,12 @@ class OpencodeHarness(
 }
 
 /**
- * Running per-step cost totals, one bucket per opencode session. ADR-0074 requires
- * `TurnEnd.costUsd` to be cumulative for the harness process, while opencode reports one
- * step's own cost on each `step_finish`, so [OpencodeHarness] accumulates.
- *
- * Each adapter instance carries its own [StepCostTotals] — the executor factory, the
- * `/llm-events` harness map and agentdebug each build their own — and one instance reads
- * a stdout file more than once (the attempt's accounting scan and the telemetry hand-off;
- * two live subscribers on the stream service's), so a step counts once, by the id
- * opencode puts on it, per instance. The retained state is bounded (§12 rule 4: the
- * session id is agent-written stdout, so its cardinality is not ours): the bound sheds
- * one eldest session's bucket, a live run's once 64 newer sessions arrived while it
- * ran — that run's cumulative then restarts, and the accounting scan's full-file
- * re-read rebuilds it, so the charge stays ADR-0074-correct; only an incremental
- * stream read of the shed run can see the restart.
+ * Running per-step cost totals, one bucket per opencode session. ADR-0074 requires `TurnEnd.costUsd` to
+ * be cumulative for the harness process, while opencode reports one step's own cost on each `step_finish`,
+ * so [OpencodeHarness] accumulates. One instance reads a stdout file more than once (accounting scan and
+ * telemetry hand-off), so a step counts once by its id, per instance. The state is bounded (§12 rule 4 —
+ * the session id is agent-written, its cardinality untrusted): the bound sheds the eldest bucket, and the
+ * scan's full-file re-read rebuilds a live run's cumulative, keeping the charge ADR-0074-correct.
  */
 internal class StepCostTotals {
     private val sessions = HashMap<String, Session>()

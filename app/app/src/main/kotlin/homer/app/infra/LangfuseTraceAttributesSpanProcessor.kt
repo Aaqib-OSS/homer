@@ -9,22 +9,11 @@ import io.opentelemetry.sdk.trace.SpanProcessor
 
 /**
  * Copies [LANGFUSE_TRACE_NAME] and [LANGFUSE_TRACE_TAGS] from a span's parent onto the span as it
- * starts, so every observation of a run carries the run's trace name and tags — command steps,
- * LLM generations and `!<agent>` hops included. Langfuse v4 has no separate trace record and reads
- * both off each observation, so without this only the root span is findable by name or tag.
- *
- * Registered **before** the `BatchSpanProcessor`, and it is the only processor that needs
- * `onStart`. See ADR-0050.
- *
- * Constraints, each a denial path:
- * - **Exactly the two keys are copied.** Nothing else on the parent — inputs, env, `request.source`
- *   extras — rides along, so a parent attribute can never become an egress Homer did not choose.
- * - **The parent's values win.** The child's own attributes are never read, so an agent or a step
- *   cannot retitle the trace or rewrite its tags from below.
- * - **A parent that carries neither key passes neither on**, and a parent that is not a recording
- *   SDK span (a `telemetry.export: OFF` wrapper, an invalid or remote context) is no parent at all.
- * - **It never throws.** A span-start hook that failed would fail the run that was starting; an
- *   unreadable parent just means this span carries no trace name or tags.
+ * starts, so every observation of a run carries the run's trace name and tags (Langfuse v4 has no
+ * separate trace record). Registered **before** the `BatchSpanProcessor` and the only processor
+ * needing `onStart`. See ADR-0050. Constraints, each a denial path: exactly those two keys are copied
+ * (nothing else rides along); the parent's values win (the child's attributes are never read); a parent
+ * carrying neither key passes neither, a non-recording-SDK parent is no parent, and it never throws.
  */
 internal class LangfuseTraceAttributesSpanProcessor : SpanProcessor {
     override fun isStartRequired(): Boolean = true

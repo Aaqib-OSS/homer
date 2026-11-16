@@ -2,6 +2,7 @@ package homer.app.routes
 
 import homer.app.ResetDrainingExtension
 import homer.app.configureServer
+import homer.app.fixtures.send
 import homer.app.infra.PasswordVerifier
 import homer.app.models.Action
 import homer.app.models.AppConfig
@@ -23,20 +24,7 @@ import homer.app.services.DispatchService
 import homer.app.services.ProcessManager
 import homer.app.services.QuestionsService
 import homer.app.services.ResultTokenService
-import io.ktor.client.request.header
-import io.ktor.client.request.prepareRequest
-import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsText
-import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpMethod
-import io.ktor.http.contentType
 import io.ktor.server.application.Application
-import io.ktor.server.application.plugin
-import io.ktor.server.routing.HttpMethodRouteSelector
-import io.ktor.server.routing.RoutingRoot
-import io.ktor.server.routing.getAllRoutes
-import io.ktor.server.routing.path
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import kotlinx.serialization.json.Json
@@ -221,34 +209,6 @@ class RouteAuthorizationMatrixTest {
             noGrantRunToken,
         )
     }
-
-    private fun registeredRoutes(app: Application): List<String> =
-        app.plugin(RoutingRoot).getAllRoutes().map { node ->
-            val method = (node.selector as? HttpMethodRouteSelector)?.method
-            if (method == null) "* ${node.path}" else "${method.value} ${node.parent!!.path}"
-        }
-
-    /** The status of [method] [target] sent with [bearer], and the body unless a `200` not asked to [readBody] (SSE never ends). */
-    private suspend fun ApplicationTestBuilder.send(
-        method: String,
-        target: String,
-        bearer: String?,
-        body: String? = null,
-        readBody: Boolean = false,
-    ): Pair<Int, String?> =
-        client
-            .prepareRequest(target) {
-                this.method = HttpMethod.parse(if (method == "*") "GET" else method)
-                header(HttpHeaders.Accept, "application/json, text/event-stream")
-                bearer?.let { header(HttpHeaders.Authorization, "Bearer $it") }
-                body?.let {
-                    contentType(ContentType.Application.Json)
-                    setBody(it)
-                }
-            }.execute { response ->
-                val status = response.status.value
-                status to (if (readBody || status != 200) response.bodyAsText() else null)
-            }
 
     private fun RouteAuthz.expected(case: Case): Int =
         when (case) {
