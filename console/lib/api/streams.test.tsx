@@ -290,6 +290,30 @@ describe('useProcessStatusStream', () => {
     // any flow summary — the summaries ride their own poll instead.
     expect(keys()).toEqual([queryKeys.allProcesses()]);
   });
+
+  it('a null payload (data: null) is taken without throwing by every frame class', () => {
+    const { emit, keys, count } = mountWithSpy();
+
+    // sse.ts delivers `null` whenever a frame's `data:` is the literal `null`
+    // (JSON.parse succeeds), so the `?.` guards must hold for null too, not
+    // just for a frame that merely omits the field.
+    emit('process.status', null);
+    nextFrame();
+    // The blanket flush still runs, but no process id rides it — the list only.
+    expect(count(queryKeys.allProcesses())).toBe(1);
+    expect(keys()).toEqual([queryKeys.allProcesses()]);
+
+    emit('message.queued', null);
+    // No processId → no run-messages query to name.
+    expect(keys()).toEqual([queryKeys.allProcesses()]);
+
+    emit('question.asked', null);
+    // The question and list invalidations are unconditional; nothing
+    // per-process rides along.
+    expect(keys()).toEqual([queryKeys.allProcesses(), queryKeys.allQuestions(), queryKeys.allProcesses()]);
+    expect(count(queryKeys.process(7))).toBe(0);
+    expect(count(queryKeys.allFlowSummaries())).toBe(0);
+  });
 });
 
 interface CapturedHandlers {
