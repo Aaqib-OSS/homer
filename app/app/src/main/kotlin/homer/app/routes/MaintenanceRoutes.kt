@@ -17,7 +17,7 @@ import io.ktor.server.routing.post
  * (ADR-0037, ADR-0047 rule 3, ADR-0092). The body is parsed *after* the gate, so a
  * non-admin caller learns nothing about the request shape either.
  */
-internal fun Route.maintenanceRoutes(deps: ApiDeps) {
+internal fun Route.maintenanceRoutes(deps: MaintenanceDeps) {
     with(deps) {
         get("/maintenance") {
             if (!authorizer.canReadServerState(call.principalName())) return@get call.respondNotFound()

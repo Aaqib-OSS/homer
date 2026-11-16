@@ -25,7 +25,7 @@ import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 
 /** Process reads and control: `/status/all`, `/status/{processId}`, `/kill/{processId}`, `/artifacts*`. */
-internal fun Route.processRoutes(deps: ApiDeps) {
+internal fun Route.processRoutes(deps: ProcessRouteDeps) {
     processListRoute(deps)
     processStatusRoute(deps)
     processKillRoute(deps)
@@ -34,7 +34,7 @@ internal fun Route.processRoutes(deps: ApiDeps) {
 }
 
 /** `GET /status/all`: one page of the processes the caller can see. */
-private fun Route.processListRoute(deps: ApiDeps) {
+private fun Route.processListRoute(deps: ProcessRouteDeps) {
     with(deps) {
         get("/status/all") {
             val principal = call.principalName()
@@ -75,7 +75,7 @@ private fun Route.processListRoute(deps: ApiDeps) {
 }
 
 /** `GET /status/{processId}`: one process the caller can see. */
-private fun Route.processStatusRoute(deps: ApiDeps) {
+private fun Route.processStatusRoute(deps: ProcessRouteDeps) {
     with(deps) {
         get("/status/{processId}") {
             val processId = call.parameters["processId"]?.toIntOrNull()
@@ -137,7 +137,7 @@ private fun Route.processStatusRoute(deps: ApiDeps) {
  * closed, like the root-id gate: a holder that is gone, or one this caller cannot see, withholds
  * the id. See ADR-0058.
  */
-private suspend fun ApiDeps.holderRunVisible(
+private suspend fun ProcessRouteDeps.holderRunVisible(
     processInfo: ProcessInfo,
     principal: String?,
 ): Boolean =
@@ -151,7 +151,7 @@ private suspend fun ApiDeps.holderRunVisible(
         } ?: false
 
 /** `DELETE /kill/{processId}`: killing a process the caller can control. */
-private fun Route.processKillRoute(deps: ApiDeps) {
+private fun Route.processKillRoute(deps: ProcessRouteDeps) {
     with(deps) {
         delete("/kill/{processId}") {
             val processId = call.parameters["processId"]?.toIntOrNull()
@@ -178,7 +178,7 @@ private fun Route.processKillRoute(deps: ApiDeps) {
 }
 
 /** `GET /artifacts`: streaming one artifact of a process the caller can see. */
-private fun Route.artifactRoute(deps: ApiDeps) {
+private fun Route.artifactRoute(deps: ProcessRouteDeps) {
     with(deps) {
         get("/artifacts") {
             val (processId, validatedPath) = artifactQuery(call)
@@ -228,7 +228,7 @@ private fun Route.artifactRoute(deps: ApiDeps) {
 }
 
 /** `GET /artifacts/list`: the artifacts of a process the caller can see. */
-private fun Route.artifactListRoute(deps: ApiDeps) {
+private fun Route.artifactListRoute(deps: ProcessRouteDeps) {
     with(deps) {
         get("/artifacts/list") {
             val processId = call.request.queryParameters["processId"]?.toIntOrNull()
@@ -261,7 +261,7 @@ private fun Route.artifactListRoute(deps: ApiDeps) {
 }
 
 /** The `GET /status/all` response for the page [result] of [query]; [aliasVisible] is the caller's admin gate. */
-private fun ApiDeps.processListResponse(
+private fun ProcessRouteDeps.processListResponse(
     result: ProcessManager.ProcessListResult,
     query: ProcessListQuery,
     aliasVisible: Boolean,
@@ -287,7 +287,7 @@ private fun ApiDeps.processListResponse(
  * The `processId` and the validated relative `path` query parameters of `GET /artifacts`; a `400`
  * when the id is missing or not an integer, or the path is missing or escapes the artifacts directory.
  */
-private fun ApiDeps.artifactQuery(call: ApplicationCall): Pair<Int, String> {
+private fun ProcessRouteDeps.artifactQuery(call: ApplicationCall): Pair<Int, String> {
     // Extract query parameters
     val processId = call.request.queryParameters["processId"]?.toIntOrNull()
     val relativePath = call.request.queryParameters["path"]

@@ -68,7 +68,7 @@ private val logger = LoggerFactory.getLogger("homer.app.routes.CallbackRoutes")
  * configured. Token extraction + constant-time resolution happen here at
  * the route level.
  */
-internal fun Route.callbackRoutes(deps: ApiDeps) {
+internal fun Route.callbackRoutes(deps: CallbackDeps) {
     callbackQuestionRoutes(deps)
     callbackTagRoutes(deps)
     callbackDispatchRoutes(deps)
@@ -81,7 +81,7 @@ internal fun Route.callbackRoutes(deps: ApiDeps) {
 }
 
 /** `POST /api/v1/callback/questions` and `GET …/{id}`: asking a question and polling its answer. */
-private fun Route.callbackQuestionRoutes(deps: ApiDeps) {
+private fun Route.callbackQuestionRoutes(deps: CallbackDeps) {
     with(deps) {
         route("/api/v1/callback/questions") {
             // Ask a question: { text, options? } → { id }. 409 when the
@@ -127,7 +127,7 @@ private fun Route.callbackQuestionRoutes(deps: ApiDeps) {
 }
 
 /** `POST /api/v1/callback/tags`: a run declaring one runtime subject tag. */
-private fun Route.callbackTagRoutes(deps: ApiDeps) {
+private fun Route.callbackTagRoutes(deps: CallbackDeps) {
     with(deps) {
         route("/api/v1/callback/tags") {
             // Declare one `key:value` subject tag against the calling run. The run is
@@ -183,7 +183,7 @@ private fun Route.callbackTagRoutes(deps: ApiDeps) {
 }
 
 /** `POST /api/v1/callback/dispatches`: a question that dispatches an agent once answered. */
-private fun Route.callbackDispatchRoutes(deps: ApiDeps) {
+private fun Route.callbackDispatchRoutes(deps: CallbackDeps) {
     with(deps) {
         route("/api/v1/callback/dispatches") {
             post {
@@ -212,7 +212,7 @@ private fun Route.callbackDispatchRoutes(deps: ApiDeps) {
  * `POST /api/v1/callback/dispatch-groups`: N questions registered as one dispatch, the target
  * started once after the last of them with every answer in question order. See ADR-0109.
  */
-private fun Route.callbackDispatchGroupRoutes(deps: ApiDeps) {
+private fun Route.callbackDispatchGroupRoutes(deps: CallbackDeps) {
     with(deps) {
         route("/api/v1/callback/dispatch-groups") {
             post {
@@ -237,14 +237,15 @@ private fun Route.callbackDispatchGroupRoutes(deps: ApiDeps) {
 }
 
 /** `POST /api/v1/callback/runs`: starting an agent at once, optionally with a completion continuation. */
-private fun Route.callbackRunRoutes(deps: ApiDeps) {
+private fun Route.callbackRunRoutes(deps: CallbackDeps) {
     with(deps) {
         route("/api/v1/callback/runs") {
             // Fire-and-forget: start an opt-in target agent immediately, no
             // operator question. Fresh chain; the asking process is recorded
             // only as the referer (ADR-0022). When `continueAgent` is present,
-            // also register a completion continuation that resumes the parent
-            // once the started sub reaches a terminal state (ADR-0023).
+            // the service also registers a completion continuation that resumes
+            // the parent once the started sub reaches a terminal state
+            // (ADR-0023) — validate-before-start and kill-on-failure live there.
             post {
                 val processId = call.resolveCallbackProcess(questionsService) ?: return@post
                 val request =
@@ -252,57 +253,20 @@ private fun Route.callbackRunRoutes(deps: ApiDeps) {
                         "Invalid JSON body: expected { agent, params?, continueAgent?, continueThread?, " +
                             "continueParams?, resumeParam?, resultJsonPath?, ttlSec? }",
                     )
-                val continueAgent = request.continueAgent
-                // `params` go to the sub (dispatchNow); `continueParams` (+ the thread id) go to the
-                // continuation run — the resumed parent. The LangGraph interrupt id rides here so it
-                // reaches the parent, not the useless sub. See ADR-0023.
-                val continuationParams = continuationRunParams(request.continueThread, request.continueParams)
-                // Validate ALL continuation inputs BEFORE starting the sub: a 4xx here must not leave
-                // an untracked sub-process running (no processId in the error body). See ADR-0023.
-                if (continueAgent != null) {
-                    continuationService.validate(
-                        originProcessId = processId,
-                        target = continueAgent,
-                        resumeParam = request.resumeParam,
-                        params = continuationParams,
-                        ttlSec = request.ttlSec,
-                    )
-                }
-                if (continueAgent == null) {
-                    call.respond(CreateRunResponse(dispatchService.dispatchNow(processId, request.agent, request.params)))
-                    return@post
-                }
-                val resultTransformer = request.resultJsonPath?.let { path -> jsonPathResult(path, request.resumeParam) }
-                // What only surfaces after the start (the pending-continuation cap) kills the sub.
-                val (dispatchedProcessId, continuationId) =
-                    processManager.killStartedOnFailure { started ->
-                        val subId = dispatchService.dispatchNow(processId, request.agent, request.params).also { started += it }
-                        subId to
-                            continuationService.create(
-                                originProcessId = processId,
-                                watchedProcessId = subId,
-                                target = continueAgent,
-                                params = continuationParams,
-                                resumeParam = request.resumeParam,
-                                resultTransformer = resultTransformer,
-                                ttlSec = request.ttlSec,
-                            )
-                    }
-                call.respond(CreateRunResponse(dispatchedProcessId, continuationId))
+                call.respond(continuationService.startWithContinuation(processId, request))
             }
         }
     }
 }
 
 /** `POST /api/v1/callback/joins`: a parallel fan-out resumed by one join continuation. */
-private fun Route.callbackJoinRoutes(deps: ApiDeps) {
+private fun Route.callbackJoinRoutes(deps: CallbackDeps) {
     with(deps) {
         route("/api/v1/callback/joins") {
             // Parallel fan-out: start N subs at once and register ONE join continuation that resumes
             // the parent a single time after the last sub ends, carrying all results keyed by
-            // interrupt id. Validate-before-start (origin live, continueAgent + every sub
-            // dispatchable with valid params, resumeParam, ttl), then kill-on-failure for what
-            // only surfaces after a start, so a 4xx can't orphan started subs. See ADR-0026.
+            // interrupt id. The service validates before it starts anything and kills every sub it
+            // started on a later failure, so a 4xx can't orphan one. See ADR-0026.
             post {
                 val processId = call.resolveCallbackProcess(questionsService) ?: return@post
                 val request =
@@ -310,47 +274,14 @@ private fun Route.callbackJoinRoutes(deps: ApiDeps) {
                         "Invalid JSON body: expected { subs:[{ agent, params?, resultJsonPath?, interruptId }], " +
                             "continueAgent, continueThread?, continueParams?, resumeParam?, ttlSec? }",
                     )
-                // `subs[*].params` go to each sub (dispatchNow); `continueParams` (+ the thread id, +
-                // the comma-joined interrupt ids the runtime supplies as HMR_LG_INTERRUPT) go to the
-                // resumed parent. See ADR-0026.
-                val continuationParams = continuationRunParams(request.continueThread, request.continueParams)
-                continuationService.validateJoin(
-                    originProcessId = processId,
-                    target = request.continueAgent,
-                    subAgents = request.subs.map { it.agent },
-                    resumeParam = request.resumeParam,
-                    params = continuationParams,
-                    ttlSec = request.ttlSec,
-                )
-                request.subs.forEach { dispatchService.validateDispatchNow(processId, it.agent, it.params) }
-                // What only surfaces once subs start (cost cap, cooldown, capacity, the pending cap)
-                // kills every sub this request already started.
-                val (watches, continuationId) =
-                    processManager.killStartedOnFailure { started ->
-                        val watches =
-                            request.subs.map { sub ->
-                                val subProcessId = dispatchService.dispatchNow(processId, sub.agent, sub.params).also { started += it }
-                                val transformer = sub.resultJsonPath?.let { path -> jsonPathResult(path, request.resumeParam) }
-                                JoinWatch(watchedProcessId = subProcessId, interruptId = sub.interruptId, resultTransformer = transformer)
-                            }
-                        watches to
-                            continuationService.createJoin(
-                                originProcessId = processId,
-                                watches = watches,
-                                target = request.continueAgent,
-                                params = continuationParams,
-                                resumeParam = request.resumeParam,
-                                ttlSec = request.ttlSec,
-                            )
-                    }
-                call.respond(CreateJoinResponse(watches.map { it.watchedProcessId }, continuationId))
+                call.respond(continuationService.startJoin(processId, request))
             }
         }
     }
 }
 
 /** `GET /api/v1/callback/results/{token}`: a continuation result read by reference. */
-private fun Route.callbackResultRoutes(deps: ApiDeps) {
+private fun Route.callbackResultRoutes(deps: CallbackDeps) {
     with(deps) {
         route("/api/v1/callback/results") {
             // Read-by-reference fetch of a large continuation result. Triple-auth:
@@ -405,7 +336,7 @@ private fun Route.callbackResultRoutes(deps: ApiDeps) {
 }
 
 /** `POST /api/v1/callback/messages/take`: a run taking the operator messages queued for it. */
-private fun Route.callbackMessageRoutes(deps: ApiDeps) {
+private fun Route.callbackMessageRoutes(deps: CallbackDeps) {
     with(deps) {
         // Takes every QUEUED message of the token's own run, never another's (a child run has its own
         // token), and marks them DELIVERED. `?hook=` answers as Claude Code hook JSON, or 204 when
@@ -434,7 +365,7 @@ private fun Route.callbackMessageRoutes(deps: ApiDeps) {
  * that decides per agent. A missing, unknown or ended run's token gets one identical `401`.
  * Any method: envoy's `ext_authz` HTTP check reuses the proxied request's method. See ADR-0110.
  */
-private fun Route.callbackWhoamiRoutes(deps: ApiDeps) {
+private fun Route.callbackWhoamiRoutes(deps: CallbackDeps) {
     with(deps) {
         route("/api/v1/callback/whoami") {
             handle {
@@ -452,30 +383,6 @@ private fun Route.callbackWhoamiRoutes(deps: ApiDeps) {
         }
     }
 }
-
-/**
- * The params of a continuation run, the resumed parent: [continueParams] plus, when given, the
- * LangGraph [continueThread] the parent resumes. See ADR-0023.
- */
-private fun continuationRunParams(
-    continueThread: String?,
-    continueParams: Map<String, String>,
-): Map<String, String> =
-    buildMap {
-        continueThread?.let { put(EnvConstants.LG_THREAD, it) }
-        putAll(continueParams)
-    }
-
-/** The transformer reading a sub's result into [envName]: the JsonPath [path] applied to its stdout. */
-private fun jsonPathResult(
-    path: String,
-    envName: String,
-): ResultEnvParam =
-    ResultEnvParam(
-        src = SrcType.STD_OUT,
-        envName = envName,
-        transformer = ResultTransformer.JsonPath(path),
-    )
 
 /** Refuses with a `400` a runtime tag [value] carrying any secret of the run's [registration]; logs the key, never the value. */
 private fun refuseSecretTagValue(
@@ -549,30 +456,6 @@ internal fun runtimeTag(
         throw QueryParamValidationException("Tag value must match ^[A-Za-z0-9._-]{1,${TagValidation.MAX_TAG_VALUE_LENGTH}}\$")
     }
     return key to value
-}
-
-/**
- * Runs [block], which records every sub it starts in the list it is given. If [block] throws
- * (or the request is cancelled), each recorded sub is killed before the exception propagates,
- * so a failed request never leaves a sub running that no continuation tracks. See ADR-0026.
- */
-@Suppress("SuspendFunSwallowedCancellation") // kills the started subs under NonCancellable and rethrows
-private suspend fun <T> ProcessManager.killStartedOnFailure(block: suspend (started: MutableList<Int>) -> T): T {
-    val started = mutableListOf<Int>()
-    try {
-        return block(started)
-    } catch (e: Throwable) {
-        withContext(NonCancellable) {
-            started.forEach { subId ->
-                try {
-                    killProcess(subId, "Never registered: the callback request that started it failed")
-                } catch (killError: Exception) {
-                    logger.warn("Failed to kill unregistered sub-process {}: {}", subId, killError.message)
-                }
-            }
-        }
-        throw e
-    }
 }
 
 /**

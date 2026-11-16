@@ -44,11 +44,14 @@ import kotlinx.coroutines.CoroutineScope
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Dependency bundle for the API route extension functions. Centralizes the
- * (large) set of services and configuration values the route handlers need,
- * so the extensions take one parameter instead of twenty. The route bodies
- * reference these fields unqualified via `with(deps) { ... }`, keeping the
- * inside-block diff against the pre-split Application.kt byte-identical.
+ * The wiring root of the API routes: every service and configuration value the route files need,
+ * built once in `Application.apiDeps` and handed to the two aggregators (`apiV1Routes`,
+ * `apiV1UnsecuredRoutes`) plus the routes mounted next to them.
+ *
+ * No route file takes this class directly — each builds the small per-file class it needs from
+ * [RouteDeps] (`deps.callbackDeps()`, …), so a handler's `with(deps) { ... }` block names only the
+ * surface of its own file. Fields stay here, and keep their names, so the builders and the
+ * relaxed-mock test fixtures are unaffected.
  */
 internal data class ApiDeps(
     val config: AppConfig,

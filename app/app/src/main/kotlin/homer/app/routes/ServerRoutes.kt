@@ -22,7 +22,7 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 
 /** `/heartbeat`, `/health`, the admin-only `/costs*` and `/status`, and the `/runners*` state reads. */
-internal fun Route.serverRoutes(deps: ApiDeps) {
+internal fun Route.serverRoutes(deps: ServerRouteDeps) {
     serverHealthRoutes(deps)
     costMeterRoutes(deps)
     costByTagRoute(deps)
@@ -30,7 +30,7 @@ internal fun Route.serverRoutes(deps: ApiDeps) {
 }
 
 /** `GET /heartbeat` and `GET /health`: the version ping and the runner and sweep health. */
-private fun Route.serverHealthRoutes(deps: ApiDeps) {
+private fun Route.serverHealthRoutes(deps: ServerRouteDeps) {
     with(deps) {
         get("/heartbeat") {
             call.respond(HeartbeatResponse(version = System.getenv("HOMER_VERSION") ?: "dev"))
@@ -87,7 +87,7 @@ private fun SweepStatus.Snapshot.toResponse(aliasVisible: Boolean): SweepStatusR
     )
 
 /** `GET /costs`, `/costs/monthly` and `/costs/totals`: the admin-only cost-meter reads. */
-private fun Route.costMeterRoutes(deps: ApiDeps) {
+private fun Route.costMeterRoutes(deps: ServerRouteDeps) {
     with(deps) {
         get("/costs") {
             if (call.deniedUnlessAdmin(authorizer)) return@get
@@ -131,7 +131,7 @@ private fun Route.costMeterRoutes(deps: ApiDeps) {
 }
 
 /** `GET /costs/by-tag/{key}`: the admin-only spend per value of a cost-tracked tag key. */
-private fun Route.costByTagRoute(deps: ApiDeps) {
+private fun Route.costByTagRoute(deps: ServerRouteDeps) {
     with(deps) {
         get("/costs/by-tag/{key}") {
             if (call.deniedUnlessAdmin(authorizer)) return@get
@@ -159,7 +159,7 @@ private fun Route.costByTagRoute(deps: ApiDeps) {
  * `GET /status` (admin), and `/runners` and `/runners/queue` (admin, or a `read` grant on `*`
  * with operator naming redacted). See ADR-0111.
  */
-private fun Route.serverStatusRoutes(deps: ApiDeps) {
+private fun Route.serverStatusRoutes(deps: ServerRouteDeps) {
     with(deps) {
         get("/status") {
             if (call.deniedUnlessAdmin(authorizer)) return@get

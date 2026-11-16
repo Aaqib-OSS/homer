@@ -11,15 +11,21 @@ import homer.app.runners.RunnerSession
 import homer.app.runners.RunnerSessionParams
 import homer.app.runners.queue.RunnerAffinityMemory
 import homer.app.runners.queue.RunnerClaimQueue
+import io.mockk.every
 import io.mockk.mockk
+import io.mockk.spyk
 import io.opentelemetry.context.Context
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -360,4 +366,107 @@ class ExternalRunnerDomainTest {
         assertNull(inst.declaredName)
         assertNull(inst.affinityInstance)
     }
+
+    // --- deliverClaim: the claim the protocol route answers from ---
+
+    /** A domain whose per-domain env marks a session the run should see when its filter is by tag. */
+    private fun envDomain() = domain(RunnerConfig.External(token = "t", env = mapOf("GREETING" to "from-the-domain")))
+
+    /** Registers one instance and queues [filter]'s run, returning the instance and its waiting run. */
+    private fun TestScope.pendingClaim(
+        d: ExternalRunnerDomain,
+        filter: RunnerFilter,
+    ): Pair<ExternalRunnerInstance, Deferred<RunnerSession>> {
+        val inst = d.register(RegisterInstanceRequest(name = "host-1", tags = listOf("gpu")))
+        val pending = async { queue.awaitClaim(params(7), filter, 30.seconds) }
+        runCurrent()
+        return inst to pending
+    }
+
+    @Test
+    fun `deliverClaim layers the domain env into a tag-filtered claim`() =
+        runTest {
+            val d = envDomain()
+            val (inst, pending) = pendingClaim(d, RunnerFilter.Tags(setOf("gpu")))
+
+            val claim = d.deliverClaim(inst, queue.take(inst))
+
+            assertNotNull(claim)
+            assertEquals(7, claim.processId)
+            assertEquals("demo", claim.agentName)
+            assertEquals(listOf("gpu"), claim.tags)
+            assertEquals(claim.sessionId, d.session(claim.sessionId)!!.id)
+            val session = pending.await()
+            assertEquals("from-the-domain", session.env["GREETING"], "a tag-filtered run learns its runner only now")
+            session.close()
+        }
+
+    // WorkspaceConfigFactory already layered the domain env below the agent's own env for an
+    // alias-filtered run; layering it again here would drop the agent's override. See ADR-0065.
+    @Test
+    fun `deliverClaim hands an alias-filtered claim the raw session`() =
+        runTest {
+            val d = envDomain()
+            val (inst, pending) = pendingClaim(d, RunnerFilter.Alias("workers"))
+
+            val claim = d.deliverClaim(inst, queue.take(inst))
+
+            assertNotNull(claim)
+            assertTrue(claim.tags.isEmpty(), "an alias claim carries no tag list")
+            val session = pending.await()
+            assertIs<ExternalRunnerSession>(session, "an alias-filtered claim is delivered unwrapped")
+            assertNull(session.env["GREETING"], "the domain env must not be layered a second time")
+            session.close()
+        }
+
+    @Test
+    fun `deliverClaim answers null and closes the session when the run stopped waiting`() =
+        runTest {
+            val d = envDomain()
+            val (inst, pending) = pendingClaim(d, RunnerFilter.Tags(setOf("gpu")))
+            val request = queue.take(inst)
+            pending.cancel()
+            pending.join()
+
+            assertNull(d.deliverClaim(inst, request))
+
+            val session = d.sessions().single()
+            assertNotNull(session.closedAt, "the run stopped waiting, so the opened session must be closed")
+            assertEquals(0, inst.inUse)
+        }
+
+    @Test
+    fun `deliverClaim fails the parked run when the session cannot be opened`() =
+        runTest {
+            val d = spyk(envDomain())
+            every { d.openSession(any(), any()) } throws RuntimeException("boom")
+            val inst = d.register(RegisterInstanceRequest(name = "host-1", tags = listOf("gpu")))
+            // runCatching: the failure the claim delivers is what this test reads, not a thrown child.
+            val pending = async { runCatching { queue.awaitClaim(params(7), RunnerFilter.Tags(setOf("gpu")), 30.seconds) } }
+            runCurrent()
+
+            val thrown = assertFailsWith<RuntimeException> { d.deliverClaim(inst, queue.take(inst)) }
+
+            assertEquals("boom", thrown.message, "the open's own failure still propagates")
+            val failure = pending.await().exceptionOrNull()
+            assertIs<ExternalRunnerException>(failure)
+            assertTrue(
+                failure.message!!.contains("Runner instance 'host-1' disconnected before the claim completed"),
+                "the parked run is failed promptly, not left claimed: ${failure.message}",
+            )
+            assertFalse(failure.message!!.contains("from-the-domain"), "the failure names no env value")
+        }
+
+    @Test
+    fun `deliverClaim touches the instance that served the claim`() =
+        runTest {
+            val d = envDomain()
+            val (inst, pending) = pendingClaim(d, RunnerFilter.Tags(setOf("gpu")))
+            now += 5_000
+
+            d.deliverClaim(inst, queue.take(inst))
+
+            assertEquals(now, inst.lastSeenAt, "a delivered claim is the heartbeat the sweep reads")
+            pending.await().close()
+        }
 }

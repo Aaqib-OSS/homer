@@ -34,7 +34,7 @@ internal fun Route.apiV1UnsecuredRoutes(deps: ApiDeps) {
     // and most reverse-proxy upstream checks don't send Authorization
     // headers. Mounted **outside** the auth wrapper so Kubernetes can
     // hit them on a bearer-secured deployment. Audit P1 #12.
-    probeRoutes(deps)
+    probeRoutes(deps.unsecuredDeps())
 
     // Auth routes — mounted OUTSIDE the authenticate(...) wrapper:
     //  • /login is by definition unauthenticated;
@@ -46,12 +46,12 @@ internal fun Route.apiV1UnsecuredRoutes(deps: ApiDeps) {
     // Audit P0 #6 (long-term) / ADR-0011.
     val passwordScheme = deps.passwordScheme
     if (passwordScheme != null) {
-        sessionAuthRoutes(deps, passwordScheme)
+        sessionAuthRoutes(deps.unsecuredDeps(), passwordScheme)
     }
 }
 
 /** `GET /api/v1/livez` and `GET /api/v1/readyz`: the liveness and readiness probes. */
-private fun Route.probeRoutes(deps: ApiDeps) {
+private fun Route.probeRoutes(deps: UnsecuredDeps) {
     with(deps) {
         route("/api/v1") {
             // Liveness — always 200. Wire `livenessProbe` here. Never wire
@@ -77,7 +77,7 @@ private fun Route.probeRoutes(deps: ApiDeps) {
 
 /** `POST /api/v1/auth/login`, `POST /api/v1/auth/logout` and `GET /api/v1/auth/me`: the session-cookie handshake. */
 private fun Route.sessionAuthRoutes(
-    deps: ApiDeps,
+    deps: UnsecuredDeps,
     passwordScheme: AuthConfig.Password,
 ) {
     with(deps) {

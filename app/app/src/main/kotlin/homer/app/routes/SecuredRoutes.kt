@@ -57,20 +57,22 @@ internal suspend fun ApplicationCall.respondNoStore(body: Any) {
  */
 internal fun Route.apiV1Routes(deps: ApiDeps) {
     with(deps) {
+        val agentDeps = agentRouteDeps()
+        val dispatchDeps = dispatchContinuationDeps()
         route("/api/v1") {
-            serverRoutes(deps)
-            maintenanceRoutes(deps)
-            agentListRoutes(deps)
-            processRoutes(deps)
-            agentRoutes(deps)
-            questionRoutes(deps)
-            runMessageRoutes(deps)
-            dispatchRoutes(deps)
-            continuationRoutes(deps)
+            serverRoutes(serverRouteDeps())
+            maintenanceRoutes(maintenanceDeps())
+            agentListRoutes(agentDeps)
+            processRoutes(processRouteDeps())
+            agentRoutes(agentDeps)
+            questionRoutes(questionRouteDeps())
+            runMessageRoutes(runMessageDeps())
+            dispatchRoutes(dispatchDeps)
+            continuationRoutes(dispatchDeps)
 
             streamingRoute(processEventBroadcaster, logTailService, authorizer, processManager, llmEventStreamService)
 
-            runRoutes(deps)
+            runRoutes(runRouteDeps())
         }
     }
 }

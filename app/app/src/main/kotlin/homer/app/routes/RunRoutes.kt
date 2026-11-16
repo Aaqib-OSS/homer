@@ -7,6 +7,8 @@ import homer.app.models.Command
 import homer.app.models.ErrorResponse
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
+import homer.app.services.AgentsService
+import homer.app.services.Authorizer
 import homer.app.services.LangGraphRunStatusService
 import homer.app.services.ProcessManager
 import io.ktor.http.HttpStatusCode
@@ -18,17 +20,17 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 
 /** Run starts (`/agent/{agentName}`, `/processes/{id}/retry`, `/processes/{id}/resume`) and `GET /processes/{id}/langgraph`. */
-internal fun Route.runRoutes(deps: ApiDeps) {
+internal fun Route.runRoutes(deps: RunRouteDeps) {
     runStartRoutes(deps)
     processLangGraphRoutes(deps)
 }
 
 /** `GET`/`POST /agent/{agentName}` and `POST /processes/{id}/retry`: starting an agent and replaying a terminal run. */
-private fun Route.runStartRoutes(deps: ApiDeps) {
+private fun Route.runStartRoutes(deps: RunRouteDeps) {
     with(deps) {
         route("/agent/{agentName}") {
-            get { agentPermitting(call, Action.RUN, "run")?.let { startAgentRun(call, it) } }
-            post { agentPermitting(call, Action.RUN, "run")?.let { startAgentRun(call, it) } }
+            get { agentPermitting(call, Action.RUN, "run", agentsService, authorizer)?.let { startAgentRun(call, it) } }
+            post { agentPermitting(call, Action.RUN, "run", agentsService, authorizer)?.let { startAgentRun(call, it) } }
         }
 
         post("/processes/{id}/retry") {
@@ -56,7 +58,7 @@ private fun Route.runStartRoutes(deps: ApiDeps) {
 }
 
 /** `GET /processes/{id}/langgraph` and `POST /processes/{id}/resume`: a run's LangGraph state and resuming its thread. */
-private fun Route.processLangGraphRoutes(deps: ApiDeps) {
+private fun Route.processLangGraphRoutes(deps: RunRouteDeps) {
     with(deps) {
         get("/processes/{id}/langgraph") {
             val processInfo = visibleProcess(call) ?: return@get
@@ -120,11 +122,16 @@ private val RESUMABLE_STATUSES =
  * The agent the `{agentName}` path parameter names, when the caller holds [action] on it. Otherwise
  * responds and returns null: `404` when the caller holds no grant on it at all, the same as an
  * unknown agent (ADR-0047 rule 3), else `403` "Not permitted to [verb]".
+ *
+ * Shared by the run starts here and the debug start in `AgentRoutes.kt`, so it takes the two
+ * services it reads rather than either file's dependency class.
  */
-internal suspend fun ApiDeps.agentPermitting(
+internal suspend fun agentPermitting(
     call: ApplicationCall,
     action: Action,
     verb: String,
+    agentsService: AgentsService,
+    authorizer: Authorizer,
 ): Agent? {
     val agentName = call.pathParameter("agentName")
     val agent = agentsService.agents[agentName]?.takeIf { authorizer.anyGrant(call.principalName(), agentName) }
@@ -140,7 +147,7 @@ internal suspend fun ApiDeps.agentPermitting(
 }
 
 /** Starts [agent] for an external run request, linked to the parent its header names (ADR-0058). */
-private suspend fun ApiDeps.startAgentRun(
+private suspend fun RunRouteDeps.startAgentRun(
     call: ApplicationCall,
     agent: Agent,
 ) {
@@ -160,7 +167,7 @@ private suspend fun ApiDeps.startAgentRun(
  * `400`; otherwise responds `404` and returns null, the same for a missing and a hidden process
  * (ADR-0039) — so nothing a caller is not shown, terminal status or agent, is disclosed after it.
  */
-private suspend fun ApiDeps.visibleProcess(call: ApplicationCall): ProcessInfo? {
+private suspend fun RunRouteDeps.visibleProcess(call: ApplicationCall): ProcessInfo? {
     val processId = call.parameters["id"]?.toIntOrNull() ?: throw QueryParamValidationException("Invalid process id")
     val processInfo = processManager.getProcessInfo(processId)
     if (processInfo == null || !authorizer.canSee(call.principalName(), processInfo.owner, processInfo.agentName)) {
@@ -176,7 +183,7 @@ private suspend fun ApiDeps.visibleProcess(call: ApplicationCall): ProcessInfo? 
  * [conflict] for another status, `404` when the agent is gone, and `404` "not found" for a caller
  * who can see the run but lacks RUN (ADR-0047 rule 3).
  */
-private suspend fun ApiDeps.replayableAgent(
+private suspend fun RunRouteDeps.replayableAgent(
     call: ApplicationCall,
     sourceProcess: ProcessInfo,
     eligible: Set<ProcessStatus>,

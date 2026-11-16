@@ -14,6 +14,7 @@ import homer.app.fixtures.mountCallbackRoutes
 import homer.app.infra.SecretRedactor
 import homer.app.models.AskQuestionResponse
 import homer.app.models.CreateDispatchGroupResponse
+import homer.app.models.CreateJoinResponse
 import homer.app.models.CreateRunResponse
 import homer.app.models.ErrorResponse
 import homer.app.models.NewRunRecord
@@ -573,17 +574,28 @@ class CallbackRoutesTest {
         }
 
     @Test
-    fun `dispatch run without a token responds 401`() =
+    fun `dispatch run without a token or with an unknown one responds 401 and calls no service`() =
         testApplication {
-            mountCallbackRoutes { every { questionsService } returns newService() }
+            val deps = mountCallbackRoutes { every { questionsService } returns newService() }
+            // Read the child mock out of the wiring mock first: `deps.continuationService` inside a
+            // verification block would be verified too, and the builder reads it at mount.
+            val continuations = deps.continuationService
 
-            val response =
+            val missing =
                 client.post("/api/v1/callback/runs") {
                     contentType(ContentType.Application.Json)
                     setBody("""{"agent":"target"}""")
                 }
+            val unknown =
+                client.post("/api/v1/callback/runs") {
+                    header(HttpHeaders.Authorization, "Bearer nope")
+                    contentType(ContentType.Application.Json)
+                    setBody("""{"agent":"target"}""")
+                }
 
-            assertEquals(HttpStatusCode.Unauthorized, response.status)
+            assertEquals(HttpStatusCode.Unauthorized, missing.status)
+            assertEquals(HttpStatusCode.Unauthorized, unknown.status)
+            coVerify(exactly = 0) { continuations.startWithContinuation(any(), any()) }
         }
 
     @Test
@@ -591,10 +603,13 @@ class CallbackRoutesTest {
         testApplication {
             val service = newService()
             val token = runBlocking { service.registerProcess(1, "agent-a") }
-            mountCallbackRoutes {
-                every { questionsService } returns service
-                coEvery { dispatchService.dispatchNow(1, "target", mapOf("foo" to "bar")) } returns 99
-            }
+            val deps =
+                mountCallbackRoutes {
+                    every { questionsService } returns service
+                    coEvery {
+                        continuationService.startWithContinuation(1, match { it.agent == "target" && it.params == mapOf("foo" to "bar") })
+                    } returns CreateRunResponse(processId = 99)
+                }
 
             val response =
                 client.post("/api/v1/callback/runs") {
@@ -605,6 +620,7 @@ class CallbackRoutesTest {
 
             assertEquals(HttpStatusCode.OK, response.status)
             assertEquals(99, apiJson.decodeFromString<CreateRunResponse>(response.bodyAsText()).processId)
+            coVerify { deps.continuationService.startWithContinuation(1, any()) }
         }
 
     @Test
@@ -614,7 +630,8 @@ class CallbackRoutesTest {
             val token = runBlocking { service.registerProcess(1, "agent-a") }
             mountCallbackRoutes {
                 every { questionsService } returns service
-                coEvery { dispatchService.dispatchNow(any(), any(), any()) } throws AgentNotDispatchableException("target")
+                coEvery { continuationService.startWithContinuation(any(), any()) } throws
+                    AgentNotDispatchableException("target")
             }
 
             val response =
@@ -634,7 +651,8 @@ class CallbackRoutesTest {
             val token = runBlocking { service.registerProcess(1, "agent-a") }
             mountCallbackRoutes {
                 every { questionsService } returns service
-                coEvery { dispatchService.dispatchNow(any(), any(), any()) } throws DispatchAgentNotFoundException("nope")
+                coEvery { continuationService.startWithContinuation(any(), any()) } throws
+                    DispatchAgentNotFoundException("nope")
             }
 
             val response =
@@ -654,7 +672,8 @@ class CallbackRoutesTest {
             val token = runBlocking { service.registerProcess(1, "agent-a") }
             mountCallbackRoutes {
                 every { questionsService } returns service
-                coEvery { dispatchService.dispatchNow(any(), any(), any()) } throws DispatchAgentNotFoundException("target")
+                coEvery { continuationService.startWithContinuation(any(), any()) } throws
+                    DispatchAgentNotFoundException("target")
             }
 
             val response =
@@ -675,7 +694,7 @@ class CallbackRoutesTest {
             val token = runBlocking { service.registerProcess(1, "agent-a") }
             mountCallbackRoutes {
                 every { questionsService } returns service
-                coEvery { dispatchService.dispatchNow(any(), any(), any()) } throws DispatchAgentNotFoundException("b")
+                coEvery { continuationService.startJoin(any(), any()) } throws DispatchAgentNotFoundException("b")
             }
 
             val response =
@@ -688,46 +707,18 @@ class CallbackRoutesTest {
             assertEquals(HttpStatusCode.NotFound, response.status)
         }
 
+    // The sub is started and the continuation registered inside ContinuationService now, so the
+    // "a refused continuation starts nothing" invariants are asserted in ContinuationServiceTest.
     @Test
-    fun `callback runs responds 404 for an unauthorized continue agent WITHOUT starting the sub`() =
+    fun `callback joins returns the started sub ids and the join id`() =
         testApplication {
             val service = newService()
             val token = runBlocking { service.registerProcess(1, "agent-a") }
-            val deps =
-                mountCallbackRoutes {
-                    every { questionsService } returns service
-                    // The pre-start gate (validate) throws BEFORE dispatchNow ever runs — this proves
-                    // the check fires early enough that the sub is never started.
-                    coEvery {
-                        continuationService.validate(any(), any(), any(), any(), any())
-                    } throws DispatchAgentNotFoundException("continueTarget")
-                }
-
-            val response =
-                client.post("/api/v1/callback/runs") {
-                    header(HttpHeaders.Authorization, "Bearer $token")
-                    contentType(ContentType.Application.Json)
-                    setBody("""{"agent":"target","continueAgent":"continueTarget"}""")
-                }
-
-            assertEquals(HttpStatusCode.NotFound, response.status)
-            coVerify(exactly = 0) { deps.dispatchService.dispatchNow(any(), any(), any()) }
-        }
-
-    @Test
-    fun `callback joins responds 404 for an unauthorized sub WITHOUT starting any sub`() =
-        testApplication {
-            val service = newService()
-            val token = runBlocking { service.registerProcess(1, "agent-a") }
-            val deps =
-                mountCallbackRoutes {
-                    every { questionsService } returns service
-                    // The pre-start gate (validateJoin) throws BEFORE the sub-start loop runs — this
-                    // proves the check fires early enough that no sub is ever started.
-                    coEvery {
-                        continuationService.validateJoin(any(), any(), any(), any(), any(), any())
-                    } throws DispatchAgentNotFoundException("b")
-                }
+            mountCallbackRoutes {
+                every { questionsService } returns service
+                coEvery { continuationService.startJoin(1, any()) } returns
+                    CreateJoinResponse(processIds = listOf(10, 11), continuationId = 12)
+            }
 
             val response =
                 client.post("/api/v1/callback/joins") {
@@ -736,8 +727,11 @@ class CallbackRoutesTest {
                     setBody("""{"subs":[{"agent":"b","interruptId":"i1"}],"continueAgent":"parent"}""")
                 }
 
-            assertEquals(HttpStatusCode.NotFound, response.status)
-            coVerify(exactly = 0) { deps.dispatchService.dispatchNow(any(), any(), any()) }
+            assertEquals(HttpStatusCode.OK, response.status)
+            assertEquals(
+                CreateJoinResponse(processIds = listOf(10, 11), continuationId = 12),
+                apiJson.decodeFromString<CreateJoinResponse>(response.bodyAsText()),
+            )
         }
 
     @Test
@@ -747,7 +741,7 @@ class CallbackRoutesTest {
             val token = runBlocking { service.registerProcess(1, "agent-a") }
             mountCallbackRoutes {
                 every { questionsService } returns service
-                coEvery { dispatchService.dispatchNow(any(), any(), any()) } throws QuestionsClosedForProcessException(1)
+                coEvery { continuationService.startWithContinuation(any(), any()) } throws QuestionsClosedForProcessException(1)
             }
 
             val response =
@@ -761,11 +755,12 @@ class CallbackRoutesTest {
         }
 
     @Test
-    fun `dispatch run with a malformed body responds 400`() =
+    fun `dispatch run with a malformed body responds 400 and calls no service`() =
         testApplication {
             val service = newService()
             val token = runBlocking { service.registerProcess(1, "agent-a") }
-            mountCallbackRoutes { every { questionsService } returns service }
+            val deps = mountCallbackRoutes { every { questionsService } returns service }
+            val continuations = deps.continuationService
 
             val response =
                 client.post("/api/v1/callback/runs") {
@@ -775,6 +770,7 @@ class CallbackRoutesTest {
                 }
 
             assertEquals(HttpStatusCode.BadRequest, response.status)
+            coVerify(exactly = 0) { continuations.startWithContinuation(any(), any()) }
         }
 
     // --- grouped ask-and-dispatch (POST /api/v1/callback/dispatch-groups) ---
@@ -960,6 +956,7 @@ class CallbackRoutesTest {
             val service = newService()
             val token = runBlocking { service.registerProcess(1, "agent-a") }
             val deps: ApiDeps = mountCallbackRoutes { every { questionsService } returns service }
+            val groups = deps.dispatchGroupService
 
             val response =
                 client.post("/api/v1/callback/dispatch-groups") {
@@ -969,7 +966,7 @@ class CallbackRoutesTest {
                 }
 
             assertEquals(HttpStatusCode.BadRequest, response.status)
-            coVerify(exactly = 0) { deps.dispatchGroupService.create(any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { groups.create(any(), any(), any(), any(), any(), any()) }
         }
 
     // --- read-by-reference result fetch (GET /api/v1/callback/results/{token}) ---

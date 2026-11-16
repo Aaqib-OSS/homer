@@ -9,6 +9,7 @@ import homer.app.models.Server
 import homer.app.models.TokenConfig
 import homer.app.routes.ApiDeps
 import homer.app.routes.apiV1Routes
+import homer.app.routes.callbackDeps
 import homer.app.routes.callbackRoutes
 import homer.app.services.Authorizer
 import io.ktor.serialization.kotlinx.json.json
@@ -62,7 +63,7 @@ internal fun ApplicationTestBuilder.mountCallbackRoutes(stubDeps: ApiDeps.() -> 
         configureStatusPages()
         routing {
             install(ContentNegotiation) { json(apiJson) }
-            callbackRoutes(deps)
+            callbackRoutes(deps.callbackDeps())
         }
     }
     return deps

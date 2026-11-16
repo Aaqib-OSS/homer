@@ -1,6 +1,5 @@
 package homer.app.routes
 
-import homer.app.exceptions.HomerException
 import homer.app.exceptions.QueryParamValidationException
 import homer.app.exceptions.RunnerTransferTimeoutException
 import homer.app.exceptions.RunnerTransferTooLargeException
@@ -10,14 +9,9 @@ import homer.app.exceptions.TooManySessionPollsException
 import homer.app.exceptions.ValidationException
 import homer.app.infra.matchesTokenConstantTime
 import homer.app.models.ErrorResponse
-import homer.app.models.RunnerFilter
 import homer.app.runners.BoundedInputStream
-import homer.app.runners.RunnerSession
 import homer.app.runners.TarStreams
-import homer.app.runners.external.ClaimResponse
 import homer.app.runners.external.ExternalRunnerDomain
-import homer.app.runners.external.ExternalRunnerException
-import homer.app.runners.external.ExternalRunnerInstance
 import homer.app.runners.external.ExternalRunnerSession
 import homer.app.runners.external.NextRequest
 import homer.app.runners.external.RegisterInstanceRequest
@@ -25,9 +19,9 @@ import homer.app.runners.external.RegisterInstanceResponse
 import homer.app.runners.external.RunnerOp
 import homer.app.runners.external.RunnerProtocol
 import homer.app.runners.external.runnerProtocolJson
+import homer.app.runners.external.withTransferTimeout
 import homer.app.runners.queue.ClaimRequest
 import homer.app.runners.queue.RunnerClaimQueue
-import homer.app.runners.queue.TagRoutedSession
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -45,19 +39,11 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import io.ktor.utils.io.jvm.javaio.toInputStream
 import io.ktor.utils.io.jvm.javaio.toOutputStream
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.SerializationException
 import org.slf4j.LoggerFactory
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.io.path.isRegularFile
 import kotlin.time.Duration
@@ -123,7 +109,8 @@ private fun Route.runnerInstanceRoutes(
             val taken = AtomicReference<ClaimRequest?>()
             withTimeoutOrNull(pollTimeout) { queue.take(instance).also { taken.set(it) } }
             val request = taken.get() ?: return@post call.respond(HttpStatusCode.NoContent)
-            deliverClaim(call, domain, instance, request)
+            val claim = domain.deliverClaim(instance, request) ?: return@post call.respond(HttpStatusCode.NoContent)
+            call.respond(HttpStatusCode.OK, claim)
         } finally {
             instance.releasePoll()
         }
@@ -278,69 +265,6 @@ private fun Route.runnerOutputRoute(domains: List<ExternalRunnerDomain>) {
     }
 }
 
-/**
- * Answers the claim poll with the claimed [request]: completes it with a session opened on [instance],
- * or, when the run stopped waiting, as if nothing matched. A failure before it is answered fails the
- * request instead of leaving the run parked for its full claim TTL.
- */
-@Suppress("SuspendFunSwallowedCancellation") // fails the claim under NonCancellable and rethrows
-private suspend fun deliverClaim(
-    call: ApplicationCall,
-    domain: ExternalRunnerDomain,
-    instance: ExternalRunnerInstance,
-    request: ClaimRequest,
-) {
-    // Once take() hands us `request` it is CLAIMED and off the deque: nobody else
-    // will ever complete or fail it. `delivered` tracks whether we reached a point
-    // where the request was answered one way or another, so a failure before that
-    // (openSession throwing, or this coroutine dying) fails the request instead of
-    // leaving the waiting run parked for its full claim TTL.
-    var delivered = false
-    var session: ExternalRunnerSession? = null
-    try {
-        session = domain.openSession(instance, request.params)
-        // A tag-filtered run learns its runner only now, so the domain env has to
-        // reach it through the session, exactly as StaticRunnerConsumer does. An
-        // alias-filtered run was already composed against this domain's env by
-        // WorkspaceConfigFactory; layering it again here would put it ABOVE the
-        // agent's own env and silently drop the agent's override. See ADR-0066.
-        val deliveredSession: RunnerSession =
-            if (request.filter is RunnerFilter.Tags && domain.runnerEnv.isNotEmpty()) {
-                TagRoutedSession(session, domain.runnerEnv)
-            } else {
-                session
-            }
-        if (!request.complete(deliveredSession)) {
-            delivered = true
-            // The run stopped waiting between our claim and now: as if nothing matched.
-            session.close()
-            return call.respond(HttpStatusCode.NoContent)
-        }
-        delivered = true
-        domain.touch(instance)
-        logger.info("Runner '{}': instance '{}' claimed process {}", domain.alias, instance.name, request.params.processId)
-        call.respond(
-            HttpStatusCode.OK,
-            ClaimResponse(
-                sessionId = session.id,
-                processId = request.params.processId,
-                agentName = request.params.agentName,
-                tags = (request.filter as? RunnerFilter.Tags)?.tags?.sorted() ?: emptyList(),
-            ),
-        )
-    } catch (e: Throwable) {
-        withContext(NonCancellable) {
-            if (!delivered) {
-                session?.close()
-                request.fail(
-                    ExternalRunnerException("Runner instance '${instance.name}' disconnected before the claim completed"),
-                )
-            }
-        }
-        throw e
-    }
-}
-
 /** The `stream` and `seq` of an output chunk: a 400 unless `stdout` or `stderr` and an integer. */
 internal fun outputChunkPosition(
     stream: String?,
@@ -376,53 +300,6 @@ internal fun isDirTarKind(kind: String?): Boolean =
         "file" -> false
         else -> throw ValidationException("kind must be dir or file", "kind")
     }
-
-/**
- * Bounds one transfer handler in time. `transferTimeoutSec` is otherwise enforced
- * only in `ExternalRunnerSession.await`, and a bound living in another component
- * is not a bound (§12 rule 4): without this an instance that stops sending or
- * reading pins a `Dispatchers.IO` thread — the pool every SQLite transaction
- * uses — and its connection for as long as it likes.
- *
- * `withTimeout` alone cannot enforce it: the copy blocks that thread on the peer's
- * socket and never observes cancellation. At the deadline a watchdog calls
- * [release], which cancels the call's byte channel and fails the blocked read or
- * write — the ADR-0064 shape. CWE-400.
- */
-@Suppress("SuspendFunSwallowedCancellation") // rethrows the caller's cancellation; maps only the cancelled channel
-internal suspend fun <T> ExternalRunnerDomain.withTransferTimeout(
-    release: (Throwable) -> Unit,
-    block: suspend () -> T,
-): T {
-    val timedOut = AtomicBoolean(false)
-    try {
-        return coroutineScope {
-            // Dispatchers.Default: the IO pool is exactly what a stalled peer saturates.
-            val watchdog =
-                launch(Dispatchers.Default) {
-                    delay(config.transferTimeoutSec.seconds)
-                    timedOut.set(true)
-                    release(RunnerTransferTimeoutException(alias, config.transferTimeoutSec))
-                }
-            try {
-                block()
-            } finally {
-                watchdog.cancel()
-            }
-        }
-    } catch (e: SecurityException) {
-        // Only the cancelled channel's failure becomes the timeout: a refusal the transfer made
-        // itself (422 containment, 413 size) keeps its own status even past the deadline.
-        throw e
-    } catch (e: HomerException) {
-        throw e
-    } catch (e: Throwable) {
-        // The caller's own cancellation (disconnect, shutdown) stays a cancellation past the deadline.
-        if (e is CancellationException) currentCoroutineContext().ensureActive()
-        if (timedOut.get()) throw RunnerTransferTimeoutException(alias, config.transferTimeoutSec)
-        throw e
-    }
-}
 
 /**
  * Serves [block] as the one in-flight request for [key], shedding a concurrent duplicate

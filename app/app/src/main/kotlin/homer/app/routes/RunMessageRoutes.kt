@@ -12,7 +12,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 
 /** Operator inbox of a run: `POST` and `GET /status/{processId}/messages`. See ADR-0097. */
-internal fun Route.runMessageRoutes(deps: ApiDeps) {
+internal fun Route.runMessageRoutes(deps: RunMessageDeps) {
     with(deps) {
         post("/status/{processId}/messages") {
             val processId = call.pathParameter("processId").toIntOrNull() ?: throw QueryParamValidationException("Invalid process ID")

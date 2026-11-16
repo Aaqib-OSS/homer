@@ -45,8 +45,9 @@ app/src/main/kotlin/homer/app/   Application.kt (main, configureServer, configur
                                  ResponseMapping.kt (secret redaction; ProcessInfo, Dispatch,
                                  Continuation, Question → response DTO); routes/ (one file per
                                  resource, mounted in order by apiV1Routes in SecuredRoutes.kt;
-                                 run-start handlers in RunHandlers.kt; ApiDeps); auth/ (session auth,
-                                 CSRF); models/ (Agent · AppConfig · Command · *Response DTOs; the
+                                 run-start handlers in RunHandlers.kt; ApiDeps, the wiring root,
+                                 plus the per-file dependency classes in RouteDeps.kt); auth/ (session
+                                 auth, CSRF); models/ (Agent · AppConfig · Command · *Response DTOs; the
                                  run's domain types ProcessInfo · ExecutionInfo · ProcessStatus;
                                  the parameter objects several layers pass — NewRunRecord ·
                                  RunStartRequest · ProcessListQuery, callbacks included);
@@ -101,7 +102,7 @@ editor could break without noticing are spelled out, each marked `Constraint:`.
 - **`RunMessagesService`** — per-run inbox: operators send, the running command lists and takes. The run-end close goes through the `RunMessageExpiry` port, and `StartupReconciliation` sweeps leftovers on boot. ADR-0097.
 - **`DispatchService`** — ask-and-dispatch: a question plus a target agent and parameters, fired (via `AgentRunStarter`) after the operator answers; PENDING dispatches cancel and TTL-sweep. **SQLite-backed via `DispatchRepository`**; dispatch-bound questions carry `dispatch_bound = 1`. ADR-0021.
 - **`DispatchGroupService`** — grouped ask-and-dispatch: N questions with one target that fires once after every answer (a GROUP `dispatches` row plus the ordered `dispatch_group_questions` members); the gate lives in `DispatchService.fire`. ADR-0109.
-- **`ContinuationService`** — completion continuations: a target agent fired when a *watched* sub-process reaches a terminal state, carrying its result. **SQLite-backed via `ContinuationRepository`**; dispatch's claim-CAS / fire / sweep / boot-reconciliation model, with a distinct `EXPIRED` state; the fire itself is `ContinuationFireService`. ADR-0023.
+- **`ContinuationService`** — completion continuations: a target agent fired when a *watched* sub-process reaches a terminal state, carrying its result. **SQLite-backed via `ContinuationRepository`**; dispatch's claim-CAS / fire / sweep / boot-reconciliation model, with a distinct `EXPIRED` state; the fire itself is `ContinuationFireService` and the start path (validate, dispatch, kill-on-failure) `ContinuationStartService`. ADR-0023.
 - **`HookService`** — agent-declared status hooks: a target agent fired when a run of the *declaring* agent reaches a status, from every start path. **SQLite-backed via `HookRepository`** (schema v31); the rows are written by `ProcessManager`'s status transitions and handed here after commit, and the fire itself is `HookFireService`. ADR-0107.
   - **Constraint:** the rows are INSERTed inside the status write's transaction and fired **after** it commits — a fire starts a run, whose own row write must not nest in the triggering transaction (SQLite rule 3). A hook failure is logged and settled on the row; it never reaches the status write.
 - **`QuestionsWorkspaceSetup`** — materializes the question tooling into each workspace before commands run (`Process.execute`): the `homer-ask` and `homer-inbox` helpers at `{projectRoot}/.homer/bin`, and a `.homer/mcp.json` when `server.mcp.enabled`.

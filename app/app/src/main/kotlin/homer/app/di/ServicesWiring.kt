@@ -200,6 +200,7 @@ internal val servicesModule =
                 agentRunStarter = get(),
                 agentInputResolver = get(),
                 processManager = get(),
+                dispatchService = get(),
                 resultTokenService = get(),
                 logger = get { parametersOf("homer.app.services.ContinuationService") },
                 config = get<AppConfig>().server.dispatch,

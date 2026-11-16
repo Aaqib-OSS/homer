@@ -27,7 +27,7 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 
 /** `GET /agents`: the agents the caller holds any grant on. */
-internal fun Route.agentListRoutes(deps: ApiDeps) {
+internal fun Route.agentListRoutes(deps: AgentRouteDeps) {
     with(deps) {
         get("/agents") {
             val principal = call.principalName()
@@ -56,7 +56,7 @@ internal fun Route.agentListRoutes(deps: ApiDeps) {
 }
 
 /** `/schemas/agent` and agent management: reload, create, agent files, LangGraph topology, debug and cron-run. */
-internal fun Route.agentRoutes(deps: ApiDeps) {
+internal fun Route.agentRoutes(deps: AgentRouteDeps) {
     agentDefinitionRoutes(deps)
     agentFileReadRoutes(deps)
     agentFileWriteRoutes(deps)
@@ -64,7 +64,7 @@ internal fun Route.agentRoutes(deps: ApiDeps) {
 }
 
 /** `GET /schemas/agent`, `POST /agents/reload` and `POST /agents`: the agent schema, reloading and creating agents. */
-private fun Route.agentDefinitionRoutes(deps: ApiDeps) {
+private fun Route.agentDefinitionRoutes(deps: AgentRouteDeps) {
     with(deps) {
         get("/schemas/agent") {
             val resource = this::class.java.classLoader.getResource("schemas/homer-agent.schema.json")
@@ -106,7 +106,7 @@ private fun Route.agentDefinitionRoutes(deps: ApiDeps) {
 }
 
 /** `GET /agents/{agentName}/files[/{path...}]`: an agent's file listing and one file's content, for EDIT holders. */
-private fun Route.agentFileReadRoutes(deps: ApiDeps) {
+private fun Route.agentFileReadRoutes(deps: AgentRouteDeps) {
     with(deps) {
         get("/agents/{agentName}/files") {
             val name = call.pathParameter("agentName")
@@ -144,7 +144,7 @@ private fun Route.agentFileReadRoutes(deps: ApiDeps) {
 }
 
 /** `PUT` and `DELETE /agents/{agentName}/files/{path...}`: writing and deleting an agent's files, for EDIT holders. */
-private fun Route.agentFileWriteRoutes(deps: ApiDeps) {
+private fun Route.agentFileWriteRoutes(deps: AgentRouteDeps) {
     with(deps) {
         put("/agents/{agentName}/files/{path...}") {
             val name = call.pathParameter("agentName")
@@ -181,7 +181,7 @@ private fun Route.agentFileWriteRoutes(deps: ApiDeps) {
 }
 
 /** `GET /agents/{agentName}/langgraph`, `POST …/debug` and `POST …/cron-run`: topology, debug runs and cron fires. */
-private fun Route.agentToolingRoutes(deps: ApiDeps) {
+private fun Route.agentToolingRoutes(deps: AgentRouteDeps) {
     with(deps) {
         get("/agents/{agentName}/langgraph") {
             val name = call.pathParameter("agentName")
@@ -197,7 +197,7 @@ private fun Route.agentToolingRoutes(deps: ApiDeps) {
         }
 
         post("/agents/{agentName}/debug") {
-            val agent = agentPermitting(call, Action.DEBUG, "debug") ?: return@post
+            val agent = agentPermitting(call, Action.DEBUG, "debug", agentsService, authorizer) ?: return@post
             handleAgentDebug(
                 serverId = serverId,
                 call = call,

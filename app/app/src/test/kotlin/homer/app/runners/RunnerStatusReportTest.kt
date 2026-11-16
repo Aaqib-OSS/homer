@@ -101,6 +101,7 @@ class RunnerStatusReportTest {
             val queue = RunnerClaimQueue(maxPending = 10)
             val runner = mockk<Runner>()
             every { runner.alias } returns "k8s"
+            every { runner.runnerEnv } returns emptyMap()
             coEvery { runner.openSession(any()) } returns mockk(relaxed = true)
             StaticRunnerConsumer(runner, tags = setOf("linux", "gpu"), concurrency = 3, queue = queue).start(backgroundScope)
 
@@ -127,6 +128,7 @@ class RunnerStatusReportTest {
             val queue = RunnerClaimQueue(maxPending = 10)
             val runner = mockk<Runner>()
             every { runner.alias } returns "ssh-a"
+            every { runner.runnerEnv } returns emptyMap()
             coEvery { runner.openSession(any()) } returns mockk(relaxed = true)
             StaticRunnerConsumer(runner, tags = emptySet(), concurrency = 1, queue = queue).start(backgroundScope)
 

@@ -20,6 +20,7 @@ import homer.app.services.persistence.DispatchRepository
 import homer.app.services.persistence.ProcessRepository
 import homer.app.services.persistence.QuestionsRepository
 import homer.app.services.persistence.ResultTokenRepository
+import io.mockk.mockk
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import org.slf4j.Logger
@@ -156,7 +157,9 @@ object PersistenceTestSupport {
     /**
      * A [ContinuationService] sharing [db] with [questionsService]. Like
      * [dispatchService], the heavy run-start collaborators are caller-supplied
-     * mocks; [processManager] backs the already-terminal race re-check.
+     * mocks; [processManager] backs the already-terminal race re-check, and
+     * [dispatchService] the sub the `startWithContinuation`/`startJoin` paths
+     * start (a relaxed mock for the tests that never reach them).
      */
     internal fun continuationService(
         db: DatabaseService,
@@ -168,6 +171,7 @@ object PersistenceTestSupport {
         config: DispatchConfig = DispatchConfig(),
         logger: Logger = TestFixtures.mockLogger(),
         authorizer: Authorizer = Authorizer(emptyMap(), emptyMap(), enabled = false),
+        dispatchService: DispatchService = mockk(relaxed = true),
     ): ContinuationService =
         ContinuationService(
             ContinuationRepository(db),
@@ -177,6 +181,7 @@ object PersistenceTestSupport {
             runStarter,
             inputResolver,
             processManager,
+            dispatchService,
             ResultTokenService(ResultTokenRepository(db), logger, config),
             logger,
             config,
