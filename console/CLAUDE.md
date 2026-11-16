@@ -303,7 +303,7 @@ nonce its own scripts.
   (cookie/bearer) is shown **only** when `appConfig.auth.allowBearer` is on
   (`CONSOLE_ALLOW_BEARER=true`); otherwise the console is cookie-only and any
   `?mode=bearer` in the URL is ignored (bearer tokens in `localStorage` are
-  XSS-exfiltratable — see the 2026-07-12 review, H3). With bearer allowed the
+  XSS-exfiltratable — see ADR-0047). With bearer allowed the
   form also **opens** in Token mode (URL `?mode=`, then the active instance's
   saved mode, win over that default), and `seedDefault` seeds the default
   instance `mode: 'bearer'` for the same reason — a bearer-only backend cannot

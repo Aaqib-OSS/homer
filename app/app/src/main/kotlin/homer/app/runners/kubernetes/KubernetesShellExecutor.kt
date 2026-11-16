@@ -83,9 +83,8 @@ class KubernetesShellExecutor(
 
             val stdInJob = stdIn?.let { feedStdin(remote, it) }
 
-            // Audit #8: mirror the LocalShellExecutor contract — cancellation
-            // and timeout must propagate to the caller. The previous catch-and-
-            // continue let CmdExecutor treat a TTL-killed command as a success.
+            // Mirror the LocalShellExecutor contract — cancellation and timeout
+            // must propagate to the caller.
             val kill = KillCause()
             try {
                 awaitExit(remote, stdOut, stdErr, timeout, kill)

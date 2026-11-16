@@ -420,7 +420,7 @@ class HmacAuthTest {
     @Test
     fun `hmac provider rejects a timestamped signature replayed within its window`() =
         testApplication {
-            // Production builds the verifier with an HmacReplayCache (M13): the same
+            // Production builds the verifier with an HmacReplayCache (ADR-0010): the same
             // timestamped signature authenticates once, then is refused as a replay.
             val secret = "shh"
             val body = "{}"

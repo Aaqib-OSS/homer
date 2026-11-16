@@ -168,8 +168,8 @@ function checkEndpoint(
 
   // When the operator has pinned an allowlist, reject an off-allowlist endpoint
   // here with a clear message (the CSP connect-src would otherwise block the
-  // request opaquely). Reinforces M2: an attacker-supplied endpoint is refused,
-  // not just warned about.
+  // request opaquely): an attacker-supplied endpoint is refused, not just
+  // warned about.
   if (!isOriginAllowed(baseUrl, allowedOrigins)) {
     return { error: 'This endpoint is not in this console’s allowed backend list.' };
   }
@@ -346,7 +346,7 @@ function LoginForm() {
   // Bearer mode is opt-in (CONSOLE_ALLOW_BEARER): its token lives in localStorage
   // and is XSS-exfiltratable, so the console is cookie-only unless the operator
   // enables it. When off, ignore any bearer request (URL param or saved instance)
-  // and never offer the toggle. See the 2026-07-12 security review (H3).
+  // and never offer the toggle. See ADR-0011.
   const allowBearer = appConfig.auth.allowBearer;
   const active = store.instances.find((i) => i.id === store.activeInstanceId);
   const endpointParam = searchParams?.get('endpoint') ?? null;

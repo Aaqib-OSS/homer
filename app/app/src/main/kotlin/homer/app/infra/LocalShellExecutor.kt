@@ -53,11 +53,9 @@ class LocalShellExecutor(
             // succeeded.
             val stdInJob = launchStdinWriter(process, stdIn)
 
-            // Audit #8: any throw past this point must (a) tear down the native
-            // process and its descendants and (b) propagate to the caller — the
-            // previous implementation swallowed the timeout/cancel exception and
-            // returned a CommandResult, so callers (CmdExecutor, LlmHarnessExecutor,
-            // ScriptExecutor) treated a killed command as a successful one.
+            // Any throw past this point must (a) tear down the native process and
+            // its descendants and (b) propagate to the caller, so a killed command
+            // is never taken for a successful one.
             var stopped = Wait.EXITED
             try {
                 stopped = awaitCompletion(process, stdOut, stdErr, timeout, outPump)

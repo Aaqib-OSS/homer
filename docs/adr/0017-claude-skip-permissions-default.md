@@ -7,7 +7,7 @@ deciders: Lukáš Vlk
 
 ## Context and Problem Statement
 
-The 2026-06-08 security review (H5) found that every `claude` command Homer
+The 2026-06-08 security review found (finding H5) that every `claude` command Homer
 runs receives `--dangerously-skip-permissions` unless the agent author opts
 out — `ClaudeCmdOptions.dangerouslySkipPermissions` defaulted to `true`. The
 prompt is compiled from webhook input via `replaceArguments`, so an injected
