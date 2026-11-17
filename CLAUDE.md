@@ -31,6 +31,8 @@ code it is never revisited and fixed later.
 When working inside a package, the nearer CLAUDE.md auto-loads and
 augments this file. The §9 doc map lists every guide and the surface it
 is canonical for.
+Every `CLAUDE.md` has a byte cap that ratchets down only
+(`site/scripts/claude-md-budget.mjs`; [`docs/quality-checks.md`](docs/quality-checks.md)).
 
 ## 1. Think Before Coding
 

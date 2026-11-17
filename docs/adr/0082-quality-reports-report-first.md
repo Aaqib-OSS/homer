@@ -412,3 +412,7 @@ GH #307 caps cognitive complexity per function on both stacks. detekt's `complex
 ## Amendment (2026-11-17): nesting-depth cap (GH #308)
 
 GH #308 caps nesting depth per function on both stacks. detekt's `complexity` set also runs `NestedBlockDepth` and the console's ESLint config enables core `max-depth` at `warn`. Each threshold is today's worst value, so the caps add no finding and only stop a function from getting worse: `allowedDepth: 4` on the backend (the worst functions, `followFile` in `LlmEventStreamService.kt`, `checkpoint` in `DatabaseService.kt` and `pollLoop` in homer-runner's `SessionWorker.kt`, are at 4; detekt reports a depth above `allowedDepth`), `max: 4` on the console (the worst is the nested block in `lib/instances/store.ts`). The thresholds live in `app/config/detekt/detekt.yml` and `console/eslint.config.mjs`.
+
+## Amendment (2026-11-17): CLAUDE.md size budget (GH #312)
+
+Every tracked `CLAUDE.md` has a byte cap in `site/scripts/claude-md-budget.mjs`, checked in `site`'s `npm test` (`docs-site`). The guides are loaded into agent sessions (the root, app and console ones into every session), and #260 pruned them; the caps keep them from growing back. They ratchet like the size caps (GH #306): a guide over its cap, a cap more than 5% of itself (rounded up, at least 1) above the current size, a guide with no cap and a cap for an untracked file all fail with the file and the fix.
