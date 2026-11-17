@@ -449,3 +449,31 @@ describe('RunAgentDialog actions', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });
+
+describe('RunAgentDialog input reset', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('resets the inputs when another agent is passed', () => {
+    mockExecuteAgent(vi.fn());
+    const { rerender } = render(<RunAgentDialog open onOpenChange={() => {}} agent={agent} />);
+    fireEvent.change(screen.getByLabelText('id'), { target: { value: '42' } });
+    expect(screen.getByLabelText('id')).toHaveValue('42');
+
+    rerender(<RunAgentDialog open onOpenChange={() => {}} agent={{ ...agent, name: 'other' }} />);
+
+    expect(screen.getByLabelText('id')).toHaveValue('');
+  });
+
+  it('resets the inputs when the dialog is closed and opened again', () => {
+    mockExecuteAgent(vi.fn());
+    const { rerender } = render(<RunAgentDialog open onOpenChange={() => {}} agent={agent} />);
+    fireEvent.change(screen.getByLabelText('id'), { target: { value: '42' } });
+
+    rerender(<RunAgentDialog open={false} onOpenChange={() => {}} agent={agent} />);
+    rerender(<RunAgentDialog open onOpenChange={() => {}} agent={agent} />);
+
+    expect(screen.getByLabelText('id')).toHaveValue('');
+  });
+});

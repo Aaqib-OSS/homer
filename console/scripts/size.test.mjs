@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { currentMaxima, otherMessages, sizeFindings, slack, staleCap, staleCapFindings } from './size.mjs';
+import { currentMaxima, hasReason, isReasonText, occurrencesOf, otherMessages, sizeFindings, slack, staleCap, staleCapFindings, suppressionFindings } from './size.mjs';
 
 const result = (filePath, messages) => ({ filePath, messages });
 
@@ -105,5 +105,72 @@ describe('staleCapFindings', () => {
 
   it('reports nothing when every cap is within the slack', () => {
     expect(staleCapFindings({ 'max-lines': 500, 'max-lines-per-function': 58 }, { 'max-lines': 500, 'max-lines-per-function': 60 })).toEqual([]);
+  });
+});
+
+describe('isReasonText', () => {
+  it('needs real words, not a bare marker or TODO', () => {
+    expect(isReasonText(' sync buffer to async content')).toBe(true);
+    expect(isReasonText('')).toBe(false);
+    expect(isReasonText(' ')).toBe(false);
+    expect(isReasonText(' TODO')).toBe(false);
+    expect(isReasonText(' fixme: ')).toBe(false);
+    expect(isReasonText(' ok */')).toBe(false);
+    expect(isReasonText(' because */}')).toBe(true);
+  });
+});
+
+describe('hasReason', () => {
+  const reasoned = (source) => {
+    const lines = source.split('\n');
+    const index = lines.findIndex((l) => l.includes('eslint-disable'));
+    return hasReason(lines, index, lines[index].indexOf('eslint-disable') + 'eslint-disable'.length);
+  };
+  it('takes a reason after two dashes or a comment line above', () => {
+    expect(reasoned('// eslint-disable-next-line no-x -- why not\nfoo()')).toBe(true);
+    expect(reasoned('{/* eslint-disable-next-line no-x -- why not */}')).toBe(true);
+    expect(reasoned('// because of the loop\n// eslint-disable-next-line no-x\nfoo()')).toBe(true);
+  });
+  it('rejects a missing, empty or TODO reason, and code above', () => {
+    expect(reasoned('foo(); // eslint-disable-line no-x')).toBe(false);
+    expect(reasoned('foo(); // eslint-disable-line no-x -- ')).toBe(false);
+    expect(reasoned('// TODO\n// eslint-disable-next-line no-x')).toBe(false);
+    expect(reasoned('foo()\n// eslint-disable-next-line no-x')).toBe(false);
+  });
+});
+
+describe('occurrencesOf', () => {
+  const file = (text) => [{ path: 'console/lib/a.ts', text }];
+  it('counts the three eslint-disable forms once each and not eslint-enable', () => {
+    const text = '/* eslint-disable a */\n// eslint-disable-next-line b\nx(); // eslint-disable-line c\n/* eslint-enable a */';
+    expect(occurrencesOf(file(text), /\beslint-disable(?:-next-line|-line)?\b/g).map((o) => o.line)).toEqual([1, 2, 3]);
+  });
+  it('counts a directive inside a string literal', () => {
+    expect(occurrencesOf(file("const s = 'eslint-disable-next-line';"), /\beslint-disable(?:-next-line|-line)?\b/g)).toHaveLength(1);
+  });
+});
+
+describe('suppressionFindings', () => {
+  const files = [{ path: 'console/lib/a.ts', text: '// ok reason\n// eslint-disable-next-line a\nx()\n// eslint-disable-next-line b -- fine\ny()' }];
+  const budgets = (eslintDisable, jscpdIgnore = 0) => ({ eslintDisable, jscpdIgnore });
+  it('is silent at the budget and within the slack', () => {
+    expect(suppressionFindings(files, budgets(2))).toEqual([]);
+    expect(suppressionFindings(files, budgets(3))).toEqual([]);
+  });
+  it('lists every occurrence over budget', () => {
+    const findings = suppressionFindings(files, budgets(1));
+    expect(findings).toHaveLength(2);
+    expect(findings[0].message).toContain('2 occurrence(s), budget 1 (ESLINT_DISABLE_BUDGET');
+  });
+  it('names the value to lower a stale budget to', () => {
+    const findings = suppressionFindings(files, budgets(20));
+    expect(findings).toHaveLength(1);
+    expect(findings[0].message).toContain('ESLINT_DISABLE_BUDGET (console/scripts/size.mjs) is 20 but the count is 2; lower it to 2');
+  });
+  it('flags a jscpd block over a zero budget and an eslint-disable without a reason', () => {
+    const more = [{ path: 'console/lib/b.ts', text: '// jscpd:ignore-start\nx()\nfoo(); // eslint-disable-line z' }];
+    const messages = suppressionFindings(more, budgets(1, 0)).map((f) => f.message);
+    expect(messages.some((m) => m.includes('JSCPD_IGNORE_BUDGET'))).toBe(true);
+    expect(messages.some((m) => m.startsWith('eslint-disable without a reason'))).toBe(true);
   });
 });

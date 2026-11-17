@@ -546,7 +546,7 @@ The same vars drive the Docker runtime. The canonical table of every
   `eslint.config.mjs` (direct `fetch`, `CONSOLE_*` reads, `dark:` classes,
   literal query keys, …) and `.dependency-cruiser.mjs` (layering, cycles).
   Changing such a rule here means changing it there too.
-- An `eslint-disable` in production code needs a reason (` -- why`) and counts against `ESLINT_DISABLE_BUDGET` in the backend's `SuppressionBudgetTest` (ADR-0082); lower the budget when you remove one.
+- An `eslint-disable` in production code needs a reason — ` -- why` after the directive, or a `//` comment line directly above — and counts against `ESLINT_DISABLE_BUDGET` in `scripts/size.mjs` (`size-console`, ADR-0082). The budget ratchets like the size caps: more than 5% of itself (rounded up, at least 1) above the count is a finding, so lower it when you remove one and never raise it to fit a new one.
 - The SSE sidecar in `(dashboard)/layout.tsx` runs for every
   dashboard page, not just the list views. New pages get
   cache-invalidation on process / agent changes for free — don't

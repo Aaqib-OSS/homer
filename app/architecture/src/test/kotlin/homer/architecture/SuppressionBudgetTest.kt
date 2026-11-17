@@ -9,10 +9,11 @@ import kotlin.test.assertTrue
 import kotlin.test.fail
 
 /**
- * Budgets for the suppressions in main code: `@Suppress`, `eslint-disable`, `jscpd:ignore-start` and the
- * pending-rule tag. Each count may not exceed its budget (root CLAUDE.md §5, "add no new finding in code you
+ * Budgets for the suppressions in backend main code: `@Suppress`, `jscpd:ignore-start` and the
+ * pending-rule tag (the console's `eslint-disable` and `jscpd:ignore-start` are budgeted in
+ * `console/scripts/size.mjs`). Each count may not exceed its budget (root CLAUDE.md §5, "add no new finding in code you
  * touch") and the budget ratchets like the size caps (ADR-0082): lower it when the count falls. Every
- * `@Suppress` and `eslint-disable` also states its reason, on one line. A directive inside a string literal or
+ * `@Suppress` also states its reason, on one line. A directive inside a string literal or
  * a comment counts too: the occurrence is the thing a reviewer must look at.
  */
 class SuppressionBudgetTest {
@@ -22,23 +23,12 @@ class SuppressionBudgetTest {
     }
 
     @Test
-    fun `console eslint-disable stays within ESLINT_DISABLE_BUDGET`() {
-        assertWithinBudget(
-            "eslint-disable in console production code",
-            "ESLINT_DISABLE_BUDGET",
-            ESLINT_DISABLE_BUDGET,
-            occurrences(consoleProduction(), ESLINT_DISABLE),
-        )
-    }
-
-    @Test
     fun `jscpd ignore blocks stay within JSCPD_IGNORE_BUDGET`() {
-        // One combined count: backend main code and console production code.
         assertWithinBudget(
-            "jscpd:ignore-start blocks in main code",
+            "jscpd:ignore-start blocks in backend main code",
             "JSCPD_IGNORE_BUDGET",
             JSCPD_IGNORE_BUDGET,
-            occurrences(backendMain() + consoleProduction(), JSCPD_IGNORE),
+            occurrences(backendMain(), JSCPD_IGNORE),
         )
     }
 
@@ -57,7 +47,7 @@ class SuppressionBudgetTest {
         val violations =
             backendMain().flatMap { file ->
                 val text = file.readText()
-                SUPPRESS.findAll(text).filterNot { hasReason(text, it.range.first, ReasonStyle.SLASHES) }.map {
+                SUPPRESS.findAll(text).filterNot { hasReason(text, it.range.first) }.map {
                     violation(
                         file.path,
                         lineOf(text, it.range.first),
@@ -69,38 +59,13 @@ class SuppressionBudgetTest {
     }
 
     @Test
-    fun `every console eslint-disable states its reason`() {
-        val violations =
-            consoleProduction().flatMap { file ->
-                val text = file.readText()
-                ESLINT_DISABLE.findAll(text).filterNot { hasReason(text, it.range.first, ReasonStyle.ESLINT) }.map {
-                    violation(
-                        file.path,
-                        lineOf(text, it.range.first),
-                        "eslint-disable without a reason (` -- reason` or a // comment on the line above)",
-                    )
-                }
-            }
-        assertNoViolations("Every eslint-disable states why (root CLAUDE.md §5)", violations)
-    }
-
-    @Test
     fun `an annotation with several ids counts once`() {
         assertEquals(1, countOf("@Suppress(\"A\", \"B\", \"C\") fun f() {}", SUPPRESS))
         assertEquals(2, countOf("@Suppress(\"A\")\nfun f() {}\n@Suppress(\"B\")\nfun g() {}", SUPPRESS))
     }
 
     @Test
-    fun `the three eslint-disable forms each count once`() {
-        assertEquals(1, countOf("/* eslint-disable no-x */", ESLINT_DISABLE))
-        assertEquals(1, countOf("// eslint-disable-next-line no-x", ESLINT_DISABLE))
-        assertEquals(1, countOf("foo(); // eslint-disable-line no-x", ESLINT_DISABLE))
-        assertEquals(0, countOf("/* eslint-enable no-x */", ESLINT_DISABLE))
-    }
-
-    @Test
     fun `a directive inside a string literal is counted`() {
-        assertEquals(1, countOf("val s = \"eslint-disable-next-line\"", ESLINT_DISABLE))
         assertEquals(1, countOf("val s = \"@Suppress(\"", SUPPRESS))
     }
 
@@ -113,7 +78,7 @@ class SuppressionBudgetTest {
 
     @Test
     fun `a Kotlin suppression has a reason on its line, inside it or on the line above`() {
-        fun reasoned(text: String) = hasReason(text, text.indexOf("@Suppress"), ReasonStyle.SLASHES)
+        fun reasoned(text: String) = hasReason(text, text.indexOf("@Suppress"))
         assertTrue(reasoned("@Suppress(\"A\") // why\nfun f() {}"), "same line")
         assertTrue(reasoned("// why\n@Suppress(\"A\")\nfun f() {}"), "line above")
         assertTrue(reasoned("@Suppress(\n    \"A\", // why\n)\nfun f() {}"), "inside the annotation")
@@ -124,20 +89,9 @@ class SuppressionBudgetTest {
         assertFalse(reasoned("@Suppress(\"A\") // TODO\nfun f() {}"), "TODO is no reason")
         assertFalse(reasoned("// FIXME:\n@Suppress(\"A\")\nfun f() {}"), "FIXME above is no reason")
         assertFalse(reasoned("@Suppress(\"http://x\")\nfun f() {}"), "a // inside a string literal is no comment")
+        assertFalse(reasoned("@Suppress(\"\"\"http://x\"\"\")\nfun f() {}"), "a // inside a raw string is no comment")
+        assertFalse(reasoned("val c = '/'\n@Suppress(\"A\", \"//\")\nfun f() {}"), "a // in a second literal is no comment")
         assertTrue(reasoned("@Suppress(\"http://x\") // the url is fixed\nfun f() {}"), "a real reason after a literal")
-    }
-
-    @Test
-    fun `an eslint-disable has a reason after two dashes or a comment above`() {
-        fun reasoned(text: String) = hasReason(text, text.indexOf("eslint-disable"), ReasonStyle.ESLINT)
-        assertTrue(reasoned("// eslint-disable-next-line no-x -- why\nfoo()"))
-        assertTrue(reasoned("{/* eslint-disable-next-line no-x -- why */}"))
-        assertTrue(reasoned("// why\n// eslint-disable-next-line no-x\nfoo()"), "comment above")
-        assertFalse(reasoned("foo(); // eslint-disable-line no-x"), "no reason")
-        assertFalse(reasoned("foo(); // eslint-disable-line no-x -- "), "an empty reason")
-        assertFalse(reasoned("{/* eslint-disable-next-line no-x -- */}"), "an empty reason in a block comment")
-        assertFalse(reasoned("// TODO\n// eslint-disable-next-line no-x\nfoo()"), "TODO above is no reason")
-        assertFalse(reasoned("foo()\n// eslint-disable-next-line no-x\nfoo()"), "code above is no reason")
     }
 
     @Test
@@ -178,34 +132,17 @@ class SuppressionBudgetTest {
 
     private fun architectureTests(): List<File> = Sources.test("architecture").files.map { File(it.path) }
 
-    /** The files `console/scripts/size.mjs` calls production code: no tests, no shadcn primitives, no `.d.ts`. */
-    private fun consoleProduction(): List<File> {
-        val console = File(Sources.repoRoot, "console")
-        return listOf("app", "components", "lib", "types")
-            .map { File(console, it) }
-            .filter { it.isDirectory }
-            .flatMap { dir -> dir.walkTopDown().filter { it.isFile } }
-            .plus(File(console, "middleware.ts"))
-            .filter { it.isFile }
-            .filter { it.extension == "ts" || (it.extension == "tsx" && !it.relativeTo(console).startsWith("types")) }
-            .filterNot { it.name.contains(".test.") || it.name.endsWith(".d.ts") }
-            .filterNot { it.relativeTo(console).invariantSeparatorsPath.startsWith("components/ui/") }
-            .sortedBy { it.path }
-    }
-
     private companion object {
         const val SOURCE_FILE = "app/architecture/src/test/kotlin/homer/architecture/SuppressionBudgetTest.kt"
 
         // Counts on 2026-11-17 (GH #310); lower a budget when its count falls, never raise one to fit a new suppression.
         const val SUPPRESS_BUDGET = 51
-        const val ESLINT_DISABLE_BUDGET = 15
         const val JSCPD_IGNORE_BUDGET = 5
         const val REPORT_ONLY_BUDGET = 0
     }
 }
 
 internal val SUPPRESS = Regex("""@Suppress\(""")
-internal val ESLINT_DISABLE = Regex("""\beslint-disable(?:-next-line|-line)?\b""")
 internal val JSCPD_IGNORE = Regex("""jscpd:ignore-start""")
 internal val REPORT_ONLY_TAG = Regex("""(?m)^\s*@Tag\(REPORT_ONLY\)""")
 
@@ -214,27 +151,17 @@ internal fun countOf(
     pattern: Regex,
 ): Int = pattern.findAll(text).count()
 
-internal enum class ReasonStyle { SLASHES, ESLINT }
-
 /**
- * Whether the directive at [offset] states why: a comment on the rest of its line (for `@Suppress(`, up to the
- * line of its closing parenthesis, so one inside the annotation counts) or a `//` comment on the line directly
- * above; [ReasonStyle.ESLINT] asks for ESLint's own ` -- reason` on the line instead of any comment, since the
- * directive itself sits in one.
+ * Whether the `@Suppress(` at [offset] states why: a comment with real text on its line (up to the line of its
+ * closing parenthesis, so one inside the annotation counts) or a `//` comment line directly above. Comments
+ * are read with [KotlinText], so a marker inside a string or character literal is no comment.
  */
 internal fun hasReason(
     text: String,
     offset: Int,
-    style: ReasonStyle,
 ): Boolean {
-    val segment = text.substring(offset, lineEndOf(text, offset, style))
-    val onLine =
-        if (style == ReasonStyle.ESLINT) {
-            segment.substringAfter(" -- ", "").let { it.isNotEmpty() && isReasonText(it) }
-        } else {
-            commentTexts(segment).any(::isReasonText)
-        }
-    if (onLine) return true
+    val segment = text.substring(offset, lineEnd(text, offset))
+    if (commentTexts(segment).any(::isReasonText)) return true
     val lineStart = text.lastIndexOf('\n', offset - 1) + 1
     if (lineStart == 0) return false
     val above = text.substring(text.lastIndexOf('\n', lineStart - 2) + 1, lineStart - 1).trimStart()
@@ -243,62 +170,30 @@ internal fun hasReason(
 
 /** A reason has real words: at least 3 non-space characters, once a closing marker is dropped, and not a bare TODO / FIXME. */
 internal fun isReasonText(raw: String): Boolean {
-    val text =
-        raw
-            .removeSuffix("}")
-            .trim()
-            .removeSuffix("*/")
-            .trim()
+    val text = raw.trim().removeSuffix("*/").trim()
     return text.count { !it.isWhitespace() } >= 3 && !Regex("""(?i)(todo|fixme)\W*""").matches(text)
 }
 
-/** The text of each comment in [segment], skipping comment markers inside a double-quoted string literal. */
-internal fun commentTexts(segment: String): List<String> {
-    val found = mutableListOf<String>()
-    var i = 0
-    while (i < segment.length) {
-        when {
-            segment[i] == '"' -> {
-                i++
-                while (i < segment.length && segment[i] != '"') i += if (segment[i] == '\\') 2 else 1
-                i++
-            }
+private val COMMENT = Regex("""//[^\n]*|/\*[\s\S]*?(?:\*/|$)""")
 
-            segment.startsWith("//", i) -> {
-                val end = segment.indexOf('\n', i).let { if (it < 0) segment.length else it }
-                found += segment.substring(i + 2, end)
-                i = end
-            }
+internal fun commentTexts(segment: String): List<String> =
+    COMMENT.findAll(KotlinText.commentText(segment)).map { it.value.removePrefix("//").removePrefix("/*") }.toList()
 
-            segment.startsWith("/*", i) -> {
-                val end = segment.indexOf("*/", i + 2).let { if (it < 0) segment.length else it }
-                found += segment.substring(i + 2, end)
-                i = end + 2
-            }
-
-            else -> {
-                i++
-            }
-        }
-    }
-    return found
-}
-
-private fun lineEndOf(
+private fun lineEnd(
     text: String,
     offset: Int,
-    style: ReasonStyle,
 ): Int {
-    var end = offset
-    if (style == ReasonStyle.SLASHES) {
-        var depth = 0
-        var i = text.indexOf('(', offset)
-        while (i in text.indices) {
-            if (text[i] == '(') depth++
-            if (text[i] == ')' && --depth == 0) break
-            i++
+    var depth = 0
+    var i = text.indexOf('(', offset)
+    while (i in text.indices) {
+        val next = KotlinText.skipNonCode(text, i)
+        if (next != i) {
+            i = next
+            continue
         }
-        end = i.coerceAtMost(text.length)
+        if (text[i] == '(') depth++
+        if (text[i] == ')' && --depth == 0) break
+        i++
     }
-    return text.indexOf('\n', end).let { if (it < 0) text.length else it }
+    return text.indexOf('\n', i.coerceAtMost(text.length)).let { if (it < 0) text.length else it }
 }
