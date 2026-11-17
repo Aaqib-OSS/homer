@@ -9,7 +9,8 @@
  * budget constant below, ratcheted like the caps, and every `eslint-disable*` states its reason. The backend's counterpart is `SuppressionBudgetTest`.
  *
  * Both caps ratchet (ADR-0082): a cap more than 5% of itself (rounded up, at least 1) above the current maximum is a finding; lower it to
- * the maximum the finding names.
+ * the maximum the finding names. So do the lint caps on parameters per function and props per component (GH #311): `MAX_PARAMS` and
+ * `MAX_PROPS` in `eslint.config.mjs` report through `eslint-warnings`, and a probe run here over the files they cover finds a stale one.
  */
 import { readFileSync } from 'node:fs';
 import { matchesGlob, relative } from 'node:path';
@@ -17,6 +18,7 @@ import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 import { ESLint } from 'eslint';
 
+import { MAX_PARAMS, MAX_PROPS, SOURCE_FILES, TEST_FILES } from '../eslint.config.mjs';
 import { CONSOLE_DIR, printReport, repoPath, writeReports } from './quality-report.mjs';
 
 const CHECK = 'size-console';
@@ -40,8 +42,17 @@ const SIZE_RULES = sizeRules(MAX_FILE_LINES, MAX_FUNCTION_LINES);
 // Every file and function over one line reports its count, which is how the current maximum is read.
 const PROBE_RULES = sizeRules(1, 1);
 
-const CONSTANTS = { 'max-lines': 'MAX_FILE_LINES', 'max-lines-per-function': 'MAX_FUNCTION_LINES' };
-const CAPS = { 'max-lines': MAX_FILE_LINES, 'max-lines-per-function': MAX_FUNCTION_LINES };
+// The lint caps' own probe: every function with a parameter and every component with a prop reports its count.
+const LINT_PROBE_RULES = { 'max-params': ['warn', 0], 'homer/max-props': ['warn', 0] };
+
+/** Each cap's constant and the file that holds it. */
+const CAP_HOMES = {
+  'max-lines': ['MAX_FILE_LINES', 'console/scripts/size.mjs'],
+  'max-lines-per-function': ['MAX_FUNCTION_LINES', 'console/scripts/size.mjs'],
+  'max-params': ['MAX_PARAMS', 'console/eslint.config.mjs'],
+  'homer/max-props': ['MAX_PROPS', 'console/eslint.config.mjs'],
+};
+const CAPS = { 'max-lines': MAX_FILE_LINES, 'max-lines-per-function': MAX_FUNCTION_LINES, 'max-params': MAX_PARAMS, 'homer/max-props': MAX_PROPS };
 
 /** Slack a cap may sit above the current maximum: 5% of the cap, rounded up, at least 1. */
 export function slack(cap) {
@@ -53,9 +64,9 @@ export function staleCap(cap, currentMax) {
   return cap - currentMax > slack(cap) ? currentMax : null;
 }
 
-/** The largest size per rule, read from the "(N)" in the messages of a probe run with 1-line caps. */
-export function currentMaxima(results) {
-  const maxima = { 'max-lines': 0, 'max-lines-per-function': 0 };
+/** The largest count per rule, read from the "(N)" in the messages of a probe run with near-zero caps; every rule must measure something. */
+export function currentMaxima(results, rules = Object.keys(SIZE_RULES)) {
+  const maxima = Object.fromEntries(rules.map((rule) => [rule, 0]));
   for (const result of results) {
     for (const message of result.messages) {
       if (!(message.ruleId in maxima)) continue;
@@ -64,9 +75,8 @@ export function currentMaxima(results) {
       if (count > maxima[message.ruleId]) maxima[message.ruleId] = count;
     }
   }
-  if (maxima['max-lines'] === 0 || maxima['max-lines-per-function'] === 0) {
-    throw new Error('size-console: the probe run measured no file or no function');
-  }
+  const unmeasured = rules.filter((rule) => maxima[rule] === 0);
+  if (unmeasured.length > 0) throw new Error(`size-console: the probe run measured nothing for ${unmeasured.join(', ')}`);
   return maxima;
 }
 
@@ -75,8 +85,9 @@ export function staleCapFindings(maxima, caps = CAPS) {
   return Object.keys(caps).flatMap((rule) => {
     const lowerTo = staleCap(caps[rule], maxima[rule]);
     if (lowerTo === null) return [];
-    const message = `${rule}: ${CONSTANTS[rule]} (console/scripts/size.mjs) is ${caps[rule]} but the current maximum is ${maxima[rule]}; lower it to ${lowerTo}`;
-    return [{ path: 'console/scripts/size.mjs', line: 1, message, stableKey: `${rule}: stale ${CONSTANTS[rule]}`, severity: 'minor' }];
+    const [constant, file] = CAP_HOMES[rule];
+    const message = `${rule}: ${constant} (${file}) is ${caps[rule]} but the current maximum is ${maxima[rule]}; lower it to ${lowerTo}`;
+    return [{ path: file, line: 1, message, stableKey: `${rule}: stale ${constant}`, severity: 'minor' }];
   });
 }
 
@@ -236,10 +247,10 @@ export function productionFiles(results, consoleDir = CONSOLE_DIR) {
     .map((result) => ({ path: repoPath(result.filePath, consoleDir), text: readFileSync(result.filePath, 'utf8') }));
 }
 
-/** Messages that are not size findings mean the run itself is broken (a parse error, a bad directive). */
-export function otherMessages(results) {
+/** Messages from no rule in `rules` mean the run itself is broken (a parse error, a bad directive). */
+export function otherMessages(results, rules = SIZE_RULES) {
   return results.flatMap((result) =>
-    result.messages.filter((message) => !(message.ruleId in SIZE_RULES)).map((message) => `${result.filePath}:${message.line}: ${message.message}`),
+    result.messages.filter((message) => !(message.ruleId in rules)).map((message) => `${result.filePath}:${message.line}: ${message.message}`),
   );
 }
 
@@ -259,7 +270,14 @@ async function main() {
   }).lintFiles(PRODUCTION_FILES);
   const brokenProbe = otherMessages(probe);
   if (brokenProbe.length > 0) throw new Error(`size-console: unexpected ESLint messages in the probe run:\n${brokenProbe.join('\n')}`);
-  const maxima = currentMaxima(probe);
+  const lintProbe = await new ESLint({
+    cwd: CONSOLE_DIR,
+    overrideConfig: { files: SOURCE_FILES, ignores: TEST_FILES, rules: LINT_PROBE_RULES },
+    ruleFilter: ({ ruleId }) => ruleId in LINT_PROBE_RULES,
+  }).lintFiles(['.']);
+  const brokenLintProbe = otherMessages(lintProbe, LINT_PROBE_RULES);
+  if (brokenLintProbe.length > 0) throw new Error(`size-console: unexpected ESLint messages in the lint-cap probe run:\n${brokenLintProbe.join('\n')}`);
+  const maxima = { ...currentMaxima(probe), ...currentMaxima(lintProbe, Object.keys(LINT_PROBE_RULES)) };
   const sizeOnly = sizeFindings(results);
   const files = productionFiles(results);
   const findings = [...sizeOnly, ...staleCapFindings(maxima), ...suppressionFindings(files)];
@@ -271,6 +289,10 @@ async function main() {
     maxFunctionLines: MAX_FUNCTION_LINES,
     currentMaxFileLines: maxima['max-lines'],
     currentMaxFunctionLines: maxima['max-lines-per-function'],
+    maxParams: MAX_PARAMS,
+    maxProps: MAX_PROPS,
+    currentMaxParams: maxima['max-params'],
+    currentMaxProps: maxima['homer/max-props'],
   };
   const detail = `(${extra.files} file(s) > ${MAX_FILE_LINES} lines, ${extra.functions} function(s) > ${MAX_FUNCTION_LINES} lines)`;
   const report = writeReports(CHECK, { title: 'Console file and function size', findings, detail, extra });
