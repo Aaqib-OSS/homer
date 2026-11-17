@@ -129,7 +129,7 @@ data class Agent(
 
     // Reads the legacy alias on purpose: it is the fallback for agents still using it.
     @Transient
-    @Suppress("DEPRECATION")
+    @Suppress("DEPRECATION") // reads the legacy queryParams alias on purpose
     val effectiveInputs: List<Param>? = inputs ?: queryParams
 
     /** The claim-queue filter this agent's runs wait on. See ADR-0066. */
@@ -160,7 +160,7 @@ data class Agent(
     // `tags.fromInputs` unioned with the deprecated `telemetry.traceTags`; one list feeds both the
     // trace tags and the process-tag rows, so the two never diverge. See ADR-0050, ADR-0060.
     @Transient
-    @Suppress("DEPRECATION")
+    @Suppress("DEPRECATION") // unions the deprecated telemetry.traceTags alias on purpose
     val effectiveFromInputTags: List<String> =
         (tags.fromInputs + telemetry.traceTags).distinct()
 }

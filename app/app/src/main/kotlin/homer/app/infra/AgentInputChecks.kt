@@ -91,7 +91,7 @@ internal class AgentInputChecks(
         // name inputs by paramName. Validating here rather than per-input is what the
         // indirection costs: a renamed input must fail loudly at load, not silently stop
         // tagging. Three ways a fromInputs entry can be wrong:
-        @Suppress("DEPRECATION")
+        @Suppress("DEPRECATION") // reads the deprecated traceTags alias on purpose, to warn about it
         if (agent.telemetry.traceTags.isNotEmpty()) {
             logger.warn(
                 "Agent '{}': telemetry.traceTags is deprecated; use the top-level tags.fromInputs block instead.",
@@ -303,7 +303,7 @@ internal class AgentInputChecks(
                 agent.name,
             )
         }
-        @Suppress("DEPRECATION")
+        @Suppress("DEPRECATION") // reads the deprecated queryParams alias on purpose, to warn about it
         if (agent.queryParams != null) {
             logger.warn(
                 "Agent '{}' uses the deprecated 'queryParams' alias; rename it to 'inputs'.",
