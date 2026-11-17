@@ -27,7 +27,7 @@ export function findings(caps, sizes) {
     else if (cap - size > slack(cap)) out.push(`lower ${path}'s cap to ${size} (it is ${cap}, more than ${slack(cap)} above the current size)`)
   }
   for (const path of Object.keys(caps)) {
-    if (!(path in sizes)) out.push(`remove the cap for ${path}: it is not a tracked CLAUDE.md`)
+    if (!(path in sizes)) out.push(`remove the cap for ${path}: no such CLAUDE.md`)
   }
   return out
 }

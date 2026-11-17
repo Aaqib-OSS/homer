@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { statSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -37,12 +37,15 @@ test('a guide over its cap fails and names the file, size and cap', () => {
 
 test('a tracked guide without a cap, and a cap without a tracked guide, fail', () => {
   assert.deepEqual(findings({}, { 'new/CLAUDE.md': 10 }), ['add a cap for new/CLAUDE.md (10 bytes) in claude-md-budget.mjs'])
-  assert.deepEqual(findings({ 'gone/CLAUDE.md': 10 }, {}), ['remove the cap for gone/CLAUDE.md: it is not a tracked CLAUDE.md'])
+  assert.deepEqual(findings({ 'gone/CLAUDE.md': 10 }, {}), ['remove the cap for gone/CLAUDE.md: no such CLAUDE.md'])
 })
 
 test('every tracked CLAUDE.md is within its cap, and no cap is stale', () => {
   const paths = execFileSync('git', ['-C', root, 'ls-files', '-z', '--cached', '*CLAUDE.md'], { encoding: 'utf8' }).split('\0').filter((p) => p === 'CLAUDE.md' || p.endsWith('/CLAUDE.md'))
   assert.ok(paths.length >= 7, `found only ${paths.length} CLAUDE.md files`)
-  const sizes = Object.fromEntries(paths.map((p) => [p, statSync(join(root, p)).size]))
+  const sizes = {}
+  for (const p of paths) {
+    if (existsSync(join(root, p))) sizes[p] = statSync(join(root, p)).size // a deleted guide: findings names its stale cap
+  }
   assert.deepEqual(findings(CAPS, sizes), [])
 })
