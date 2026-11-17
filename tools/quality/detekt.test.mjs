@@ -63,5 +63,7 @@ test('the complexity rule set runs only CognitiveComplexMethod (GH #307)', () =>
   const complexity = config.split('\ncomplexity:\n')[1].split(/\n(?=\S)/)[0];
   const active = [...complexity.matchAll(/^ {2}(\w+):\n {4}active: true$/gm)].map(([, rule]) => rule);
 
+  assert.match(complexity, /^ {2}active: true$/m);
+  assert.match(complexity, /^ {4}allowedComplexity: 23$/m);
   assert.deepEqual(active, ['CognitiveComplexMethod']);
 });
