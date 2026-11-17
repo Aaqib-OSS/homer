@@ -151,7 +151,7 @@ internal object ConstraintTestRefs {
             when {
                 text.isEmpty() -> break
                 text.startsWith("/*") || text.startsWith("*") || text.startsWith("//") -> Unit
-                "fun " in text -> break
+                "fun " in withoutStrings(text) -> break
                 lineIndent > indent -> Unit
                 lineIndent == indent && text.startsWith(")") -> Unit
                 lineIndent == indent && text.startsWith("@") -> found += text
@@ -160,6 +160,11 @@ internal object ConstraintTestRefs {
         }
         return found
     }
+
+    /** [text] with the content of its string literals (raw `"""` and escaped `"`) blanked out. */
+    private fun withoutStrings(text: String): String = text.replace(STRING_LITERAL, "\"\"")
+
+    private val STRING_LITERAL = Regex(""""{3}.*?"{3}|"(?:\\.|[^"\\])*"""")
 
     private fun String.indentation() = length - trimStart().length
 

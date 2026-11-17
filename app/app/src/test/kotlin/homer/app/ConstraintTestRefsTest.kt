@@ -259,6 +259,24 @@ class ConstraintTestRefsTest {
     }
 
     @Test
+    fun `a function keyword inside an annotation string does not end the scan`() {
+        val sources =
+            mapOf(
+                "D.kt" to
+                    """
+                    class Quoted {
+                        @Test
+                        @CsvSource("fun stuff", "a \"fun \" b")
+                        @Tag(${'"'}${'"'}${'"'}fun raw${'"'}${'"'}${'"'})
+                        fun `x`() {}
+                    }
+                    """.trimIndent(),
+            )
+
+        assertNull(ConstraintTestRefs.unresolved(TestRef("Quoted", "x"), sources))
+    }
+
+    @Test
     fun `whatever the names, a line built in the documented format parses back to the same refs`() =
         runTest {
             val identifier = Arb.string(1..12, Codepoint.alphanumeric())
