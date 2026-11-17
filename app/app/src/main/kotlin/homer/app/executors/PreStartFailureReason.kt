@@ -79,7 +79,7 @@ object PreStartFailureReason {
 
             is UnresolvedLockKeyPlaceholderException -> {
                 PreStartFailure(
-                    "Lock key ${describePlaceholders(e.placeholders)} (lockStrategy.key), so this run never started.",
+                    "Lock key ${placeholderSentence(e.placeholders)} (lockStrategy.key), so this run never started.",
                 )
             }
 
@@ -87,12 +87,6 @@ object PreStartFailureReason {
                 null
             }
         }
-
-    /**
-     * The unresolved placeholder names as the stored sentence names them, by the shared builder
-     * the denial's own log sentence uses. See ADR-0098.
-     */
-    private fun describePlaceholders(placeholders: List<String>): String = placeholderSentence(placeholders)
 
     /**
      * The run's runner filter without its alias: `describe()` names one, and a runner alias is
