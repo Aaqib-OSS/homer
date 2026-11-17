@@ -2,7 +2,7 @@
 
 comments:
   active: false
-# Only CognitiveComplexMethod (GH #307); every other default-active complexity rule is listed off.
+# Only CognitiveComplexMethod (GH #307) and NestedBlockDepth (GH #308); every other default-active complexity rule is listed off.
 complexity:
   active: true
   CognitiveComplexMethod:
@@ -19,7 +19,8 @@ complexity:
   LongParameterList:
     active: false
   NestedBlockDepth:
-    active: false
+    active: true
+    allowedDepth: 4
   TooManyFunctions:
     active: false
 empty-blocks:
