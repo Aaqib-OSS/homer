@@ -10,6 +10,10 @@ import homer.app.exceptions.TooManyPendingContinuationsException
 import homer.app.exceptions.ValidationException
 import homer.app.infra.AgentInputResolver
 import homer.app.infra.validatePayloadParam
+import homer.app.models.CreateJoinRequest
+import homer.app.models.CreateJoinResponse
+import homer.app.models.CreateRunRequest
+import homer.app.models.CreateRunResponse
 import homer.app.models.DispatchConfig
 import homer.app.models.ProcessStatus
 import homer.app.models.ResultEnvParam
@@ -97,6 +101,7 @@ internal class ContinuationService(
     agentRunStarter: AgentRunStarter,
     private val agentInputResolver: AgentInputResolver,
     private val processManager: ProcessManager,
+    private val dispatchService: DispatchService,
     resultTokenService: ResultTokenService,
     private val logger: Logger,
     private val config: DispatchConfig = DispatchConfig(),
@@ -114,6 +119,10 @@ internal class ContinuationService(
             logger,
             nowSec,
         )
+
+    // Lazy: the starter calls back into this service's validate/create/createJoin, so it must not be
+    // handed a half-built `this` from the constructor.
+    private val starts by lazy { ContinuationStartService(this, dispatchService, processManager, logger) }
 
     /**
      * Validates everything [create] checks before it inserts a row — the dispatch hop's
@@ -248,6 +257,26 @@ internal class ContinuationService(
     /** True when every watched sub of a JOIN continuation has reached a terminal status. */
     private suspend fun allWatchedTerminal(continuation: Continuation): Boolean =
         continuation.watches.all { processManager.getProcessStatus(it.watchedProcessId) in TERMINAL_STATUSES }
+
+    /**
+     * Starts the run a `POST /api/v1/callback/runs` body asks for: a plain dispatch when it names no
+     * [CreateRunRequest.continueAgent], otherwise the sub plus the completion continuation watching
+     * it. See [ContinuationStartService], ADR-0023.
+     */
+    suspend fun startWithContinuation(
+        originProcessId: Int,
+        request: CreateRunRequest,
+    ): CreateRunResponse = starts.startWithContinuation(originProcessId, request)
+
+    /**
+     * Starts the parallel fan-out a `POST /api/v1/callback/joins` body asks for: every sub, plus ONE
+     * join continuation resuming the parent after the last of them ends.
+     * See [ContinuationStartService], ADR-0026.
+     */
+    suspend fun startJoin(
+        originProcessId: Int,
+        request: CreateJoinRequest,
+    ): CreateJoinResponse = starts.startJoin(originProcessId, request)
 
     /**
      * [validate]s a registration and builds its PENDING row, not yet inserted (id 0) and watching

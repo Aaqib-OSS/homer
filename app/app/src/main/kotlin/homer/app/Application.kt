@@ -14,7 +14,9 @@ import homer.app.models.flattenAuthSchemes
 import homer.app.routes.ApiDeps
 import homer.app.routes.apiV1Routes
 import homer.app.routes.apiV1UnsecuredRoutes
+import homer.app.routes.callbackDeps
 import homer.app.routes.callbackRoutes
+import homer.app.routes.mcpRouteDeps
 import homer.app.routes.mcpRoutes
 import homer.app.routes.questionsMcpRoutes
 import homer.app.routes.runnerBearerToken
@@ -226,19 +228,19 @@ private fun Application.configureRouting(
         // Token-authenticated at the route level (HMR_CALLBACK_TOKEN), NOT by
         // the operator auth schemes — keep physically outside authenticate(...)
         // so the two credential domains can never satisfy each other. ADR-0019.
-        callbackRoutes(deps)
+        callbackRoutes(deps.callbackDeps())
         // Domain-token principal (runners.*.token), the same structural boundary
         // as the callback token: outside authenticate(...). ADR-0066, §12.
         runnerProtocolRoutes(deps.runnerRegistry.externalDomains, deps.runnerRegistry.queue)
         if (config.server.mcp.enabled) {
-            questionsMcpRoutes(deps)
+            questionsMcpRoutes(deps.mcpRouteDeps())
         }
 
         if (authNames.isEmpty()) {
             rateLimit(RateLimitName("perCaller")) {
                 apiV1Routes(deps)
                 if (config.server.mcp.enabled) {
-                    mcpRoutes(deps)
+                    mcpRoutes(deps.mcpRouteDeps())
                 }
             }
         } else {
@@ -253,7 +255,7 @@ private fun Application.configureRouting(
                     // CSRF guard above is session-cookie-scoped (ADR-0016), so
                     // bearer/HMAC MCP clients pass without a CSRF header.
                     if (config.server.mcp.enabled) {
-                        mcpRoutes(deps)
+                        mcpRoutes(deps.mcpRouteDeps())
                     }
                 }
             }

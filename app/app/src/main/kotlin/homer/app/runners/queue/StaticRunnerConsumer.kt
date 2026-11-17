@@ -1,6 +1,5 @@
 package homer.app.runners.queue
 
-import homer.app.models.RunnerFilter
 import homer.app.runners.Runner
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -90,18 +89,7 @@ class StaticRunnerConsumer(
                 logger.warn("Process {}: runner '{}' failed to open a session: {}", request.params.processId, alias, e.message)
                 return
             }
-        // A tag-filtered claim has no per-alias entry in WorkspaceConfigFactory's
-        // env layering (the run's workspace env was composed before the serving
-        // runner was known), so the runner's own env must reach the run through
-        // the session instead. An alias-filtered claim's runner env was already
-        // layered by the factory. See ADR-0066.
-        val delivered =
-            if (request.filter is RunnerFilter.Tags && runner.runnerEnv.isNotEmpty()) {
-                TagRoutedSession(session, runner.runnerEnv)
-            } else {
-                session
-            }
-        val tracked = PermitReleasingSession(delivered) { releaseOnce() }
+        val tracked = PermitReleasingSession(session.deliveredFor(request.filter, runner.runnerEnv)) { releaseOnce() }
         if (!request.complete(tracked)) {
             // The run stopped waiting (killed or timed out) while we were opening: free the backend.
             logger.debug("Process {}: run stopped waiting before runner '{}' opened; closing session", request.params.processId, alias)

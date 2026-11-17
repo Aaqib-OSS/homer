@@ -3,8 +3,6 @@ package homer.app.routes
 import homer.app.EnvConstants
 import homer.app.apiJson
 import homer.app.configureStatusPages
-import homer.app.exceptions.RunnerTransferTimeoutException
-import homer.app.exceptions.RunnerTransferTooLargeException
 import homer.app.infra.WorkspaceConfig
 import homer.app.models.RunnerConfig
 import homer.app.models.RunnerFilter
@@ -46,19 +44,14 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.spyk
 import io.opentelemetry.context.Context
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
@@ -67,7 +60,6 @@ import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -1283,60 +1275,6 @@ class RunnerProtocolRoutesTest {
                 assertEquals("warn\n", err.readText())
             }
             session.close()
-        }
-
-    /**
-     * Runs [block] through [ExternalRunnerDomain.withTransferTimeout] only once that call's
-     * watchdog has fired, so the block starts past the deadline: the condition wait that replaces
-     * the fixed sleep which used to outlast the 1 s timeout. Waiting on the watchdog itself keeps
-     * the wait and the deadline from drifting apart.
-     */
-    private suspend fun <T> pastDeadline(
-        domain: ExternalRunnerDomain,
-        block: suspend () -> T,
-    ): T {
-        val fired = CompletableDeferred<Unit>()
-        return domain.withTransferTimeout(release = { fired.complete(Unit) }) {
-            withTimeout(10.seconds) { fired.await() }
-            block()
-        }
-    }
-
-    @Test
-    fun `past the deadline only the cancelled channel's failure becomes a timeout, a transfer's own refusal keeps its status`() =
-        runBlocking<Unit> {
-            val slow = ExternalRunnerDomain("slow", RunnerConfig.External(token = "slow-token", transferTimeoutSec = 1), queue)
-            // Each block starts after the deadline (the watchdog has fired) before it fails.
-            assertThrows<SecurityException> {
-                pastDeadline(slow) { throw SecurityException("entry escapes the target") }
-            }
-            assertThrows<RunnerTransferTooLargeException> {
-                pastDeadline(slow) { throw RunnerTransferTooLargeException(16) }
-            }
-            assertThrows<RunnerTransferTimeoutException> {
-                pastDeadline(slow) { throw java.io.IOException("channel cancelled") }
-            }
-        }
-
-    @Test
-    fun `a caller cancelled past the deadline ends cancelled, not as a transfer timeout`() =
-        runBlocking<Unit> {
-            val slow = ExternalRunnerDomain("slow", RunnerConfig.External(token = "slow-token", transferTimeoutSec = 1), queue)
-            // What withTransferTimeout itself throws, captured inside the cancelled caller.
-            val thrown = CompletableDeferred<Throwable?>()
-            launch {
-                val caller = coroutineContext.job
-                val result =
-                    runCatching {
-                        pastDeadline(slow) {
-                            caller.cancel() // e.g. the runner disconnects
-                            throw CancellationException("caller cancelled")
-                        }
-                    }
-                thrown.complete(result.exceptionOrNull())
-            }.join()
-
-            assertIs<CancellationException>(thrown.await())
         }
 
     // ---- liveness (ADR-0066): every protocol call is the heartbeat the sweep reads, so each route

@@ -37,7 +37,7 @@ import kotlin.coroutines.CoroutineContext
  * tool list always reflects agent reloads. Mounted inside the same
  * authenticate/rateLimit wrapper as the REST API. See ADR-0018.
  */
-internal fun Route.mcpRoutes(deps: ApiDeps) {
+internal fun Route.mcpRoutes(deps: McpRouteDeps) {
     route("/mcp") {
         // The MCP transport responds with SDK JSONRPCMessage objects, which
         // must serialize through McpJson (polymorphic message types). Route-
@@ -78,7 +78,7 @@ internal fun Route.mcpRoutes(deps: ApiDeps) {
  * uses SSE response mode (`enableJsonResponse = false`), so headers flush before the tool runs and
  * progress notifications stream mid-call, letting a blocking `ask_user_and_wait` survive client first-byte/inactivity timeouts.
  */
-internal fun Route.questionsMcpRoutes(deps: ApiDeps) {
+internal fun Route.questionsMcpRoutes(deps: McpRouteDeps) {
     route("/mcp/questions") {
         install(ContentNegotiation) {
             json(McpJson)

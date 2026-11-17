@@ -80,9 +80,11 @@ class QuestionsMcpRoutesTest {
             mockk<ApiDeps> {
                 every { questionsService } returns service
                 every { questionsMcpToolFactory } returns factory
+                // `mcpRouteDeps()` is shared with the operator MCP route, so it reads all three.
+                every { mcpToolFactory } returns mockk(relaxed = true)
             }
         routing {
-            if (enabled) questionsMcpRoutes(deps)
+            if (enabled) questionsMcpRoutes(deps.mcpRouteDeps())
         }
     }
 

@@ -21,7 +21,7 @@ import io.ktor.server.routing.route
 import kotlin.enums.EnumEntries
 
 /** `/dispatches`: list, read and cancel ask-and-dispatch rows. */
-internal fun Route.dispatchRoutes(deps: ApiDeps) {
+internal fun Route.dispatchRoutes(deps: DispatchContinuationDeps) {
     with(deps) {
         route("/dispatches") {
             get {
@@ -67,7 +67,7 @@ internal fun Route.dispatchRoutes(deps: ApiDeps) {
 }
 
 /** `/continuations`: list, read and cancel completion continuations. */
-internal fun Route.continuationRoutes(deps: ApiDeps) {
+internal fun Route.continuationRoutes(deps: DispatchContinuationDeps) {
     with(deps) {
         route("/continuations") {
             get {
@@ -147,19 +147,19 @@ private fun ApplicationCall.recordId(kind: String): Int =
     pathParameter("id").toIntOrNull() ?: throw ValidationException("Invalid $kind id", "id")
 
 /** The dispatch the `{id}` path parameter names; a non-integer id is a `400`, an unknown one a `404`. */
-private suspend fun ApiDeps.storedDispatch(call: ApplicationCall): Dispatch {
+private suspend fun DispatchContinuationDeps.storedDispatch(call: ApplicationCall): Dispatch {
     val id = call.recordId("dispatch")
     return dispatchService.get(id) ?: throw DispatchNotFoundException(id)
 }
 
 /** The continuation the `{id}` path parameter names; a non-integer id is a `400`, an unknown one a `404`. */
-private suspend fun ApiDeps.storedContinuation(call: ApplicationCall): Continuation {
+private suspend fun DispatchContinuationDeps.storedContinuation(call: ApplicationCall): Continuation {
     val id = call.recordId("continuation")
     return continuationService.get(id) ?: throw ContinuationNotFoundException(id)
 }
 
 /** [dispatch]'s stored params, secrets masked against its agent's current definition. */
-private fun ApiDeps.redactedParams(dispatch: Dispatch): Map<String, String> =
+private fun DispatchContinuationDeps.redactedParams(dispatch: Dispatch): Map<String, String> =
     redactStoredParams(
         dispatch.params,
         dispatch.secretInputKeys,
@@ -168,7 +168,7 @@ private fun ApiDeps.redactedParams(dispatch: Dispatch): Map<String, String> =
     )
 
 /** [continuation]'s stored params, secrets masked against its target agent's current definition. */
-private fun ApiDeps.redactedParams(continuation: Continuation): Map<String, String> =
+private fun DispatchContinuationDeps.redactedParams(continuation: Continuation): Map<String, String> =
     redactStoredParams(
         continuation.params,
         continuation.secretInputKeys,

@@ -3,6 +3,9 @@ package homer.app.runners.external
 import homer.app.EnvConstants
 import homer.app.exceptions.OutputCapExceededException
 import homer.app.exceptions.RunnerOutputSequenceException
+import homer.app.exceptions.RunnerTransferTimeoutException
+import homer.app.exceptions.RunnerTransferTooLargeException
+import homer.app.exceptions.ValidationException
 import homer.app.infra.OutputLineFilter
 import homer.app.infra.WorkspaceConfig
 import homer.app.models.ExtraUploadSpec
@@ -14,9 +17,14 @@ import io.mockk.every
 import io.mockk.mockk
 import io.opentelemetry.context.Context
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
@@ -27,6 +35,7 @@ import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -750,5 +759,107 @@ class ExternalRunnerSessionTest {
             d.sweepExpired()
             assertNull(d.session(s.id))
             assertNotNull(d.instance(s.instance.id), "a live instance is not dropped by a closed session's expiry")
+        }
+
+    // --- the transfer watchdog (ADR-0064): the bound lives with the transfer handler ---
+
+    /** A domain whose transfers time out after one second. */
+    private fun slowDomain() = domain(RunnerConfig.External(token = "slow-token", transferTimeoutSec = 1))
+
+    /**
+     * Runs [block] through [ExternalRunnerDomain.withTransferTimeout] only once that call's
+     * watchdog has fired, so the block starts past the deadline: the condition wait that replaces
+     * the fixed sleep which used to outlast the 1 s timeout. Waiting on the watchdog itself keeps
+     * the wait and the deadline from drifting apart.
+     */
+    private suspend fun <T> pastDeadline(
+        domain: ExternalRunnerDomain,
+        block: suspend () -> T,
+    ): T {
+        val fired = CompletableDeferred<Unit>()
+        return domain.withTransferTimeout(release = { fired.complete(Unit) }) {
+            withTimeout(10.seconds) { fired.await() }
+            block()
+        }
+    }
+
+    @Test
+    fun `the watchdog releases the blocked transfer at the deadline`() =
+        runBlocking<Unit> {
+            val released = CompletableDeferred<Throwable>()
+
+            val thrown =
+                assertThrows<RunnerTransferTimeoutException> {
+                    slowDomain().withTransferTimeout(release = { released.complete(it) }) {
+                        withTimeout(10.seconds) { released.await() }
+                        throw java.io.IOException("channel cancelled")
+                    }
+                }
+
+            // The release is what fails the blocked read/write, and it carries the domain and bound.
+            assertIs<RunnerTransferTimeoutException>(released.await())
+            assertEquals("Runner domain 'workers' transfer exceeded 1s", thrown.message)
+        }
+
+    @Test
+    fun `past the deadline only the cancelled channel's failure becomes a timeout, a transfer's own refusal keeps its status`() =
+        runBlocking<Unit> {
+            // Each block starts after the deadline (the watchdog has fired) before it fails.
+            assertThrows<SecurityException> {
+                pastDeadline(slowDomain()) { throw SecurityException("entry escapes the target") }
+            }
+            assertThrows<RunnerTransferTooLargeException> {
+                pastDeadline(slowDomain()) { throw RunnerTransferTooLargeException(16) }
+            }
+            assertThrows<RunnerTransferTimeoutException> {
+                pastDeadline(slowDomain()) { throw java.io.IOException("channel cancelled") }
+            }
+        }
+
+    // A refusal the transfer made itself (422 containment, 413 size) keeps its status past the deadline.
+    @Test
+    fun `a HomerException raised past the deadline keeps its own type`() =
+        runBlocking<Unit> {
+            val thrown =
+                assertThrows<ValidationException> {
+                    pastDeadline(slowDomain()) { throw ValidationException("no such op", "opId") }
+                }
+            assertEquals("opId", thrown.field)
+        }
+
+    @Test
+    fun `a caller cancelled past the deadline ends cancelled, not as a transfer timeout`() =
+        runBlocking<Unit> {
+            // What withTransferTimeout itself throws, captured inside the cancelled caller.
+            val thrown = CompletableDeferred<Throwable?>()
+            launch {
+                val caller = coroutineContext.job
+                val result =
+                    runCatching {
+                        pastDeadline(slowDomain()) {
+                            caller.cancel() // e.g. the runner disconnects
+                            throw CancellationException("caller cancelled")
+                        }
+                    }
+                thrown.complete(result.exceptionOrNull())
+            }.join()
+
+            assertIs<CancellationException>(thrown.await())
+        }
+
+    // One transfer per key at a time: the route maps the null to 429 instead of holding another
+    // Dispatchers.IO thread and connection for up to transferTimeoutSec (§12 rule 4).
+    @Test
+    fun `a transfer key already in flight refuses a second transfer until it ends`() =
+        runTest {
+            val s = openSession()
+
+            val first = s.tryBeginTransfer("op-1")
+            assertNotNull(first)
+            assertNull(s.tryBeginTransfer("op-1"))
+            assertNotNull(s.tryBeginTransfer("op-1/stdout"), "output is keyed per stream")
+
+            s.endTransfer("op-1", first)
+            assertNotNull(s.tryBeginTransfer("op-1"), "a finished transfer frees its key")
         }
 }

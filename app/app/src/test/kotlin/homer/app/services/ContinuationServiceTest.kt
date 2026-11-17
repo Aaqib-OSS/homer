@@ -1,5 +1,6 @@
 package homer.app.services
 
+import homer.app.EnvConstants
 import homer.app.exceptions.AgentNotDispatchableException
 import homer.app.exceptions.ContinuationNotFoundException
 import homer.app.exceptions.ContinuationNotPendingException
@@ -14,8 +15,13 @@ import homer.app.models.Agent
 import homer.app.models.AgentContinuationConfig
 import homer.app.models.AgentDispatchConfig
 import homer.app.models.Command
+import homer.app.models.CreateJoinRequest
+import homer.app.models.CreateJoinResponse
+import homer.app.models.CreateRunRequest
+import homer.app.models.CreateRunResponse
 import homer.app.models.DispatchConfig
 import homer.app.models.ExecutionInfo
+import homer.app.models.JoinSubSpec
 import homer.app.models.Param
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
@@ -30,6 +36,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -51,6 +58,7 @@ class ContinuationServiceTest {
     private val runStarter = mockk<AgentRunStarter>()
     private val inputResolver = mockk<AgentInputResolver>(relaxed = true)
     private val processManager = mockk<ProcessManager>(relaxed = true)
+    private val dispatchService = mockk<DispatchService>(relaxed = true)
     private val resultTokenService = mockk<ResultTokenService>(relaxed = true)
     private val authorizer =
         mockk<Authorizer>().also {
@@ -69,6 +77,7 @@ class ContinuationServiceTest {
             runStarter,
             inputResolver,
             processManager,
+            dispatchService,
             resultTokenService,
             LoggerFactory.getLogger("t"),
             config,
@@ -337,6 +346,7 @@ class ContinuationServiceTest {
                     runStarter,
                     AgentInputResolver(),
                     processManager,
+                    dispatchService,
                     resultTokenService,
                     LoggerFactory.getLogger("t"),
                 ) { 1000L }
@@ -364,6 +374,7 @@ class ContinuationServiceTest {
             runStarter,
             AgentInputResolver(),
             processManager,
+            dispatchService,
             resultTokenService,
             LoggerFactory.getLogger("t"),
         ) { 1000L }
@@ -1919,5 +1930,290 @@ class ContinuationServiceTest {
             coEvery { repo.pruneSettled(any()) } returns 2
             service(DispatchConfig(settledRetentionSec = 3_600)).pruneSettled()
             coVerify(exactly = 1) { repo.pruneSettled(1000L - 3_600) }
+        }
+
+    // --- startWithContinuation / startJoin: the orchestration the callback route used to hold ---
+
+    /** The continuation target `h` plus each named sub, all dispatchable, on origin process 7. */
+    private fun joinTargets(vararg subs: String) {
+        every { questions.registrationFor(7) } returns QuestionsService.Registration("asker", closed = false)
+        val target = mockk<Agent>(relaxed = true).also { every { it.dispatch } returns AgentDispatchConfig(enabled = true) }
+        val subAgents =
+            subs.associateWith {
+                mockk<Agent>(relaxed = true).also { sub -> every { sub.dispatch } returns AgentDispatchConfig(enabled = true) }
+            }
+        every { agents.agents } returns subAgents + mapOf("h" to target)
+    }
+
+    private fun runRequest(
+        continueAgent: String? = "h",
+        continueThread: String? = null,
+        continueParams: Map<String, String> = emptyMap(),
+        resumeParam: String = "HMR_LG_RESUME",
+        ttlSec: Int? = null,
+        resultJsonPath: String? = null,
+    ) = CreateRunRequest(
+        agent = "sub",
+        params = mapOf("subParam" to "1"),
+        continueAgent = continueAgent,
+        continueThread = continueThread,
+        continueParams = continueParams,
+        resumeParam = resumeParam,
+        resultJsonPath = resultJsonPath,
+        ttlSec = ttlSec,
+    )
+
+    private fun joinRequest(
+        vararg subs: JoinSubSpec,
+        continueThread: String? = null,
+        continueParams: Map<String, String> = emptyMap(),
+        resumeParam: String = "HMR_LG_RESUME",
+        ttlSec: Int? = null,
+    ) = CreateJoinRequest(
+        subs = subs.toList(),
+        continueAgent = "h",
+        continueThread = continueThread,
+        continueParams = continueParams,
+        resumeParam = resumeParam,
+        ttlSec = ttlSec,
+    )
+
+    // Every continuation input is checked before the sub starts, so a 4xx can never leave
+    // an untracked run behind (ADR-0023): the three refusals below start nothing.
+    @Test
+    fun `startWithContinuation rejects a continueParams key colliding with resumeParam before starting the sub`() =
+        runTest {
+            dispatchableTarget()
+
+            val ex =
+                assertFailsWith<ValidationException> {
+                    service().startWithContinuation(7, runRequest(continueParams = mapOf("HMR_LG_RESUME" to "clash")))
+                }
+
+            assertEquals("resumeParam", ex.field)
+            coVerify(exactly = 0) { dispatchService.dispatchNow(any(), any(), any()) }
+            coVerify(exactly = 0) { repo.create(any(), any()) }
+        }
+
+    @Test
+    fun `startWithContinuation refuses an unknown continue target before starting the sub`() =
+        runTest {
+            dispatchableTarget()
+
+            assertFailsWith<DispatchAgentNotFoundException> {
+                service().startWithContinuation(7, runRequest(continueAgent = "ghost"))
+            }
+
+            coVerify(exactly = 0) { dispatchService.dispatchNow(any(), any(), any()) }
+            coVerify(exactly = 0) { repo.create(any(), any()) }
+        }
+
+    @Test
+    fun `startWithContinuation rejects a non-positive ttl before starting the sub`() =
+        runTest {
+            dispatchableTarget()
+
+            val ex = assertFailsWith<ValidationException> { service().startWithContinuation(7, runRequest(ttlSec = 0)) }
+
+            assertEquals("ttlSec", ex.field)
+            coVerify(exactly = 0) { dispatchService.dispatchNow(any(), any(), any()) }
+            coVerify(exactly = 0) { repo.create(any(), any()) }
+        }
+
+    @Test
+    fun `startWithContinuation without a continue agent is a plain dispatch and registers nothing`() =
+        runTest {
+            dispatchableTarget()
+            coEvery { dispatchService.dispatchNow(7, "sub", mapOf("subParam" to "1")) } returns 42
+
+            val response = service().startWithContinuation(7, runRequest(continueAgent = null))
+
+            assertEquals(CreateRunResponse(processId = 42), response)
+            coVerify(exactly = 0) { repo.create(any(), any()) }
+            coVerify(exactly = 0) { processManager.killProcess(any(), any()) }
+        }
+
+    @Test
+    fun `startWithContinuation starts the sub then registers the continuation watching it`() =
+        runTest {
+            dispatchableTarget()
+            coEvery { dispatchService.dispatchNow(7, "sub", mapOf("subParam" to "1")) } returns 42
+            val stored = slot<Continuation>()
+            coEvery { repo.create(capture(stored), any()) } returns 11
+
+            val response =
+                service().startWithContinuation(
+                    7,
+                    runRequest(
+                        continueThread = "thread-9",
+                        continueParams = mapOf("K" to "v"),
+                        ttlSec = 60,
+                        resultJsonPath = "$.result",
+                    ),
+                )
+
+            assertEquals(CreateRunResponse(processId = 42, continuationId = 11), response)
+            val row = stored.captured
+            assertEquals(42, row.watchedProcessId)
+            assertEquals("h", row.targetAgentName)
+            // The thread id rides with the continuation run — the resumed parent — not the sub.
+            assertEquals(mapOf(EnvConstants.LG_THREAD to "thread-9", "K" to "v"), row.params)
+            assertEquals(1060L, row.expiresAt)
+            assertEquals(
+                ResultEnvParam(src = SrcType.STD_OUT, envName = "HMR_LG_RESUME", transformer = ResultTransformer.JsonPath("$.result")),
+                row.resultTransformer,
+            )
+            coVerify(exactly = 0) { processManager.killProcess(any(), any()) }
+        }
+
+    @Test
+    fun `startWithContinuation kills the started sub when the continuation cannot be registered`() =
+        runTest {
+            dispatchableTarget()
+            coEvery { dispatchService.dispatchNow(7, "sub", any()) } returns 42
+            coEvery { repo.create(any(), any()) } returns null
+
+            assertFailsWith<TooManyPendingContinuationsException> {
+                service(DispatchConfig(maxPending = 1)).startWithContinuation(7, runRequest())
+            }
+
+            coVerify { processManager.killProcess(42, "Never registered: the callback request that started it failed") }
+        }
+
+    // The kill is best-effort: a failed kill is logged and the original failure still propagates.
+    @Test
+    fun `startWithContinuation rethrows the registration failure when the kill itself fails`() =
+        runTest {
+            dispatchableTarget()
+            coEvery { dispatchService.dispatchNow(7, "sub", any()) } returns 42
+            coEvery { repo.create(any(), any()) } returns null
+            coEvery { processManager.killProcess(42, any()) } throws RuntimeException("kill failed")
+
+            assertFailsWith<TooManyPendingContinuationsException> {
+                service(DispatchConfig(maxPending = 1)).startWithContinuation(7, runRequest())
+            }
+
+            coVerify { processManager.killProcess(42, any()) }
+        }
+
+    // The cleanup runs under NonCancellable, so a cancelled request still kills what it started.
+    @Test
+    fun `startWithContinuation kills the started sub when the request is cancelled`() =
+        runTest {
+            dispatchableTarget()
+            coEvery { dispatchService.dispatchNow(7, "sub", any()) } returns 42
+            coEvery { repo.create(any(), any()) } coAnswers { throw CancellationException("client went away") }
+
+            assertFailsWith<CancellationException> { service().startWithContinuation(7, runRequest()) }
+
+            coVerify { processManager.killProcess(42, "Never registered: the callback request that started it failed") }
+        }
+
+    @Test
+    fun `startJoin refuses an empty or oversized fan-out without starting anything`() =
+        runTest {
+            joinTargets("sub-a")
+
+            val empty =
+                assertFailsWith<ValidationException> {
+                    service().startJoin(7, joinRequest())
+                }
+            val oversized =
+                assertFailsWith<ValidationException> {
+                    service(DispatchConfig(maxJoinSubs = 1)).startJoin(
+                        7,
+                        joinRequest(JoinSubSpec("sub-a", interruptId = "a"), JoinSubSpec("sub-a", interruptId = "b")),
+                    )
+                }
+
+            assertEquals("subs", empty.field)
+            assertEquals("subs", oversized.field)
+            coVerify(exactly = 0) { dispatchService.dispatchNow(any(), any(), any()) }
+            coVerify(exactly = 0) { repo.createJoin(any(), any(), any()) }
+            coVerify(exactly = 0) { processManager.killProcess(any(), any()) }
+        }
+
+    @Test
+    fun `startJoin validates every sub before it starts any`() =
+        runTest {
+            joinTargets("sub-a")
+            coEvery { dispatchService.validateDispatchNow(7, "sub-a", any()) } throws
+                ValidationException("missing input", "params")
+
+            assertFailsWith<ValidationException> {
+                service().startJoin(7, joinRequest(JoinSubSpec("sub-a", interruptId = "a")))
+            }
+
+            coVerify(exactly = 0) { dispatchService.dispatchNow(any(), any(), any()) }
+            coVerify(exactly = 0) { repo.createJoin(any(), any(), any()) }
+        }
+
+    @Test
+    fun `startJoin kills the subs already started when a later one fails`() =
+        runTest {
+            joinTargets("sub-a", "sub-b")
+            coEvery { dispatchService.dispatchNow(7, "sub-a", any()) } returns 10
+            coEvery { dispatchService.dispatchNow(7, "sub-b", any()) } throws RuntimeException("no capacity")
+
+            assertFailsWith<RuntimeException> {
+                service().startJoin(7, joinRequest(JoinSubSpec("sub-a", interruptId = "a"), JoinSubSpec("sub-b", interruptId = "b")))
+            }
+
+            coVerify { processManager.killProcess(10, "Never registered: the callback request that started it failed") }
+            coVerify(exactly = 0) { repo.createJoin(any(), any(), any()) }
+        }
+
+    @Test
+    fun `startJoin kills every started sub when the join cannot be registered`() =
+        runTest {
+            joinTargets("sub-a", "sub-b")
+            coEvery { dispatchService.dispatchNow(7, "sub-a", any()) } returns 10
+            coEvery { dispatchService.dispatchNow(7, "sub-b", any()) } returns 11
+            coEvery { repo.createJoin(any(), any(), any()) } returns null
+
+            assertFailsWith<TooManyPendingContinuationsException> {
+                service(DispatchConfig(maxPending = 1)).startJoin(
+                    7,
+                    joinRequest(JoinSubSpec("sub-a", interruptId = "a"), JoinSubSpec("sub-b", interruptId = "b")),
+                )
+            }
+
+            val reason = "Never registered: the callback request that started it failed"
+            coVerify { processManager.killProcess(10, reason) }
+            coVerify { processManager.killProcess(11, reason) }
+        }
+
+    @Test
+    fun `startJoin registers one join over the started subs, with their transformers`() =
+        runTest {
+            joinTargets("sub-a", "sub-b")
+            coEvery { dispatchService.dispatchNow(7, "sub-a", mapOf("p" to "1")) } returns 10
+            coEvery { dispatchService.dispatchNow(7, "sub-b", emptyMap()) } returns 11
+            val row = slot<Continuation>()
+            val watches = slot<List<JoinWatch>>()
+            coEvery { repo.createJoin(capture(row), capture(watches), any()) } returns 12
+
+            val response =
+                service().startJoin(
+                    7,
+                    joinRequest(
+                        JoinSubSpec("sub-a", params = mapOf("p" to "1"), resultJsonPath = "$.a", interruptId = "int-a"),
+                        JoinSubSpec("sub-b", interruptId = "int-b"),
+                        continueThread = "thread-9",
+                        continueParams = mapOf("K" to "v"),
+                    ),
+                )
+
+            assertEquals(CreateJoinResponse(processIds = listOf(10, 11), continuationId = 12), response)
+            assertEquals(listOf(10, 11), watches.captured.map { it.watchedProcessId })
+            assertEquals(listOf("int-a", "int-b"), watches.captured.map { it.interruptId })
+            assertEquals(
+                ResultEnvParam(src = SrcType.STD_OUT, envName = "HMR_LG_RESUME", transformer = ResultTransformer.JsonPath("$.a")),
+                watches.captured[0].resultTransformer,
+            )
+            assertNull(watches.captured[1].resultTransformer)
+            assertEquals(mapOf(EnvConstants.LG_THREAD to "thread-9", "K" to "v"), row.captured.params)
+            coVerify(exactly = 1) { repo.createJoin(any(), any(), any()) }
+            coVerify(exactly = 0) { processManager.killProcess(any(), any()) }
         }
 }
