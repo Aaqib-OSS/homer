@@ -16,15 +16,6 @@ import kotlin.test.fail
  * 200 lines and it could be 50, rewrite it") as numbers, plus a cap on parameter lists, which a parameter
  * object keeps short; app/CLAUDE.md "Architecture tests" records them.
  */
-/** Slack a cap may sit above the current maximum: 5% of the cap, rounded up, at least 1. */
-internal fun slack(cap: Int): Int = maxOf(1, (cap + 19) / 20)
-
-/** The value to lower [cap] to (the current maximum) when it sits more than the slack above it, else null. */
-internal fun staleCap(
-    cap: Int,
-    currentMax: Int,
-): Int? = if (cap - currentMax > slack(cap)) currentMax else null
-
 class SizeLimitsTest {
     @Test
     fun `source files stay within MAX_FILE_LINES`() {
@@ -157,3 +148,12 @@ class SizeLimitsTest {
         val DECLARATION_KEYWORD = Regex("""\b(fun|class|object|interface)\b""")
     }
 }
+
+/** Slack a cap may sit above the current maximum: 5% of the cap, rounded up, at least 1. */
+internal fun slack(cap: Int): Int = maxOf(1, (cap + 19) / 20)
+
+/** The value to lower [cap] to (the current maximum) when it sits more than the slack above it, else null. */
+internal fun staleCap(
+    cap: Int,
+    currentMax: Int,
+): Int? = if (cap - currentMax > slack(cap)) currentMax else null

@@ -80,6 +80,13 @@ describe('currentMaxima', () => {
   });
 });
 
+describe('currentMaxima without a measured file', () => {
+  it('throws instead of reporting a maximum of 0', () => {
+    expect(() => currentMaxima([])).toThrow('measured no file');
+    expect(() => currentMaxima([result('/c/a.ts', [])])).toThrow('measured no file');
+  });
+});
+
 describe('staleCapFindings', () => {
   it('names the constant, its file, the current maximum and the value to lower it to', () => {
     const findings = staleCapFindings({ 'max-lines': 400, 'max-lines-per-function': 60 }, { 'max-lines': 500, 'max-lines-per-function': 60 });

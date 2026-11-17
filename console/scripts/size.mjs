@@ -53,6 +53,7 @@ export function currentMaxima(results) {
       if (message.ruleId in maxima && count > maxima[message.ruleId]) maxima[message.ruleId] = count;
     }
   }
+  if (maxima['max-lines'] === 0) throw new Error('size-console: the probe run measured no file');
   return maxima;
 }
 
@@ -102,6 +103,8 @@ async function main() {
     overrideConfig: { files: PRODUCTION_FILES, ignores: NOT_PRODUCTION, rules: PROBE_RULES },
     ruleFilter: ({ ruleId }) => ruleId in SIZE_RULES,
   }).lintFiles(PRODUCTION_FILES);
+  const brokenProbe = otherMessages(probe);
+  if (brokenProbe.length > 0) throw new Error(`size-console: unexpected ESLint messages in the probe run:\n${brokenProbe.join('\n')}`);
   const maxima = currentMaxima(probe);
   const sizeOnly = sizeFindings(results);
   const findings = [...sizeOnly, ...staleCapFindings(maxima)];
