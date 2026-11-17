@@ -31,7 +31,7 @@ data class TokenConfig(
         // resolveAuth rebuilds via copy(), so this also rejects @SYSENV
         // values that resolve to blank.
         require(token.isNotBlank()) { "TokenConfig.token must not be blank." }
-        requireValidPrincipalGrants(role, grants, endpoints, "TokenConfig")
+        requireValidPrincipalRole(role, "TokenConfig")
     }
 
     override fun toString() = "TokenConfig(token=${redactSecret(token)}, role=$role, grants=$grants)"
@@ -170,23 +170,17 @@ interface Principaled {
 }
 
 /**
- * A principal must declare exactly one authority form: `role: admin`, or a
- * non-empty `grants` list. A leftover `endpoints` field is a not-yet-migrated
- * config; it is tolerated at parse time and rejected at startup with a
- * migration hint (validateNoLegacyEndpoints) so the message can name the fix.
+ * Parse-time check of a principal's `role`: `admin` if set. The rest of the authority rule is checked at
+ * startup (validateNoLegacyEndpoints): no leftover `endpoints`, and at least one of `role: admin` or a
+ * non-empty `grants` (both is allowed; `role` wins), so the error can name the migration fix.
  */
-internal fun requireValidPrincipalGrants(
+internal fun requireValidPrincipalRole(
     role: String?,
-    grants: List<Grant>,
-    endpoints: List<String>?,
     who: String,
 ) {
     if (role != null) {
         require(role == "admin") { "$who.role must be 'admin' if set (got '$role')." }
     }
-    // endpoints present → defer to startup migration error; grants emptiness is
-    // checked at startup too (a principal may legitimately parse with neither
-    // here so the startup error can aggregate and instruct).
 }
 
 @Serializable
@@ -317,7 +311,7 @@ data class PasswordUserConfig(
 ) : Principaled {
     init {
         require(passwordHash.isNotBlank()) { "PasswordUserConfig.passwordHash must not be blank." }
-        requireValidPrincipalGrants(role, grants, endpoints, "PasswordUserConfig")
+        requireValidPrincipalRole(role, "PasswordUserConfig")
     }
 
     override fun toString() =
@@ -369,7 +363,7 @@ data class HmacKeyConfig(
             "HmacKeyConfig.timestampHeader is set but payloadTemplate does not include {{timestamp}}; " +
                 "an unsigned timestamp provides no replay protection (e.g. use \"{{timestamp}}.{{body}}\")"
         }
-        requireValidPrincipalGrants(role, grants, endpoints, "HmacKeyConfig")
+        requireValidPrincipalRole(role, "HmacKeyConfig")
     }
 
     override fun toString() =

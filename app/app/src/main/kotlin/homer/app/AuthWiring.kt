@@ -6,7 +6,6 @@ import homer.app.infra.HmacReplayCache
 import homer.app.infra.HmacVerifier
 import homer.app.infra.PasswordVerifier
 import homer.app.infra.matchesTokenConstantTime
-import homer.app.models.AppConfig
 import homer.app.models.AuthConfig
 import homer.app.models.AuthConfig.Bearer
 import homer.app.routes.ApiDeps
@@ -161,7 +160,6 @@ internal fun hmacBodyCapturePlugin(hmacBodyKey: AttributeKey<ByteArray>) =
  * registration order plus the Password scheme and HMAC body key.
  */
 internal fun Application.configureAuth(
-    config: AppConfig,
     schemes: List<AuthConfig>,
     passwordVerifier: PasswordVerifier,
 ): AuthSetup {

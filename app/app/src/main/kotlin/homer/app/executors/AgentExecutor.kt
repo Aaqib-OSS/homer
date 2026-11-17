@@ -173,7 +173,7 @@ class AgentExecutor(
             plan.artifactIndex,
             CommandArtifactPaths(stdOut, stdErr, kind = command.kind, redactor = executionContextRedactor),
         )
-        val executionContext = commandExecutionContext(session, command, plan, artifactNames, stdOut, stdErr)
+        val executionContext = commandExecutionContext(session, plan, artifactNames, stdOut, stdErr)
 
         workspace.appendToEnv(mapOf(EnvConstants.AGENT_NAME to agent.name))
         // The stop context is appended for an `onStop:` step only, and only after the agent name,
@@ -207,7 +207,6 @@ class AgentExecutor(
     /** The context one command runs under: where its artifacts go, its timeout, and the facts it reports. */
     private fun commandExecutionContext(
         session: RunnerSession,
-        command: Command,
         plan: StepPlan,
         artifactNames: ArtifactNameResolver,
         stdOut: Path,
@@ -285,7 +284,9 @@ class AgentExecutor(
         whenResult: WhenEvaluator.Result?,
         deadline: RunDeadline?,
     ): StepHandover {
-        val (index, command, nextCommand, startTime, commandSpan, stdOut, stdErr, executionContext) = run
+        val command = run.command
+        val commandSpan = run.commandSpan
+        val executionContext = run.executionContext
         val artifactsDir = workspace.config.artifacts
         var nextStart: Long? = null
         // Failure-shaped default so an Error escaping the try can't record a success-looking ExecutionInfo.

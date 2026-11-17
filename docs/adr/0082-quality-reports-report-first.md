@@ -79,7 +79,7 @@ into this gate as the `crap` check.
 | `unused-console` | knip | unused files, exports, dependencies |
 | `duplication` | jscpd over both stacks' production code | DRY |
 | `diff-coverage` | changed lines vs. Kover and V8 coverage, threshold 80% per file | new code is tested |
-| `detekt` | detekt 2.0 `detektMain` (type-resolved) SARIF, coroutines / exceptions / potential-bugs rule sets; added 2026-10-13, see the amendment below | likely defects in code bodies |
+| `detekt` | detekt 2.0 `detektMain` (type-resolved) SARIF, coroutines / exceptions / potential-bugs rule sets plus the five unused-code rules of `style`; added 2026-10-13, unused-code rules 2026-11-16, see the amendments below | likely defects and dead code in code bodies |
 | `query-plans` | `EXPLAIN QUERY PLAN` of every distinct SQL statement production code ran in `:app:test`, on a fresh schema; added 2026-10-14, see the amendment below | `app/CLAUDE.md` § SQLite rules, rule 1 |
 | `query-repeats` | statements production code ran three or more times in one transaction in `:app:test`, from the same capture; added 2026-10-14, see the amendment below | `app/CLAUDE.md` § SQLite rules, rule 2 |
 | `mock-calls` | `MockCallBudget` counts each mock method's calls per `:app` test; added 2026-11-13, see the amendment below | `CLAUDE.md` §6 |
@@ -361,8 +361,9 @@ backend sends: the request and response bodies, the error body, and the `data:` 
 frame. The root list stopped being trust-on-first-use. A fail-closed scan over the `routes/` sources
 (`DtoContractRootsTest`, the home of the rule beside `DtoContract`, whose export it reads) judges the
 route output from source text — every `respond`/`respondNoStore` argument (a constructor, a call
-judged by the callee's declared return type, a name a `val`, a parameter or a lambda parameter binds),
-the `data:` of every `sendEvent` call, and the frame constructors inside every `SseFrame` builder —
+judged by the callee's declared return type, a name a `val`, a parameter or a lambda parameter binds;
+an elvis judged by each operand, a `return` or `throw` operand handing back none), the `data:` of every
+`sendEvent` call, and the frame constructors inside every `SseFrame` builder —
 and fails, naming the type, when the body it reads is neither reachable from a root in `DtoContract`
 nor listed in `DtoContract.routeBodiesNotMirrored`. An argument or payload the scan cannot read is a
 finding of its own, so no body passes unjudged; a new output form is resolved into the scan, never
@@ -381,3 +382,11 @@ tie the check to detekt's alpha lifecycle; a Konsist rule over the same sources 
 same resolution cost without the fail-closed unread-shape guard. Widening the TypeScript extract to
 scan more console files was rejected too: the extract stays `console/types/homer.ts` alone, and the
 scope widens on the backend side.
+
+*Amended (2026-11-16):* `detekt` also runs its unused-code rules (GH #297): `UnusedParameter`,
+`UnusedPrivateClass`, `UnusedPrivateFunction`, `UnusedPrivateProperty` and `UnusedVariable`. The backend
+had no dead-code check, while the console has knip, and the compiler reports neither unused private
+members nor unused parameters. Every other rule of the `style` set stays off, listed in
+`app/config/detekt/detekt.yml`. The 23 findings at introduction were fixed in the same change: 13
+constructor properties read only while the object is built became plain parameters, and 4 parameters and
+6 destructured variables nothing read were removed.

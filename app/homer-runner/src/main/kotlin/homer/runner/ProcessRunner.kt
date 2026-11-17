@@ -179,7 +179,7 @@ object ProcessRunner {
         private class Pump(
             scope: CoroutineScope,
             input: InputStream,
-            private val stream: String,
+            stream: String,
             sink: suspend (stream: String, seq: Long, bytes: ByteArray) -> Unit,
         ) {
             val chunks = AtomicLong()

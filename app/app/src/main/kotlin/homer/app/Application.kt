@@ -285,7 +285,7 @@ fun Application.configureServer(config: AppConfig) {
 
     val schemes = flattenAuthSchemes(config.server.apiAuth)
     val passwordVerifier = get<PasswordVerifier>()
-    val authSetup = configureAuth(config, schemes, passwordVerifier)
+    val authSetup = configureAuth(schemes, passwordVerifier)
 
     warnIfUnsecured(config)
 

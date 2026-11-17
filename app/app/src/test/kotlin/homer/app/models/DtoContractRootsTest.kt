@@ -221,6 +221,99 @@ class DtoContractRootsTest {
     }
 
     @Test
+    fun `an elvis is judged by each operand, and a jump operand hands back no value`() {
+        val sources =
+            mapOf(
+                "FixtureRoutes.kt" to
+                    """
+                    fun Route.fixture() {
+                        val claim = domain.deliverClaim(instance, request) ?: return@post call.respond(HttpStatusCode.NoContent)
+                        call.respond(HttpStatusCode.OK, claim)
+                    }
+                    """.trimIndent(),
+                "FallbackRoutes.kt" to
+                    """
+                    fun Route.fallback() {
+                        val claim = domain.deliverClaim(instance, request) ?: Fallback()
+                        call.respond(claim)
+                    }
+                    """.trimIndent(),
+            )
+        val returns = mapOf("deliverClaim" to setOf("ClaimResponse"))
+        assertEquals(emptyList(), unreadRouteBodies(sources, returns))
+        assertEquals(
+            listOf(
+                "FallbackRoutes.kt: ClaimResponse is responded with but is not a DtoContract root",
+                "FallbackRoutes.kt: Fallback is responded with but is not a DtoContract root",
+                "FixtureRoutes.kt: ClaimResponse is responded with but is not a DtoContract root",
+            ),
+            unrootedRouteBodies(sources, setOf("ClaimResponse", "Fallback"), emptySet(), emptyMap(), returns),
+        )
+    }
+
+    @Test
+    fun `a respond argument elvis is judged by each operand, a constructor one included`() {
+        val sources =
+            mapOf(
+                "FixtureRoutes.kt" to
+                    """
+                    fun Route.fixture() {
+                        call.respond(Fallback() ?: domain.build(id))
+                        call.respondNoStore(HttpStatusCode.OK, domain.find(id) ?: domain.other(id) ?: Fallback())
+                        val claim = domain.deliverClaim(instance, request) ?: throw NotFoundException("no claim")
+                        call.respond(claim)
+                    }
+                    """.trimIndent(),
+            )
+        val returns =
+            mapOf(
+                "build" to setOf("Built"),
+                "deliverClaim" to setOf("ClaimResponse"),
+                "find" to setOf("Found"),
+                "other" to setOf("Other"),
+            )
+        assertEquals(emptyList(), unreadRouteBodies(sources, returns))
+        assertEquals(
+            listOf("Built", "ClaimResponse", "Fallback", "Found", "Other").map {
+                "FixtureRoutes.kt: $it is responded with but is not a DtoContract root"
+            },
+            unrootedRouteBodies(sources, setOf("Built", "ClaimResponse", "Fallback", "Found", "Other"), emptySet(), emptyMap(), returns),
+        )
+    }
+
+    @Test
+    fun `an elvis splits only at the top level, never inside a literal or brackets`() {
+        assertEquals(listOf("a()", "b()", "C()"), elvisOperands("a() ?: b() ?: C()"))
+        assertEquals(listOf("a()", "\"x ?: y\""), elvisOperands("a() ?: \"x ?: y\""))
+        assertEquals(listOf("a('?')", "':'"), elvisOperands("a('?') ?: ':'"))
+        assertEquals(listOf("(a() ?: b())"), elvisOperands("(a() ?: b())"))
+        assertEquals(listOf("f(a ?: b) { c ?: d }", "e[x ?: y]"), elvisOperands("f(a ?: b) { c ?: d } ?: e[x ?: y]"))
+        assertEquals(listOf("a?.b()"), elvisOperands("a?.b()"))
+    }
+
+    @Test
+    fun `an elvis operand the scan cannot read keeps the whole binding or argument unread`() {
+        val sources =
+            mapOf(
+                "FixtureRoutes.kt" to
+                    """
+                    fun Route.fixture() {
+                        val claim = domain.deliverClaim(instance, request) ?: whatever()
+                        call.respond(claim)
+                        call.respond(Fallback() ?: whatever())
+                    }
+                    """.trimIndent(),
+            )
+        assertEquals(
+            listOf(
+                "FixtureRoutes.kt: cannot read the type of `Fallback() ?: whatever()`",
+                "FixtureRoutes.kt: cannot read the type of `claim`",
+            ),
+            unreadRouteBodies(sources, mapOf("deliverClaim" to setOf("ClaimResponse"))),
+        )
+    }
+
+    @Test
     fun `a lambda parameter is judged by the call chain it is an argument of`() {
         val sources =
             mapOf(
@@ -591,6 +684,10 @@ private fun argumentTypes(
     returns: Map<String, Set<String>>,
 ): Set<String>? {
     val expression = argument.trim()
+    val operands = elvisOperands(expression)
+    if (operands.size > 1) {
+        return operands.flatMap { argumentTypes(source, it, returns) ?: return null }.toSet()
+    }
     return when {
         expression.isEmpty() || expression.startsWith("HttpStatusCode") -> emptySet()
         CONSTRUCTOR.containsMatchIn(expression) -> typeNames(CONSTRUCTOR.find(expression)!!.groupValues[1])
@@ -608,6 +705,11 @@ private fun expressionTypes(
     returns: Map<String, Set<String>>,
     depth: Int,
 ): Set<String>? {
+    val operands = elvisOperands(expression)
+    if (operands.size > 1) {
+        return operands.flatMap { expressionTypes(source, it, returns, depth) ?: return null }.toSet()
+    }
+    if (JUMP.containsMatchIn(expression)) return emptySet()
     val call = callee(expression)
     if (call != null) {
         if (call.first().isUpperCase()) return setOf(call)
@@ -697,6 +799,41 @@ private fun enclosingCall(
         i--
     }
     return null
+}
+
+/**
+ * The operands of the top-level `?:` chain in [expression], trimmed: `a() ?: return@post b()` is
+ * `a()` and `return@post b()`. One operand, [expression] itself, when it has no top-level elvis.
+ */
+private fun elvisOperands(expression: String): List<String> {
+    val operands = mutableListOf<String>()
+    var depth = 0
+    var start = 0
+    var i = 0
+    while (i < expression.length) {
+        when {
+            expression[i] == '"' || expression[i] == '\'' -> {
+                i = endOfLiteral(expression, i)
+                continue
+            }
+
+            expression[i] in "([{" -> {
+                depth++
+            }
+
+            expression[i] in ")]}" -> {
+                depth--
+            }
+
+            depth == 0 && expression.startsWith("?:", i) -> {
+                operands += expression.substring(start, i).trim()
+                start = i + 2
+                i++
+            }
+        }
+        i++
+    }
+    return operands + expression.substring(start).trim()
 }
 
 /** The name of the outermost call in [expression] (`a.b(x).c(y)` is `c`), or null when it makes none. */
@@ -1000,6 +1137,9 @@ private val CALL = Regex("""(\w+)\s*\(""")
 private val CAPITALIZED = Regex("""\b[A-Z]\w*""")
 
 private val IDENTIFIER = Regex("""[A-Za-z_]\w*""")
+
+/** An expression that jumps (`return`, `return@label`, `throw`) and so hands back no value. */
+private val JUMP = Regex("""^(?:return\b|throw\b)""")
 
 private val CONSTRUCTOR = Regex("""^\s*([A-Z]\w*)\s*\(""")
 
