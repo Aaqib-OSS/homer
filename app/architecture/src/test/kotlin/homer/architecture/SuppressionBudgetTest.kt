@@ -120,6 +120,11 @@ class SuppressionBudgetTest {
         assertFalse(reasoned("@Suppress(\"A\")\nfun f() {}"), "no reason")
         assertFalse(reasoned("// why\n\n@Suppress(\"A\")\nfun f() {}"), "a blank line breaks the link")
         assertFalse(reasoned("val x = 1\n@Suppress(\"A\")\nfun f() {}"), "code above is no reason")
+        assertFalse(reasoned("@Suppress(\"A\") //\nfun f() {}"), "a bare marker")
+        assertFalse(reasoned("@Suppress(\"A\") // TODO\nfun f() {}"), "TODO is no reason")
+        assertFalse(reasoned("// FIXME:\n@Suppress(\"A\")\nfun f() {}"), "FIXME above is no reason")
+        assertFalse(reasoned("@Suppress(\"http://x\")\nfun f() {}"), "a // inside a string literal is no comment")
+        assertTrue(reasoned("@Suppress(\"http://x\") // the url is fixed\nfun f() {}"), "a real reason after a literal")
     }
 
     @Test
@@ -129,6 +134,9 @@ class SuppressionBudgetTest {
         assertTrue(reasoned("{/* eslint-disable-next-line no-x -- why */}"))
         assertTrue(reasoned("// why\n// eslint-disable-next-line no-x\nfoo()"), "comment above")
         assertFalse(reasoned("foo(); // eslint-disable-line no-x"), "no reason")
+        assertFalse(reasoned("foo(); // eslint-disable-line no-x -- "), "an empty reason")
+        assertFalse(reasoned("{/* eslint-disable-next-line no-x -- */}"), "an empty reason in a block comment")
+        assertFalse(reasoned("// TODO\n// eslint-disable-next-line no-x\nfoo()"), "TODO above is no reason")
         assertFalse(reasoned("foo()\n// eslint-disable-next-line no-x\nfoo()"), "code above is no reason")
     }
 
@@ -220,12 +228,60 @@ internal fun hasReason(
     style: ReasonStyle,
 ): Boolean {
     val segment = text.substring(offset, lineEndOf(text, offset, style))
-    val onLine = if (style == ReasonStyle.ESLINT) " -- " in segment else "//" in segment || "/*" in segment
+    val onLine =
+        if (style == ReasonStyle.ESLINT) {
+            segment.substringAfter(" -- ", "").let { it.isNotEmpty() && isReasonText(it) }
+        } else {
+            commentTexts(segment).any(::isReasonText)
+        }
     if (onLine) return true
     val lineStart = text.lastIndexOf('\n', offset - 1) + 1
     if (lineStart == 0) return false
-    val above = text.substring(text.lastIndexOf('\n', lineStart - 2) + 1, lineStart - 1)
-    return above.trimStart().startsWith("//")
+    val above = text.substring(text.lastIndexOf('\n', lineStart - 2) + 1, lineStart - 1).trimStart()
+    return above.startsWith("//") && isReasonText(above.removePrefix("//"))
+}
+
+/** A reason has real words: at least 3 non-space characters, once a closing marker is dropped, and not a bare TODO / FIXME. */
+internal fun isReasonText(raw: String): Boolean {
+    val text =
+        raw
+            .removeSuffix("}")
+            .trim()
+            .removeSuffix("*/")
+            .trim()
+    return text.count { !it.isWhitespace() } >= 3 && !Regex("""(?i)(todo|fixme)\W*""").matches(text)
+}
+
+/** The text of each comment in [segment], skipping comment markers inside a double-quoted string literal. */
+internal fun commentTexts(segment: String): List<String> {
+    val found = mutableListOf<String>()
+    var i = 0
+    while (i < segment.length) {
+        when {
+            segment[i] == '"' -> {
+                i++
+                while (i < segment.length && segment[i] != '"') i += if (segment[i] == '\\') 2 else 1
+                i++
+            }
+
+            segment.startsWith("//", i) -> {
+                val end = segment.indexOf('\n', i).let { if (it < 0) segment.length else it }
+                found += segment.substring(i + 2, end)
+                i = end
+            }
+
+            segment.startsWith("/*", i) -> {
+                val end = segment.indexOf("*/", i + 2).let { if (it < 0) segment.length else it }
+                found += segment.substring(i + 2, end)
+                i = end + 2
+            }
+
+            else -> {
+                i++
+            }
+        }
+    }
+    return found
 }
 
 private fun lineEndOf(
