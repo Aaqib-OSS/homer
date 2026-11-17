@@ -404,3 +404,7 @@ each carries its reason.
 ## Amendment (2026-11-17): detekt also runs MatchingDeclarationName
 
 `detekt` also runs the `naming` rule `MatchingDeclarationName` (GH #309): a file declaring one top-level class or object is named after it, so a declaration is found by its file name. One file broke it at introduction (`KillNotices.kt`, which declares `KillCause`) and was renamed in the same change. Every other `naming` rule stays off, listed in `app/config/detekt/detekt.yml`.
+
+## Amendment (2026-11-17): cognitive-complexity cap (GH #307)
+
+GH #307 caps cognitive complexity per function on both stacks. detekt's `complexity` set runs only `CognitiveComplexMethod` (every other complexity rule stays off) and the console's ESLint config enables `sonarjs/cognitive-complexity` at `warn`. Each threshold is today's worst value, so the caps add no finding and only stop a function from getting worse: 23 on the backend (`callbackResultRoutes` in `CallbackRoutes.kt`), 11 on the console (the `onEvent` handler in `lib/api/streams.ts`). The thresholds live in `app/config/detekt/detekt.yml` and `console/eslint.config.mjs`.

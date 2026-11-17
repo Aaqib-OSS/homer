@@ -58,6 +58,20 @@ test('the style rule set runs exactly the five unused-code rules (GH #297)', () 
   assert.deepEqual(active, ['UnusedParameter', 'UnusedPrivateClass', 'UnusedPrivateFunction', 'UnusedPrivateProperty', 'UnusedVariable']);
 });
 
+test('the complexity rule set runs only CognitiveComplexMethod (GH #307)', () => {
+  const config = fs.readFileSync(new URL('../../app/config/detekt/detekt.yml', import.meta.url), 'utf8');
+  const complexity = config.split('\ncomplexity:\n')[1].split(/\n(?=\S)/)[0];
+  const active = [...complexity.matchAll(/^ {2}(\w+):\n {4}active: true$/gm)].map(([, rule]) => rule);
+
+  assert.match(complexity, /^ {2}active: true$/m);
+  assert.match(complexity, /^ {4}allowedComplexity: 23$/m);
+  assert.deepEqual(active, ['CognitiveComplexMethod']);
+  // Unlisted, detekt would run these at their defaults.
+  for (const rule of ['ComplexCondition', 'CyclomaticComplexMethod', 'LargeClass', 'LongMethod', 'LongParameterList', 'NestedBlockDepth', 'TooManyFunctions']) {
+    assert.match(complexity, new RegExp(`^ {2}${rule}:\\n {4}active: false$`, 'm'), `${rule} must be listed active: false`);
+  }
+});
+
 test('the naming rule set runs exactly MatchingDeclarationName (GH #309)', () => {
   const config = fs.readFileSync(new URL('../../app/config/detekt/detekt.yml', import.meta.url), 'utf8');
   const naming = config.split('\nnaming:\n')[1].split(/\n(?=\S)/)[0];
