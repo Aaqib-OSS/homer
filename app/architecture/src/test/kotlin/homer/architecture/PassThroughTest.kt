@@ -36,10 +36,11 @@ class PassThroughTest {
 
 /**
  * The callee text when [fn] is a pass-through, else null. Exempt: an `override` or `operator` function, a function
- * without parameters, one without a body, an interface member (a default method included), a function of a class
+ * without parameters, one with a parameter default (it supplies something), one without a body, an interface member (a default method included), a function of a class
  * implementing an interface of [ports] (name to member names, ADR-0083) that declares a member of that name, and a
  * forward whose target is a non-public (private or internal) member of the enclosing class or object, or is reached
- * through a non-public property of it (a constructor property included) — encapsulation, not a layer.
+ * through a non-public property of it (a constructor property included), or a private top-level function or property
+ * of the same file — encapsulation, not a layer.
  */
 internal fun passThroughTarget(
     fn: KoFunctionDeclaration,
@@ -49,16 +50,34 @@ internal fun passThroughTarget(
     val owner = fn.containingDeclaration
     if (owner is KoInterfaceDeclaration) return null
     if (owner is KoClassDeclaration && owner.parents().any { ports[it.name.substringBefore("<")]?.contains(fn.name) == true }) return null
-    val target = forwardedCall(fn.text, (fn as KoParametersProvider).parameters.map { it.name }) ?: return null
-    val hidden = nonPublicMembers(owner)
-    val reached = receiverRoot(target) ?: target.removePrefix("this.")
+    val parameters = (fn as KoParametersProvider).parameters
+    if (parameters.any { it.hasDefaultValue() }) return null
+    val forwarded = parameters.map { if (it.hasModifier(KoModifier.VARARG)) "*${it.name}" else it.name }
+    val target = forwardedCall(fn.text, forwarded) ?: return null
+    val hidden = nonPublicMembers(owner) + privateFileMembers(fn)
+    val reached = receiverRoot(target) ?: target.replace(THIS, "")
     return target.takeUnless { reached in hidden }
 }
 
 /** The first segment of a receiver chain, `this.` skipped: `jobs` for `jobs.remove`, null for a bare call. */
 internal fun receiverRoot(callee: String): String? {
-    val parts = callee.removePrefix("this.").split('.')
+    val parts = callee.replace(THIS, "").split('.')
     return if (parts.size > 1) parts.first().trimEnd('?', '!') else null
+}
+
+/** Names of the private top-level functions and properties of the file declaring [fn]. */
+private fun privateFileMembers(fn: KoFunctionDeclaration): Set<String> {
+    val file = fn.containingFile
+    val publicFunctions =
+        file
+            .functions(includeNested = false)
+            .filterNot { it.hasModifier(KoModifier.PRIVATE) }
+            .map { it.name }
+            .toSet()
+    return (
+        file.functions(includeNested = false).filter { it.hasModifier(KoModifier.PRIVATE) }.map { it.name } +
+            file.properties(includeNested = false).filter { it.hasModifier(KoModifier.PRIVATE) }.map { it.name }
+    ).toSet() - publicFunctions
 }
 
 private fun KoModifierProvider.isNonPublic() = hasModifier(KoModifier.PRIVATE) || hasModifier(KoModifier.INTERNAL)
@@ -76,7 +95,9 @@ private fun nonPublicMembers(owner: KoBaseProvider?): Set<String> {
     ).toSet() - publicFunctions
 }
 
-private val CALLEE = Regex("""[A-Za-z_][\w.?!]*(<[^()]*>)?""")
+private val THIS = Regex("""^this(@\w+)?\.""")
+private val RETURN = Regex("""^return\b""")
+private val CALLEE = Regex("""[A-Za-z_][\w.?!@]*(<[^()]*>)?""")
 private val NAMED_ARG = Regex("""^[A-Za-z_]\w*\s*=(?!=)\s*""")
 
 /**
@@ -99,7 +120,7 @@ internal fun forwardedCall(
             code
                 .substring(start + 1, end)
                 .trim()
-                .removePrefix("return")
+                .replace(RETURN, "")
                 .trim()
         }
     val callee = CALLEE.matchAt(body, 0) ?: return null

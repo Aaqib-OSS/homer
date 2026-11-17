@@ -51,6 +51,23 @@ class PassThroughMatcherTest {
         assertEquals("g", target("publicFunctionTarget"))
     }
 
+    @Test
+    fun `return needs a word boundary, a labelled this is read, a vararg is spread, a default value exempts`() {
+        assertEquals("returnX", target("wordBoundary"))
+        assertEquals("this@Outer.g", target("labelledThis"))
+        assertEquals("target", target("varargSpread"))
+        assertNull(target("varargNotSpread"))
+        assertNull(target("withDefault"))
+    }
+
+    @Test
+    fun `an extension receiver and a type argument are findings, a private file member target is not`() {
+        assertEquals("target", target("extensionReceiver"))
+        assertEquals("target<Int>", target("genericCallee"))
+        assertNull(target("viaFileHelper"))
+        assertNull(target("viaFileState"))
+    }
+
     private fun target(
         name: String,
         ports: Map<String, Set<String>> = emptyMap(),

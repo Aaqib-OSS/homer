@@ -113,3 +113,38 @@ interface WithDefault {
 
     fun g(a: Int) = a
 }
+
+// `return` needs a word boundary: this calls `returnX`, not `X`.
+fun wordBoundary(a: Int) {
+    returnX(a)
+}
+
+class Outer {
+    fun g(a: Int) = a
+
+    inner class Inner {
+        fun labelledThis(a: Int) = this@Outer.g(a)
+    }
+}
+
+// A vararg parameter is forwarded by spreading it.
+fun varargSpread(vararg a: Int) = target(*a)
+
+fun varargNotSpread(vararg a: Int) = target(a)
+
+// A default value is something the wrapper adds.
+fun withDefault(a: Int = 5) = target(a)
+
+// As implemented: the extension receiver is not a parameter, and a type argument stays in the callee.
+fun String.extensionReceiver(a: Int) = target(a)
+
+fun genericCallee(a: Int) = target<Int>(a)
+
+// A private top-level function or property of the same file is encapsulation at file level.
+private fun fileHelper(a: Int) = a
+
+private val fileState = mutableListOf<Int>()
+
+fun viaFileHelper(a: Int) = fileHelper(a)
+
+fun viaFileState(a: Int) = fileState.add(a)
