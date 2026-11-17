@@ -110,13 +110,9 @@ internal object ConstraintTestRefs {
         val declaration = "fun `$method`("
         val states =
             body.indices.filter { declaration in body[it] }.mapNotNull { at ->
-                val annotations =
-                    (at - 1 downTo maxOf(0, at - 8))
-                        .map { body[it].trim() }
-                        .takeWhile { !it.endsWith("}") }
-                        .filter { it.startsWith("@") }
+                val annotations = annotationsOf(body, at, declaration)
                 when {
-                    annotations.none { Regex("""@\w*Test\b""").containsMatchIn(it) } -> null
+                    annotations.none { TEST_ANNOTATION.containsMatchIn(it) } -> null
                     annotations.any { it.startsWith("@Disabled") } -> false
                     else -> true
                 }
@@ -129,4 +125,38 @@ internal object ConstraintTestRefs {
             null
         }
     }
+
+    /**
+     * The annotations of the function declared on line [at]: those inline before `fun`, and those on
+     * the contiguous annotation, comment and blank lines directly above, a multi-line annotation
+     * argument list included. The scan stops at the first line of other code.
+     */
+    private fun annotationsOf(
+        body: List<String>,
+        at: Int,
+        declaration: String,
+    ): List<String> {
+        val found = mutableListOf<String>()
+        body[at]
+            .substringBefore(declaration)
+            .trim()
+            .takeIf { it.startsWith("@") }
+            ?.let { found += it }
+        var depth = 0
+        for (line in body.subList(0, at).asReversed().map { it.trim() }) {
+            val net = line.count { it == ')' } - line.count { it == '(' }
+            val insideArguments = depth > 0
+            depth += net
+            val skippable =
+                line.isEmpty() || line.startsWith("/**") || line.startsWith("*") || line.startsWith("//")
+            when {
+                line.startsWith("@") -> found += line
+                insideArguments || net > 0 || skippable -> Unit
+                else -> break
+            }
+        }
+        return found
+    }
+
+    private val TEST_ANNOTATION = Regex("""@\w*Test\b""")
 }

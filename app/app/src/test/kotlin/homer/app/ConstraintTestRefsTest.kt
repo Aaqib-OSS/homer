@@ -160,6 +160,57 @@ class ConstraintTestRefsTest {
         assertNull(ConstraintTestRefs.unresolved(TestRef("Other", "elsewhere"), tricky))
     }
 
+    private val annotated =
+        mapOf(
+            "B.kt" to
+                """
+                class Annotated {
+                    @Test fun `inline`() {}
+
+                    /**
+                     * A long KDoc with a } brace and a (paren.
+                     *
+                     * More lines.
+                     */
+                    @Tag("slow")
+                    @ParameterizedTest(
+                        name = "x",
+                    )
+                    @MethodSource("rows")
+                    fun `long block`() {}
+
+                    /**
+                     * Also long.
+                     */
+                    @Test
+                    @Tag("slow")
+                    @Disabled("flaky")
+                    fun `off in a long block`() {}
+
+                    val x = 1
+                    fun `code above`() {}
+                }
+                """.trimIndent(),
+        )
+
+    @Test
+    fun `an inline annotation and a long annotation and KDoc block above the function both count`() {
+        assertNull(ConstraintTestRefs.unresolved(TestRef("Annotated", "inline"), annotated))
+        assertNull(ConstraintTestRefs.unresolved(TestRef("Annotated", "long block"), annotated))
+    }
+
+    @Test
+    fun `a Disabled anywhere in the long block disables the test, and a function after code has no annotation`() {
+        assertEquals(
+            "Annotated has only a @Disabled test `off in a long block`",
+            ConstraintTestRefs.unresolved(TestRef("Annotated", "off in a long block"), annotated),
+        )
+        assertEquals(
+            "Annotated has no @Test function `code above`",
+            ConstraintTestRefs.unresolved(TestRef("Annotated", "code above"), annotated),
+        )
+    }
+
     @Test
     fun `whatever the names, a line built in the documented format parses back to the same refs`() =
         runTest {
