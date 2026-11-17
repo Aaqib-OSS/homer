@@ -74,7 +74,13 @@ const matches = (lineTokens, word) => lineTokens.some((t) => t === word || t ===
  * @param {Set<object>} [used] receives each allowed context that excused a hit
  */
 export function findHits(file, rules, used = new Set()) {
-  const lines = clean[file.kind](file.text).split('\n')
+  let cleaned
+  try {
+    cleaned = clean[file.kind](file.text)
+  } catch (e) {
+    throw new Error(`${file.path}: ${e.message}`)
+  }
+  const lines = cleaned.split('\n')
   const original = file.text.split('\n')
   const hits = []
   lines.forEach((line, i) => {
