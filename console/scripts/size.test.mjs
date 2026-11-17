@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { currentMaxima, hasReason, lineCommentLines, productionFiles, isReasonText, occurrencesOf, otherMessages, sizeFindings, slack, staleCap, staleCapFindings, suppressionFindings } from './size.mjs';
+import { CONSOLE_DIR } from './quality-report.mjs';
+import { currentMaxima, hasReason, lineCommentLines, LINT_PROBE_RULES, lintCapProbe, productionFiles, isReasonText, occurrencesOf, otherMessages, sizeFindings, slack, staleCap, staleCapFindings, suppressionFindings } from './size.mjs';
 
 const result = (filePath, messages) => ({ filePath, messages });
 
@@ -127,6 +128,13 @@ describe('staleCapFindings', () => {
     ]);
   });
 
+  it('names a stale MAX_PROPS in eslint.config.mjs (GH #311)', () => {
+    const [finding] = staleCapFindings({ 'max-params': 5, 'homer/max-props': 11 }, { 'max-params': 5, 'homer/max-props': 14 });
+    expect(finding.path).toBe('console/eslint.config.mjs');
+    expect(finding.message).toBe('homer/max-props: MAX_PROPS (console/eslint.config.mjs) is 14 but the current maximum is 11; lower it to 11');
+    expect(finding.stableKey).toBe('homer/max-props: stale MAX_PROPS');
+  });
+
   it('reports nothing when every cap is within the slack', () => {
     expect(staleCapFindings({ 'max-lines': 500, 'max-lines-per-function': 58 }, { 'max-lines': 500, 'max-lines-per-function': 60 })).toEqual([]);
   });
@@ -245,5 +253,33 @@ describe('productionFiles', () => {
     const files = productionFiles(results, root);
     expect(files.map((f) => f.path)).toEqual(['console/lib/a.ts', 'console/middleware.ts', 'console/components/b.tsx']);
     expect(files[0].text).toBe('// lib/a.ts\n');
+  });
+});
+
+describe('otherMessages with the lint-cap rules', () => {
+  it('keeps only messages from no lint-cap rule', () => {
+    const results = [
+      result('/c/a.ts', [
+        { ruleId: 'max-params', line: 1, message: "Function 'f' has too many parameters (3). Maximum allowed is 0." },
+        { ruleId: 'homer/max-props', line: 2, message: "Component 'C' has too many props (2). Maximum allowed is 0." },
+        { ruleId: 'max-lines', line: 3, message: 'File has too many lines (9). Maximum allowed is 1.' },
+      ]),
+    ];
+    expect(otherMessages(results, LINT_PROBE_RULES)).toEqual(['/c/a.ts:3: File has too many lines (9). Maximum allowed is 1.']);
+  });
+});
+
+describe('lintCapProbe (GH #311)', () => {
+  const code = 'export function Card({ a, b, c, d }: { a: string; b: string; c: string; d: string }) {\n  return null;\n}\nexport function add(x: number, y: number, z: number) {\n  return x + y + z;\n}\n';
+
+  it('measures parameters and props in production source with the config\'s own homer/max-props', async () => {
+    const results = await lintCapProbe().lintText(code, { filePath: join(CONSOLE_DIR, 'components/lint-cap-probe.tsx') });
+    expect(otherMessages(results, LINT_PROBE_RULES)).toEqual([]);
+    expect(currentMaxima(results, Object.keys(LINT_PROBE_RULES))).toEqual({ 'max-params': 3, 'homer/max-props': 4 });
+  });
+
+  it('leaves test files out, as the caps do', async () => {
+    const results = await lintCapProbe().lintText(code, { filePath: join(CONSOLE_DIR, 'components/lint-cap-probe.test.tsx') });
+    expect(results.flatMap((r) => r.messages)).toEqual([]);
   });
 });

@@ -3,7 +3,8 @@
  * the backend's parameter cap. A component is a function named in PascalCase — a declaration, or a
  * variable holding a function (directly or wrapped, as in `memo(...)`). Its props are the keys its first
  * parameter destructures, or, for an undestructured parameter, the members of its type when that type is
- * written inline or declared in the same file. A props type it cannot resolve is not counted.
+ * written inline or declared in the same file (an interface with the members it inherits from same-file
+ * interfaces). A props type it cannot resolve, or one extending a type it cannot resolve, is not counted.
  */
 
 const isComponentName = (name) => /^[A-Z]/.test(name ?? '');
@@ -30,13 +31,28 @@ function topLevelTypes(program) {
 }
 
 /** Member count of a props type, or null when it is neither inline nor declared in this file as an interface or object type. */
-function typeMemberCount(type, types) {
+function typeMemberCount(type, types, seen = new Set()) {
   if (type?.type === 'TSTypeLiteral') return type.members.length;
   if (type?.type !== 'TSTypeReference' || type.typeName.type !== 'Identifier') return null;
-  const declaration = types.get(type.typeName.name);
-  if (declaration?.type === 'TSInterfaceDeclaration') return declaration.body.body.length;
-  if (declaration?.type === 'TSTypeAliasDeclaration') return typeMemberCount(declaration.typeAnnotation, types);
-  return null;
+  return namedTypeCount(type.typeName.name, types, seen);
+}
+
+/**
+ * Member count of the same-file type `name`: an alias's target, or an interface's own members plus those of every interface it
+ * extends, or null when it or any base is not declared in this file. `seen` stops a circular declaration.
+ */
+function namedTypeCount(name, types, seen) {
+  const declaration = types.get(name);
+  if (!declaration || seen.has(name)) return null;
+  const visited = new Set(seen).add(name);
+  if (declaration.type === 'TSTypeAliasDeclaration') return typeMemberCount(declaration.typeAnnotation, types, visited);
+  let count = declaration.body.body.length;
+  for (const base of declaration.extends ?? []) {
+    const inherited = base.expression.type === 'Identifier' && !base.typeArguments ? namedTypeCount(base.expression.name, types, visited) : null;
+    if (inherited === null) return null;
+    count += inherited;
+  }
+  return count;
 }
 
 /** The number of props `fn` takes, or null when its first parameter declares none this rule can count. */

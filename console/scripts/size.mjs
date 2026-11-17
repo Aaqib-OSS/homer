@@ -43,7 +43,7 @@ const SIZE_RULES = sizeRules(MAX_FILE_LINES, MAX_FUNCTION_LINES);
 const PROBE_RULES = sizeRules(1, 1);
 
 // The lint caps' own probe: every function with a parameter and every component with a prop reports its count.
-const LINT_PROBE_RULES = { 'max-params': ['warn', 0], 'homer/max-props': ['warn', 0] };
+export const LINT_PROBE_RULES = { 'max-params': ['warn', 0], 'homer/max-props': ['warn', 0] };
 
 /** Each cap's constant and the file that holds it. */
 const CAP_HOMES = {
@@ -247,6 +247,15 @@ export function productionFiles(results, consoleDir = CONSOLE_DIR) {
     .map((result) => ({ path: repoPath(result.filePath, consoleDir), text: readFileSync(result.filePath, 'utf8') }));
 }
 
+/** The lint caps' probe: an ESLint run over the files the caps cover (the config's own, so `homer/max-props` resolves) at caps of 0. */
+export function lintCapProbe() {
+  return new ESLint({
+    cwd: CONSOLE_DIR,
+    overrideConfig: { files: SOURCE_FILES, ignores: TEST_FILES, rules: LINT_PROBE_RULES },
+    ruleFilter: ({ ruleId }) => ruleId in LINT_PROBE_RULES,
+  });
+}
+
 /** Messages from no rule in `rules` mean the run itself is broken (a parse error, a bad directive). */
 export function otherMessages(results, rules = SIZE_RULES) {
   return results.flatMap((result) =>
@@ -270,11 +279,7 @@ async function main() {
   }).lintFiles(PRODUCTION_FILES);
   const brokenProbe = otherMessages(probe);
   if (brokenProbe.length > 0) throw new Error(`size-console: unexpected ESLint messages in the probe run:\n${brokenProbe.join('\n')}`);
-  const lintProbe = await new ESLint({
-    cwd: CONSOLE_DIR,
-    overrideConfig: { files: SOURCE_FILES, ignores: TEST_FILES, rules: LINT_PROBE_RULES },
-    ruleFilter: ({ ruleId }) => ruleId in LINT_PROBE_RULES,
-  }).lintFiles(['.']);
+  const lintProbe = await lintCapProbe().lintFiles(['.']);
   const brokenLintProbe = otherMessages(lintProbe, LINT_PROBE_RULES);
   if (brokenLintProbe.length > 0) throw new Error(`size-console: unexpected ESLint messages in the lint-cap probe run:\n${brokenLintProbe.join('\n')}`);
   const maxima = { ...currentMaxima(probe), ...currentMaxima(lintProbe, Object.keys(LINT_PROBE_RULES)) };

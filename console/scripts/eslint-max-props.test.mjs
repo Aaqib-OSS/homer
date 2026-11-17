@@ -20,6 +20,14 @@ tester.run('homer/max-props', maxProps, {
     { code: "import type { P } from './p'\nfunction Card(props: P) { return null }", options: [2] },
     { code: 'function Card(props) { return null }', options: [2] },
     { code: 'function Card() { return null }', options: [2] },
+    // A wrapper call holding no function, and a qualified type name, declare nothing countable.
+    { code: 'const Card = hoc(Base)', options: [2] },
+    { code: 'function Card(props: NS.P) { return null }', options: [2] },
+    // An interface extending a type declared elsewhere, or a generic base, is not counted.
+    { code: "import type { Base } from './base'\ninterface P extends Base { a: string; b: string; c: string }\nfunction Card(props: P) { return null }", options: [2] },
+    { code: 'interface P extends Omit<Q, "x"> { a: string; b: string; c: string }\nfunction Card(props: P) { return null }', options: [2] },
+    // A circular alias stops instead of recursing.
+    { code: 'type P = Q\ntype Q = P\nfunction Card(props: P) { return null }', options: [2] },
   ],
   invalid: [
     { code: 'function Card({ a, b, c }) { return null }', options: [2], errors: [tooMany('Card', 3)] },
@@ -33,5 +41,14 @@ tester.run('homer/max-props', maxProps, {
       errors: [tooMany('Card', 3)],
     },
     { code: 'type P = { a: string; b: string; c: string }\nconst Card = (props: P) => null', options: [2], errors: [tooMany('Card', 3)] },
+    { code: 'type Q = { a: string; b: string; c: string }\ntype P = Q\nfunction Card(props: P) { return null }', options: [2], errors: [tooMany('Card', 3)] },
+    // Inherited members count: 1 own + 2 from Base.
+    {
+      code: 'interface Base { a: string; b: string }\ninterface P extends Base { c: string }\nfunction Card(props: P) { return null }',
+      options: [2],
+      errors: [tooMany('Card', 3)],
+    },
+    // A props type declared after the component still resolves.
+    { code: 'function Card(props: P) { return null }\ninterface P { a: string; b: string; c: string }', options: [2], errors: [tooMany('Card', 3)] },
   ],
 });
