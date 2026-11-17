@@ -75,7 +75,7 @@ kotest-property inside a plain JUnit test (`checkAll` in `runTest`, no Kotest en
 
 One line per service: what it owns, plus the ADR holding the reasoning. Only the constraints an
 editor could break without noticing are spelled out, each marked `Constraint:`.
-A `Constraint:` bullet ends with `Enforced by` and the backticked `Class#test name` of the test (under `app/*/src/test/kotlin`) that fails
+A `Constraint:` bullet ends with `Enforced by` and the backticked `Class#test name` of the test (in `:app`, `:architecture`, `:homer-runner` or `agentdebug`) that fails
 when it is broken (a bare `Class` names a whole class; several are joined by `,` or `and`), and a constraint no test
 fails on gets one first; `ConstraintsNameTheirTestsTest` fails on a bullet that names none or names one that does not exist.
 
