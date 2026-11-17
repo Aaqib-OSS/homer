@@ -1,8 +1,8 @@
 package homer.app.executors.llm
 
 import homer.app.exceptions.MalformedLlmOutputException
+import homer.app.infra.BoundedLines
 import homer.app.infra.TranslatedStream
-import homer.app.infra.boundedLines
 import homer.app.infra.parseNdjson
 import homer.app.infra.parseNdjsonLenient
 import homer.app.infra.translateStream
@@ -128,7 +128,7 @@ internal class LlmAttemptOutput<C>(
         span: Span,
     ): TranslatedStream {
         val (parsed, cut) =
-            boundedLines(stdOut, HANDOFF_PARSE_MAX_BYTES).use { bounded ->
+            BoundedLines(stdOut, HANDOFF_PARSE_MAX_BYTES).use { bounded ->
                 parseNdjsonLenient(bounded.lines, HANDOFF_PARSE_MAX_EVENTS) to bounded.cut
             }
         if (parsed.truncated || cut) {
