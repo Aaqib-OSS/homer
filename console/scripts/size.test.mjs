@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { afterAll, describe, expect, it } from 'vitest';
 
-import { currentMaxima, hasReason, isReasonText, occurrencesOf, otherMessages, sizeFindings, slack, staleCap, staleCapFindings, suppressionFindings } from './size.mjs';
+import { currentMaxima, hasReason, lineCommentLines, productionFiles, isReasonText, occurrencesOf, otherMessages, sizeFindings, slack, staleCap, staleCapFindings, suppressionFindings } from './size.mjs';
 
 const result = (filePath, messages) => ({ filePath, messages });
 
@@ -124,7 +127,7 @@ describe('hasReason', () => {
   const reasoned = (source) => {
     const lines = source.split('\n');
     const index = lines.findIndex((l) => l.includes('eslint-disable'));
-    return hasReason(lines, index, lines[index].indexOf('eslint-disable') + 'eslint-disable'.length);
+    return hasReason(lines, index, lines[index].indexOf('eslint-disable') + 'eslint-disable'.length, lineCommentLines(source));
   };
   it('takes a reason after two dashes or a comment line above', () => {
     expect(reasoned('// eslint-disable-next-line no-x -- why not\nfoo()')).toBe(true);
@@ -136,6 +139,9 @@ describe('hasReason', () => {
     expect(reasoned('foo(); // eslint-disable-line no-x -- ')).toBe(false);
     expect(reasoned('// TODO\n// eslint-disable-next-line no-x')).toBe(false);
     expect(reasoned('foo()\n// eslint-disable-next-line no-x')).toBe(false);
+    expect(reasoned('const s = `\n// why it is here\n`;\n// eslint-disable-next-line no-x')).toBe(false);
+    expect(reasoned('const s = `a ${b}\n// why it is here`;\n// eslint-disable-next-line no-x')).toBe(false);
+    expect(reasoned('const s = `${`x`}`; // why it is here\n// eslint-disable-next-line no-x')).toBe(false);
   });
 });
 
@@ -172,5 +178,38 @@ describe('suppressionFindings', () => {
     const messages = suppressionFindings(more, budgets(1, 0)).map((f) => f.message);
     expect(messages.some((m) => m.includes('JSCPD_IGNORE_BUDGET'))).toBe(true);
     expect(messages.some((m) => m.startsWith('eslint-disable without a reason'))).toBe(true);
+  });
+});
+
+describe('lineCommentLines', () => {
+  const lines = (text) => [...lineCommentLines(text)];
+  it('finds comment-only lines', () => {
+    expect(lines('a();\n  // c\nb(); // d\n// e')).toEqual([1, 3]);
+  });
+  it('skips lines inside template literals, nested templates, strings and block comments', () => {
+    expect(lines('const s = `\n// in template\n`;\n// real')).toEqual([3]);
+    expect(lines('const s = `${a}\n// still template ${`\n// nested`}\n// still`;\n// real')).toEqual([4]);
+    expect(lines("const s = 'http://x';\n// real")).toEqual([1]);
+    expect(lines('/*\n// in block\n*/\n// real')).toEqual([3]);
+  });
+  it('resumes the template after a ${} block with braces', () => {
+    expect(lines('const s = `${{ a: 1 }.a}\n// still template`;\n// real')).toEqual([2]);
+  });
+});
+
+describe('productionFiles', () => {
+  const root = mkdtempSync(join(tmpdir(), 'size-prod-'));
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+  const make = (rel) => {
+    const filePath = join(root, rel);
+    mkdirSync(dirname(filePath), { recursive: true });
+    writeFileSync(filePath, `// ${rel}\n`);
+    return { filePath, messages: [] };
+  };
+  it('keeps production files with repo-relative paths and drops tests, shadcn primitives and declarations', () => {
+    const results = ['lib/a.ts', 'lib/a.test.tsx', 'components/ui/button.tsx', 'types/x.d.ts', 'middleware.ts', 'components/b.tsx'].map(make);
+    const files = productionFiles(results, root);
+    expect(files.map((f) => f.path)).toEqual(['console/lib/a.ts', 'console/middleware.ts', 'console/components/b.tsx']);
+    expect(files[0].text).toBe('// lib/a.ts\n');
   });
 });

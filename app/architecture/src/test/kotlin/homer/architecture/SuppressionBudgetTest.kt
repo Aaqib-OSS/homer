@@ -91,6 +91,18 @@ class SuppressionBudgetTest {
         assertFalse(reasoned("@Suppress(\"http://x\")\nfun f() {}"), "a // inside a string literal is no comment")
         assertFalse(reasoned("@Suppress(\"\"\"http://x\"\"\")\nfun f() {}"), "a // inside a raw string is no comment")
         assertFalse(reasoned("val c = '/'\n@Suppress(\"A\", \"//\")\nfun f() {}"), "a // in a second literal is no comment")
+        assertFalse(reasoned("@Suppress(\"A(\")\nfun f() {}"), "a parenthesis inside a string shifts nothing")
+        assertFalse(
+            reasoned("@Suppress(\"A(\")\nfun f() {} // next line's comment"),
+            "an open parenthesis in a string does not swallow the next line",
+        )
+        assertFalse(reasoned("@Suppress(\"\${listOf(\"(\")}\")\nfun f() {} // next line's comment"), "nor one inside a template expression")
+        assertFalse(reasoned("@Suppress(\"\${listOf(\"//\")}\")\nfun f() {}"), "a // inside a template expression is no comment")
+        assertFalse(
+            reasoned("val s = \"\"\"a\n// why it is here\"\"\".trim()\n@Suppress(\"A\")\nfun f() {}"),
+            "a raw-string line above is no comment",
+        )
+        assertTrue(reasoned("@Suppress(\"A(\") // why it stays\nfun f() {}"), "a real reason after a literal with a parenthesis")
         assertTrue(reasoned("@Suppress(\"http://x\") // the url is fixed\nfun f() {}"), "a real reason after a literal")
     }
 
@@ -164,7 +176,8 @@ internal fun hasReason(
     if (commentTexts(segment).any(::isReasonText)) return true
     val lineStart = text.lastIndexOf('\n', offset - 1) + 1
     if (lineStart == 0) return false
-    val above = text.substring(text.lastIndexOf('\n', lineStart - 2) + 1, lineStart - 1).trimStart()
+    // Lexed up to the line above, so a raw-string or character-literal line starting with the marker is no comment.
+    val above = KotlinText.commentText(text.substring(0, lineStart - 1)).substringAfterLast('\n').trimStart()
     return above.startsWith("//") && isReasonText(above.removePrefix("//"))
 }
 

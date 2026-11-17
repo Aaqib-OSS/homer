@@ -105,20 +105,92 @@ export function isReasonText(raw) {
   return text.replace(/\s/g, '').length >= 3 && !/^(todo|fixme)\W*$/i.test(text);
 }
 
-/** Whether the directive ending at `column` of line `index` states why: ESLint's ` -- reason` on its line, or a `//` comment line directly above. */
-export function hasReason(lines, index, column) {
+/**
+ * The 0-based lines whose first non-space text starts a `//` comment, found by lexing `text`: a line inside a
+ * template literal (`${…}` nesting included), a string or a block comment is never one. Regex literals and JSX
+ * text are not lexed, so a `//` there still reads as a comment.
+ */
+export function lineCommentLines(text) {
+  const found = new Set();
+  const templateBraces = [];
+  let braces = 0;
+  let line = 0;
+  let lineHasCode = false;
+  let inTemplate = false;
+  let i = 0;
+  const skipUntil = (close, stopAtNewline) => {
+    for (i += 1; i < text.length && !text.startsWith(close, i); i += 1) {
+      if (text[i] === '\\') i += 1;
+      else if (text[i] === '\n') {
+        if (stopAtNewline) return;
+        line += 1;
+      }
+    }
+    i += close.length - 1;
+  };
+  for (; i < text.length; i += 1) {
+    const c = text[i];
+    if (c === '\n') {
+      line += 1;
+      lineHasCode = false;
+    } else if (inTemplate) {
+      if (c === '\\') {
+        if (text[i + 1] === '\n') line += 1;
+        i += 1;
+      } else if (c === '`') inTemplate = false;
+      else if (c === '$' && text[i + 1] === '{') {
+        templateBraces.push(braces);
+        braces += 1;
+        inTemplate = false;
+        i += 1;
+      }
+    } else if (text.startsWith('//', i)) {
+      if (!lineHasCode) found.add(line);
+      skipUntil('\n', true);
+      i -= 1;
+    } else if (text.startsWith('/*', i)) {
+      lineHasCode = true;
+      skipUntil('*/', false);
+    } else if (c === "'" || c === '"') {
+      lineHasCode = true;
+      skipUntil(c, true);
+    } else if (c === '`') {
+      lineHasCode = true;
+      inTemplate = true;
+    } else if (c === '{') {
+      lineHasCode = true;
+      braces += 1;
+    } else if (c === '}') {
+      lineHasCode = true;
+      braces -= 1;
+      if (templateBraces.length > 0 && templateBraces[templateBraces.length - 1] === braces) {
+        templateBraces.pop();
+        inTemplate = true;
+      }
+    } else if (!/\s/.test(c)) lineHasCode = true;
+  }
+  return found;
+}
+
+/** Whether the directive ending at `column` of line `index` states why: ESLint's ` -- reason` on its line, or a lexed `//` comment line directly above. */
+export function hasReason(lines, index, column, commentLines) {
   const afterDashes = lines[index].slice(column).split(' -- ')[1];
   if (afterDashes !== undefined && isReasonText(afterDashes)) return true;
-  const above = index > 0 ? lines[index - 1].trim() : '';
-  return above.startsWith('//') && isReasonText(above.slice(2));
+  return index > 0 && commentLines.has(index - 1) && isReasonText(lines[index - 1].trim().slice(2));
 }
 
 /** Every match of `pattern` in each file's text: { path, line, text, reasoned }. A directive inside a string literal counts too. */
 export function occurrencesOf(files, pattern) {
   return files.flatMap(({ path, text }) => {
     const lines = text.split('\n');
+    const commentLines = lineCommentLines(text);
     return lines.flatMap((line, index) =>
-      [...line.matchAll(pattern)].map((match) => ({ path, line: index + 1, text: line.trim(), reasoned: hasReason(lines, index, match.index + match[0].length) })),
+      [...line.matchAll(pattern)].map((match) => ({
+        path,
+        line: index + 1,
+        text: line.trim(),
+        reasoned: hasReason(lines, index, match.index + match[0].length, commentLines),
+      })),
     );
   });
 }
