@@ -1,13 +1,13 @@
 package homer.app.services
 
 import homer.app.infra.AgentInputResolver
+import homer.app.infra.coRunCatching
 import homer.app.models.HookConfig
 import homer.app.models.ProcessStatus
 import homer.app.services.persistence.HookRecording
 import homer.app.services.persistence.HookRepository
 import homer.app.services.persistence.RecordedHooks
 import homer.app.services.persistence.ShedHooks
-import kotlinx.coroutines.CancellationException
 import org.slf4j.Logger
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -83,11 +83,9 @@ internal class HookService(
      * sweep or the next boot's replay picks it up. See ADR-0023, ADR-0107.
      */
     private suspend fun fireSafely(hook: PendingHook) {
-        try {
+        coRunCatching {
             fires.fire(hook)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
+        }.onFailure { e ->
             logger.error("Hook {} fire failed: {}", hook.id, e.message, e)
         }
     }
@@ -121,11 +119,9 @@ internal class HookService(
     /** Re-fires hooks whose transient-failure retry is due. Driven by [ContinuationSweepService]. */
     suspend fun sweepRetries() {
         val due =
-            try {
+            coRunCatching {
                 repository.findDueRetries(nowSec())
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
+            }.getOrElse { e ->
                 logger.error("Hook retry lookup failed: {}", e.message, e)
                 return
             }

@@ -5,6 +5,7 @@ import homer.app.infra.FileOperations
 import homer.app.infra.GraphStateResult
 import homer.app.infra.GraphStateRunner
 import homer.app.infra.LangGraphTopologyLimits
+import homer.app.infra.coRunCatching
 import homer.app.models.Agent
 import homer.app.models.AppConfig
 import homer.app.models.Command
@@ -17,7 +18,6 @@ import homer.app.models.LangGraphTopology
 import homer.app.models.ProcessInfo
 import homer.app.models.SubRunProgress
 import homer.app.services.persistence.ContinuationRepository
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
@@ -244,7 +244,7 @@ class LangGraphRunStatusService(
         owner: String?,
     ): Map<String, List<LangGraphSubProgress>>? {
         if (interrupts.isEmpty()) return null
-        return try {
+        return coRunCatching {
             val watchedProcessByInterrupt =
                 continuationRepository
                     .byThread(threadId, owner)
@@ -280,12 +280,7 @@ class LangGraphRunStatusService(
                     if (nodeSubs.isNotEmpty()) put(node, nodeSubs)
                 }
             }
-        } catch (e: CancellationException) {
-            // The request went away: stop here instead of answering nobody.
-            throw e
-        } catch (_: Exception) {
-            null
-        }
+        }.getOrElse { null }
     }
 
     /** Compact per-command progress of a sub run: finished executions + the running command. */

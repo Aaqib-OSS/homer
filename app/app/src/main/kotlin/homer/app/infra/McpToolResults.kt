@@ -11,11 +11,7 @@ import kotlinx.serialization.json.JsonObject
  * CancellationException propagates — it is the coroutine machinery, not a domain failure.
  */
 internal inline fun runTool(block: () -> CallToolResult): CallToolResult =
-    try {
-        block()
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
+    coRunCatching { block() }.getOrElse { e ->
         toolError("${e::class.simpleName}: ${e.message}")
     }
 

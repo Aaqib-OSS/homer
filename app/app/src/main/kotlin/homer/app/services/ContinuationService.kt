@@ -9,6 +9,7 @@ import homer.app.exceptions.QuestionsClosedForProcessException
 import homer.app.exceptions.TooManyPendingContinuationsException
 import homer.app.exceptions.ValidationException
 import homer.app.infra.AgentInputResolver
+import homer.app.infra.coRunCatching
 import homer.app.infra.validatePayloadParam
 import homer.app.models.CreateJoinRequest
 import homer.app.models.CreateJoinResponse
@@ -19,7 +20,6 @@ import homer.app.models.ProcessStatus
 import homer.app.models.ResultEnvParam
 import homer.app.services.persistence.ContinuationRepository
 import homer.app.services.persistence.RecordPage
-import kotlinx.coroutines.CancellationException
 import org.slf4j.Logger
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -329,11 +329,9 @@ internal class ContinuationService(
         status: ProcessStatus,
     ) {
         val pending =
-            try {
+            coRunCatching {
                 repository.findByWatchedProcessId(processId)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
+            }.getOrElse { e ->
                 logger.error("Continuation lookup for terminal process {} failed: {}", processId, e.message, e)
                 emptyList()
             }
@@ -344,11 +342,9 @@ internal class ContinuationService(
         // terminal; the last sub to finish triggers the resume. Two subs finishing concurrently can
         // both observe "all terminal" — the claim CAS in fireJoin keeps it exactly-once. See ADR-0026.
         val joins =
-            try {
+            coRunCatching {
                 repository.findJoinsByWatchedProcessId(processId)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
+            }.getOrElse { e ->
                 logger.error("Join lookup for terminal process {} failed: {}", processId, e.message, e)
                 return
             }
@@ -440,11 +436,9 @@ internal class ContinuationService(
      */
     suspend fun sweepRetries() {
         val due =
-            try {
+            coRunCatching {
                 repository.findDueRetries(nowSec())
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
+            }.getOrElse { e ->
                 logger.error("Continuation retry lookup failed: {}", e.message, e)
                 return
             }

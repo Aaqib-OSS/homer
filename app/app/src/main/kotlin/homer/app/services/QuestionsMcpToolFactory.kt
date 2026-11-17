@@ -1,5 +1,6 @@
 package homer.app.services
 
+import homer.app.infra.coRunCatching
 import homer.app.infra.runTool
 import homer.app.infra.toolError
 import homer.app.infra.toolResult
@@ -18,7 +19,6 @@ import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.Tool
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
-import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -261,7 +261,7 @@ internal class QuestionsMcpToolFactory(
         ttlSec: Int,
     ) {
         if (progressToken == null) return
-        try {
+        coRunCatching {
             connection.notification(
                 ProgressNotification(
                     ProgressNotificationParams(
@@ -273,9 +273,7 @@ internal class QuestionsMcpToolFactory(
                 ),
                 progressToken,
             )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
+        }.onFailure { e ->
             logger.debug("Progress notification for question {} not delivered: {}", questionId, e.message)
         }
     }

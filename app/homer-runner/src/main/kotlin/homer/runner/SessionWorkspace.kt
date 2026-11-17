@@ -1,10 +1,10 @@
 package homer.runner
 
+import homer.app.infra.coRunCatching
 import homer.app.runners.DownloadMode
 import homer.app.runners.TarStreams
 import homer.app.runners.external.OpResult
 import homer.app.runners.external.RunnerOp
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
@@ -33,7 +33,7 @@ internal class SessionWorkspace(
         private set
 
     suspend fun execute(op: RunnerOp): OpResult =
-        try {
+        coRunCatching {
             withContext(Dispatchers.IO) {
                 when (op) {
                     is RunnerOp.CreateWorkspace -> {
@@ -66,9 +66,7 @@ internal class SessionWorkspace(
                     }
                 }
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
+        }.getOrElse { e ->
             logger.warn("Session {}: op {} failed: {}", sessionId, op.opId, e.message)
             OpResult(op.opId, ok = false, error = e.message ?: e::class.simpleName)
         }

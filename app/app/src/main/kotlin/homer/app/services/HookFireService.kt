@@ -3,6 +3,7 @@ package homer.app.services
 import homer.app.EnvConstants
 import homer.app.exceptions.HomerException
 import homer.app.infra.AgentInputResolver
+import homer.app.infra.coRunCatching
 import homer.app.infra.hookControlParams
 import homer.app.models.Agent
 import homer.app.models.ProcessInfo
@@ -80,11 +81,9 @@ internal class HookFireService(
      * A cancellation is rethrown; every other failure is not this hook's to escalate.
      */
     private suspend fun runOrNull(processId: Int): ProcessInfo? =
-        try {
+        coRunCatching {
             processManager.getProcessInfo(processId)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
+        }.getOrElse { e ->
             logger.warn("Hook fire could not read run {}: {}", processId, e.message)
             null
         }
