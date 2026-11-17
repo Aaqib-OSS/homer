@@ -133,9 +133,9 @@ object QueryPlanReport {
             .sortedBy { it.name }
 
     /**
-     * The non-blank lines of every `<prefix>*.tsv` in [dir], files in name order, the first line per
-     * [key] (tab-separated field numbers) kept; empty when there is no file. Each test worker writes
-     * its own file and two may record the same key at another line.
+     * The non-blank lines of every `<prefix>*.tsv` in [dir], sorted, the smallest line per [key]
+     * (tab-separated field numbers) kept, so the result does not depend on which worker file held it;
+     * empty when there is no file. Each test worker writes its own file and two may record one key.
      */
     fun mergedLines(
         dir: File,
@@ -145,6 +145,7 @@ object QueryPlanReport {
         captureFiles(dir, prefix)
             .flatMap { it.readLines() }
             .filter { it.isNotBlank() }
+            .sorted()
             .distinctBy { line -> line.split('\t', limit = 4).let { fields -> key.map { fields[it] } } }
 
     /** `queryPlanReport`: `<capture dir> <report json>`. */

@@ -8,6 +8,7 @@ import io.kotest.property.arbitrary.map
 import io.kotest.property.arbitrary.string
 import io.kotest.property.checkAll
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
@@ -70,7 +71,7 @@ class QueryPlanReportTest {
         dir.resolve("other.tsv").writeText("x\t9\tz\tSELECT 9\n")
 
         assertEquals(
-            listOf("z\t360\tother\tSELECT 2", "c\t3\th\tSELECT 3", "a\t1\tf\tSELECT 1"),
+            listOf("a\t1\tf\tSELECT 1", "b\t2\tg\tSELECT 2", "c\t3\th\tSELECT 3"),
             QueryPlanReport.mergedLines(dir, "statements", QueryPlanReport.STATEMENT_KEY),
         )
         assertEquals(listOf("a\t1\tf\tSELECT 1"), QueryPlanReport.mergedLines(dir, "repeats", QueryPlanReport.REPEAT_KEY))
@@ -87,6 +88,39 @@ class QueryPlanReportTest {
             listOf("a\t1\tf\tSELECT 1", "a\t5\tg\tSELECT 1", "b\t1\tf\tSELECT 1"),
             QueryPlanReport.mergedLines(dir, "repeats", QueryPlanReport.REPEAT_KEY),
         )
+    }
+
+    @Test
+    fun `the kept line per key does not depend on which worker file holds it`(
+        @TempDir dir: File,
+    ) {
+        val low = "a\t1\tf\tSELECT 1"
+        val high = "a\t360\tf\tSELECT 1"
+        val first = dir.resolve("first").apply { mkdirs() }
+        val second = dir.resolve("second").apply { mkdirs() }
+        first.resolve("repeats-1.tsv").writeText("$low\n")
+        first.resolve("repeats-2.tsv").writeText("$high\n")
+        second.resolve("repeats-1.tsv").writeText("$high\n")
+        second.resolve("repeats-2.tsv").writeText("$low\n")
+
+        assertEquals(listOf(low), QueryPlanReport.mergedLines(first, "repeats", QueryPlanReport.REPEAT_KEY))
+        assertEquals(listOf(low), QueryPlanReport.mergedLines(second, "repeats", QueryPlanReport.REPEAT_KEY))
+    }
+
+    @Test
+    fun `main merges the worker files and writes the report`(
+        @TempDir dir: File,
+    ) {
+        val out = dir.resolve("out").resolve("report.json")
+        dir.resolve("statements-1.tsv").writeText("app/A.kt\t3\tget\tSELECT processes.status FROM processes WHERE processes.id = ?\n")
+        dir.resolve("repeats-1.tsv").writeText("app/R.kt\t360\trun\tSELECT 1\n")
+        dir.resolve("repeats-2.tsv").writeText("app/R.kt\t1\trun\tSELECT 1\n")
+
+        QueryPlanReport.main(arrayOf(dir.path, out.path))
+
+        val report = Json.decodeFromString(QueryPlanReport.Report.serializer(), out.readText())
+        assertEquals(1, report.statements)
+        assertEquals(listOf(QueryPlanReport.Repeat("app/R.kt", 1, "run", "SELECT 1")), report.repeats)
     }
 
     @Test
