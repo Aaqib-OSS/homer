@@ -207,6 +207,13 @@ tasks.test {
             repoRoot.resolve(".env.example"),
             // Inside :app, but not compiled into any test input.
             repoRoot.resolve("app/app/src/main/kotlin/homer/app/services/persistence/CLAUDE.md"),
+            // ConstraintsNameTheirTestsTest reads every backend guide under app/.
+            fileTree(repoRoot.resolve("app")) {
+                include("**/CLAUDE.md")
+                exclude("**/build/**", "**/.gradle/**", "**/node_modules/**")
+            },
+            // LangGraphRunStatusServiceTest pins the state cache TTL against the console's poll interval.
+            repoRoot.resolve("console/lib/hooks/use-process-lang-graph-view.ts"),
         ).withPropertyName("guardedRepoFiles")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 
