@@ -96,6 +96,13 @@ class PassThroughMatcherTest {
     }
 
     @Test
+    fun `the called function of a chain counts, a public one does not`() {
+        listOf("dataHelper", "foreignReceiver").forEach { assertNull(target(it), it) }
+        assertEquals("value.loudExt", target("viaLoudExt"))
+        assertEquals("Companion.open", target("viaPublicCompanionMember"))
+    }
+
+    @Test
     fun `a local function is not checked`() {
         assertNull(checkedFunctions(fixtures).find { it.name == "local" })
         assertEquals(1, checkedFunctions(fixtures).count { it.name == "outerOfLocal" })

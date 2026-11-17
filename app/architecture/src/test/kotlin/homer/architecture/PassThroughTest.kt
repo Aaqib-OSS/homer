@@ -65,30 +65,22 @@ internal fun passThroughTarget(
     if (parameters.any { it.hasDefaultValue() }) return null
     val forwarded = parameters.map { if (it.hasModifier(KoModifier.VARARG)) "*${it.name}" else it.name }
     val target = forwardedCall(fn.text, forwarded) ?: return null
-    val fileMembers = privateFileMembers(fn)
-    val hidden = nonPublicMembers(owner) + fileMembers
-    return target.takeUnless { isEncapsulated(target, owner, hidden, fileMembers) }
+    val hidden = nonPublicMembers(owner) + privateFileMembers(fn)
+    return target.takeUnless { isEncapsulated(it, hidden) }
 }
 
 /**
- * Whether a forward to [callee] stays inside its class or file: a receiver of the chain, or the bare callee, is in
- * [hidden]; the called function of a chain is a private top-level function of the file (an extension) or, after the
- * companion's name, a non-public member of the companion.
+ * Whether a forward to [callee] stays inside its class or file: the bare callee, or any receiver of the chain or the
+ * called function of the chain, is in [hidden] (the non-public members of the class or object, its companion and
+ * parents, and the private top-level members of the file).
  */
 private fun isEncapsulated(
     callee: String,
-    owner: KoBaseProvider?,
     hidden: Set<String>,
-    fileMembers: Set<String>,
 ): Boolean {
     val parts = callee.replace(THIS, "").split('.').map { it.replace(TYPE_ARGUMENTS, "").trimEnd('?', '!') }
-    if (parts.size == 1) return parts.first() in hidden
-    if (parts.dropLast(1).any { it in hidden } || parts.last() in fileMembers) return true
-    val companion = (owner as? KoCompanionObjectProvider)?.companionObject ?: return false
-    return parts.first() == companion.name && parts.last() in nonPublicMembers(companion)
+    return parts.any { it in hidden }
 }
-
-private val TYPE_ARGUMENTS = Regex("""<.*>$""")
 
 /** Names of the private top-level functions and properties of the file declaring [fn]. */
 private fun privateFileMembers(fn: KoFunctionDeclaration): Set<String> {
@@ -128,6 +120,7 @@ private fun nonPublicMembers(owner: KoBaseProvider?): Set<String> {
     ).toSet() - publicFunctions
 }
 
+private val TYPE_ARGUMENTS = Regex("""<.*>$""")
 private val THIS = Regex("""^this(@\w+)?\.""")
 private val RETURN = Regex("""^return\b""")
 private val CALLEE = Regex("""[A-Za-z_][\w.?!@]*(<[^()]*>)?""")

@@ -224,7 +224,7 @@ fun viaFileOverload(a: Int) = fileOverload(a)
 // A forward to a private top-level extension through a receiver is encapsulation at file level.
 private fun Int.fileExtension(a: Int) = a
 
-fun viaFileExtension(a: Int, b: Int) = a.fileExtension(b)
+fun viaFileExtension(b: Int) = value.fileExtension(b)
 
 // A forward through the companion's name reaches its non-public member.
 class CompanionQualified {
@@ -232,6 +232,35 @@ class CompanionQualified {
 
     companion object {
         private fun helper(a: Int) = a
+    }
+}
+
+// The called function of a chain counts as well as its receivers.
+class DataChain {
+    fun dataHelper(a: Int) = data.helper(a)
+
+    private fun helper(a: Int) = a
+}
+
+// By the rule, a callee that is a non-public companion member is exempt whatever its receiver is.
+class CompanionForeignReceiver {
+    fun foreignReceiver(a: Int) = other.helper(a)
+
+    companion object {
+        private fun helper(a: Int) = a
+    }
+}
+
+// Positive controls: a public top-level extension and a public companion member are no encapsulation.
+fun Int.loudExt(a: Int) = a
+
+fun viaLoudExt(b: Int) = value.loudExt(b)
+
+class CompanionPublic {
+    fun viaPublicCompanionMember(a: Int) = Companion.open(a)
+
+    companion object {
+        fun open(a: Int) = a
     }
 }
 
