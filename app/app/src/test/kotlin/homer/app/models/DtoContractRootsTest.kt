@@ -292,7 +292,7 @@ class DtoContractRootsTest {
     }
 
     @Test
-    fun `an elvis operand the scan cannot read keeps the whole binding unread`() {
+    fun `an elvis operand the scan cannot read keeps the whole binding or argument unread`() {
         val sources =
             mapOf(
                 "FixtureRoutes.kt" to
@@ -300,11 +300,15 @@ class DtoContractRootsTest {
                     fun Route.fixture() {
                         val claim = domain.deliverClaim(instance, request) ?: whatever()
                         call.respond(claim)
+                        call.respond(Fallback() ?: whatever())
                     }
                     """.trimIndent(),
             )
         assertEquals(
-            listOf("FixtureRoutes.kt: cannot read the type of `claim`"),
+            listOf(
+                "FixtureRoutes.kt: cannot read the type of `Fallback() ?: whatever()`",
+                "FixtureRoutes.kt: cannot read the type of `claim`",
+            ),
             unreadRouteBodies(sources, mapOf("deliverClaim" to setOf("ClaimResponse"))),
         )
     }
