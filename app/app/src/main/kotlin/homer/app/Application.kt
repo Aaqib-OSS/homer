@@ -14,7 +14,9 @@ import homer.app.models.flattenAuthSchemes
 import homer.app.routes.ApiDeps
 import homer.app.routes.apiV1Routes
 import homer.app.routes.apiV1UnsecuredRoutes
+import homer.app.routes.callbackDeps
 import homer.app.routes.callbackRoutes
+import homer.app.routes.mcpRouteDeps
 import homer.app.routes.mcpRoutes
 import homer.app.routes.questionsMcpRoutes
 import homer.app.routes.runnerBearerToken
@@ -65,12 +67,11 @@ val serverId = UUID.randomUUID().toString()
 
 /**
  * Drain flag flipped to `true` at the very first instant of the
- * `ApplicationStopping` lifecycle event (before the in-flight job join
- * loop). Read by `GET /api/v1/readyz`, which returns `503` while
- * draining and `200` otherwise. Kept separate from `/livez` so a
- * Kubernetes liveness probe does **not** see 503 during drain and
- * restart the pod mid-drain — exactly the failure that would defeat
- * `server.shutdownDrainSec`. Audit P1 #12.
+ * `ApplicationStopping` lifecycle event (before the in-flight job join loop).
+ * Read by `GET /api/v1/readyz`, which returns `503` while draining and `200`
+ * otherwise. Kept separate from `/livez` so a Kubernetes liveness probe does
+ * **not** see 503 during drain and restart the pod mid-drain, defeating
+ * `server.shutdownDrainSec`.
  */
 val isDraining: AtomicBoolean = AtomicBoolean(false)
 
@@ -206,9 +207,8 @@ private fun resolveStartupConfig(
     }
 
 /**
- * Installs the routing-scoped ContentNegotiation and wires every API / MCP
- * route under the same rate-limit / authenticate / CSRF nesting as before.
- *
+ * Installs the routing-scoped ContentNegotiation and wires every API / MCP route
+ * under the same rate-limit / authenticate / CSRF nesting as before.
  * ContentNegotiation is route-scoped (installed here, not at application level)
  * so /mcp can override it with McpJson. Ktor forbids mixing an application-level
  * install with a per-route one (DuplicatePluginException). StatusPages responds
@@ -228,19 +228,19 @@ private fun Application.configureRouting(
         // Token-authenticated at the route level (HMR_CALLBACK_TOKEN), NOT by
         // the operator auth schemes — keep physically outside authenticate(...)
         // so the two credential domains can never satisfy each other. ADR-0019.
-        callbackRoutes(deps)
+        callbackRoutes(deps.callbackDeps())
         // Domain-token principal (runners.*.token), the same structural boundary
         // as the callback token: outside authenticate(...). ADR-0066, §12.
         runnerProtocolRoutes(deps.runnerRegistry.externalDomains, deps.runnerRegistry.queue)
         if (config.server.mcp.enabled) {
-            questionsMcpRoutes(deps)
+            questionsMcpRoutes(deps.mcpRouteDeps())
         }
 
         if (authNames.isEmpty()) {
             rateLimit(RateLimitName("perCaller")) {
                 apiV1Routes(deps)
                 if (config.server.mcp.enabled) {
-                    mcpRoutes(deps)
+                    mcpRoutes(deps.mcpRouteDeps())
                 }
             }
         } else {
@@ -255,7 +255,7 @@ private fun Application.configureRouting(
                     // CSRF guard above is session-cookie-scoped (ADR-0016), so
                     // bearer/HMAC MCP clients pass without a CSRF header.
                     if (config.server.mcp.enabled) {
-                        mcpRoutes(deps)
+                        mcpRoutes(deps.mcpRouteDeps())
                     }
                 }
             }

@@ -101,6 +101,9 @@ class McpRoutesTest {
             )
         return mockk<ApiDeps> {
             every { mcpToolFactory } returns factory
+            // `mcpRouteDeps()` is shared with the questions MCP route, so it reads all three.
+            every { questionsService } returns mockk(relaxed = true)
+            every { questionsMcpToolFactory } returns mockk(relaxed = true)
         }
     }
 
@@ -120,10 +123,10 @@ class McpRoutesTest {
         routing {
             if (requireAuth) {
                 authenticate("auth-bearer") {
-                    if (enabled) mcpRoutes(deps())
+                    if (enabled) mcpRoutes(deps().mcpRouteDeps())
                 }
             } else {
-                if (enabled) mcpRoutes(deps())
+                if (enabled) mcpRoutes(deps().mcpRouteDeps())
             }
         }
     }

@@ -3,12 +3,13 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ArtifactPickerDialog } from './artifact-picker-dialog';
-import { homerApi, type ArtifactListing } from '@/lib/api/client';
+import { homerApi } from '@/lib/api/client';
+import type { ArtifactListing } from '@/types/homer';
 
 const NOW = 1_700_000_000;
 
 function listing(files: ArtifactListing['files']): ArtifactListing {
-  return { processId: 7, artifactsDir: '/artifacts/7', files };
+  return { processId: 7, artifactsDir: '/artifacts/7', files, truncated: false };
 }
 
 function renderDialog(open = true) {

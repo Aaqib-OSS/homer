@@ -62,11 +62,8 @@ internal class DispatchGroupService(
      * before any other work and before any row exists, so a refused group leaves nothing behind
      * and a group is never observably partial. Every other gate is [DispatchService.create]'s:
      * live origin, unreserved `answerParam`, question caps, authorized and opted-in target,
-     * satisfiable inputs, positive TTL.
-     *
-     * The group counts against the global PENDING cap and against the origin process's
-     * open-question cap — the latter is the bound on this call's own multiplication, N questions
-     * at once. See ADR-0109.
+     * satisfiable inputs, positive TTL. The group counts against the global PENDING cap and the
+     * origin process's open-question cap — the bound on this call's own multiplication. See ADR-0109.
      */
     suspend fun create(
         originProcessId: Int,
@@ -140,15 +137,12 @@ internal class DispatchGroupService(
         }
 
     /**
-     * The group's aggregated answer — a JSON array of the member answers in question order —
-     * or null while any member is still OPEN. Never reports a group with no members as answered:
-     * an empty set is not "every member answered", it is a group that can never fire.
-     *
-     * Throws [DispatchGroupAnswersTooLargeException] when the aggregate is over
-     * [MAX_ANSWER_BYTES]: `QuestionsService.answer` bounds no answer's length, so N unbounded
-     * answers are the one way a group's payload can grow past what a start should carry. The
-     * caller settles the group FAILED rather than leaving it PENDING on answers that can never
-     * be delivered. See ADR-0109.
+     * The group's aggregated answer — a JSON array of the member answers in question order — or null
+     * while any member is still OPEN. Never reports a group with no members as answered: an empty set
+     * is not "every member answered", it is a group that can never fire. Throws
+     * [DispatchGroupAnswersTooLargeException] when the aggregate is over [MAX_ANSWER_BYTES]:
+     * `QuestionsService.answer` bounds no answer's length, so N unbounded answers are the one way a
+     * group's payload can outgrow a start; the caller settles it FAILED, not PENDING on undeliverable answers. See ADR-0109.
      */
     suspend fun aggregateAnswers(dispatchId: Int): String? {
         val members = repository.groupMembers(dispatchId)

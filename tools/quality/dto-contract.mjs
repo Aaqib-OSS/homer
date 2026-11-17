@@ -36,6 +36,7 @@ export const RENAMES = {
   AgentCronInfo: 'CronInfo',
   AgentFileEntry: 'AgentFileEntryResponse',
   AgentExecutionResponse: 'ExecuteResponse',
+  ArtifactListing: 'ArtifactListingResponse',
   LlmTurnStatus: 'TurnStatus',
 };
 
@@ -45,7 +46,8 @@ export const CONSOLE_ONLY = {
   AgentQueryParam: 'deprecated alias of AgentInput',
   ProcessFilters: 'query parameters of GET /api/v1/processes, not a body',
   Role: 'MeResponse.role is a String the console narrows',
-  LlmStreamFrame: 'the llm.event frame is built with buildJsonObject in StreamingRoutes.kt',
+  ArtifactDownload: 'the client assembles it from an artifact response body and its headers',
+  ArtifactContent: 'the client assembles it from an artifact response text and its headers',
 };
 
 /** Kotlin fields the console deliberately does not mirror (`Class.field`), and why. */

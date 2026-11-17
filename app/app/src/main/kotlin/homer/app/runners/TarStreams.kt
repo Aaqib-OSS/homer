@@ -24,23 +24,12 @@ import kotlin.io.path.isRegularFile
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
 
-/**
- * Transport-neutral gzip'd-tar packing and extraction shared by the Kubernetes
- * sync (tar over the exec channel) and the external runner protocol (tar over
- * HTTP). Extraction treats the far side as a trust boundary: entry names are
- * contained lexically and through [PathSafety], link/device entries are skipped,
- * and MIRROR pruning is the caller's step after its transport confirmed success
- * (ADR-0043, ADR-0055, ADR-0066).
- */
+// Transport-neutral gzip'd-tar packing/extraction for the Kubernetes sync and the external runner
+// protocol; extraction treats the far side as a trust boundary. See ADR-0043, ADR-0055, ADR-0066.
 object TarStreams {
     private val logger = LoggerFactory.getLogger(TarStreams::class.java)
 
-    /**
-     * Extraction bound for callers with no configured ceiling of their own (the
-     * kubernetes sync and the runner instance). Matches the default of the one
-     * configurable ceiling, `maxTransferBytes`, so a bomb is refused at the same
-     * size wherever a tar is extracted.
-     */
+    // Extraction bound where the caller configures none; matches `maxTransferBytes`'s default.
     const val DEFAULT_MAX_EXTRACTED_BYTES: Long = 1L * 1024 * 1024 * 1024
 
     /** Directory nesting an upload walk descends, here and in the ssh upload (§12 rule 4). */
@@ -49,21 +38,12 @@ object TarStreams {
     /** Octal `0100`, the owner-execute mode bit. */
     internal const val OWNER_EXECUTE_BIT = 64
 
-    /**
-     * Realpath of an **operator-configured** pack source, so [pack]'s unconditional
-     * symlink refusal does not break a legitimately symlinked agent dir or
-     * `extraUploads` entry (ADR-0042). Lives next to the refusal it compensates for
-     * so the two cannot drift apart. Never call it on an agent-written path: there
-     * the refusal is the fix (root §12 rule 2). Falls back to [local] when the link
-     * cannot be resolved, so the refusal still fires.
-     */
+    // Realpath of an operator-configured pack source, so [pack]'s symlink refusal does not break
+    // a legitimate link; never call on an agent-written path (§12 rule 2). See ADR-0042.
     fun resolvedPackSource(local: Path): Path = runCatching { local.toRealPath() }.getOrDefault(local)
 
-    /**
-     * Writes [local] as a gzip'd tar to [out] and closes [out]. A directory
-     * contributes its contents (no entry for itself); a regular file contributes
-     * one entry named [singleFileEntryName] (default: its file name).
-     */
+    // Writes [local] as a gzip'd tar to [out] and closes [out]; a directory contributes its
+    // contents, a regular file one entry named [singleFileEntryName] (default: its file name).
     fun pack(
         out: OutputStream,
         local: Path,
@@ -71,11 +51,8 @@ object TarStreams {
         omitDirEntries: Set<String> = emptySet(),
         singleFileEntryName: String? = null,
     ) {
-        // A symlink at the source itself is checked nowhere else: addDirContents guards
-        // only CHILDREN of an already-opened directory, and isDirectory()/isRegularFile()
-        // below follow the link, so addFile would stream the target's bytes. Every caller
-        // but one passes an agent-writable path (§12 rule 2); the operator-configured
-        // sources are realpath'd by AgentExecutor before they get here.
+        // A symlink at the source itself is checked nowhere else — isDirectory()/isRegularFile()
+        // below follow it and addFile would stream the target's bytes (§12 rule 2).
         if (Files.isSymbolicLink(local)) {
             throw SecurityException("pack source '$local' is a symlink")
         }
@@ -87,9 +64,7 @@ object TarStreams {
                 }
 
                 local.isRegularFile() -> {
-                    // The directory walk's hard-link rule, refused rather than skipped: a single
-                    // file was named explicitly, so an empty tar would hide the failure.
-                    // CWE-200.
+                    // Refused, not skipped: a single file was named explicitly, so an empty tar would hide it.
                     if (PathSafety.isHardLinked(local)) throw SecurityException("pack source '$local' is hard-linked")
                     addFile(tar, local, singleFileEntryName ?: local.name)
                 }
@@ -101,26 +76,8 @@ object TarStreams {
         }
     }
 
-    /**
-     * Extracts a gzip'd tar from [input] (read to EOF and closed) into [local]
-     * under [mode]. Returns the set of materialized paths relative to [local] when
-     * `mode == MIRROR && remoteIsDir`, for the caller's [prune]; null otherwise.
-     *
-     * [maxDecompressedBytes] bounds what the stream may expand to, not what it
-     * arrived as: a transport bound on the compressed bytes is no bound at all
-     * here, since a few KiB of gzip decompress to gigabytes on disk (§12 rule 4).
-     * Past the bound the extraction throws [RunnerTransferTooLargeException], so
-     * a partially extracted tree can remain — never anything outside [local].
-     *
-     * An entry whose normalized mode cannot be applied is refused rather than written
-     * unnormalized: its just-written target is deleted and a [SecurityException] is
-     * thrown, again leaving the same partially extracted tree, never anything outside
-     * [local]. A non-POSIX target has no mode to normalize and still extracts bytes-only.
-     *
-     * [posixViewLookup] overrides the per-target `PosixFileAttributeView` lookup —
-     * a test seam only, kept out of object state so tests need no reset and stay
-     * parallel-safe; null means the real lookup.
-     */
+    // Extracts a gzip'd tar from [input] into [local]; [maxDecompressedBytes] bounds decompressed size
+    // (§12 rule 4). A refused entry leaves only a partial tree, never anything outside [local].
     fun extract(
         input: InputStream,
         local: Path,
@@ -140,13 +97,8 @@ object TarStreams {
         return materialized
     }
 
-    /**
-     * Deletes local paths under [local] not present in [keep] (paths relative to
-     * [local] recorded during extraction). Deepest paths first so a directory
-     * empties before its own removal. `Files.walk` does not follow symlinks by
-     * default, so a stale local symlink is deleted as a link — its target is
-     * never touched. Only called after a fully successful download. See ADR-0055.
-     */
+    // Deletes local paths under [local] absent from [keep], deepest first. Only called after a
+    // fully successful download. See ADR-0055.
     fun prune(
         local: Path,
         keep: Set<Path>,
@@ -160,18 +112,8 @@ object TarStreams {
             .forEach { Files.deleteIfExists(it) }
     }
 
-    /**
-     * [visited] holds the realpath of every directory already descended into and
-     * [depth] bounds the descent: a symlink that resolves back INSIDE the upload root
-     * (`loop -> .`, `a/b -> a`) satisfies the containment check below, and
-     * `isDirectory()` follows it, so without these two the walk never terminates
-     * (§12 rule 4). On the walk by name from the root a real directory (its realpath is
-     * its own entry path under the directory's realpath) is always packed, so the result
-     * never depends on which name the walk reaches first; only a symlink to a visited
-     * directory is skipped. Under a symlink ([viaLink]) every visited directory is
-     * skipped, so each directory is walked at most once by name and once through links.
-     * Entries are walked real ones first, then symlinks, each group by name.
-     */
+    // [visited]/[depth] bound the walk: a symlink resolving back inside the upload root would loop
+    // forever (§12 rule 4). A real directory is always packed; only a symlink to a visited one skips.
     private fun addDirContents(
         out: TarArchiveOutputStream,
         dir: Path,
@@ -187,14 +129,8 @@ object TarStreams {
         val realDir = if (depth == 0) root.toRealPath() else dir
         walkEntries(dir, prefix, excludes)
             .forEach { (entry, entryName) ->
-                // Pack the resolved target, not the link: addFile must read the path that was
-                // checked, so re-pointing the link afterwards changes nothing (see addFile).
-                // isDirectory()/isRegularFile() below follow symlinks, and addFile streams
-                // the resolved target's bytes — fine for links that stay inside the
-                // workspace (venv/tooling links are common there), but a link at a host
-                // file would otherwise leak that file's content into the pod. Warn+skip
-                // rather than fail: failing the whole upload over a legitimate absolute
-                // tooling symlink would break real runs.
+                // Pack the resolved target, not the link: addFile must read the checked path, so
+                // re-pointing the link changes nothing. Escaping links warn+skip, never fail.
                 val source = containedSource(entry, root)
                 if (source == null) {
                     logger.warn("Skipping symlink '{}' escaping the upload root", entry)
@@ -207,10 +143,8 @@ object TarStreams {
 
                     source.isRegularFile() -> {
                         if (PathSafety.isHardLinked(source)) {
-                            // A hardlink is a second name for another file's inode, with no path
-                            // back to the first — containment cannot be decided, so the link count
-                            // alone decides. Warn+skip like an escaping symlink: hardlink-deduped
-                            // tool stores (pnpm, Nix) put legitimate ones in real workspaces.
+                            // A hardlink's other name may be outside the root and containment cannot be
+                            // decided, so warn+skip (pnpm/Nix dedupe legitimate ones in real workspaces).
                             logger.warn("Skipping '{}': hard-linked file, its other name may be outside the upload root", entry)
                             return@forEach
                         }
@@ -234,10 +168,8 @@ object TarStreams {
         viaLink: Boolean,
         realDir: Path,
     ) {
-        // Descend on the realpath checked here, not the entry's name: a name is re-resolved
-        // when listed, so a link repointed after its check would lead out of the root
-        // (CWE-59). An ancestor swapped later stays addFile's
-        // residual (accepted in ADR-0047's 2026-09-23 amendment).
+        // Descend on the realpath checked here, not the entry's name: a link repointed after its
+        // check would lead out of the root (CWE-59). See ADR-0047's 2026-09-23 amendment.
         val real = realPathInside(source, root)
         if (real == null) {
             logger.warn("Skipping '{}': does not resolve inside the upload root", entry)
@@ -270,21 +202,8 @@ object TarStreams {
         root: Path,
     ): Path? = runCatching { path.toRealPath() }.getOrNull()?.takeIf { it.startsWith(root.toRealPath()) }
 
-    /**
-     * Opens [file] before reading anything about it: the size and the bytes then come
-     * from one pinned handle, and `NOFOLLOW_LINKS` refuses a symlink swapped in at this
-     * path after its caller's check. Callers pass an already-resolved path for a
-     * contained symlink, so the link is never followed here (§12 rule 2).
-     * The mode is the one read by path (java.nio has no permission read on a handle),
-     * also `NOFOLLOW_LINKS`, so it is not bound to the pinned inode.
-     *
-     * Residual, unclosable with java.nio: an ancestor *directory* of [file] can still be
-     * replaced by a symlink between the caller's check and this open — there is no
-     * openat/dirfd walk and no fstat on an open handle to bind the check to the inode.
-     * Accepted as a same-UID residual (CWE-59 / CWE-367); see
-     * ADR-0047's 2026-09-23 amendment, which records the decision and why the
-     * prerequisite (same-UID write access) is not a trust boundary.
-     */
+    // Opens [file] NOFOLLOW_LINKS before reading size or bytes, so one pinned handle answers both and
+    // a swapped-in symlink is refused (§12 rule 2). An ancestor-dir swap residual is accepted (ADR-0047).
     private fun addFile(
         out: TarArchiveOutputStream,
         file: Path,
@@ -320,11 +239,8 @@ object TarStreams {
         return mode
     }
 
-    /**
-     * The entries of [dir] an upload walk visits, each with its entry name ([prefix]-joined path
-     * from the upload root): real ones first, then symlinks, each group by name, minus the
-     * [isExcluded] ones. Shared with the ssh `WorkspaceSync` upload walk.
-     */
+    // The entries of [dir] an upload walk visits, each with its [prefix]-joined name: real ones
+    // first, then symlinks, each group by name. Shared with the ssh `WorkspaceSync` upload.
     internal fun walkEntries(
         dir: Path,
         prefix: String,
@@ -332,19 +248,15 @@ object TarStreams {
     ): List<Pair<Path, String>> =
         dir
             .listDirectoryEntries()
-            // The flag is read once so a flip mid-sort cannot break the comparator; it pins only the
-            // order. Handling re-stats the entry, and is safe either way: a directory is descended
-            // on its checked realpath, a file is opened NOFOLLOW_LINKS.
+            // The symlink flag is read once so a flip mid-sort cannot break the comparator; it pins
+            // only the order, and handling re-stats each entry safely either way.
             .map { it to Files.isSymbolicLink(it) }
             .sortedWith(compareBy({ it.second }, { it.first.name }))
             .map { (entry, _) -> entry to if (prefix.isEmpty()) entry.name else "$prefix/${entry.name}" }
             .filterNot { (entry, entryName) -> isExcluded(excludes, entryName, entry.name) }
 
-    /**
-     * Whether an upload walk skips the entry [name] at [entryName] (its path from the upload
-     * root): a `/`-prefixed exclude matches that root-anchored path, any other the bare name.
-     * Shared with the ssh `WorkspaceSync` upload walk.
-     */
+    // Whether the walk skips [name] at [entryName]: a `/`-prefixed exclude matches that
+    // root-anchored path, any other the bare name. Shared with the ssh upload.
     internal fun isExcluded(
         excludes: List<String>,
         entryName: String,
@@ -358,11 +270,8 @@ object TarStreams {
             }
         }
 
-    /**
-     * What an upload walk reads for [entry]: the entry itself, or a symlink's resolved target
-     * when it stays inside [root]; null for a symlink that escapes [root] or cannot be resolved.
-     * Shared with the ssh `WorkspaceSync` upload walk.
-     */
+    // What the walk reads for [entry]: the entry, or a symlink's target when it stays inside
+    // [root]; null when the link escapes or cannot be resolved. Shared with the ssh upload.
     internal fun containedSource(
         entry: Path,
         root: Path,
@@ -373,10 +282,8 @@ object TarStreams {
         return if (contained) real else null
     }
 
-    /**
-     * Resolve a remote-supplied tar entry name against [base], rejecting
-     * anything that is not strictly inside it (absolute names, `..`).
-     */
+    // Resolve a remote-supplied entry name against [base], rejecting anything not strictly
+    // inside it (absolute names, `..`).
     internal fun containedEntryPath(
         base: Path,
         entryName: String,
@@ -398,11 +305,8 @@ object TarStreams {
     }
 }
 
-/**
- * Fails with [RunnerTransferTooLargeException] once more than [limit] bytes were
- * read. One copy for both sides of a transfer — the compressed request body on the
- * tar route and the bytes it expands to inside [TarStreams.extract] (§12 rule 4).
- */
+// Fails with [RunnerTransferTooLargeException] once more than [limit] bytes were read; one copy
+// for both sides of a transfer (§12 rule 4).
 internal class BoundedInputStream(
     private val inner: InputStream,
     private val limit: Long,

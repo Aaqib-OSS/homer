@@ -128,7 +128,7 @@ Specifics:
   `key:value` longer than the 193-character `?tag=` bound or outside its URL-safe
   charset — a tag that no query can ever match and that only grows the table
   (denial_of_service / CWE-400).
-- **`?tag=` ANDs with the visibility clause (ADR-0058 pattern).** `getAll` collects
+- **`?tag=` ANDs with the visibility clause (ADR-0058 pattern).** `getAllProcesses` collects
   repeated `tag` params (trimmed, de-duped), caps them at **10** locally in the
   handler (`400` past the cap), and ANDs a correlated `EXISTS (… GROUP BY process_id
   HAVING COUNT(*) = n)` predicate onto the same `WHERE` that carries the owner/grant
@@ -213,17 +213,17 @@ token, post-run `secret` flip).
   gates the callback route are not one transaction. A callback that arrives after a
   run's row is purged would therefore `INSERT` a tag row for a process that no longer
   exists — a tag outliving the run it describes, an orphan that no delete path will
-  ever reclaim. `insertRuntimeTag` now checks row existence **inside its own
+  ever reclaim. `addRuntimeTag` now checks row existence **inside its own
   transaction** and returns "not written" when the row is gone, so the route answers
   the same terminal/unknown `409` it already gives. Denial-path test per §12 rule 8.
 - **`?tag=` id resolution is visibility-scoped in the query, not after it (CWE-400).**
   `tagMatchingIdsTx` originally resolved the `GROUP BY … HAVING COUNT` id set across
   **all** tenants' `process_tags` rows and left the owner/grant union to the outer
-  `getAll` query. That made the intermediate id set — and the work to build it —
+  `getAllProcesses` query. That made the intermediate id set — and the work to build it —
   scale to the whole table regardless of what the caller can see, an availability
   side-channel a reader could drive with tags on runs they have no grant on. The
   visibility union is now pushed into the resolution query as a `JOIN processes` with
-  the same owner/grant predicate `getAll` applies (null `visibleAgents` = admin = no
+  the same owner/grant predicate `getAllProcesses` applies (null `visibleAgents` = admin = no
   filter), so the materialized set never spans invisible runs and the cost scales to
   the caller's own rows. Denial-path test per §12 rule 8.
 - **`?tag=` no longer materializes an id set at all (CWE-400, follow-up).** Even
@@ -262,7 +262,7 @@ token, post-run `secret` flip).
   every id is a bound parameter and SQLite's `SQLITE_LIMIT_VARIABLE_NUMBER` default
   (999) makes an `IN`-list wider than that a runtime error, so a candidate set the
   visibility clause admits past 999 matches must degrade to repeated reads, not a
-  500. The screen is a **required, no-null-escape** parameter of `ProcessRepository.getAll`
+  500. The screen is a **required, no-null-escape** parameter of `ProcessRepository.getAllProcesses`
   whenever a tag filter is present (failing closed otherwise) — ADR-0052 again: a
   defaulted parameter is how a future caller silently re-opens the oracle. The
   screen is per-row identity-based — it needs the row's agent/snapshot — so it must
@@ -321,7 +321,7 @@ rejected, because it could disagree with the visibility arguments it duplicates.
 - Write path: `Process.fromInputTags` (= `langfuseTraceTags(agent, queryParams,
   secretInputKeys)`), `ProcessRepository.obtainProcessId(tags)`,
   `CallbackRoutes` `POST /api/v1/callback/tags` → `ProcessManager.addRuntimeTag`.
-- Read path: `ProcessRepository.getAll(tags)` (`id IN (SELECT … HAVING COUNT)` for an admin, correlated
+- Read path: `ProcessRepository.getAllProcesses(tags)` (`id IN (SELECT … HAVING COUNT)` for an admin, correlated
   `EXISTS … HAVING COUNT` for a scoped caller, ∧ visibility; see the 2026-09-29 amendment),
   `ProcessInfoResponse.tags`; query cap in `SecuredRoutes.parseStatusAllParams`.
 - Validation: `TagValidation` (value/key charset, per-run and per-request caps) is the

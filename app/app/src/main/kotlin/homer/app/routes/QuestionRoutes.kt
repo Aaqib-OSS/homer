@@ -18,7 +18,7 @@ import org.slf4j.LoggerFactory
 private val logger = LoggerFactory.getLogger("homer.app.routes.QuestionRoutes")
 
 /** Operator questions: `GET /questions` and `POST /questions/{id}/answer`. */
-internal fun Route.questionRoutes(deps: ApiDeps) {
+internal fun Route.questionRoutes(deps: QuestionRouteDeps) {
     // Operator view of agent questions (ADR-0019). Answering a
     // non-OPEN question or an unknown id maps to 409/404 via the
     // QuestionNotOpen/QuestionNotFound exceptions in StatusPages.
@@ -27,7 +27,7 @@ internal fun Route.questionRoutes(deps: ApiDeps) {
 }
 
 /** `GET /questions`: the questions asked by the processes the caller can see. */
-private fun Route.questionListRoute(deps: ApiDeps) {
+private fun Route.questionListRoute(deps: QuestionRouteDeps) {
     with(deps) {
         get("/questions") {
             val statusParam = call.request.queryParameters["status"]
@@ -74,7 +74,7 @@ private fun Route.questionListRoute(deps: ApiDeps) {
 }
 
 /** `POST /questions/{id}/answer`: answering a question of a process the caller can control, firing its dispatch. */
-private fun Route.questionAnswerRoute(deps: ApiDeps) {
+private fun Route.questionAnswerRoute(deps: QuestionRouteDeps) {
     with(deps) {
         post("/questions/{id}/answer") {
             val id = call.pathParameter("id")

@@ -146,7 +146,10 @@ class QueryPlanCapture : GlobalStatementInterceptor {
                 .takeIf { it >= 0 }
         }
 
-        /** `getAll` for `ProcessQueriesKt$getAll$2.invokeSuspend` and for `getAll$lambda$0`; the method name otherwise. */
+        /**
+         * `getAllProcesses` for `ProcessQueriesKt$getAllProcesses$2.invokeSuspend` and for
+         * `getAllProcesses$lambda$0`; the method name otherwise.
+         */
         internal fun functionOf(frame: StackTraceElement): String {
             val simple = frame.className.substringAfterLast('.')
             val lambdaOwner = simple.split('$').getOrNull(1)?.takeIf { it.isNotEmpty() && !it.first().isDigit() }

@@ -222,16 +222,11 @@ sealed class AuthConfig {
 
     /**
      * Username + password authentication backed by an HMAC-signed `HttpOnly`
-     * session cookie. Closes audit P0 #6 (long-term phase) — see ADR-0011.
-     *
-     * `sessionSecret` (and the optional `sessionSecretPrevious` rotation key)
-     * sign the cookie payload; both flow through `SysEnvResolver` like
-     * `HmacKeyConfig.secret`. `sessionTtlMin` is the cookie's `Max-Age` and
-     * the `exp` claim in the payload.
-     *
-     * Per-user `role`/`grants` follow the same authorization model as
-     * `Bearer` tokens (ADR-0037), so a single deployment can serve a
-     * tightly-scoped console session alongside broader CLI bearer tokens.
+     * session cookie. `sessionSecret` (and the optional `sessionSecretPrevious`
+     * rotation key) sign the cookie payload and flow through `SysEnvResolver`
+     * like `HmacKeyConfig.secret`; `sessionTtlMin` is the cookie's `Max-Age` and
+     * the payload's `exp` claim. Per-user `role`/`grants` follow the same
+     * authorization model as `Bearer` tokens (ADR-0037). See ADR-0011.
      */
     @Serializable
     @SerialName("password")
@@ -394,12 +389,11 @@ enum class HmacAlgorithm {
 
 /**
  * `SameSite` attribute applied to the session cookie issued by
- * [AuthConfig.Password]. `LAX` (default) preserves the original single-origin
- * console behavior. `NONE` is required when the console is served from a
- * different origin than the API (cross-origin cookie auth) and is only valid
- * alongside `cookieSecure = true`. Moving off `LAX` does not reopen CSRF —
- * the defense is the `X-Homer-CSRF` custom-header guard plus pinned
- * credentialed CORS (ADR-0016), not SameSite. See ADR-0028.
+ * [AuthConfig.Password]. `LAX` is the default. `NONE` is required when the
+ * console is served from a different origin than the API (cross-origin cookie
+ * auth) and is only valid alongside `cookieSecure = true`. Moving off `LAX`
+ * does not reopen CSRF — the defense is the `X-Homer-CSRF` custom-header guard
+ * plus pinned credentialed CORS (ADR-0016), not SameSite. See ADR-0028.
  */
 @Serializable
 enum class SameSiteMode {

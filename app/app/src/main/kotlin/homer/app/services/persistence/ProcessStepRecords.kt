@@ -28,7 +28,7 @@ suspend fun ProcessRepository.addExecution(
     processId: Int,
     executionInfo: ExecutionInfo,
 ) {
-    db.query {
+    query {
         val row =
             Processes
                 .select(Processes.executions)
@@ -50,7 +50,7 @@ suspend fun ProcessRepository.completeStep(
     nextLabel: String?,
     nextStart: Long?,
 ): Boolean =
-    db.query {
+    query {
         val row =
             Processes
                 .select(Processes.executions, Processes.status)
@@ -90,7 +90,7 @@ suspend fun ProcessRepository.settleAccounting(
     pending: LlmAccounting,
     settled: LlmAccounting,
 ): SettlementSwap =
-    db.query {
+    query {
         val row =
             Processes
                 .select(Processes.executions)
@@ -114,7 +114,7 @@ suspend fun ProcessRepository.setCurrentCommand(
     label: String?,
     startTime: Long?,
 ): Boolean =
-    db.query {
+    query {
         val row =
             Processes
                 .select(Processes.status)
@@ -131,7 +131,7 @@ suspend fun ProcessRepository.setRunnerState(
     processId: Int,
     update: (RunnerState?) -> RunnerState,
 ) {
-    db.query {
+    query {
         val row =
             Processes
                 .select(Processes.runnerState)
@@ -143,7 +143,7 @@ suspend fun ProcessRepository.setRunnerState(
 }
 
 suspend fun ProcessRepository.getRunnerState(processId: Int): RunnerState? =
-    db.read {
+    read {
         Processes
             .select(Processes.runnerState)
             .where { Processes.id eq processId }
@@ -161,7 +161,7 @@ suspend fun ProcessRepository.setStop(
     processId: Int,
     stop: RunStop,
 ) {
-    db.query {
+    query {
         Processes.update({ Processes.id eq processId }) { it[Processes.stop] = encodeRunStop(stop) }
     }
 }
@@ -177,7 +177,7 @@ suspend fun ProcessRepository.addCost(
     delta: Double,
     source: CostSource,
 ) {
-    db.query {
+    query {
         val row =
             Processes
                 .select(Processes.costSource, Processes.costUsd)
@@ -205,7 +205,7 @@ suspend fun ProcessRepository.setArtifactsDir(
     processId: Int,
     artifactsDir: String,
 ) {
-    db.query {
+    query {
         Processes.update({ Processes.id eq processId }) { it[Processes.artifactsDir] = artifactsDir }
     }
 }
@@ -214,7 +214,7 @@ suspend fun ProcessRepository.setTraceId(
     processId: Int,
     traceId: String,
 ) {
-    db.query {
+    query {
         Processes.update({ Processes.id eq processId }) { it[Processes.traceId] = traceId }
     }
 }
@@ -223,18 +223,16 @@ suspend fun ProcessRepository.setTraceId(
  * Stores why the run ended FAILED before any of its commands started, and the run that
  * blocked it when the cause names one. The write is guarded: it lands only while the row
  * still reads `FAILED` and shows no started work — no recorded execution and no current
- * command. A run that failed while it was running therefore keeps NULL, and so does one
- * whose failure raced a kill that won the status CAS. Returns whether the write landed.
- *
- * [reason] is truncated to `MAX_FAILURE_REASON_LENGTH` here, so the column's bound holds
- * whatever the caller passes. See ADR-0020.
+ * command. A run that failed while running, or whose failure raced a kill that won the
+ * status CAS, keeps NULL. [reason] is truncated to `MAX_FAILURE_REASON_LENGTH` here, so the
+ * column's bound holds whatever the caller passes. See ADR-0020.
  */
 suspend fun ProcessRepository.setFailureReason(
     processId: Int,
     reason: String,
     holderRunId: Int?,
 ): Boolean =
-    db.query {
+    query {
         val row =
             Processes
                 .select(Processes.status, Processes.executions, Processes.currentCommand)

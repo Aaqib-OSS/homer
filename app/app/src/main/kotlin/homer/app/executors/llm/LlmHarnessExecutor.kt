@@ -108,14 +108,11 @@ class LlmHarnessExecutor<C>(
 
     /**
      * Invokes the harness CLI, validating its output, and retrying transient failures
-     * (non-zero exit — except a terminal stop the command opted into, which is never
-     * retried — OR [MalformedLlmOutputException]) per the command's [LlmRetry]
-     * configuration. With the default `attempts = 1` the loop runs exactly once.
-     *
-     * The last attempt's outcome is the one that surfaces: a successful run is returned
-     * directly; if every attempt failed, the most recent [MalformedLlmOutputException]
-     * is rethrown, otherwise the most recent non-zero [CommandResult] is returned (so
-     * downstream `continueIfFail` / `finishExitCode` semantics are preserved).
+     * (non-zero exit — except a terminal stop the command opted into, never retried — or
+     * [MalformedLlmOutputException]) per [LlmRetry]; the default `attempts = 1` runs once.
+     * The last attempt's outcome surfaces: a success is returned directly; if every attempt
+     * failed the most recent [MalformedLlmOutputException] is rethrown, else the most recent
+     * non-zero [CommandResult] is returned (preserving `continueIfFail` / `finishExitCode`).
      */
     private suspend fun runWithRetry(
         command: C,
@@ -252,15 +249,14 @@ class LlmHarnessExecutor<C>(
                 interruptGrace = attempt.context.interruptGrace,
             )
         } catch (e: Throwable) {
-            // `e` must be the exception rethrown below — AgentExecutor branches
-            // on its type (OutputCapExceededException vs CancellationException).
-            // See ADR-0061.
+            // `e` must be the exception rethrown below — AgentExecutor branches on
+            // its type (OutputCapExceededException vs CancellationException). See ADR-0061.
             // [denial_of_service / CWE-400] Capture cancellation state before
             // entering NonCancellable — inside it isActive is always true, so
             // this is the only place a genuine cancellation (parent job killed)
             // can still be told apart from the shell's own throw; a genuinely
-            // cancelled attempt must not hold this block open for a remote
-            // lookup, though its spend is real and is still accounted.
+            // cancelled attempt must not hold this block open for a remote lookup,
+            // though its spend is real and is still accounted.
             val callerActive = currentCoroutineContext().isActive
             val endedAtMs = System.currentTimeMillis()
             accountAborted(attempt, allowRemoteLookup = callerActive, endedAtMs, abortedBy = "the shell aborted the attempt")
@@ -286,13 +282,9 @@ class LlmHarnessExecutor<C>(
     /**
      * Accounts an aborted attempt uncancellably and hands its telemetry off, since `execute`'s
      * hand-off never runs on this path. A failure is logged, never thrown: the caller rethrows
-     * the attempt's own exception.
-     *
-     * An attempt a graceful stop interrupted is accounted the same way — the CLI may already
-     * have written its `result` before the signal landed, and `account` prices the stream
-     * leniently either way — and additionally hands what it learned to [ExecutionContext.facts]:
-     * the spend, so the step's own row carries it, and the CLI session id, so the stop steps
-     * receive it as `HMR_STOP_SESSION_ID`. See ADR-0108.
+     * the attempt's own exception. An attempt a graceful stop interrupted is accounted the same
+     * way and additionally hands [ExecutionContext.facts] the spend (the step's row carries it)
+     * and the CLI session id, so the stop steps receive it as `HMR_STOP_SESSION_ID`. See ADR-0108.
      */
     @Suppress("SuspendFunSwallowedCancellation") // NonCancellable inside; its caller rethrows the original
     private suspend fun accountAborted(

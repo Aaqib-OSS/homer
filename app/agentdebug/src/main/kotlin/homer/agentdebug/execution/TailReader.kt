@@ -4,11 +4,9 @@ package homer.agentdebug.execution
  * Tracks the read position of a single output file while it is being tailed,
  * and emits newly-appended lines exactly once.
  *
- * Single-owner by construction: a [TailReader] instance is created per
- * (file, prefix) pair, advanced only by its tail coroutine via [consume],
- * and read once by [flushRemaining] after that coroutine has been joined.
- * Because the handoff is ordered by `cancelAndJoin` there is no concurrent
- * access, so the position needs no synchronization.
+ * Single-owner by construction: one instance per (file, prefix), advanced only by
+ * its tail coroutine via [consume] and read once by [flushRemaining] after that
+ * coroutine is joined; ordered by `cancelAndJoin`, so no synchronization is needed.
  */
 class TailReader(
     private val prefix: String,

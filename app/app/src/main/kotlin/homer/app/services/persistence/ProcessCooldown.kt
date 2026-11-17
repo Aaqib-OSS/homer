@@ -10,11 +10,11 @@ import org.jetbrains.exposed.v1.jdbc.select
 
 // The cooldown bound's two lookups in the transaction-local form `obtainProcessId` evaluates inside
 // the INSERT's transaction (ADR-0051), plus the subject filter they share, so a keyed and a keyless
-// start cannot scope differently (ADR-0106). The `db.read` forms `CooldownGate` calls stay on
+// start cannot scope differently (ADR-0106). The `read { }` forms `CooldownGate` calls stay on
 // ProcessRepository, where the pre-flight gate can stub them.
 
 // Transaction-local forms of the two reads `CooldownGate` calls, so the authoritative cooldown
-// check in obtainProcessId can run inside the INSERT's transaction. `db.query` opens its own, and
+// check in obtainProcessId can run inside the INSERT's transaction. `query { }` opens its own, and
 // nesting one inside another would deadlock the writer.
 internal fun ProcessRepository.latestRunStartedAtTx(
     agentName: String,
@@ -44,16 +44,13 @@ private fun ProcessRepository.cooldownPredicate(
         cooldownKey?.let { Processes.cooldownKey eq it },
     ).reduce { a, b -> a and b }
 
-// MAX over ended_at, not the newest row's history: `id` is INSERT order, and
-// same-agent runs overlap by default (the default lockStrategy.key is per
-// process and maxParallelRuns is 10), so an older run can fail AFTER a newer
-// one. Ordering by id then picked the newer row's EARLIER failure and let a
-// start through inside the afterFailure window. Rows from before v14 have a
-// null ended_at and are skipped by MAX. See ADR-0051.
+// MAX over ended_at, not the newest row's history: `id` is INSERT order, and same-agent
+// runs overlap by default, so an older run can fail AFTER a newer one — ordering by id
+// would pick the newer row's earlier failure and let a start through. Rows from before
+// v14 have a null ended_at and are skipped by MAX. See ADR-0051.
 //
-// Only a run that failed while executing a command arms the window: a run refused
-// before it started never ran and carries a `failure_reason`, written only in that
-// case (ADR-0098 — PreStartFailureReason holds the five causes).
+// Only a run that failed while executing a command arms the window: a run refused before
+// it started carries a `failure_reason` and never arms it (ADR-0098).
 internal fun ProcessRepository.latestFailureEndedAtTx(
     agentName: String,
     cooldownKey: String?,

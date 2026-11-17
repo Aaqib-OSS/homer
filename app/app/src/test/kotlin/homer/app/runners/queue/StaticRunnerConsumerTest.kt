@@ -17,6 +17,7 @@ import org.junit.jupiter.api.assertThrows
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
@@ -192,6 +193,24 @@ class StaticRunnerConsumerTest {
             runCurrent()
 
             assertEquals(mapOf("HMR_API_URL" to "u"), result.await().env)
+        }
+
+    // Delivered unwrapped, not merely with the same env: an alias-filtered run was composed against
+    // this runner's env already, so the session passes through (see `RunnerSession.deliveredFor`).
+    @Test
+    fun `alias-filtered claim is delivered with the session's own env map`() =
+        runTest {
+            val queue = RunnerClaimQueue(maxPending = 10)
+            val session = mockk<RunnerSession>(relaxed = true)
+            val env = mapOf("HMR_API_URL" to "u")
+            every { session.env } returns env
+            val runner = FakeRunner("k8s", open = { session }, runnerEnv = mapOf("TOKEN" to "t"))
+            StaticRunnerConsumer(runner, tags = emptySet(), concurrency = null, queue = queue).start(backgroundScope)
+
+            val result = async { queue.awaitClaim(params(1), RunnerFilter.Alias("k8s"), 300.seconds) }
+            runCurrent()
+
+            assertSame(env, result.await().env)
         }
 
     @Test

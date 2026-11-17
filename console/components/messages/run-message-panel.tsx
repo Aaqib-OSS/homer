@@ -9,7 +9,7 @@ import { useCan } from '@/lib/auth/use-can';
 import { HomerApiError } from '@/lib/api/client';
 import { formatTimestamp } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
-import type { ProcessInfo, RunMessage, RunMessageStatus } from '@/types/homer';
+import type { ErrorResponse, ProcessInfo, RunMessage, RunMessageStatus } from '@/types/homer';
 
 const statusStyles: Record<RunMessageStatus, { label: string; className: string }> = {
   QUEUED: { label: 'Queued', className: 'bg-amber-500 text-white' },
@@ -20,7 +20,7 @@ const statusStyles: Record<RunMessageStatus, { label: string; className: string 
 // The server's `msg` when it sent one (400/404/409/429), else the generic message.
 function sendErrorText(err: unknown): string {
   if (err instanceof HomerApiError) {
-    const msg = (err.body as { msg?: unknown } | undefined)?.msg;
+    const msg = (err.body as Partial<ErrorResponse> | undefined)?.msg;
     if (typeof msg === 'string' && msg) return msg;
   }
   return err instanceof Error ? err.message : 'Failed to send the message.';

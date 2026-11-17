@@ -136,17 +136,12 @@ internal class DispatchService(
     }
 
     /**
-     * Starts the target run for the (now answered) question. Claims the dispatch
-     * (PENDING→DISPATCHING) before starting the run so a crash between run-start and
-     * markDispatched cannot cause a duplicate re-fire. No-op when there is nothing to
-     * fire (no dispatch, not PENDING, or the claim was lost to a concurrent cancel) —
-     * idempotent, safe for both the answer path and the startup re-fire. After the
-     * claim succeeds, ANY failure (HomerException or unexpected) marks the dispatch
-     * FAILED immediately — the claim is never left dangling in-process; boot-time
-     * [failOrphanedDispatching] only handles a hard crash mid-fire. The one exception
-     * is a start the shutdown drain refuses: it releases the claim back to PENDING
-     * (see [startTarget]). Returns the resulting Dispatch (DISPATCHED/FAILED, or
-     * PENDING on a drain deferral), or null when there is nothing to fire.
+     * Starts the target run for the (now answered) question. Claims the dispatch (PENDING→DISPATCHING)
+     * before starting the run so a crash between run-start and markDispatched cannot duplicate the fire.
+     * No-op when there is nothing to fire (no dispatch, not PENDING, or the claim lost to a concurrent
+     * cancel) — idempotent, safe for the answer path and the startup re-fire. After the claim, ANY failure
+     * marks it FAILED at once, never dangling in-process ([failOrphanedDispatching] covers only a hard crash
+     * mid-fire) — except a drain-refused start, which releases the claim to PENDING (see [startTarget]). Returns the Dispatch or null.
      */
     suspend fun fire(
         questionId: String,
@@ -179,7 +174,6 @@ internal class DispatchService(
      * Fires a GROUP dispatch once every member question is ANSWERED, null while any is OPEN. The
      * claim CAS (in [claimAndStart]) is the gate that starts the target exactly once when the
      * last two answers land concurrently or the boot re-fire races a live answer.
-     *
      * An aggregate over `DispatchGroupService.MAX_ANSWER_BYTES` settles the group FAILED rather
      * than leaving it PENDING; it is caught here because [fire] also runs on the boot path,
      * where a throw would abort startup reconciliation.
@@ -310,13 +304,12 @@ internal class DispatchService(
     }
 
     /**
-     * Starts [agent] immediately — no operator question, no dispatch row — and returns the
-     * new process id. Fire-and-forget and fully decoupled: a fresh empty invocation chain
-     * (no cycle/depth linkage), exactly like [fire]. The only link back to the caller is the
-     * referer ([originProcessId] + asking agent name) recorded on the run's `agent_request`
-     * span. The origin process must still be live ([QuestionsClosedForProcessException]) so a
-     * dead process cannot keep spawning runs, and the target must opt in via `dispatch.enabled`
-     * — the same gate [create] enforces. See ADR-0022.
+     * Starts [agent] immediately — no operator question, no dispatch row — and returns the new
+     * process id. Fire-and-forget and fully decoupled: a fresh empty invocation chain (no cycle/depth
+     * linkage), exactly like [fire]. The only link back to the caller is the referer ([originProcessId]
+     * + asking agent name) recorded on the run's `agent_request` span. The origin process must still be
+     * live ([QuestionsClosedForProcessException]) so a dead process cannot keep spawning runs, and the
+     * target must opt in via `dispatch.enabled` — the same gate [create] enforces. See ADR-0022.
      */
     suspend fun dispatchNow(
         originProcessId: Int,

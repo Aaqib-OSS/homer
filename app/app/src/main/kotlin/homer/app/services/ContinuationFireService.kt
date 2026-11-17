@@ -161,11 +161,10 @@ internal class ContinuationFireService(
     /**
      * Fires a JOIN continuation once, after every watched sub is terminal. Claimed (PENDING→
      * DISPATCHING CAS) up front so concurrent terminal hooks, race-close, and boot replay all
-     * collapse to exactly one fire. Aggregates each sub's terminal result (per-sub transformer,
-     * over-cap → minted resultRef; absent/purged sub → UNKNOWN + null result, carried as partial)
-     * into one map keyed by interrupt id, byte-for-byte the single-fanout payload per entry, then
-     * starts the target with that map under [Continuation.resumeParam]. Never throws into the
-     * caller. See ADR-0026.
+     * collapse to exactly one fire. Aggregates each sub's terminal result (per-sub transformer;
+     * over-cap → minted resultRef, absent/purged sub → UNKNOWN + null result as partial) into one
+     * map keyed by interrupt id — byte-for-byte the single-fanout payload per entry — and starts
+     * the target with it under [Continuation.resumeParam]; never throws to the caller. See ADR-0026.
      */
     suspend fun fireJoin(continuation: Continuation) {
         if (!repository.claim(continuation.id)) return
@@ -298,18 +297,12 @@ internal class ContinuationFireService(
         )
 
     /**
-     * Settles a fire that threw a [HomerException]. ADR-0023 promises the parent always
-     * wakes, but a fire can fail for a reason that has nothing to do with this
-     * continuation and may clear on its own — the target agent is over its cost cap, the
-     * process table is full, the target's queue is full. Ending those as FAILED loses the
-     * resume permanently, and the only trace was a WARN line; agents that use continuations
-     * as their crash-reporting channel would lose the report of the crash.
-     *
-     * So: transient reasons go back to PENDING with the attempt counted and the next one
-     * scheduled with exponential backoff, and the sweep re-fires them. Everything else
-     * (target gone, not dispatchable, unauthorized, bad input) is permanent and still
-     * FAILs immediately — retrying it would just burn sweep cycles. The retry itself is
-     * bounded twice: by [MAX_FIRE_ATTEMPTS], and by the continuation's own TTL.
+     * Settles a fire that threw a [HomerException]. ADR-0023 promises the parent always wakes, but a
+     * fire can fail for a reason unrelated to this continuation that may clear on its own (target over
+     * its cost cap, process table full, queue full); ending those FAILED loses the resume permanently.
+     * Transient reasons go back to PENDING with the attempt counted and the next scheduled with
+     * exponential backoff, re-fired by the sweep; everything else (target gone, not dispatchable,
+     * unauthorized, bad input) is permanent and FAILs immediately. Bounded twice: by [MAX_FIRE_ATTEMPTS] and the continuation's own TTL.
      */
     private suspend fun settleFailedFire(
         continuation: Continuation,

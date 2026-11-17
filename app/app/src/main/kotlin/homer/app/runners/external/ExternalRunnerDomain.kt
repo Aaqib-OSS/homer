@@ -3,11 +3,16 @@ package homer.app.runners.external
 import homer.app.exceptions.RunnerRegistrationRejectedException
 import homer.app.exceptions.TooManyRunnerInstancesException
 import homer.app.models.RunnerConfig
+import homer.app.models.RunnerFilter
 import homer.app.models.RunnerTagValidation
 import homer.app.runners.Runner
 import homer.app.runners.RunnerSession
 import homer.app.runners.RunnerSessionParams
+import homer.app.runners.queue.ClaimRequest
 import homer.app.runners.queue.RunnerClaimQueue
+import homer.app.runners.queue.deliveredFor
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
 
@@ -15,7 +20,8 @@ import java.util.concurrent.ConcurrentHashMap
  * One `!<external>` alias: the token its instances authenticate with, the live
  * instance registry and the heartbeat sweep. Implements [Runner] only for the
  * facets `QueuedRunner` reads (`isRemote`, `runnerEnv`, `sysEnvBackedEnvNames`);
- * sessions are created by the claim route, never by [openSession]. See ADR-0066.
+ * sessions are created by [deliverClaim] when an instance's long-poll takes a
+ * request, never by [openSession]. See ADR-0066.
  */
 class ExternalRunnerDomain(
     override val alias: String,
@@ -32,7 +38,7 @@ class ExternalRunnerDomain(
     private val registerLock = Any()
 
     override suspend fun openSession(params: RunnerSessionParams): RunnerSession =
-        error("External runner '$alias' sessions are created by the claim route, never by openSession")
+        error("External runner '$alias' sessions are created by deliverClaim, never by openSession")
 
     fun register(request: RegisterInstanceRequest): ExternalRunnerInstance {
         val tags =
@@ -138,6 +144,54 @@ class ExternalRunnerDomain(
         instance.sessionOpened()
         sessions[session.id] = session
         return session
+    }
+
+    /**
+     * Hands the claimed [request] to [instance]: completes it with a session opened here, or with
+     * `null` when the run stopped waiting (the session is closed and the claim reads as unmatched).
+     * A failure before it is answered fails the request instead of leaving the run parked for its
+     * full claim TTL.
+     */
+    @Suppress("SuspendFunSwallowedCancellation") // fails the claim under NonCancellable and rethrows
+    suspend fun deliverClaim(
+        instance: ExternalRunnerInstance,
+        request: ClaimRequest,
+    ): ClaimResponse? {
+        // Once take() hands us `request` it is CLAIMED and off the deque: nobody else
+        // will ever complete or fail it. `delivered` tracks whether we reached a point
+        // where the request was answered one way or another, so a failure before that
+        // (openSession throwing, or this coroutine dying) fails the request instead of
+        // leaving the waiting run parked for its full claim TTL.
+        var delivered = false
+        var session: ExternalRunnerSession? = null
+        try {
+            session = openSession(instance, request.params)
+            if (!request.complete(session.deliveredFor(request.filter, runnerEnv))) {
+                delivered = true
+                // The run stopped waiting between our claim and now: as if nothing matched.
+                session.close()
+                return null
+            }
+            delivered = true
+            touch(instance)
+            logger.info("Runner '{}': instance '{}' claimed process {}", alias, instance.name, request.params.processId)
+            return ClaimResponse(
+                sessionId = session.id,
+                processId = request.params.processId,
+                agentName = request.params.agentName,
+                tags = (request.filter as? RunnerFilter.Tags)?.tags?.sorted() ?: emptyList(),
+            )
+        } catch (e: Throwable) {
+            withContext(NonCancellable) {
+                if (!delivered) {
+                    session?.close()
+                    request.fail(
+                        ExternalRunnerException("Runner instance '${instance.name}' disconnected before the claim completed"),
+                    )
+                }
+            }
+            throw e
+        }
     }
 
     fun session(id: String): ExternalRunnerSession? = sessions[id]

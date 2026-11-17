@@ -122,8 +122,10 @@ scheduling state only — no run record or response field carries it (ADR-0077,
 ADR-0099).
 
 An `!<external>` domain (`ExternalRunnerDomain`) is a `Runner` only for the
-facets `QueuedRunner` reads; its sessions are created by the claim route
-(`RunnerProtocolRoutes`) when an instance's long-poll takes a request. An
+facets `QueuedRunner` reads; its sessions are created by
+`ExternalRunnerDomain.deliverClaim` when an instance's long-poll takes a request
+(the claim route, `RunnerProtocolRoutes`, only calls it and answers with the
+returned `ClaimResponse`, or with `204` when the run stopped waiting). An
 `ExternalRunnerSession` turns each primitive into one `RunnerOp` in its
 `OpMailbox`; the instance drains ops through `next` and answers with
 `OpResult`s, tars ride the `tar` routes through `TarStreams`, and command

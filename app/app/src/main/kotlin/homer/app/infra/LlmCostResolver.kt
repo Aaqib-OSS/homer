@@ -28,25 +28,12 @@ import java.net.SocketTimeoutException
 import java.nio.channels.UnresolvedAddressException
 
 /**
- * Prices one Claude attempt: the operator's session-spend endpoint first, the CLI's own
- * figure second. Every failure of the first rung degrades to the second with a reason,
- * never an exception — cost is metadata, the run must complete. Each request is bounded
- * by [SessionSpendConfig.timeoutMs] and [MAX_BODY_BYTES].
- *
- * With [SessionSpendConfig.callsPath] set the endpoint also reports how many of the
- * session's calls it has ingested, and the lookup is retried on the fixed
- * [DEFAULT_POLL_OFFSETS_MS] schedule until that count reaches the calls the attempt made
- * — spend ingestion is asynchronous, so the figure available at CLI exit is often partial.
- * A harness that cannot count its model calls passes `expectedCalls = null`: the figure is
- * then accepted once two successive readings agree and show at least one call (ADR-0070).
- * Without it, one request as before.
- *
- * With the request-window keys set ([SessionSpendConfig.requestsPath], `startedPath`,
- * `requestSpendPath`) the figure is instead the sum of the rows whose start time falls in
- * the attempt's own `[startedAtMs, endedAtMs]` window (plus `windowGraceMs` on each side),
- * and the window's row count drives the completeness poll. This is what prices a
- * `--continue`-resumed session per attempt rather than charging each run the session's
- * cumulative total. See ADR-0061.
+ * Prices one Claude attempt: the session-spend endpoint first, the CLI figure second, every
+ * failure of the first degrading to the second with a reason (cost is metadata, the run must
+ * complete); each request is bounded by [SessionSpendConfig.timeoutMs] and [MAX_BODY_BYTES].
+ * With [SessionSpendConfig.callsPath] the lookup polls on [DEFAULT_POLL_OFFSETS_MS] until the
+ * attempt's calls are ingested; with `expectedCalls = null` a figure is accepted once two
+ * readings agree (ADR-0070). With the request-window keys it sums the attempt's own window rows (ADR-0061).
  */
 class LlmCostResolver(
     private val config: SessionSpendConfig?,

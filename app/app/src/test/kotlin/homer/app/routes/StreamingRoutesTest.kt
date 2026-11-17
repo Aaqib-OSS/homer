@@ -164,8 +164,12 @@ class StreamingRoutesTest {
             )
         assertEquals("llm.event", frame.name)
         assertEquals("1:2:30:4", frame.id)
-        assertEquals(true, frame.data.startsWith("""{"processId":7,"cmdIndex":1,"attemptIndex":2,"event":{"""), frame.data)
-        assertEquals(true, "slow down" in frame.data, frame.data)
+        // The payload is the serialized frame, byte for byte: field order, the `type`
+        // discriminator and the nested event all as the client reads them.
+        assertEquals(
+            """{"processId":7,"cmdIndex":1,"attemptIndex":2,"event":{"type":"transient_error","message":"slow down"}}""",
+            frame.data,
+        )
         assertEquals(SseFrame("llm.end", "{}"), llmEventFrame(7, LlmStreamEvent.End))
     }
 

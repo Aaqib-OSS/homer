@@ -251,7 +251,7 @@ not make — if the fan-out shows up in practice, that is the change to reach fo
 - Write path: `AgentRunStarter.start(parentProcessId)`, `ProcessFactory.create`,
   `ProcessRepository.obtainProcessId`; header resolution in
   `SecuredRoutes.resolveParentProcessHeader`.
-- Read path: `ProcessRepository.getAll(parentProcessId)`, `ProcessInfoResponse.parentProcessId`.
+- Read path: `ProcessRepository.getAllProcesses(parentProcessId)`, `ProcessInfoResponse.parentProcessId`.
 - Env: `EnvConstants.PARENT_PROCESS_ID`, `EnvConstants.PARENT_PROCESS_HEADER`.
 - Root (amendment above): same write/read paths carrying `rootProcessId` /
   `root_process_id`; filters `?rootProcessId=` and `?roots=`; env

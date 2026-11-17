@@ -10,14 +10,12 @@ import io.ktor.server.routing.post
 
 /**
  * `GET`/`POST /api/v1/maintenance`: the maintenance-mode toggle and its state. `GET` admits an
- * admin or a `read` grant on `*` (ADR-0111); `POST` stays admin-only.
- *
- * The gate is handler-level and fail-closed, and a denial is the same `404` an unknown
- * resource answers — never a `403`, which would confirm the endpoint exists
- * (ADR-0037, ADR-0047 rule 3, ADR-0092). The body is parsed *after* the gate, so a
- * non-admin caller learns nothing about the request shape either.
+ * admin or a `read` grant on `*` (ADR-0111); `POST` stays admin-only. The gate is handler-level
+ * and fail-closed, and a denial is the same `404` an unknown resource answers — never a `403`,
+ * which would confirm the endpoint exists (ADR-0037, ADR-0047 rule 3, ADR-0092). The body is
+ * parsed *after* the gate, so a non-admin caller learns nothing about the request shape either.
  */
-internal fun Route.maintenanceRoutes(deps: ApiDeps) {
+internal fun Route.maintenanceRoutes(deps: MaintenanceDeps) {
     with(deps) {
         get("/maintenance") {
             if (!authorizer.canReadServerState(call.principalName())) return@get call.respondNotFound()

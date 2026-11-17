@@ -75,9 +75,8 @@ object ProcessRunner {
          * exit, then [kill] what is left. Best-effort — a command that exits inside the grace
          * leaves the kill a no-op, one that ignores SIGINT is killed after the grace, and a host
          * without `setsid` (no known group) still gets the [kill]. Null skips the wait, not the
-         * SIGINT — the group is signalled either way. The pgid
-         * is the process's own group or nothing, the same guard [kill] uses, so it can never be
-         * this runner's group. See ADR-0108.
+         * SIGINT — the group is signalled either way. The pgid is the process's own group or
+         * nothing, the same guard [kill] uses, so it can never be this runner's group. ADR-0108.
          */
         fun interrupt(grace: Duration?) {
             if (!process.isAlive) return
@@ -120,16 +119,12 @@ object ProcessRunner {
         }
 
         /**
-         * Waits for both pumps to hand over what they still hold and returns the streams whose
-         * drain was abandoned with chunks unsent. [remaining] is what the op's timeout has left.
-         *
-         * The fixed [PUMP_JOIN] floor comes first, and is what makes the rest decidable: it is
-         * what a post already in flight needs, and a read still in flight after it cannot be one
-         * the dead process's output is about to end. Such a read is parked on a write end that
-         * outlives the step — a grandchild holding the pipe, which nothing wakes — and its pump
-         * has nothing left to hand over, so it is shed instead of spending the op's budget on it.
-         * A pump still posting gets the rest of that budget. Either way the wait is bounded on
-         * every path and a drain that never finishes is shed, not joined (§12 rules 4–5).
+         * Waits for both pumps to hand over what they still hold and returns the streams whose drain
+         * was abandoned with chunks unsent. [remaining] is what the op's timeout has left. The fixed
+         * [PUMP_JOIN] floor comes first: a post already in flight needs it, and a read still in flight
+         * after it is parked on a write end that outlives the step (a grandchild holding the pipe, which
+         * nothing wakes), so it is shed rather than spending the op's budget on it. A pump still posting
+         * gets the rest, so the wait is bounded on every path; a drain that never finishes is shed, not joined (§12 4–5).
          */
         private suspend fun reap(
             finished: Boolean,

@@ -14,6 +14,9 @@
   "ignoreExportsUsedInFile": { "interface": true, "type": true },
   // shadcn CLI output (console/CLAUDE.md § Gotchas): its export surface is not edited by hand.
   "ignoreIssues": {
-    "components/ui/**": ["exports", "types"]
+    "components/ui/**": ["exports", "types"],
+    // Every export is a wire mirror the dto-contract check reads from the file itself;
+    // whether console code currently imports a given type is not what it is there for.
+    "types/homer.ts": ["types"]
   }
 }

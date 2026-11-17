@@ -71,8 +71,8 @@ internal class LlmSpanEmitter(
                 if (usage.reasoning > 0) put("reasoning", usage.reasoning)
             }.toString(),
         )
-        // Omitted rather than priced at zero when neither the resolver nor the harness
-        // reports a cost: a zero cost_details used to read as "this run was free."
+        // Omitted rather than priced at zero when neither the resolver nor the harness reports a
+        // cost: a zero cost_details would read as "this run was free."
         if (cost != null) {
             resultSpan.setAttribute(
                 "langfuse.observation.cost_details",

@@ -42,13 +42,11 @@ private data class InspectOutput(
 
 /**
  * Produces each `Command.LangGraph`'s topology (and deprecated Mermaid source) via
- * `homer_langgraph inspect --json`, the read-only introspection mode. A per-command
- * failure surfaces as [LangGraphGraphInfo.error]; the caller still gets one entry
- * per command.
- *
- * The agent's declared `env` is passed to each inspect subprocess so the agent's
- * `PYTHONPATH` makes its module importable, exactly as a real run does (a run
- * gets that env via the workspace config; introspection has no workspace).
+ * `homer_langgraph inspect --json`, the read-only introspection mode. A per-command failure
+ * surfaces as [LangGraphGraphInfo.error]; the caller still gets one entry per command.
+ * The agent's declared `env` is passed to each inspect subprocess so the agent's `PYTHONPATH`
+ * makes its module importable, exactly as a real run does (a run gets that env via the
+ * workspace config; introspection has no workspace).
  */
 class LangGraphInspectService(
     private val runner: GraphInspectRunner,

@@ -10,15 +10,12 @@ import kotlin.io.path.isDirectory
 import kotlin.io.path.isRegularFile
 
 /**
- * Workspace transfer into a pod over the exec channel: one gzip'd tar
- * stream per direction (the `kubectl cp` mechanism), so many small files
- * cost one round-trip. Requires `tar` + `gzip` in the image (documented
- * in SERVER.md). Semantics mirror the ssh WorkspaceSync: dir uploads copy
- * contents, excludes match entry names at any depth (uploads only) unless
- * prefixed with `/`, which anchors the exclude to the upload root;
- * missing remote downloads are silent no-ops. Downloads honor a
- * [DownloadMode] (OVERLAY/OVERWRITE/MIRROR) — see ADR-0043 for the
- * transfer mechanism and ADR-0055 for the mirror/prune semantics.
+ * Workspace transfer into a pod over the exec channel: one gzip'd tar stream per direction (the
+ * `kubectl cp` mechanism), so many small files cost one round-trip; requires `tar` + `gzip` in the
+ * image (SERVER.md). Semantics mirror the ssh WorkspaceSync: dir uploads copy contents, excludes
+ * match entry names at any depth (uploads only) unless prefixed with `/`, which anchors the
+ * exclude to the upload root; missing remote downloads are silent no-ops. Downloads honor a
+ * [DownloadMode] (OVERLAY/OVERWRITE/MIRROR). See ADR-0043 for the transfer mechanism and ADR-0055 for the mirror/prune semantics.
  */
 class KubernetesWorkspaceSync(
     private val execClient: KubernetesExecClient,
@@ -28,13 +25,12 @@ class KubernetesWorkspaceSync(
     fun mkdirs(remoteDir: String) = runToExit(listOf("mkdir", "-p", remoteDir))
 
     /**
-     * Uploads [local] (file or directory) to [remote] in the pod. Directory uploads copy
-     * contents, matched against [excludes] as described in the class doc. [omitDirEntries]
-     * holds root-relative directory paths (e.g. `"workdir"`) whose own tar directory entry
-     * is skipped while its contents still upload: the pod pre-creates such directories as
-     * kubelet-owned subPath mounts, and GNU tar's directory-entry restore (chmod/utime)
-     * fails there under `runAsNonRoot`; omitting just the entry lets tar write files into
-     * the directory without ever touching the directory itself. See ADR-0054.
+     * Uploads [local] (file or directory) to [remote] in the pod. Directory uploads copy contents,
+     * matched against [excludes] as described in the class doc. [omitDirEntries] holds
+     * root-relative directory paths (e.g. `"workdir"`) whose own tar directory entry is skipped
+     * while its contents still upload: the pod pre-creates such directories as kubelet-owned
+     * subPath mounts, and GNU tar's directory-entry restore (chmod/utime) fails there under
+     * `runAsNonRoot`; omitting just the entry lets tar write files in without touching the directory itself. See ADR-0054.
      */
     fun upload(
         local: Path,

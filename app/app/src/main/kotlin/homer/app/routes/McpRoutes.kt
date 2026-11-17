@@ -37,7 +37,7 @@ import kotlin.coroutines.CoroutineContext
  * tool list always reflects agent reloads. Mounted inside the same
  * authenticate/rateLimit wrapper as the REST API. See ADR-0018.
  */
-internal fun Route.mcpRoutes(deps: ApiDeps) {
+internal fun Route.mcpRoutes(deps: McpRouteDeps) {
     route("/mcp") {
         // The MCP transport responds with SDK JSONRPCMessage objects, which
         // must serialize through McpJson (polymorphic message types). Route-
@@ -71,18 +71,14 @@ internal fun Route.mcpRoutes(deps: ApiDeps) {
 }
 
 /**
- * Stateless MCP endpoint at `/mcp/questions` for the question tools
- * (`ask_user`, `check_answer`, `ask_user_and_wait`). Same per-POST pattern
- * as [mcpRoutes] with two differences (ADR-0019):
- *
- * - Authenticated by the per-process `HMR_CALLBACK_TOKEN` resolved at the
- *   route level — mounted physically OUTSIDE `authenticate(...)`, in the
- *   same credential domain as [callbackRoutes], never operator auth.
- * - SSE response mode (`enableJsonResponse = false`): headers flush before
- *   the tool runs and progress notifications stream mid-call, so a blocking
- *   `ask_user_and_wait` survives client first-byte/inactivity timeouts.
+ * Stateless MCP endpoint at `/mcp/questions` for the question tools (`ask_user`, `check_answer`,
+ * `ask_user_and_wait`). Same per-POST pattern as [mcpRoutes] with two differences (ADR-0019): it is
+ * authenticated by the per-process `HMR_CALLBACK_TOKEN` resolved at the route level — mounted
+ * physically OUTSIDE `authenticate(...)`, in the same credential domain as [callbackRoutes] — and
+ * uses SSE response mode (`enableJsonResponse = false`), so headers flush before the tool runs and
+ * progress notifications stream mid-call, letting a blocking `ask_user_and_wait` survive client first-byte/inactivity timeouts.
  */
-internal fun Route.questionsMcpRoutes(deps: ApiDeps) {
+internal fun Route.questionsMcpRoutes(deps: McpRouteDeps) {
     route("/mcp/questions") {
         install(ContentNegotiation) {
             json(McpJson)
@@ -122,13 +118,11 @@ internal fun Route.questionsMcpRoutes(deps: ApiDeps) {
 private const val SSE_HEARTBEAT_MS = 15_000L
 
 /**
- * Bridges the SDK transport's SSE response mode onto Homer's hand-rolled
- * SSE (no Ktor SSE plugin installed). The transport only needs a
- * [ServerSSESession] it can `send`/`close`; the response stream must not
- * start before the transport's first send — it appends the SSE headers
- * itself just before, and its reject paths (401/406/415) respond plain
- * HTTP on the untouched call. Idle gaps between events are filled with
- * `: ping` comment heartbeats so held tool calls keep bytes flowing.
+ * Bridges the SDK transport's SSE response mode onto Homer's hand-rolled SSE (no Ktor SSE plugin
+ * installed). The transport only needs a [ServerSSESession] it can `send`/`close`; the response
+ * stream must not start before the transport's first send — it appends the SSE headers itself just
+ * before, and its reject paths (401/406/415) respond plain HTTP on the untouched call. Idle gaps
+ * between events are filled with `: ping` comment heartbeats so held tool calls keep bytes flowing.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 private suspend fun handleSsePost(

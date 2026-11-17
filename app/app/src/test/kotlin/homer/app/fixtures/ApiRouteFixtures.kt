@@ -9,8 +9,17 @@ import homer.app.models.Server
 import homer.app.models.TokenConfig
 import homer.app.routes.ApiDeps
 import homer.app.routes.apiV1Routes
+import homer.app.routes.callbackDeps
 import homer.app.routes.callbackRoutes
 import homer.app.services.Authorizer
+import io.ktor.client.request.header
+import io.ktor.client.request.prepareRequest
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
+import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
@@ -62,7 +71,7 @@ internal fun ApplicationTestBuilder.mountCallbackRoutes(stubDeps: ApiDeps.() -> 
         configureStatusPages()
         routing {
             install(ContentNegotiation) { json(apiJson) }
-            callbackRoutes(deps)
+            callbackRoutes(deps.callbackDeps())
         }
     }
     return deps
@@ -78,6 +87,32 @@ internal fun authorizerFor(tokens: Map<String, TokenConfig>): Authorizer =
             databasePath = "unused",
         ),
     )
+
+/**
+ * The status of [method] [target] sent as JSON, with [bearer] when it holds one, and the body —
+ * read whenever the caller asked for it or the status was not `200`, so a failure case never
+ * returns a body the caller cannot assert on. Shared by the matrix and canary sweeps.
+ */
+internal suspend fun ApplicationTestBuilder.send(
+    method: String,
+    target: String,
+    bearer: String?,
+    body: String? = null,
+    readBody: Boolean = false,
+): Pair<Int, String?> =
+    client
+        .prepareRequest(target) {
+            this.method = HttpMethod.parse(if (method == "*") "GET" else method)
+            header(HttpHeaders.Accept, "application/json, text/event-stream")
+            bearer?.let { header(HttpHeaders.Authorization, "Bearer $it") }
+            body?.let {
+                contentType(ContentType.Application.Json)
+                setBody(it)
+            }
+        }.execute { response ->
+            val status = response.status.value
+            status to (if (readBody || status != 200) response.bodyAsText() else null)
+        }
 
 /**
  * Mounts the production [apiV1Routes] behind the production bearer provider

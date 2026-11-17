@@ -30,6 +30,30 @@ class DtoContractTest {
     }
 
     @Test
+    fun `exports the artifact listing, the error body and every SSE frame payload`() {
+        val classes = DtoContract.export().getValue("classes").jsonObject
+        val roots =
+            listOf(
+                "ArtifactListingResponse",
+                "ArtifactEntry",
+                "ErrorResponse",
+                "ExecuteResponse",
+                "ProcessStatusFrame",
+                "ProcessCmdFrame",
+                "QuestionAskedFrame",
+                "QuestionFrame",
+                "RunMessageFrame",
+                "LogChunkFrame",
+                "AgentReloadFrame",
+                "LlmStreamFrame",
+            )
+        assertEquals(emptyList(), roots.filterNot { it in classes })
+        // The field the console did not mirror before: a response field, so the walk must carry it.
+        val truncated = classes.getValue("ArtifactListingResponse").jsonObject.fieldsByName()["truncated"]
+        assertEquals(field(optional = true, nullable = false, type = """{"kind":"boolean"}"""), truncated)
+    }
+
+    @Test
     fun `exports optional, nullable and coarse kind per field and walks nested classes`() {
         val classes = walk(Fixture.serializer().descriptor)
         val fields = classes.getValue("Fixture").jsonObject.fieldsByName()

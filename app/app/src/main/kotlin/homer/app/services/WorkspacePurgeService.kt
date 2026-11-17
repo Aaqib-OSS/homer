@@ -46,12 +46,10 @@ class WorkspacePurgeService(
     }
 
     /**
-     * Two sweeps, two lifetimes. `workspace.purgeAfter` governs the directory on
-     * disk; `workspace.retain.recordFor` governs the process row. They used to be
-     * one step, so a link to `/processes/{id}` — the URL people paste into tickets
-     * and merge requests — started returning 404 five days later, taking the run's
-     * status, steps, exit codes and cost with it. Those comments outlive any
-     * sensible artifact retention. See ADR-0048.
+     * Two sweeps, two lifetimes: `workspace.purgeAfter` governs the directory on disk,
+     * `workspace.retain.recordFor` the process row. The row must outlive the directory, or a
+     * `/processes/{id}` link would 404 while the run's status, steps, exit codes and cost are still
+     * wanted. See ADR-0048.
      */
     suspend fun purgeExpired() {
         val now = System.currentTimeMillis() / 1000
@@ -88,11 +86,10 @@ class WorkspacePurgeService(
             // from the DB, so a poisoned/crafted path must not steer this
             // recursive delete outside the configured workspace root.
             artifactsDir.parent?.let { PathSafety.deleteContainedRecursively(workspaceRoot, it) }
-            // Clear only after a successful delete (or a deliberate skip): the column
-            // doubles as the "already swept" marker, so a failed delete leaves it set
-            // and the next sweep retries instead of orphaning the directory. Clearing
-            // it also drops this row out of another process's shared-dir check, exactly
-            // as removing the row used to.
+            // Clear only after a successful delete (or a deliberate skip): the column doubles as the
+            // "already swept" marker, so a failed delete leaves it set and the next sweep retries
+            // instead of orphaning the directory. Clearing it also drops the row out of another
+            // process's shared-dir check, as removing the row would.
             processManager.clearArtifactsDir(process.id)
         }
         if (retainedCount > 0) {

@@ -77,6 +77,7 @@ class ContinuationRoutesTest {
                 inputResolver = inputResolver,
                 processManager = processManager,
                 config = config,
+                dispatchService = dispatches,
             )
 
         init {

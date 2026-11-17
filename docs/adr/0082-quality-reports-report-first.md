@@ -85,7 +85,7 @@ into this gate as the `crap` check.
 | `mock-calls` | `MockCallBudget` counts each mock method's calls per `:app` test; added 2026-11-13, see the amendment below | `CLAUDE.md` §6 |
 | `mutation-console` | Stryker on the console lines a merge request changes; a full run is manual | tests assert behaviour |
 | `size-console` | ESLint `max-lines` (600) and `max-lines-per-function` (60), blank lines and comments not counted, in its own run over console production code | the file and function size limits the backend uses too |
-| `dto-contract` | backend DTO serial descriptors (`DtoContractTest`) vs the TS mirrors in `console/types/homer.ts` (TypeScript compiler API) | `console/CLAUDE.md` § Types & backend coupling |
+| `dto-contract` | backend DTO serial descriptors (`DtoContractTest`) vs the TS mirrors in `console/types/homer.ts` (TypeScript compiler API); widened 2026-11-16 to every wire type the backend sends, with the root list guarded by a fail-closed scan of the routes' output, see the amendment below | `console/CLAUDE.md` § Types & backend coupling, `app/CLAUDE.md` § Console DTO contract |
 
 *Amended (2026-10-13):* `duplication` became `required` once its clones were
 merged. jscpd does not count import and package lines, which two files that use the
@@ -355,6 +355,32 @@ born with no finding.
 The parameter cap (13) came in `required` after GH #257's parameter objects, at the widest signatures
 then left (`createWorkspaceConfig`, `handleResume`, `AgentExecutor`'s constructor); it may only be
 lowered.
+
+*Amended (2026-11-16):* `dto-contract` widened from the hand-kept root list to every wire type the
+backend sends: the request and response bodies, the error body, and the `data:` payload of every SSE
+frame. The root list stopped being trust-on-first-use. A fail-closed scan over the `routes/` sources
+(`DtoContractRootsTest`, the home of the rule beside `DtoContract`, whose export it reads) judges the
+route output from source text — every `respond`/`respondNoStore` argument (a constructor, a call
+judged by the callee's declared return type, a name a `val`, a parameter or a lambda parameter binds),
+the `data:` of every `sendEvent` call, and the frame constructors inside every `SseFrame` builder —
+and fails, naming the type, when the body it reads is neither reachable from a root in `DtoContract`
+nor listed in `DtoContract.routeBodiesNotMirrored`. An argument or payload the scan cannot read is a
+finding of its own, so no body passes unjudged; a new output form is resolved into the scan, never
+taught to skip. **The exemption-with-reason contract.** An entry in `routeBodiesNotMirrored` names
+the `@Serializable` class and the route (with its method) and caller that actually receive the body,
+with the reason the console never reads it: it is the audit trail for a deliberate hole in the
+contract, so an entry whose class the main sources no longer declare as `@Serializable` fails the
+test like an unrooted body does; that the reason names a route that still exists stays on the
+reviewer — the route text in a reason is free text no check validates. A shape the console *builds* rather than
+receives keeps its `CONSOLE_ONLY` reason in `dto-contract.mjs` instead; a `CONSOLE_ONLY` key naming a
+root DTO would silently skip that type's comparison, so the check's test derives the forbidden names
+from the root list itself. **Rejected alternatives for body discovery.** A PSI or detekt pass with
+type resolution was rejected: it needs detekt's Analysis API, its own daemon and a larger runner (see
+the 2026-10-13 amendment) to answer a question the route source text already answers, and it would
+tie the check to detekt's alpha lifecycle; a Konsist rule over the same sources was rejected for the
+same resolution cost without the fail-closed unread-shape guard. Widening the TypeScript extract to
+scan more console files was rejected too: the extract stays `console/types/homer.ts` alone, and the
+scope widens on the backend side.
 
 *Amended (2026-11-16):* `detekt` also runs its unused-code rules (GH #297): `UnusedParameter`,
 `UnusedPrivateClass`, `UnusedPrivateFunction`, `UnusedPrivateProperty` and `UnusedVariable`. The backend

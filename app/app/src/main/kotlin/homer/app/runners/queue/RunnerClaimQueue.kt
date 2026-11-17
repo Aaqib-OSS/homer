@@ -19,16 +19,12 @@ import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.time.Duration
 
 /**
- * The one queue every run passes through. A run enqueues a [ClaimRequest] with a
- * [RunnerFilter] and waits; a consumer with a free permit takes the oldest
- * request it matches. One claim TTL covers waiting for a permit and waiting for
- * a consumer to exist. Bounded by [maxPending] (§12 rule 4). See ADR-0066.
- * A new request wakes one parked consumer, the matching one that claimed least
- * recently (ties: the oldest waiter), and is reserved for it. See ADR-0096.
- *
- * A run whose agent declares `runnerAffinity` also carries a [ClaimAffinity]: the
- * instance its flow's key recorded, the instance it prefers until `waitSec`
- * passes, and the key a claim is recorded under. See ADR-0099.
+ * The one queue every run passes through. A run enqueues a [ClaimRequest] with a [RunnerFilter]
+ * and waits; a consumer with a free permit takes the oldest request it matches. One claim TTL
+ * covers waiting for a permit and waiting for a consumer to exist. Bounded by [maxPending]
+ * (§12 rule 4). A new request wakes one parked consumer and is reserved for it; a run whose
+ * agent declares `runnerAffinity` also carries a [ClaimAffinity] preferring the instance its
+ * flow's key recorded. See ADR-0066, ADR-0096, ADR-0099.
  */
 class RunnerClaimQueue(
     private val maxPending: Int,

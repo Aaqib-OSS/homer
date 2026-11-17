@@ -91,23 +91,12 @@ class LocalFileOperations : FileOperations {
             .epochSecond
 
     /**
-     * Opens [path] for reading with two TOCTOU defences (see the artifact-race
-     * hardening): re-assert the target is a regular file (NOFOLLOW) immediately
-     * before opening, and run the blocking `open(2)` on a **bounded** daemon pool
-     * capped at [OPEN_TIMEOUT_MS] per open. The [open] lambda itself now opens
-     * with `LinkOption.NOFOLLOW_LINKS`, making the symlink check atomic with the
-     * open — a symlink swapped in after this pre-check fails the open instead of
-     * being followed. The pre-check and the bounded pool remain: they are what
-     * catches a same-UID swap to a FIFO/device, which `O_NOFOLLOW` does not
-     * refuse. A swap that still wins that residual race blocks a pool thread
-     * instead of the caller. `open(2)` is not interruptible, so a genuinely
-     * blocked open leaks its thread until a writer appears — but the pool is
-     * capped at [MAX_OPEN_THREADS] with a synchronous handoff, so leaked threads
-     * cannot grow without bound: once saturated, further opens fail fast
-     * ([RejectedExecutionException] → [IOException]) rather than exhausting
-     * threads. Normal opens complete in microseconds and return their thread
-     * immediately, so the small cap does not throttle legitimate reads. A
-     * bounded, documented residual acceptable under the single-UID model.
+     * Opens [path] for reading: re-assert a regular file (NOFOLLOW) before the open, then run the
+     * blocking `open(2)` on a **bounded** daemon pool capped at [OPEN_TIMEOUT_MS] per open. The [open]
+     * lambda opens with `LinkOption.NOFOLLOW_LINKS`, so the symlink check is atomic with the open; the
+     * pre-check and pool also catch a same-UID swap to a FIFO/device, which `O_NOFOLLOW` misses. A
+     * blocked open cannot exhaust threads: the pool ([MAX_OPEN_THREADS], synchronous handoff) bounds
+     * leaked threads, and once saturated further opens fail fast ([RejectedExecutionException] → IOException).
      */
     private fun <T : AutoCloseable> openBounded(
         path: Path,

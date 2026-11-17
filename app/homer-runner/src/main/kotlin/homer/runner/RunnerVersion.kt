@@ -6,9 +6,8 @@ import homer.app.models.RunnerTagValidation
  * The version this runner binary was built from, as the build stamped it into the jar
  * (`homerVersion` Gradle property, else `HOMER_VERSION`, else `dev` — one source, see
  * `homer-runner/build.gradle.kts`). Homer validates the registration's `version` against
- * [RunnerTagValidation.PATTERN] and reports it to operators, so that same shape is the one
- * gate here — a jar that passes this parses would be refused `422` at registration otherwise.
- * The value is never read from run-time configuration: every host running the same jar
+ * [RunnerTagValidation.PATTERN] and reports it to operators, so that same shape is the gate
+ * here. The value is never read from run-time configuration: every host running the same jar
  * reports the same thing.
  */
 object RunnerVersion {

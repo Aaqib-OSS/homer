@@ -16,6 +16,7 @@ import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.core.isNull
+import org.jetbrains.exposed.v1.jdbc.JdbcTransaction
 import org.jetbrains.exposed.v1.jdbc.batchInsert
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.select
@@ -34,20 +35,28 @@ internal const val MAX_TAG_SCREENED_ROWS = 10_000
 internal const val SQLITE_PARAM_CHUNK = 512
 
 /**
- * All durable access to process state. SQLite is authoritative — every read and
- * write is a transaction (no in-memory cache). The live coroutine [job] is the
- * one piece of [ProcessInfo] that cannot be persisted; it is sourced from
- * [jobRegistry] when mapping rows. See ADR-0020.
- *
- * Read-modify-write operations (history append, executions append, runner-state
- * merge) run inside a single `BEGIN IMMEDIATE` transaction (see
- * [DatabaseService]), so concurrent writers serialize through the write lock
- * rather than losing updates — this is what replaced the old `Mutex`.
+ * All durable access to process state. SQLite is authoritative — every read and write is a
+ * transaction (no in-memory cache). The live coroutine [job] is the one piece of [ProcessInfo]
+ * that cannot be persisted; it is sourced from [jobRegistry] when mapping rows. See ADR-0020.
+ * Read-modify-write operations (history append, executions append, runner-state merge) run
+ * inside a single `BEGIN IMMEDIATE` transaction (see [DatabaseService]), so concurrent writers
+ * serialize through the write lock rather than losing updates.
  */
 class ProcessRepository(
-    internal val db: DatabaseService,
+    private val db: DatabaseService,
     internal val jobRegistry: ProcessJobRegistry,
 ) {
+    /**
+     * Runs [block] in one write transaction on the writer handle. The extension functions of this
+     * package — `ProcessQueries.kt`, `ProcessRetention.kt`, `ProcessStepRecords.kt`,
+     * `ProcessRunTags.kt` — reach the database only through this and [read]: [db] is private to the
+     * class, so the handle cannot be opened outside it. See ADR-0020.
+     */
+    internal suspend fun <T> query(block: JdbcTransaction.() -> T): T = db.query(block)
+
+    /** Runs a read-only [block] on the reader handle; see [query]. */
+    internal suspend fun <T> read(block: JdbcTransaction.() -> T): T = db.read(block)
+
     /** Outcome of [obtainProcessId]: the new id plus any terminal row evicted to make room. */
     data class ObtainResult(
         val processId: Int,
@@ -85,17 +94,10 @@ class ProcessRepository(
     /**
      * Inserts a new CREATED row and returns its id, enforcing capacity and — when
      * [NewRunRecord.cooldown] is set — the agent's frequency bound, both inside the same
-     * `BEGIN IMMEDIATE` transaction as the INSERT.
-     *
-     * The cooldown check belongs *here*, not only in the caller: a check that
-     * happens before the transaction lets two concurrent starts both observe the
-     * same previous run and both insert. Writers serialize through this
-     * transaction, so evaluating the windows against rows read inside it is what
-     * actually makes the bound hold. See ADR-0051.
-     *
-     * Replay-unsafe (a re-run takes a fresh AUTOINCREMENT id: a second process
-     * row and tag set); safe only because the writer handle is single-attempt.
-     * See ADR-0020.
+     * `BEGIN IMMEDIATE` transaction as the INSERT. The cooldown check belongs *here*, not only
+     * in the caller: a check before the transaction lets two concurrent starts observe the same
+     * previous run and both insert, so the windows must be evaluated against rows read inside it.
+     * Replay-unsafe (a re-run takes a fresh id); the writer handle is single-attempt (ADR-0051, ADR-0020).
      */
     suspend fun obtainProcessId(
         record: NewRunRecord,
@@ -174,7 +176,7 @@ class ProcessRepository(
             )?.let { throw it }
     }
 
-    suspend fun getStatus(processId: Int): ProcessStatus =
+    suspend fun getProcessStatus(processId: Int): ProcessStatus =
         db.read {
             Processes
                 .select(Processes.status)
@@ -229,7 +231,7 @@ class ProcessRepository(
      * Appends [newStatus] to history and writes it when the row exists and
      * [guard] accepts its current status (null guard = unconditional). The
      * status read, guard check, and write are one atomic transaction, which is
-     * what enforces the KILLED-precedence invariant (audit #9) at the DB level.
+     * what enforces the KILLED-precedence invariant at the DB level.
      */
     suspend fun transitionStatus(
         processId: Int,
@@ -257,19 +259,12 @@ class ProcessRepository(
         }
 
     /**
-     * Insert time of the most recent run of [agentName], or null when it has never run —
-     * or when every past run has been purged, which resets the cooldown.
-     * Ordered by id: AUTOINCREMENT ids are monotonic and never reused.
-     *
-     * Reads `created_at`, **not** the first `history` entry. History is written by the
-     * launched coroutine, so between the INSERT and that first write the newest row
-     * reads back empty — and since this query takes the newest row only, it would
-     * return null and skip the whole `minInterval` check. `created_at` is written in
-     * the INSERT's own transaction and has no such window. See ADR-0051.
-     * Null for rows migrated in from before v13, which predate the cooldown feature.
-     *
-     * [cooldownKey] selects the subject the read is scoped to; null counts every row of
-     * the agent. See ADR-0106.
+     * Insert time of the most recent run of [agentName], or null when it has never run — or when
+     * every past run has been purged, which resets the cooldown. Ordered by id (AUTOINCREMENT ids
+     * are monotonic and never reused). Reads `created_at`, **not** the first `history` entry: the
+     * newest row's history is written by the launched coroutine, so between the INSERT and that
+     * first write this query would read it empty and skip the whole `minInterval` check, while `created_at`
+     * is written in the INSERT's own transaction. [cooldownKey] scopes the subject, null counts every row. See ADR-0051, ADR-0106.
      */
     suspend fun latestRunStartedAt(
         agentName: String,
@@ -297,7 +292,7 @@ class ProcessRepository(
         db.query { Processes.update({ Processes.id eq processId }) { it[endedAt] = null } }
     }
 
-    suspend fun getHistory(processId: Int): List<Pair<Long, ProcessStatus>> =
+    suspend fun getProcessHistory(processId: Int): List<Pair<Long, ProcessStatus>> =
         db.read {
             Processes
                 .select(Processes.history)
@@ -307,7 +302,7 @@ class ProcessRepository(
                 ?: emptyList()
         }
 
-    suspend fun getExecutions(processId: Int): List<ExecutionInfo> =
+    suspend fun getProcessExecutions(processId: Int): List<ExecutionInfo> =
         db.read {
             Processes
                 .select(Processes.executions)
@@ -317,7 +312,7 @@ class ProcessRepository(
                 ?: emptyList()
         }
 
-    suspend fun getInfo(processId: Int): ProcessInfo? =
+    suspend fun getProcessInfo(processId: Int): ProcessInfo? =
         db.read {
             Processes
                 .selectAll()
@@ -328,11 +323,11 @@ class ProcessRepository(
 
     /**
      * The (owner, agentName) pair a visibility gate reads, by primary key, or null when the row
-     * is gone. Projected, not [getInfo]: a gate runs on polled paths, and decoding the row's
+     * is gone. Projected, not [getProcessInfo]: a gate runs on polled paths, and decoding the row's
      * `history`/`executions` blobs plus the side queries to read two columns is the cost
      * SQLite rule 4 forbids there.
      */
-    suspend fun getRunVisibility(processId: Int): Pair<String?, String>? =
+    suspend fun getProcessVisibility(processId: Int): Pair<String?, String>? =
         db.read {
             Processes
                 .select(Processes.owner, Processes.agentName)
@@ -386,13 +381,12 @@ class ProcessRepository(
         }
 
     /**
-     * Stamps `purge_at` / `record_purge_at` / `retain_artifacts` on every UNKNOWN row that
-     * has none, counted from [nowSec], and returns how many it stamped. A run's own
-     * coroutine stamps these when it ends; a run a restart left UNKNOWN never got there,
-     * and both purge sweeps skip a null `purge_at` — so without this its directory and
-     * record lived until capacity eviction. Rows already stamped are left alone, so a
-     * repeat boot is a no-op. Startup only: one read on `processes_status`, one UPDATE
-     * per id chunk on the primary key. See ADR-0048 (2026-10-01 amendment).
+     * Stamps `purge_at` / `record_purge_at` / `retain_artifacts` on every UNKNOWN row that has
+     * none, counted from [nowSec], and returns how many it stamped. Both purge sweeps skip a null
+     * `purge_at`, so without this a run a restart left UNKNOWN keeps its directory and record until
+     * capacity eviction. Rows already stamped are left alone, so a repeat boot is a no-op. Startup
+     * only: one read on `processes_status`, one UPDATE per id chunk on the primary key. See ADR-0048
+     * (2026-10-01 amendment).
      */
     suspend fun stampUnknownPurgeTimes(
         nowSec: Long,

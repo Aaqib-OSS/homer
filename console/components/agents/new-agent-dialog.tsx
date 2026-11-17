@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Plus } from 'lucide-react';
 import { useCreateAgent } from '@/lib/api/queries';
 import { HomerApiError } from '@/lib/api/client';
+import type { ErrorResponse } from '@/types/homer';
 
 interface NewAgentDialogProps {
   open: boolean;
@@ -38,7 +39,7 @@ function createErrorMessage(error: Error | null, name: string): string | undefin
     ? error.status === 409
       ? `An agent named "${name}" already exists`
       : error.status === 400
-        ? (error.body as { msg?: string })?.msg ||
+        ? (error.body as Partial<ErrorResponse>)?.msg ||
           error.message
         : error.message
     : error?.message;
