@@ -1,7 +1,7 @@
 /**
  * mock-calls: tests during `:app:test` in which one mock method was called `MockCallBudget.WARN_CALLS`
  * times or more, the shape of a stub that answers at once inside a polling loop (ADR-0082 amendment
- * of 2026-11-13, `CLAUDE.md` §6). `MockCallBudget` appends one JSON line per such test to the report;
+ * of 2026-11-13, `CLAUDE.md` §6). `MockCallBudget` appends one JSON line per such test to its worker's report file;
  * from `MockCallBudget.FAIL_CALLS` calls it also fails the test.
  * Usage (repository root): node tools/quality/mock-calls.mjs [report dir] [out dir]
  */
@@ -10,7 +10,6 @@ import path from 'node:path';
 import { runMain, writeCheck } from './lib.mjs';
 
 const REPORT_DIR = 'app/app/build/reports/mock-calls';
-const REPORT_FILE = 'mock-calls.jsonl';
 const TEST_ROOT = 'app/app/src/test/kotlin';
 
 /** The source file of a test class: its outermost class's file, named after the class (Kotlin's convention here). */
@@ -24,6 +23,13 @@ export function testLine(source, name) {
   const bare = name.replace(/\(.*\)$/, '');
   const at = source.split('\n').findIndex((l) => l.includes(`fun \`${bare}\``) || l.includes(`fun ${bare}(`));
   return at < 0 ? 1 : at + 1;
+}
+
+/** The distinct non-blank lines of every `mock-calls*.jsonl` in `dir`, files in name order: one per test worker. */
+export function readLines(dir) {
+  const files = fs.readdirSync(dir).filter((f) => /^mock-calls.*\.jsonl$/.test(f)).sort();
+  const lines = files.flatMap((f) => fs.readFileSync(path.join(dir, f), 'utf8').split('\n')).filter((l) => l.trim() !== '');
+  return [...new Set(lines)];
 }
 
 /** Findings of the report's lines; `read` returns a test file's text, or undefined when it is missing. */
@@ -47,8 +53,7 @@ export function parseReport(lines, read) {
 
 export function main([reportDir = REPORT_DIR, outDir = 'reports/quality/mock-calls']) {
   if (!fs.existsSync(reportDir)) throw new Error(`no ${reportDir}: did :app:test run?`);
-  const file = path.join(reportDir, REPORT_FILE);
-  const lines = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter((l) => l.trim() !== '') : [];
+  const lines = readLines(reportDir);
   const read = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : undefined);
   const findings = parseReport(lines, read);
   return writeCheck(outDir, 'mock-calls', 'Mock methods called in a loop', findings, { tests: lines.length }).split('\n').slice(0, 21).join('\n') + '\n';

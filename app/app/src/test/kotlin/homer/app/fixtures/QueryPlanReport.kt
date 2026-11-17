@@ -118,21 +118,53 @@ object QueryPlanReport {
             .map { (path, line, function, sql) -> Repeat(path, line.toInt(), function, sql) }
             .sortedWith(compareBy({ it.path }, { it.line }))
 
+    /** Statements are one per SQL; a repeat is one per path, function and SQL (the fields of a line it is keyed by). */
+    val STATEMENT_KEY = listOf(3)
+    val REPEAT_KEY = listOf(0, 2, 3)
+
+    /** The `<prefix>*.tsv` files in [dir], in name order. */
+    private fun captureFiles(
+        dir: File,
+        prefix: String,
+    ): List<File> =
+        dir
+            .listFiles { f -> f.isFile && f.name.startsWith(prefix) && f.name.endsWith(".tsv") }
+            .orEmpty()
+            .sortedBy { it.name }
+
+    /**
+     * The non-blank lines of every `<prefix>*.tsv` in [dir], sorted, the smallest line per [key]
+     * (tab-separated field numbers) kept, so the result does not depend on which worker file held it;
+     * empty when there is no file. Each test worker writes its own file and two may record one key.
+     */
+    fun mergedLines(
+        dir: File,
+        prefix: String,
+        key: List<Int>,
+    ): List<String> =
+        captureFiles(dir, prefix)
+            .flatMap { it.readLines() }
+            .filter { it.isNotBlank() }
+            .sorted()
+            .distinctBy { line -> line.split('\t', limit = 4).let { fields -> key.map { fields[it] } } }
+
     /** `queryPlanReport`: `<capture dir> <report json>`. */
     @JvmStatic
     fun main(args: Array<String>) {
         val (captureDir, out) = args
-        val captured = File(captureDir, QueryPlanCapture.CAPTURE_FILE)
-        check(captured.isFile) { "no captured statements at $captured: run :app:test first" }
-        val lines = captured.readLines().filter { it.isNotBlank() }
+        val dir = File(captureDir)
+        check(captureFiles(dir, QueryPlanCapture.CAPTURE_PREFIX).isNotEmpty()) {
+            "no captured statements in $dir: run :app:test first"
+        }
+        val lines = mergedLines(dir, QueryPlanCapture.CAPTURE_PREFIX, STATEMENT_KEY)
         // An empty capture means the capture broke, not that every query is fine.
-        check(lines.isNotEmpty()) { "$captured is empty: QueryPlanCapture recorded no production statement" }
+        check(lines.isNotEmpty()) { "$dir has no captured statement: QueryPlanCapture recorded no production statement" }
         val db = Files.createTempFile("homer-query-plans-", ".db").toFile().apply { deleteOnExit() }
         DatabaseService(db.path, LoggerFactory.getLogger(QueryPlanReport::class.java)).apply {
             migrate()
             close()
         }
-        val repeats = repeats(File(captureDir, QueryPlanCapture.REPEATS_FILE).takeIf { it.isFile }?.readLines().orEmpty())
+        val repeats = repeats(mergedLines(dir, QueryPlanCapture.REPEATS_PREFIX, REPEAT_KEY))
         val report = DriverManager.getConnection("jdbc:sqlite:${db.path}").use { report(it, lines) }.copy(repeats = repeats)
         File(out).apply { parentFile.mkdirs() }.writeText(json.encodeToString(Report.serializer(), report))
         println(

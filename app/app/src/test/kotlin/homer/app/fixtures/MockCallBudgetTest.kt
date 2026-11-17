@@ -127,4 +127,10 @@ class MockCallBudgetTest {
     fun `a method of an unnamed type is still named`() {
         assertEquals("?.invoke", MockCallBudget.methodName(null, "invoke"))
     }
+
+    @Test
+    fun `the report file is named for this test worker`() {
+        val worker = System.getProperty("org.gradle.test.worker") ?: "0"
+        assertEquals("mock-calls-$worker.jsonl", MockCallBudget.REPORT_FILE)
+    }
 }

@@ -13,14 +13,15 @@ import java.io.File
 /**
  * After every `:app` test: counts the calls each mock method took in the test, then clears mockk's
  * recorded calls (answers stay). mockk keeps every call it records, with its stack trace, for as long
- * as the mock is reachable, and the suite runs in one JVM: a stub that answers at once inside a
+ * as the mock is reachable, and a test JVM runs many test classes (`:app:test` runs several such
+ * forks): a stub that answers at once inside a
  * polling loop (a fake `waitFor` returning "not yet" without waiting) calls it about 140,000 times a
  * second, and about a million such calls kept until the suite ended once filled the 2g test heap
  * (#198, #200).
  *
  * A method called [FAIL_CALLS] times or more fails the test: only a busy loop gets there, as the
  * busiest ordinary test calls one method a few hundred times. One called [WARN_CALLS] times or more
- * is a line in `mock-calls.jsonl` under [DIR_PROPERTY], which the warn-mode `mock-calls` check
+ * is a line in `mock-calls-<worker>.jsonl` under [DIR_PROPERTY], which the warn-mode `mock-calls` check
  * reports (ADR-0082). Registered through `META-INF/services`; the test task enables autodetection
  * for this class only.
  */
@@ -71,7 +72,9 @@ class MockCallBudget(
         const val FAIL_CALLS = 20_000
 
         const val DIR_PROPERTY = "homer.mockCalls.dir"
-        const val REPORT_FILE = "mock-calls.jsonl"
+
+        /** This test worker's report file (`0` outside Gradle); `mock-calls.mjs` merges every worker's. */
+        val REPORT_FILE = "mock-calls-${System.getProperty("org.gradle.test.worker") ?: "0"}.jsonl"
 
         /**
          * Every mock's stub, or null before the first mock exists: mockk sets its gateway up on first

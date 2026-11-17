@@ -120,7 +120,7 @@ table CI does, once the reports exist.
 
 | What | Where | Run locally |
 | --- | --- | --- |
-| Backend unit and integration tests (JUnit, MockK, Ktor test host); Kover coverage | `homer-app-tests` | `app/gradlew -p app :app:test` |
+| Backend unit and integration tests (JUnit, MockK, Ktor test host); Kover coverage. `:app:test` runs in parallel forks (half the cores); the capture files behind `query-plans`, `query-repeats` and `mock-calls` are written per worker and merged by their readers | `homer-app-tests` | `app/gradlew -p app :app:test` |
 | ktlint formatting and lint | `homer-app-tests` (`check`) | `app/gradlew -p app ktlintFormat` |
 | Contract backstops: `ModelSchemaContractTest` (config and agent models vs. schemas: property names and required sets), `SchemaDocTableContractTest` (schemas vs. the `SERVER.md` / `AGENT.md` field tables: rows, required flags, defaults), `SchemaValidationTest` (schemas vs. example config and agents), `AgentMdExamplesTest` / `ServerMdExamplesTest` (every complete `AGENT.md` / `SERVER.md` example parses and validates), `AuthoringPluginBundleTest` (bundled plugin copies are byte-identical) | `homer-app-tests` | `app/gradlew -p app :app:test` |
 | Third-party notices and license policy (backend and console) | `homer-app-tests`, `homer-console-tests` | `app/gradlew -p app :app:checkThirdPartyNotices`; `cd console && npm run licenses:check` |

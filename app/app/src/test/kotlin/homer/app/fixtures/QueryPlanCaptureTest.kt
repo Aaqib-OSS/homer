@@ -113,6 +113,13 @@ class QueryPlanCaptureTest {
         }
 
     @Test
+    fun `each file is named for this test worker`() {
+        val worker = System.getProperty("org.gradle.test.worker") ?: "0"
+        assertEquals("statements-$worker.tsv", QueryPlanCapture.CAPTURE_FILE)
+        assertEquals("repeats-$worker.tsv", QueryPlanCapture.REPEATS_FILE)
+    }
+
+    @Test
     fun `the counter fires on the third run in one transaction, not on two, a batch or other transactions`() {
         val counter = QueryPlanCapture.RepeatCounter(threshold = 3)
         val sql = "SELECT a FROM t WHERE id = ?"
