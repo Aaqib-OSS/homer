@@ -14,8 +14,11 @@ import homer.app.runners.queue.QueuedRunner
 import homer.app.runners.queue.RegisteredRunner
 import homer.app.runners.queue.RunnerAffinityMemory
 import homer.app.runners.queue.RunnerClaimQueue
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.spyk
 import io.opentelemetry.context.Context
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runCurrent
@@ -281,6 +284,22 @@ class RunnerRegistryTest {
             RunnerRegistry(listOf(RegisteredRunner(stubRunner("workers"))), listOf(domain("workers", queue)), queue)
         }
     }
+
+    @Test
+    fun `the heartbeat sweeper survives a failing sweep and sweeps again on the next tick`() =
+        runTest {
+            val queue = RunnerClaimQueue(maxPending = 10)
+            val workers = spyk(domain("workers", queue))
+            coEvery { workers.sweepExpired() } throws IllegalStateException("sweep failed")
+            val registry = RunnerRegistry(emptyList(), listOf(workers), queue, sweepInterval = 100.milliseconds)
+            registry.start(backgroundScope)
+
+            testScheduler.advanceTimeBy(250)
+            runCurrent()
+
+            coVerify(atLeast = 2) { workers.sweepExpired() }
+            registry.stop()
+        }
 
     @Test
     fun `start runs the heartbeat sweeper and stop ends it`() =

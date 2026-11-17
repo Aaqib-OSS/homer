@@ -1,6 +1,7 @@
 package homer.app.routes
 
 import homer.app.exceptions.QueryParamValidationException
+import homer.app.infra.coRunCatching
 import homer.app.models.AnswerQuestionRequest
 import homer.app.models.ErrorResponse
 import homer.app.models.QuestionsListResponse
@@ -12,7 +13,6 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
-import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 
 private val logger = LoggerFactory.getLogger("homer.app.routes.QuestionRoutes")
@@ -97,11 +97,9 @@ private fun Route.questionAnswerRoute(deps: QuestionRouteDeps) {
 
             val answered = questionsService.answer(id, request.answer)
             val dispatch =
-                try {
+                coRunCatching {
                     dispatchService.fire(id, request.answer)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
+                }.getOrElse { e ->
                     logger.warn("Dispatch fire failed for answered question {}: {}", id, e.message)
                     null
                 }

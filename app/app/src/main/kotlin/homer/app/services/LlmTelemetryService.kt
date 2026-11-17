@@ -6,6 +6,7 @@ import homer.app.infra.LlmTurnCosts
 import homer.app.infra.SecretRedactor
 import homer.app.infra.TelemetryService
 import homer.app.infra.TranslatedStream
+import homer.app.infra.coRunCatching
 import homer.app.models.FALLBACK_REASON_NO_RESULT_EVENT
 import homer.app.models.LlmEvent
 import homer.app.models.LlmEventJson
@@ -14,7 +15,6 @@ import homer.app.models.TurnStatus
 import io.opentelemetry.api.trace.Span
 import io.opentelemetry.api.trace.StatusCode
 import io.opentelemetry.api.trace.Tracer
-import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -47,15 +47,13 @@ class LlmTelemetryService(
         // Split across the attempt's turn ends by [LlmTurnCosts.allocate].
         resolvedCostUsd: Double?,
     ) {
-        try {
+        coRunCatching {
             if (stream.events.isEmpty() && stream.raw.isEmpty()) {
                 logger.warn("LLM output is empty, skipping telemetry")
                 return
             }
             emitTelemetry(stream, prompt, parentSpan, redactor, step, resolvedCostUsd)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
+        }.onFailure { e ->
             parentSpan.setStatus(StatusCode.ERROR, e.message ?: "Unknown error")
             parentSpan.recordException(e)
             logger.error("Failed to process LLM telemetry", e)

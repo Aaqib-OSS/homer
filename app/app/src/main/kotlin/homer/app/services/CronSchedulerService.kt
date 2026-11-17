@@ -3,10 +3,10 @@ package homer.app.services
 import com.cronutils.model.time.ExecutionTime
 import homer.app.infra.AgentInputResolver
 import homer.app.infra.CronSupport
+import homer.app.infra.coRunCatching
 import homer.app.models.Agent
 import homer.app.models.CronConfig
 import homer.app.models.RunStartRequest
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -119,7 +119,7 @@ internal class CronSchedulerService(
         agent: Agent,
         now: ZonedDateTime,
     ) {
-        try {
+        coRunCatching {
             val processId =
                 agentRunStarter.start(
                     RunStartRequest(
@@ -135,10 +135,7 @@ internal class CronSchedulerService(
                 )
             lastRunMap[agent.name] = RunInfo(processId, now.toEpochSecond())
             logger.info("Cron triggered agent '{}', processId={}", agent.name, processId)
-        } catch (e: CancellationException) {
-            // The scheduler stopping, not a failed fire: the tick must not go on to the next agent.
-            throw e
-        } catch (e: Exception) {
+        }.onFailure { e ->
             logger.error("Failed to fire scheduled agent '{}'", agent.name, e)
         }
     }

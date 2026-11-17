@@ -111,6 +111,7 @@ coroutines:
     active: false
   SuspendFunInFinallySection:
     active: true
+  # Flags cancellation swallowed around suspend calls (runCatching included); use homer.app.infra.coRunCatching.
   SuspendFunSwallowedCancellation:
     active: true
 

@@ -2,9 +2,9 @@ package homer.app.services
 
 import homer.app.infra.ArtifactRetention
 import homer.app.infra.PathSafety
+import homer.app.infra.coRunCatching
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -60,12 +60,9 @@ class WorkspacePurgeService(
     private suspend fun purgeWorkspaces(now: Long) {
         for (process in processManager.getWorkspacePurgeableProcesses(terminalStatuses, now)) {
             val artifactsDir = process.artifactsDir ?: continue
-            try {
+            coRunCatching {
                 purgeWorkspace(process, artifactsDir)
-            } catch (e: CancellationException) {
-                // stop() mid-sweep ends the sweep; it is no failure of this row.
-                throw e
-            } catch (e: Exception) {
+            }.onFailure { e ->
                 logger.error("Failed to purge workspace of process {}: {}", process.id, e.message, e)
             }
         }
@@ -150,7 +147,7 @@ class WorkspacePurgeService(
 
     private suspend fun purgeRecords(now: Long) {
         for (process in processManager.getRecordPurgeableProcesses(terminalStatuses, now)) {
-            try {
+            coRunCatching {
                 // A retained row still owns its pruned directory; it dies with the record.
                 // Delete before removing the row — a failed delete keeps the row so the
                 // next sweep retries, same ordering invariant as the workspace sweep.
@@ -168,9 +165,7 @@ class WorkspacePurgeService(
                 processManager.removeProcess(process.id)
                 questionsService.removeForProcess(process.id)
                 logger.info("Purged process record {} (agent: {})", process.id, process.agentName)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
+            }.onFailure { e ->
                 logger.error("Failed to purge process record {}: {}", process.id, e.message, e)
             }
         }

@@ -1,6 +1,5 @@
 package homer.app.infra
 
-import kotlinx.coroutines.CancellationException
 import kotlin.time.Duration
 
 /** Runs the `homer_langgraph state` subprocess for one LangGraph run. */
@@ -40,7 +39,8 @@ class ProcessGraphStateRunner : GraphStateRunner {
         env: Map<String, String>,
         timeout: Duration,
     ): GraphStateResult =
-        try {
+        // A cancelled caller (disconnect, shutdown, kill race) must not become a cached per-command failure.
+        coRunCatching {
             // CWE-770: the shared helper caps output at write time.
             // See the ADR-0073 amendment.
             outcomeResult(
@@ -52,12 +52,7 @@ class ProcessGraphStateRunner : GraphStateRunner {
                 ),
                 timeout,
             )
-        } catch (e: CancellationException) {
-            // The suspend call sits inside this try, so a cancelled caller (client
-            // disconnect, shutdown, the kill-vs-CREATED race) must not be turned into
-            // a cached per-command failure — let it unwind.
-            throw e
-        } catch (e: Exception) {
+        }.getOrElse { e ->
             GraphStateResult.Err(e.message ?: "failed to launch python")
         }
 

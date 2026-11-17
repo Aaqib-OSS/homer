@@ -151,6 +151,19 @@ class LlmTelemetryServiceTest {
         }
 
     @Test
+    fun `a failing span emission marks the parent span as errored and returns normally`() =
+        runBlocking {
+            val failure = IllegalStateException("tracer down")
+            every { mockTracer.spanBuilder(any()) } throws failure
+
+            process(LlmEvent.ToolCall("tool-1", "MyTool", buildJsonObject {}, "m1"))
+
+            verify { mockParentSpan.setStatus(StatusCode.ERROR, "tracer down") }
+            verify { mockParentSpan.recordException(failure) }
+            verify { mockLogger.error("Failed to process LLM telemetry", failure) }
+        }
+
+    @Test
     fun `system event sets parent span metadata attributes`() =
         runBlocking {
             process(LlmEvent.SessionStart("s", "claude-opus-4", listOf("Read", "Write")))

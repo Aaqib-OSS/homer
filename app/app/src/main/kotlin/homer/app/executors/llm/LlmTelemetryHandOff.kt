@@ -3,11 +3,11 @@ package homer.app.executors.llm
 import homer.app.SpanAttributes
 import homer.app.infra.SecretRedactor
 import homer.app.infra.TranslatedStream
+import homer.app.infra.coRunCatching
 import homer.app.models.Command
 import homer.app.models.LlmAccounting
 import io.opentelemetry.api.trace.Span
 import io.opentelemetry.context.Context
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
@@ -72,7 +72,8 @@ internal class LlmTelemetryHandOff<C>(
         span: Span,
         redactor: SecretRedactor,
     ) {
-        try {
+        // A kill during the hand-off must stop the step, not let it finish as a success.
+        coRunCatching {
             // A non-zero exit's stream is read leniently: a killed CLI's trailing partial line
             // must not take the attempt's tool and message spans with it. Exit 0 stays strict.
             // OtherFailure already carries the lenient read the terminal-stop inspection made —
@@ -81,10 +82,7 @@ internal class LlmTelemetryHandOff<C>(
             val stream = outcome.stream ?: output.readLeniently(outcome.result.stdOut, span)
             val step = LlmStepInfo(label = command.label, configuredModel = command.model)
             handOff(settlement, outcome.result.llmAccounting, stream, compiledPrompt, span, redactor, step)
-        } catch (e: CancellationException) {
-            // A kill during the hand-off must stop the step, not let it finish as a success.
-            throw e
-        } catch (e: Exception) {
+        }.onFailure { e ->
             span.setAttribute(SpanAttributes.TELEMETRY_ERROR, e.message ?: "Unknown error")
             span.recordException(e)
         }

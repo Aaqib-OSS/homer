@@ -3,9 +3,9 @@ package homer.app.services
 import homer.app.infra.GraphSubprocessOutcome
 import homer.app.infra.MAX_GRAPH_STDERR_BYTES
 import homer.app.infra.MAX_GRAPH_STDOUT_BYTES
+import homer.app.infra.coRunCatching
 import homer.app.infra.readHead
 import homer.app.infra.runBoundedGraphSubprocess
-import kotlinx.coroutines.CancellationException
 import kotlin.time.Duration
 
 /** Reported when the command's runtime predates `inspect --json`; names no interpreter path. */
@@ -32,7 +32,8 @@ class ProcessGraphInspectRunner : GraphInspectRunner {
         env: Map<String, String>,
         timeout: Duration,
     ): GraphInspectResult =
-        try {
+        // A cancelled caller (disconnect, shutdown, kill race) must not become a cached per-command failure.
+        coRunCatching {
             // CWE-770: the shared helper caps output at write time.
             // See the ADR-0073 amendment.
             outcomeResult(
@@ -44,12 +45,7 @@ class ProcessGraphInspectRunner : GraphInspectRunner {
                 ),
                 timeout,
             )
-        } catch (e: CancellationException) {
-            // The suspend call sits inside this try, so a cancelled caller (client
-            // disconnect, shutdown, the kill-vs-CREATED race) must not be turned into
-            // a cached per-command failure — let it unwind.
-            throw e
-        } catch (e: Exception) {
+        }.getOrElse { e ->
             GraphInspectResult.Err(e.message ?: "failed to launch python")
         }
 
