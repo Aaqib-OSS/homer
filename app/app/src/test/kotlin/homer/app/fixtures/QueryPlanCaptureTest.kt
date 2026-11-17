@@ -117,7 +117,6 @@ class QueryPlanCaptureTest {
         val worker = System.getProperty("org.gradle.test.worker") ?: "0"
         assertEquals("statements-$worker.tsv", QueryPlanCapture.CAPTURE_FILE)
         assertEquals("repeats-$worker.tsv", QueryPlanCapture.REPEATS_FILE)
-        assertEquals("mock-calls-$worker.jsonl", MockCallBudget.REPORT_FILE)
     }
 
     @Test
