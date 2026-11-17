@@ -252,6 +252,46 @@ class DtoContractRootsTest {
     }
 
     @Test
+    fun `a respond argument elvis is judged by each operand, a constructor one included`() {
+        val sources =
+            mapOf(
+                "FixtureRoutes.kt" to
+                    """
+                    fun Route.fixture() {
+                        call.respond(Fallback() ?: domain.build(id))
+                        call.respondNoStore(HttpStatusCode.OK, domain.find(id) ?: domain.other(id) ?: Fallback())
+                        val claim = domain.deliverClaim(instance, request) ?: throw NotFoundException("no claim")
+                        call.respond(claim)
+                    }
+                    """.trimIndent(),
+            )
+        val returns =
+            mapOf(
+                "build" to setOf("Built"),
+                "deliverClaim" to setOf("ClaimResponse"),
+                "find" to setOf("Found"),
+                "other" to setOf("Other"),
+            )
+        assertEquals(emptyList(), unreadRouteBodies(sources, returns))
+        assertEquals(
+            listOf("Built", "ClaimResponse", "Fallback", "Found", "Other").map {
+                "FixtureRoutes.kt: $it is responded with but is not a DtoContract root"
+            },
+            unrootedRouteBodies(sources, setOf("Built", "ClaimResponse", "Fallback", "Found", "Other"), emptySet(), emptyMap(), returns),
+        )
+    }
+
+    @Test
+    fun `an elvis splits only at the top level, never inside a literal or brackets`() {
+        assertEquals(listOf("a()", "b()", "C()"), elvisOperands("a() ?: b() ?: C()"))
+        assertEquals(listOf("a()", "\"x ?: y\""), elvisOperands("a() ?: \"x ?: y\""))
+        assertEquals(listOf("a('?')", "':'"), elvisOperands("a('?') ?: ':'"))
+        assertEquals(listOf("(a() ?: b())"), elvisOperands("(a() ?: b())"))
+        assertEquals(listOf("f(a ?: b) { c ?: d }", "e[x ?: y]"), elvisOperands("f(a ?: b) { c ?: d } ?: e[x ?: y]"))
+        assertEquals(listOf("a?.b()"), elvisOperands("a?.b()"))
+    }
+
+    @Test
     fun `an elvis operand the scan cannot read keeps the whole binding unread`() {
         val sources =
             mapOf(
@@ -640,6 +680,10 @@ private fun argumentTypes(
     returns: Map<String, Set<String>>,
 ): Set<String>? {
     val expression = argument.trim()
+    val operands = elvisOperands(expression)
+    if (operands.size > 1) {
+        return operands.flatMap { argumentTypes(source, it, returns) ?: return null }.toSet()
+    }
     return when {
         expression.isEmpty() || expression.startsWith("HttpStatusCode") -> emptySet()
         CONSTRUCTOR.containsMatchIn(expression) -> typeNames(CONSTRUCTOR.find(expression)!!.groupValues[1])
