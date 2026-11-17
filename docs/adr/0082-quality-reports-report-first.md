@@ -79,7 +79,7 @@ into this gate as the `crap` check.
 | `unused-console` | knip | unused files, exports, dependencies |
 | `duplication` | jscpd over both stacks' production code | DRY |
 | `diff-coverage` | changed lines vs. Kover and V8 coverage, threshold 80% per file | new code is tested |
-| `detekt` | detekt 2.0 `detektMain` (type-resolved) SARIF, coroutines / exceptions / potential-bugs rule sets; added 2026-10-13, see the amendment below | likely defects in code bodies |
+| `detekt` | detekt 2.0 `detektMain` (type-resolved) SARIF, coroutines / exceptions / potential-bugs rule sets plus the five unused-code rules of `style`; added 2026-10-13, unused-code rules 2026-11-16, see the amendments below | likely defects and dead code in code bodies |
 | `query-plans` | `EXPLAIN QUERY PLAN` of every distinct SQL statement production code ran in `:app:test`, on a fresh schema; added 2026-10-14, see the amendment below | `app/CLAUDE.md` § SQLite rules, rule 1 |
 | `query-repeats` | statements production code ran three or more times in one transaction in `:app:test`, from the same capture; added 2026-10-14, see the amendment below | `app/CLAUDE.md` § SQLite rules, rule 2 |
 | `mock-calls` | `MockCallBudget` counts each mock method's calls per `:app` test; added 2026-11-13, see the amendment below | `CLAUDE.md` §6 |
