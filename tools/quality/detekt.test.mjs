@@ -67,4 +67,17 @@ test('the complexity rule set runs exactly CognitiveComplexMethod and NestedBloc
   assert.match(complexity, /^ {4}allowedComplexity: 23$/m);
   assert.match(complexity, /^ {4}allowedDepth: 4$/m);
   assert.deepEqual(active, ['CognitiveComplexMethod', 'NestedBlockDepth']);
+  // Unlisted, detekt would run these at their defaults (NestedBlockDepth is on, GH #308).
+  for (const rule of ['ComplexCondition', 'CyclomaticComplexMethod', 'LargeClass', 'LongMethod', 'LongParameterList', 'TooManyFunctions']) {
+    assert.match(complexity, new RegExp(`^ {2}${rule}:\\n {4}active: false$`, 'm'), `${rule} must be listed active: false`);
+  }
+});
+
+test('the naming rule set runs exactly MatchingDeclarationName (GH #309)', () => {
+  const config = fs.readFileSync(new URL('../../app/config/detekt/detekt.yml', import.meta.url), 'utf8');
+  const naming = config.split('\nnaming:\n')[1].split(/\n(?=\S)/)[0];
+  const active = [...naming.matchAll(/^ {2}(\w+):\n {4}active: true$/gm)].map(([, rule]) => rule);
+
+  assert.match(naming, /^ {2}active: true$/m);
+  assert.deepEqual(active, ['MatchingDeclarationName']);
 });
