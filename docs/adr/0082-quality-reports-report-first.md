@@ -408,3 +408,7 @@ each carries its reason.
 ## Amendment (2026-11-17): cognitive-complexity cap (GH #307)
 
 GH #307 caps cognitive complexity per function on both stacks. detekt's `complexity` set runs only `CognitiveComplexMethod` (every other complexity rule stays off) and the console's ESLint config enables `sonarjs/cognitive-complexity` at `warn`. Each threshold is today's worst value, so the caps add no finding and only stop a function from getting worse: 23 on the backend (`callbackResultRoutes` in `CallbackRoutes.kt`), 11 on the console (the `onEvent` handler in `lib/api/streams.ts`). The thresholds live in `app/config/detekt/detekt.yml` and `console/eslint.config.mjs`.
+
+## Amendment (2026-11-17): nesting-depth cap (GH #308)
+
+GH #308 caps nesting depth per function on both stacks. detekt's `complexity` set also runs `NestedBlockDepth` and the console's ESLint config enables core `max-depth` at `warn`. Each threshold is today's worst value, so the caps add no finding and only stop a function from getting worse: `allowedDepth: 4` on the backend (the worst functions, `followFile` in `LlmEventStreamService.kt`, `checkpoint` in `DatabaseService.kt` and `pollLoop` in homer-runner's `SessionWorker.kt`, are at 4; detekt reports a depth above `allowedDepth`), `max: 4` on the console (the worst is the nested block in `lib/instances/store.ts`). The thresholds live in `app/config/detekt/detekt.yml` and `console/eslint.config.mjs`.
