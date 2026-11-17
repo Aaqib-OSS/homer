@@ -3,7 +3,10 @@ package homer.app
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.Codepoint
 import io.kotest.property.arbitrary.alphanumeric
+import io.kotest.property.arbitrary.element
+import io.kotest.property.arbitrary.filter
 import io.kotest.property.arbitrary.list
+import io.kotest.property.arbitrary.printableAscii
 import io.kotest.property.arbitrary.string
 import io.kotest.property.checkAll
 import kotlinx.coroutines.test.runTest
@@ -131,13 +134,44 @@ class ConstraintTestRefsTest {
     }
 
     @Test
+    fun `a disabled test, a class named only in a string or comment, and a method of another class do not resolve`() {
+        val tricky =
+            mapOf(
+                "A.kt" to
+                    """
+                    // class Ghost
+                    val s = "class Ghost {"
+                    class Real {
+                        @Disabled
+                        @Test
+                        fun `off`() {}
+                    }
+
+                    class Other {
+                        @Test
+                        fun `elsewhere`() {}
+                    }
+                    """.trimIndent(),
+            )
+
+        assertEquals("no test class Ghost", ConstraintTestRefs.unresolved(TestRef("Ghost", null), tricky))
+        assertEquals("Real has only a @Disabled test `off`", ConstraintTestRefs.unresolved(TestRef("Real", "off"), tricky))
+        assertEquals("Real has no @Test function `elsewhere`", ConstraintTestRefs.unresolved(TestRef("Real", "elsewhere"), tricky))
+        assertNull(ConstraintTestRefs.unresolved(TestRef("Other", "elsewhere"), tricky))
+    }
+
+    @Test
     fun `whatever the names, a line built in the documented format parses back to the same refs`() =
         runTest {
             val identifier = Arb.string(1..12, Codepoint.alphanumeric())
-            val methodName = Arb.string(1..30, Codepoint.alphanumeric())
-            checkAll(Arb.list(identifier, 1..4), Arb.list(methodName, 1..4)) { classes, methods ->
+            val methodName = Arb.string(1..40, Codepoint.printableAscii()).filter { it.isNotBlank() && '`' !in it }
+            val separator = Arb.element(", ", " and ", ", and ")
+            checkAll(Arb.list(identifier, 1..4), Arb.list(methodName, 1..4), Arb.list(separator, 4..4)) { classes, methods, separators ->
                 val expected = classes.zip(methods) { c, m -> TestRef("C$c", m) }
-                val tail = expected.joinToString(", ") { "`${it.className}#${it.method}`" }
+                val tail =
+                    expected
+                        .mapIndexed { i, ref -> "`${ref.className}#${ref.method}`" + if (i < expected.lastIndex) separators[i] else "" }
+                        .joinToString("")
 
                 assertEquals(expected, ConstraintTestRefs.refs("- **Constraint:** anything. Enforced by $tail."))
             }

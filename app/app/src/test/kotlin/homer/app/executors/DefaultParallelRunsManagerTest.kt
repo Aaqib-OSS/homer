@@ -9,12 +9,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Unit tests for DefaultParallelRunsManager
@@ -451,7 +453,7 @@ class DefaultParallelRunsManagerTest {
             runCurrent()
 
             assertFailsWith<MaxQueuedRunsExceededException> {
-                manager.acquireSlot(agent, 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = 1)
+                withTimeout(1.seconds) { manager.acquireSlot(agent, 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = 1) }
             }
             freshWaiter.cancelAndJoin()
             oldWaiter.cancelAndJoin()

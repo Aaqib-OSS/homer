@@ -8,7 +8,7 @@ import kotlin.test.assertTrue
 /**
  * Doc-drift backstop for the `Constraint:` bullets of the backend CLAUDE.md guides under `app/`
  * (app/CLAUDE.md § Key service responsibilities): each ends with `Enforced by `Class#test name`.`
- * naming a test in `:app` that fails when the constraint is broken. A bullet naming none, a class
+ * naming a test in a test source tree of an `app` module that fails when the constraint is broken. A bullet naming none, a class
  * no test source declares, or a function that is no `@Test` of that class fails here. That the
  * named test really fails on a break is the reviewer's check, made once when the line was written.
  */
@@ -21,9 +21,12 @@ class ConstraintsNameTheirTestsTest {
             .toList()
 
     private val testSources: Map<String, String> =
-        File(repoRoot, "app/app/src/test/kotlin")
-            .walkTopDown()
-            .filter { it.isFile && it.extension == "kt" }
+        File(repoRoot, "app")
+            .listFiles { it.isDirectory }
+            .orEmpty()
+            .map { File(it, "src/test/kotlin") }
+            .filter { it.isDirectory }
+            .flatMap { it.walkTopDown().filter { f -> f.isFile && f.extension == "kt" }.toList() }
             .associate { it.path to it.readText() }
 
     private fun relative(file: File) = file.relativeTo(repoRoot).path

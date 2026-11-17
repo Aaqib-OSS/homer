@@ -1237,6 +1237,36 @@ class LangGraphRunStatusServiceTest {
         }
 
     @Test
+    fun `a shed reading is not cached under its thread, so the next poll of that thread reads the state`() =
+        runBlocking {
+            val ran = java.util.concurrent.CopyOnWriteArrayList<String>()
+            val stateRunner =
+                GraphStateRunner { _, _, threadId, _, _ ->
+                    ran += threadId
+                    if (threadId == "t1") delay(300)
+                    GraphStateResult.Ok("""{"threadId":"$threadId","nodes":{"a":"done"},"errors":{}}""")
+                }
+            val service =
+                service(
+                    fileOperations = fileOperationsForThreads("t1", "t2", "t2"),
+                    stateRunner = stateRunner,
+                    maxConcurrentStateRuns = 1,
+                    maxQueueWait = 40.milliseconds,
+                )
+
+            val occupier = launch(Dispatchers.Default) { service.status(processInfo(), agent, includeGraph = true) }
+            delay(60) // let t1 take the only permit
+            val shed = service.status(processInfo(), agent, includeGraph = true)
+            occupier.join()
+
+            assertEquals(LangGraphRunStatusService.BUSY_MESSAGE, shed?.error)
+            val after = service.status(processInfo(), agent, includeGraph = true)
+            assertNull(after?.error, "a cached busy would answer this poll of t2")
+            assertEquals(mapOf("a" to "done"), after?.nodes)
+            assertEquals(listOf("t1", "t2"), ran.toList())
+        }
+
+    @Test
     fun `the cache never holds more than its maximum, evicting the least recently read`() =
         runBlocking {
             // Distinct thread ids come from an agent-writable artifact, so cardinality

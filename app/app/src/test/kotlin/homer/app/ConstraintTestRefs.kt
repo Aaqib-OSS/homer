@@ -67,33 +67,66 @@ internal object ConstraintTestRefs {
     }
 
     /**
-     * Why [ref] names no test in [sources] (file path to text), or null when it resolves: some file
-     * declares the class and, for a method ref, holds a `@Test`-annotated function of that name.
+     * Why [ref] names no test in [sources] (file path to text), or null when it resolves: a file other
+     * than this check's own tests declares the class at the start of a line and, for a method ref, the
+     * class body holds a `@Test`-annotated function of that name that is not `@Disabled`.
      */
     fun unresolved(
         ref: TestRef,
         sources: Map<String, String>,
     ): String? {
-        val declaring = Regex("""\b(?:class|object)\s+${Regex.escape(ref.className)}\b""")
-        val files = sources.filterValues { declaring.containsMatchIn(it) }
-        if (files.isEmpty()) return "no test class ${ref.className}"
+        val declaring =
+            Regex("""(?m)^\s*(?:(?:public|internal|private|open|abstract|data)\s+)*(?:class|object)\s+${Regex.escape(ref.className)}\b""")
+        val bodies =
+            sources
+                .filterKeys { !it.endsWith("ConstraintTestRefsTest.kt") }
+                .values
+                .mapNotNull { source -> declaring.find(source)?.let { classBody(source, it.range.first) } }
+        if (bodies.isEmpty()) return "no test class ${ref.className}"
         val method = ref.method ?: return null
-        val found = files.values.any { hasTestFunction(it, method) }
-        return if (found) null else "${ref.className} has no @Test function `$method`"
+        val states = bodies.map { testState(it, method) }
+        return when {
+            true in states -> null
+            false in states -> "${ref.className} has only a @Disabled test `$method`"
+            else -> "${ref.className} has no @Test function `$method`"
+        }
     }
 
-    private fun hasTestFunction(
+    /** The lines from the class declaration to the first column-0 closing brace (ktlint's top-level end). */
+    private fun classBody(
         source: String,
+        declarationAt: Int,
+    ): List<String> {
+        val lines = source.substring(declarationAt).lines()
+        val end = lines.drop(1).indexOfFirst { it == "}" }
+        return if (end < 0) lines else lines.take(end + 2)
+    }
+
+    /** True: an enabled test of that name; false: only disabled ones; null: none. */
+    private fun testState(
+        body: List<String>,
         method: String,
-    ): Boolean {
-        val lines = source.lines()
+    ): Boolean? {
         val declaration = "fun `$method`("
-        return lines.indices.any { at ->
-            declaration in lines[at] &&
-                (at - 1 downTo maxOf(0, at - 8))
-                    .map { lines[it].trim() }
-                    .takeWhile { !it.endsWith("}") }
-                    .any { Regex("""@\w*Test\b""").containsMatchIn(it) && it.startsWith("@") }
+        val states =
+            body.indices.filter { declaration in body[it] }.mapNotNull { at ->
+                val annotations =
+                    (at - 1 downTo maxOf(0, at - 8))
+                        .map { body[it].trim() }
+                        .takeWhile { !it.endsWith("}") }
+                        .filter { it.startsWith("@") }
+                when {
+                    annotations.none { Regex("""@\w*Test\b""").containsMatchIn(it) } -> null
+                    annotations.any { it.startsWith("@Disabled") } -> false
+                    else -> true
+                }
+            }
+        return if (true in states) {
+            true
+        } else if (false in states) {
+            false
+        } else {
+            null
         }
     }
 }
