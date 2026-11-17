@@ -3,6 +3,7 @@ package homer.app.services
 import homer.app.EnvConstants
 import homer.app.fixtures.PersistenceTestSupport
 import homer.app.fixtures.SqlStatementRecorder
+import homer.app.fixtures.repoRoot
 import homer.app.infra.FileOperations
 import homer.app.infra.GraphStateResult
 import homer.app.infra.GraphStateRunner
@@ -30,6 +31,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.io.File
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.max
@@ -1103,6 +1105,44 @@ class LangGraphRunStatusServiceTest {
             clock += 4_000
             assertEquals(mapOf("a" to "done"), service.status(processInfo(), agent, includeGraph = true)?.nodes)
             assertEquals(2, runs)
+        }
+
+    @Test
+    fun `the default state cache TTL sits just under the console's poll interval`() =
+        runBlocking {
+            val hook = File(repoRoot, "console/lib/hooks/use-process-lang-graph-view.ts").readText()
+            val pollMs =
+                Regex("""refetchInterval:\s*lgStatusOpen\s*\?\s*(\d+)""")
+                    .find(hook)
+                    ?.groupValues
+                    ?.get(1)
+                    ?.toLong()
+                    ?: error("the LangGraph status poll interval is no longer read from refetchInterval in the console hook")
+            var runs = 0
+            val stateRunner =
+                GraphStateRunner { _, _, _, _, _ ->
+                    runs++
+                    GraphStateResult.Ok("""{"threadId":"t1","nodes":{"a":"done"},"errors":{}}""")
+                }
+            var clock = 1_000L
+            // No stateCacheTtl: the production default is what is pinned.
+            val service =
+                LangGraphRunStatusService(
+                    fileOperations = fileOperationsFor(),
+                    stateRunner = stateRunner,
+                    appConfig = appConfig,
+                    continuationRepository = mockk(),
+                    processManager = mockk(),
+                    nowMillis = { clock },
+                )
+
+            service.status(processInfo(), agent, includeGraph = true)
+            clock += pollMs - 1_000 - 1
+            service.status(processInfo(), agent, includeGraph = true)
+            assertEquals(1, runs, "the reading must still be reused within 1 s of the console's ${pollMs}ms poll")
+            clock += 1_000
+            service.status(processInfo(), agent, includeGraph = true)
+            assertEquals(2, runs, "the reading must have expired before the console's ${pollMs}ms poll")
         }
 
     @Test
