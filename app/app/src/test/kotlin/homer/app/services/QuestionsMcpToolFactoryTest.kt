@@ -260,6 +260,26 @@ class QuestionsMcpToolFactoryTest {
         }
 
     @Test
+    fun `ask_user_and_wait carries on when a progress notification cannot be sent`() =
+        runTest {
+            val service = service()
+            service.registerProcess(1, "agent-a")
+            coEvery { connection.notification(any(), any()) } throws IllegalStateException("stream closed")
+            launch {
+                delay(40_000)
+                val open = service.all(QuestionsService.QuestionStatus.OPEN).single()
+                service.answer(open.id, "answered mid-hold")
+            }
+
+            val result =
+                factory(service).askUserAndWait(connection, 1, request(askArgs(), progressToken = 7))
+
+            assertEquals("ANSWERED", structured(result, "status"))
+            assertEquals("answered mid-hold", structured(result, "answer"))
+            coVerify(exactly = 2) { connection.notification(any(), any()) }
+        }
+
+    @Test
     fun `ask_user_and_wait holds ttlSec in hold chunks, the last one only the remainder`() =
         runTest {
             val service = spyk(service())

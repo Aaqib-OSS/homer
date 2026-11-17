@@ -53,6 +53,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class QuestionsRoutesTest {
@@ -302,6 +303,35 @@ class QuestionsRoutesTest {
             assertEquals("ANSWERED", body.status)
             assertEquals("yes, go", body.answer)
             assertEquals("ANSWERED", runBlocking { service.get(question.id) }?.status?.name)
+        }
+
+    @Test
+    fun `POST answer still succeeds without a dispatch when the dispatch fire fails`() =
+        testApplication {
+            val service = newService()
+            val question =
+                runBlocking {
+                    service.registerProcess(1, "agent-a")
+                    service.ask(1, "Proceed?")
+                }
+            val dispatches = mockk<DispatchService>()
+            coEvery { dispatches.fire(any(), any()) } throws IllegalStateException("db down")
+            mountApiV1Routes {
+                every { questionsService } returns service
+                every { dispatchService } returns dispatches
+            }
+
+            val response =
+                client.post("/api/v1/questions/${question.id}/answer") {
+                    contentType(ContentType.Application.Json)
+                    setBody("""{"answer":"yes, go"}""")
+                }
+
+            assertEquals(HttpStatusCode.OK, response.status)
+            val body = apiJson.decodeFromString<QuestionResponse>(response.bodyAsText())
+            assertEquals("ANSWERED", body.status)
+            assertNull(body.dispatch)
+            coVerify(exactly = 1) { dispatches.fire(question.id, "yes, go") }
         }
 
     @Test

@@ -1185,6 +1185,17 @@ class ContinuationServiceTest {
         }
 
     @Test
+    fun `a failed retry lookup leaves the sweep to return without firing`() =
+        runTest {
+            coEvery { repo.findDueRetries(any()) } throws IllegalStateException("database is gone")
+
+            service().sweepRetries()
+
+            coVerify(exactly = 0) { repo.claim(any()) }
+            coVerify(exactly = 0) { processManager.getProcessStatus(any()) }
+        }
+
+    @Test
     fun `fire marks FAILED when the target agent is no longer dispatch-enabled`() =
         runTest {
             // Registered while dispatchable, but the target was reloaded to dispatch.enabled=false
