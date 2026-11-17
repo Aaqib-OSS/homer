@@ -521,6 +521,28 @@ class MaintenanceModeServiceTest {
             withTimeout(5_000) { parked.await() }
         }
 
+    @Test
+    fun `a released start holds its release slot until its start returns`() =
+        runBlocking {
+            newService(MaintenanceConfig(releaseConcurrency = 1))
+            svc.setEnabled(true)
+            val started = CompletableDeferred<Unit>()
+            val finish = CompletableDeferred<Unit>()
+            val first = async { svc.gated("alice") { started.complete(Unit).also { finish.await() } } }
+            val second = async { svc.gated("alice") { } }
+            yield()
+            assertEquals(2, svc.queueDepth())
+
+            svc.setEnabled(false)
+            withTimeout(5_000) { started.await() }
+            repeat(20) { yield() }
+
+            assertFalse(second.isCompleted, "the one release slot is still held until the first start returns")
+            finish.complete(Unit)
+            withTimeout(5_000) { awaitAll(first, second) }
+            assertEquals(0, svc.queueDepth())
+        }
+
     // --- the shutdown drain (ADR-0102) ---
 
     @Test

@@ -9,12 +9,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Unit tests for DefaultParallelRunsManager
@@ -413,6 +415,49 @@ class DefaultParallelRunsManagerTest {
             assertFailsWith<MaxParallelRunsExceededException> {
                 manager.acquireSlot(agentName, maxParallelRuns = 2, OnMaxParallelRunsStrategy.REJECT)
             }
+        }
+
+    @Test
+    fun `a slot held across a reload is released to its own semaphore, not the fresh one`() =
+        runTest {
+            val agent = "reloaded-while-held"
+            val held = manager.acquireSlot(agent, maxParallelRuns = 1, OnMaxParallelRunsStrategy.REJECT)
+
+            manager.onAgentsReloaded(updated = setOf(agent), removed = emptySet())
+            val fresh = manager.acquireSlot(agent, 1, OnMaxParallelRunsStrategy.REJECT)
+            // A release that re-looked the semaphore up by name would free the fresh one here.
+            manager.releaseSlot(held)
+
+            assertFailsWith<MaxParallelRunsExceededException> {
+                manager.acquireSlot(agent, 1, OnMaxParallelRunsStrategy.REJECT)
+            }
+            manager.releaseSlot(fresh)
+        }
+
+    @Test
+    fun `a queued run that outlives a reload decrements the counter it incremented`() =
+        runTest {
+            val agent = "reloaded-while-queued"
+            val held = manager.acquireSlot(agent, maxParallelRuns = 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = 1)
+            val oldWaiter = launch { manager.acquireSlot(agent, 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = 1) }
+            runCurrent()
+
+            // The reload drops the semaphore and the counter the parked waiter captured.
+            manager.onAgentsReloaded(updated = setOf(agent), removed = emptySet())
+            val freshHeld = manager.acquireSlot(agent, 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = 1)
+            val freshWaiter = launch { manager.acquireSlot(agent, 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = 1) }
+            runCurrent()
+
+            // The old waiter wakes and leaves its own counter; the fresh counter must still read 1.
+            manager.releaseSlot(held)
+            runCurrent()
+
+            assertFailsWith<MaxQueuedRunsExceededException> {
+                withTimeout(1.seconds) { manager.acquireSlot(agent, 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = 1) }
+            }
+            freshWaiter.cancelAndJoin()
+            oldWaiter.cancelAndJoin()
+            manager.releaseSlot(freshHeld)
         }
 
     @Test
