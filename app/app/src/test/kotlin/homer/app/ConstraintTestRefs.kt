@@ -131,7 +131,8 @@ internal object ConstraintTestRefs {
      * ktlint-formatted): those inline before `fun`, and those on the lines directly above that are an
      * annotation line at the function's indentation that declares nothing, an argument continuation
      * (deeper, or a closing `)` at the function's indentation), or a comment. The scan stops at a blank
-     * line, a line containing `fun `, and any other line at the function's indentation or shallower.
+     * line, a line whose code (string literals blanked) contains `fun `, and any other line at the
+     * function's indentation or shallower.
      */
     private fun annotationsOf(
         body: List<String>,
