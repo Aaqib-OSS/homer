@@ -401,6 +401,10 @@ each carries its reason.
 
 *Amended (2026-11-17):* The size caps ratchet (GH #306). A cap more than 5% of itself (rounded up, at least 1) above the current maximum now fails, in `SizeLimitsTest` for the backend and in `size-console` for the console, with a message naming the constant, its file, the current maximum and the value to lower it to; the cap then becomes exactly that maximum. Lowered now: `MAX_FILE_LINES` 600 → 542 (backend), `MAX_FILE_LINES` 600 → 500 (console). The other caps were within the slack and stay. The slack exists because requiring the cap to equal the maximum exactly would force a cap edit in every commit that shrinks the worst offender slightly; it absorbs that churn while still catching a cap set at a single outlier far above the rest (the cap itself still limits growth).
 
+## Amendment (2026-11-17): detekt also runs MatchingDeclarationName
+
+`detekt` also runs the `naming` rule `MatchingDeclarationName` (GH #309): a file declaring one top-level class or object is named after it, so a declaration is found by its file name. One file broke it at introduction (`KillNotices.kt`, which declares `KillCause`) and was renamed in the same change. Every other `naming` rule stays off, listed in `app/config/detekt/detekt.yml`.
+
 ## Amendment (2026-11-17): cognitive-complexity cap (GH #307)
 
 GH #307 caps cognitive complexity per function on both stacks. detekt's `complexity` set runs only `CognitiveComplexMethod` (every other complexity rule stays off) and the console's ESLint config enables `sonarjs/cognitive-complexity` at `warn`. Each threshold is today's worst value, so the caps add no finding and only stop a function from getting worse: 23 on the backend (`callbackResultRoutes` in `CallbackRoutes.kt`), 11 on the console (the `onEvent` handler in `lib/api/streams.ts`). The thresholds live in `app/config/detekt/detekt.yml` and `console/eslint.config.mjs`.
