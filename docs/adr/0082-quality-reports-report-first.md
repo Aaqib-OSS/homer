@@ -3,6 +3,7 @@ status: accepted
 date: 2026-10-12
 deciders: Lukáš Vlk
 consulted: ADR-0081
+amended: 2026-10-13, 2026-10-14, 2026-11-04, 2026-11-05, 2026-11-06, 2026-11-11, 2026-11-13, 2026-11-14, 2026-11-15, 2026-11-16, 2026-11-17
 ---
 
 # ADR-0082: Quality checks are reported first and made required one by one
@@ -398,4 +399,8 @@ suppressions stay: each is cleanup-before-rethrow, a deliberate cancellation bou
 cleanup whose catch would change behaviour if it rethrew a cancellation or stopped catching `Error`, and
 each carries its reason.
 
-*Amended (2026-11-17):* GH #307 caps cognitive complexity per function on both stacks. detekt's `complexity` set runs only `CognitiveComplexMethod` (every other complexity rule stays off) and the console's ESLint config enables `sonarjs/cognitive-complexity` at `warn`. Each threshold is today's worst value, so the caps add no finding and only stop a function from getting worse: 23 on the backend (`callbackResultRoutes` in `CallbackRoutes.kt`), 11 on the console (the `onEvent` handler in `lib/api/streams.ts`). The thresholds live in `app/config/detekt/detekt.yml` and `console/eslint.config.mjs`.
+*Amended (2026-11-17):* The size caps ratchet (GH #306). A cap more than 5% of itself (rounded up, at least 1) above the current maximum now fails, in `SizeLimitsTest` for the backend and in `size-console` for the console, with a message naming the constant, its file, the current maximum and the value to lower it to; the cap then becomes exactly that maximum. Lowered now: `MAX_FILE_LINES` 600 → 542 (backend), `MAX_FILE_LINES` 600 → 500 (console). The other caps were within the slack and stay. The slack exists because requiring the cap to equal the maximum exactly would force a cap edit in every commit that shrinks the worst offender slightly; it absorbs that churn while still catching a cap set at a single outlier far above the rest (the cap itself still limits growth).
+
+## Amendment (2026-11-17): cognitive-complexity cap (GH #307)
+
+GH #307 caps cognitive complexity per function on both stacks. detekt's `complexity` set runs only `CognitiveComplexMethod` (every other complexity rule stays off) and the console's ESLint config enables `sonarjs/cognitive-complexity` at `warn`. Each threshold is today's worst value, so the caps add no finding and only stop a function from getting worse: 23 on the backend (`callbackResultRoutes` in `CallbackRoutes.kt`), 11 on the console (the `onEvent` handler in `lib/api/streams.ts`). The thresholds live in `app/config/detekt/detekt.yml` and `console/eslint.config.mjs`.

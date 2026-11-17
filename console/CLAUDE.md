@@ -499,7 +499,7 @@ operator. See
 | `npm run test:watch` | Vitest watch mode |
 | `npm run test:coverage` | Vitest single run with V8 coverage → `coverage/` (what CI runs) |
 | `npm run crap` | CRAP score per function from that coverage → `coverage/crap/` ([ADR-0081](../docs/adr/0081-crap-score-gate.md)) |
-| `npm run quality:report` | Report-only ESLint warnings, dependency-cruiser layering, knip unused code and file / function size (`size-console`: files over 600 and functions over 60 lines, in an ESLint run of its own, so not lint warnings) → `reports/quality/`, plus the `types/homer.ts` extract the `dto-contract` check reads → `reports/dto-contract/` ([ADR-0082](../docs/adr/0082-quality-reports-report-first.md)) |
+| `npm run quality:report` | Report-only ESLint warnings, dependency-cruiser layering, knip unused code and file / function size (`size-console`: files over `MAX_FILE_LINES` and functions over `MAX_FUNCTION_LINES` in `scripts/size.mjs`, ratcheted: a cap more than 5% of itself (rounded up, at least 1) above the current maximum is a finding; in an ESLint run of its own, so not lint warnings) → `reports/quality/`, plus the `types/homer.ts` extract the `dto-contract` check reads → `reports/dto-contract/` ([ADR-0082](../docs/adr/0082-quality-reports-report-first.md)) |
 | `npm run mutation` / `npm run mutation:changed` | Stryker mutation testing, full or of the lines changed since `MUTATE_BASE` (from the working tree with `MUTATE_WORKTREE=1`) → `reports/quality/mutation-console/` (ADR-0082) |
 | `npm run build` | Production build |
 | `npm run start` | Serve the production build |
