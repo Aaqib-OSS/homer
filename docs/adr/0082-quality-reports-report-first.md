@@ -397,3 +397,5 @@ now `homer.app.infra.coRunCatching`; no separate rule was added. All 38 `Suspend
 suppressions stay: each is cleanup-before-rethrow, a deliberate cancellation boundary, or a best-effort
 cleanup whose catch would change behaviour if it rethrew a cancellation or stopped catching `Error`, and
 each carries its reason.
+
+*Amended (2026-11-17):* The size caps ratchet (GH #306). A cap more than 5% of itself (rounded up, at least 1) above the current maximum now fails, in `SizeLimitsTest` for the backend and in `size-console` for the console, with a message naming the constant, its file, the current maximum and the value to lower it to; the cap then becomes exactly that maximum. Lowered now: `MAX_FILE_LINES` 600 → 542 (backend), `MAX_FILE_LINES` 600 → 500 (console). The other caps were within the slack and stay.
