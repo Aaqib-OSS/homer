@@ -192,6 +192,19 @@ describe('lineCommentLines', () => {
     expect(lines("const s = 'http://x';\n// real")).toEqual([1]);
     expect(lines('/*\n// in block\n*/\n// real')).toEqual([3]);
   });
+  it('reads an escaped quote inside a string as part of it', () => {
+    expect(lines("const s = 'it\\'s // not a comment';\n// real")).toEqual([1]);
+    expect(lines('const s = "say \\"hi\\" // not a comment";\n// real')).toEqual([1]);
+  });
+  it('keeps the line count across a backslash-newline in a string', () => {
+    expect(lines("const s = 'a\\\nb';\n// real")).toEqual([2]);
+  });
+  it('treats a backslash in a block comment as plain text', () => {
+    expect(lines('/* a \\\n b */\n// real')).toEqual([2]);
+  });
+  it('treats a backslash at the end of a line comment as plain text', () => {
+    expect(lines('// a \\\n// real')).toEqual([0, 1]);
+  });
   it('resumes the template after a ${} block with braces', () => {
     expect(lines('const s = `${{ a: 1 }.a}\n// still template`;\n// real')).toEqual([2]);
   });

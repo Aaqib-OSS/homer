@@ -84,6 +84,10 @@ class SuppressionBudgetTest {
         assertTrue(reasoned("@Suppress(\n    \"A\", // why\n)\nfun f() {}"), "inside the annotation")
         assertFalse(reasoned("@Suppress(\"A\")\nfun f() {}"), "no reason")
         assertFalse(reasoned("// why\n\n@Suppress(\"A\")\nfun f() {}"), "a blank line breaks the link")
+        assertFalse(
+            reasoned("val x = 1 // a note on the code\n@Suppress(\"A\")\nfun f() {}"),
+            "a trailing comment on a code line above is no reason",
+        )
         assertFalse(reasoned("val x = 1\n@Suppress(\"A\")\nfun f() {}"), "code above is no reason")
         assertFalse(reasoned("@Suppress(\"A\") //\nfun f() {}"), "a bare marker")
         assertFalse(reasoned("@Suppress(\"A\") // TODO\nfun f() {}"), "TODO is no reason")
@@ -165,7 +169,7 @@ internal fun countOf(
 
 /**
  * Whether the `@Suppress(` at [offset] states why: a comment with real text on its line (up to the line of its
- * closing parenthesis, so one inside the annotation counts) or a `//` comment line directly above. Comments
+ * closing parenthesis, so one inside the annotation counts) or a `//` comment line directly above (comment-only: a trailing comment on a code line does not count). Comments
  * are read with [KotlinText], so a marker inside a string or character literal is no comment.
  */
 internal fun hasReason(
@@ -176,9 +180,12 @@ internal fun hasReason(
     if (commentTexts(segment).any(::isReasonText)) return true
     val lineStart = text.lastIndexOf('\n', offset - 1) + 1
     if (lineStart == 0) return false
-    // Lexed up to the line above, so a raw-string or character-literal line starting with the marker is no comment.
-    val above = KotlinText.commentText(text.substring(0, lineStart - 1)).substringAfterLast('\n').trimStart()
-    return above.startsWith("//") && isReasonText(above.removePrefix("//"))
+    // The line above must be comment-only: its raw text starts with the marker, and lexed up to it the marker
+    // is a comment, so neither a trailing comment on a code line nor a raw-string line counts.
+    val before = text.substring(0, lineStart - 1)
+    val raw = before.substringAfterLast('\n').trimStart()
+    val lexed = KotlinText.commentText(before).substringAfterLast('\n').trimStart()
+    return raw.startsWith("//") && lexed.startsWith("//") && isReasonText(raw.removePrefix("//"))
 }
 
 /** A reason has real words: at least 3 non-space characters, once a closing marker is dropped, and not a bare TODO / FIXME. */

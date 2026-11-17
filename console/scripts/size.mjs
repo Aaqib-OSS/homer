@@ -118,10 +118,13 @@ export function lineCommentLines(text) {
   let lineHasCode = false;
   let inTemplate = false;
   let i = 0;
-  const skipUntil = (close, stopAtNewline) => {
+  // Moves `i` to the last character of `close`; a backslash escapes only inside a string, and its newline is a line continuation.
+  const skipUntil = (close, { escapes = false, stopAtNewline = false } = {}) => {
     for (i += 1; i < text.length && !text.startsWith(close, i); i += 1) {
-      if (text[i] === '\\') i += 1;
-      else if (text[i] === '\n') {
+      if (escapes && text[i] === '\\') {
+        i += 1;
+        if (text[i] === '\n') line += 1;
+      } else if (text[i] === '\n') {
         if (stopAtNewline) return;
         line += 1;
       }
@@ -146,14 +149,14 @@ export function lineCommentLines(text) {
       }
     } else if (text.startsWith('//', i)) {
       if (!lineHasCode) found.add(line);
-      skipUntil('\n', true);
+      skipUntil('\n', { stopAtNewline: true });
       i -= 1;
     } else if (text.startsWith('/*', i)) {
       lineHasCode = true;
-      skipUntil('*/', false);
+      skipUntil('*/');
     } else if (c === "'" || c === '"') {
       lineHasCode = true;
-      skipUntil(c, true);
+      skipUntil(c, { escapes: true, stopAtNewline: true });
     } else if (c === '`') {
       lineHasCode = true;
       inTemplate = true;
