@@ -134,7 +134,7 @@ test('an unclosed script, style or comment in HTML throws instead of shrinking t
 
 test('the documented corners: a ">" in a quoted attribute ends its tag early; a regex literal quote hides the rest of its line', () => {
   const rules = parseForbidden(GLOSSARY)
-  const html = '<a title="a>b">skill</a>'
+  const html = '<img title="a>b" alt="skill">'
   assert.deepEqual(findHits({ path: 'a.html', kind: 'html', text: html }, rules).map((h) => h.line), [1])
   const ts = 'const re = /"/; const skill = "x"\nconst skill = 1\n'
   assert.deepEqual(findHits({ path: 'a.ts', kind: 'ts', text: ts }, rules).map((h) => h.line), [2])
