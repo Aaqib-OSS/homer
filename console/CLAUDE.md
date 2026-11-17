@@ -494,7 +494,7 @@ operator. See
 | Command | Purpose |
 | --- | --- |
 | `npm run dev` | Local dev server at `http://localhost:3000` |
-| `npm run lint` | ESLint (eslint-config-next, plus this file's architecture rules at `warn`); fails on errors only |
+| `npm run lint` | ESLint (eslint-config-next, plus this file's architecture rules and `sonarjs/cognitive-complexity` (GH #307, capped at the worst function) at `warn`); fails on errors only |
 | `npm test` | Vitest single run |
 | `npm run test:watch` | Vitest watch mode |
 | `npm run test:coverage` | Vitest single run with V8 coverage → `coverage/` (what CI runs) |
