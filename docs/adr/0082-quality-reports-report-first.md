@@ -397,3 +397,5 @@ now `homer.app.infra.coRunCatching`; no separate rule was added. All 38 `Suspend
 suppressions stay: each is cleanup-before-rethrow, a deliberate cancellation boundary, or a best-effort
 cleanup whose catch would change behaviour if it rethrew a cancellation or stopped catching `Error`, and
 each carries its reason.
+
+*Amended (2026-11-17):* GH #307 caps cognitive complexity per function on both stacks. detekt's `complexity` set runs only `CognitiveComplexMethod` (every other complexity rule stays off) and the console's ESLint config enables `sonarjs/cognitive-complexity` at `warn`. Each threshold is today's worst value, so the caps add no finding and only stop a function from getting worse: 23 on the backend (`callbackResultRoutes` in `CallbackRoutes.kt`), 11 on the console (the `onEvent` handler in `lib/api/streams.ts`). The thresholds live in `app/config/detekt/detekt.yml` and `console/eslint.config.mjs`.

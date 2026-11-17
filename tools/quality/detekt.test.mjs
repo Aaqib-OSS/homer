@@ -57,3 +57,11 @@ test('the style rule set runs exactly the five unused-code rules (GH #297)', () 
   assert.match(style, /^ {2}active: true$/m);
   assert.deepEqual(active, ['UnusedParameter', 'UnusedPrivateClass', 'UnusedPrivateFunction', 'UnusedPrivateProperty', 'UnusedVariable']);
 });
+
+test('the complexity rule set runs only CognitiveComplexMethod (GH #307)', () => {
+  const config = fs.readFileSync(new URL('../../app/config/detekt/detekt.yml', import.meta.url), 'utf8');
+  const complexity = config.split('\ncomplexity:\n')[1].split(/\n(?=\S)/)[0];
+  const active = [...complexity.matchAll(/^ {2}(\w+):\n {4}active: true$/gm)].map(([, rule]) => rule);
+
+  assert.deepEqual(active, ['CognitiveComplexMethod']);
+});
