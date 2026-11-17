@@ -127,7 +127,7 @@ class DtoContractRootsTest {
         val sources =
             mapOf(
                 "FixtureRoutes.kt" to
-                    """sendEvent(this, "agent.reload", frameData(AgentReloadFrame.serializer(), AgentReloadFrame(added, updated, removed)))""",
+                    """sendEvent(this, "agent.reload", LlmEventJson.encodeToString(AgentReloadFrame.serializer(), AgentReloadFrame(added, updated, removed)))""",
             )
         assertEquals(
             emptyList(),
@@ -148,7 +148,7 @@ class DtoContractRootsTest {
                     internal fun fixtureFrame(event: FixtureEvent): SseFrame =
                         when (event) {
                             is FixtureEvent.Changed ->
-                                SseFrame("fixture", frameData(FixtureFrame.serializer(), FixtureFrame(event.id)))
+                                SseFrame("fixture", LlmEventJson.encodeToString(FixtureFrame.serializer(), FixtureFrame(event.id)))
                         }
                     """.trimIndent(),
             )

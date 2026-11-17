@@ -90,12 +90,6 @@ class BoundedLines(
     }
 }
 
-/** Reads at most [maxBytes] of [path] line-by-line, so a flood cannot be materialized whole (§12 rule 4). */
-fun boundedLines(
-    path: Path,
-    maxBytes: Long,
-): BoundedLines = BoundedLines(path, maxBytes)
-
 /**
  * What the lenient parse recovered: the parsed events, plus how many lines it had to skip.
  * [skippedLines] is surfaced on `telemetry.llm.malformed_events` so a CLI that garbles a line

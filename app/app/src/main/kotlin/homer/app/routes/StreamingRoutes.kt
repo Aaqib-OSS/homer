@@ -39,7 +39,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.serialization.SerializationStrategy
 
 private const val HEARTBEAT_MS = 15_000L
 
@@ -128,7 +127,7 @@ private fun Route.agentEventsStreamRoute(
                         sendEvent(
                             this,
                             "agent.reload",
-                            frameData(AgentReloadFrame.serializer(), AgentReloadFrame(added, updated, removed)),
+                            LlmEventJson.encodeToString(AgentReloadFrame.serializer(), AgentReloadFrame(added, updated, removed)),
                         )
                     }
             }
@@ -212,15 +211,6 @@ internal data class SseFrame(
     val id: String? = null,
 )
 
-/**
- * The `data:` JSON of one frame payload. [LlmEventJson] is compact and writes explicit nulls, so the
- * bytes match the `buildJsonObject` form this replaced — a nullable field is `null`, never absent.
- */
-private fun <T> frameData(
-    serializer: SerializationStrategy<T>,
-    payload: T,
-): String = LlmEventJson.encodeToString(serializer, payload)
-
 /** The process a `/stream/processes` [event] is about; null for an event that stream does not carry. */
 internal fun streamedProcessId(event: ProcessEvent): Int? =
     when (event) {
@@ -238,35 +228,41 @@ internal fun processEventFrame(event: ProcessEvent): SseFrame? =
         is ProcessEvent.StatusChanged -> {
             SseFrame(
                 PROCESS_STATUS_SSE_EVENT,
-                frameData(ProcessStatusFrame.serializer(), ProcessStatusFrame(event.processId, event.status.name, event.agentName)),
+                LlmEventJson.encodeToString(
+                    ProcessStatusFrame.serializer(),
+                    ProcessStatusFrame(event.processId, event.status.name, event.agentName),
+                ),
             )
         }
 
         is ProcessEvent.CurrentCommandChanged -> {
             SseFrame(
                 "process.cmd",
-                frameData(ProcessCmdFrame.serializer(), ProcessCmdFrame(event.processId, event.label, event.startedAt)),
+                LlmEventJson.encodeToString(ProcessCmdFrame.serializer(), ProcessCmdFrame(event.processId, event.label, event.startedAt)),
             )
         }
 
         is ProcessEvent.QuestionAsked -> {
             SseFrame(
                 "question.asked",
-                frameData(QuestionAskedFrame.serializer(), QuestionAskedFrame(event.processId, event.questionId, event.agentName)),
+                LlmEventJson.encodeToString(
+                    QuestionAskedFrame.serializer(),
+                    QuestionAskedFrame(event.processId, event.questionId, event.agentName),
+                ),
             )
         }
 
         is ProcessEvent.QuestionAnswered -> {
             SseFrame(
                 "question.answered",
-                frameData(QuestionFrame.serializer(), QuestionFrame(event.processId, event.questionId)),
+                LlmEventJson.encodeToString(QuestionFrame.serializer(), QuestionFrame(event.processId, event.questionId)),
             )
         }
 
         is ProcessEvent.QuestionExpired -> {
             SseFrame(
                 "question.expired",
-                frameData(QuestionFrame.serializer(), QuestionFrame(event.processId, event.questionId)),
+                LlmEventJson.encodeToString(QuestionFrame.serializer(), QuestionFrame(event.processId, event.questionId)),
             )
         }
 
@@ -281,7 +277,7 @@ private class MessageEvent(
     val processId: Int,
     val messageId: String,
 ) {
-    fun payload(): String = frameData(RunMessageFrame.serializer(), RunMessageFrame(processId, messageId))
+    fun payload(): String = LlmEventJson.encodeToString(RunMessageFrame.serializer(), RunMessageFrame(processId, messageId))
 }
 
 private fun messageEvent(event: ProcessEvent): MessageEvent? =
@@ -306,7 +302,7 @@ internal fun logEventFrame(event: LogTailService.LogEvent): SseFrame =
         is LogTailService.LogEvent.Chunk -> {
             SseFrame(
                 name = "log.chunk",
-                data = frameData(LogChunkFrame.serializer(), LogChunkFrame(event.content)),
+                data = LlmEventJson.encodeToString(LogChunkFrame.serializer(), LogChunkFrame(event.content)),
                 id = event.offset.toString(),
             )
         }
@@ -336,7 +332,7 @@ internal fun llmEventFrame(
         is LlmStreamEvent.Event -> {
             SseFrame(
                 "llm.event",
-                frameData(
+                LlmEventJson.encodeToString(
                     LlmStreamFrame.serializer(),
                     LlmStreamFrame(
                         processId = processId,

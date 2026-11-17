@@ -127,16 +127,16 @@ class LlmOutputJsonTest {
     }
 
     @Test
-    fun `boundedLines stops reading at the byte bound and marks the cut`() {
+    fun `BoundedLines stops reading at the byte bound and marks the cut`() {
         val file = tempDir.resolve("flood.ndjson")
         Files.write(file, "line\n".repeat(10).toByteArray())
-        val bounded = boundedLines(file, maxBytes = 12)
+        val bounded = BoundedLines(file, maxBytes = 12)
         val lines = bounded.lines.toList()
         // 5 bytes per line: 3 whole lines (15 bytes) are read, the 4th pushes the budget
         // negative and the sequence stops there.
         assertEquals(3, lines.size)
         assertTrue(bounded.cut)
-        assertFalse(boundedLines(file, maxBytes = 100).cut)
+        assertFalse(BoundedLines(file, maxBytes = 100).cut)
     }
 
     @Test
