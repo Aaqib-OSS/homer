@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { findHits, format, parseForbidden, stripNonCode, tokens } from './glossary-synonyms.mjs'
+import { findHits, format, parseForbidden, stripHtml, stripNonCode, tokens } from './glossary-synonyms.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..')
 const tracked = (...patterns) => execFileSync('git', ['-C', root, 'ls-files', '-z', '--cached', ...patterns], { encoding: 'utf8' }).split('\0').filter(Boolean)
@@ -123,4 +123,11 @@ test('HTML is read as text: tags, scripts, styles and comments are not', () => {
   const rules = parseForbidden(GLOSSARY)
   const html = '<a class="skill" href="skill">x</a>\n<script>\nvar skill\n</script><style>.skill{}</style>\n<!-- skill -->\n<p>a <b>skill</b></p>'
   assert.deepEqual(findHits({ path: 'a.html', text: html, kind: 'html' }, rules).map((h) => h.line), [6])
+})
+
+test('an unclosed script, style or comment in HTML throws instead of shrinking the scan', () => {
+  for (const open of ['<script>', '<style type="text/css">', '<!--']) {
+    assert.throws(() => stripHtml(`<p>a</p>\n${open} skill`), /unclosed .* at line 2/)
+  }
+  assert.equal(stripHtml('<!-- <script> -->x').trim(), 'x')
 })

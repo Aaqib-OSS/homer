@@ -61,7 +61,7 @@ or letter-digit part of an identifier (`skillName`, `skill2`), in:
   root `CLAUDE.md` §9 says; `docs/glossary.md` and `docs/quality-checks.md` stay in), `CHANGELOG.md`,
   `THIRD-PARTY-LICENSES.md`, `CONTRIBUTORS.md`, `plugins/` (copies) and `.github/`, this section
   excepted, so the site pages and every package guide are in;
-- `docs/homer-feature-atlas.html`, read as text (tags, scripts and styles dropped);
+- `docs/homer-feature-atlas.html`, read as text (tags, scripts, styles and comments dropped; an unclosed one fails the test, and a `>` inside a quoted attribute ends its tag early);
 - the backend's Kotlin under every `app/*/src/main`, comments and string literals not read, a
   backticked name read as an identifier;
 - the console's production TypeScript (`app`, `components`, `lib`, `types`, `middleware.ts`; not

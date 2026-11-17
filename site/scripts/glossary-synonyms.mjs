@@ -54,8 +54,14 @@ const NOT_TS = new RegExp(`${NOT_KOTLIN.source}|\`(?:[^\`\\\\]|\\\\.)*\``, 'g')
 const blank = (m) => m.replace(/[^\n]/g, ' ')
 export const stripNonCode = (text, lang = 'kotlin') => text.replace(lang === 'ts' ? NOT_TS : NOT_KOTLIN, blank)
 
-// HTML as prose: script and style bodies and tags are dropped, line breaks kept.
-export const stripHtml = (text) => text.replace(/<(script|style)\b[\s\S]*?<\/\1>|<!--[\s\S]*?-->|<[^>]*>/gi, blank)
+// HTML as prose: script and style bodies, comments and tags are dropped, line breaks kept. A
+// script, style or comment left unclosed would drop the rest of the file silently, so it throws.
+export function stripHtml(text) {
+  const blocks = text.replace(/<(script|style)\b[\s\S]*?<\/\1\s*>|<!--[\s\S]*?-->/gi, blank)
+  const open = /<(?:script|style)\b|<!--/i.exec(blocks)
+  if (open) throw new Error(`unclosed ${open[0]} at line ${blocks.slice(0, open.index).split('\n').length}`)
+  return blocks.replace(/<[^>]*>/g, blank)
+}
 
 const clean = { kotlin: (t) => stripNonCode(t, 'kotlin'), ts: (t) => stripNonCode(t, 'ts'), html: stripHtml, prose: (t) => t }
 
