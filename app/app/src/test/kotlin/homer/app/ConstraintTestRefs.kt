@@ -127,9 +127,11 @@ internal object ConstraintTestRefs {
     }
 
     /**
-     * The annotations of the function declared on line [at]: those inline before `fun`, and those on
-     * the contiguous annotation, comment and blank lines directly above, a multi-line annotation
-     * argument list included. The scan stops at the first line of other code.
+     * The annotations of the function declared on line [at], read by indentation (test sources are
+     * ktlint-formatted): those inline before `fun`, and those on the lines directly above that are an
+     * annotation line at the function's indentation that declares nothing, an argument continuation
+     * (deeper, or a closing `)` at the function's indentation), or a comment. The scan stops at a blank
+     * line, a line containing `fun `, and any other line at the function's indentation or shallower.
      */
     private fun annotationsOf(
         body: List<String>,
@@ -142,21 +144,24 @@ internal object ConstraintTestRefs {
             .trim()
             .takeIf { it.startsWith("@") }
             ?.let { found += it }
-        var depth = 0
-        for (line in body.subList(0, at).asReversed().map { it.trim() }) {
-            val net = line.count { it == ')' } - line.count { it == '(' }
-            val insideArguments = depth > 0
-            depth += net
-            val skippable =
-                line.isEmpty() || line.startsWith("/**") || line.startsWith("*") || line.startsWith("//")
+        val indent = body[at].indentation()
+        for (line in body.subList(0, at).asReversed()) {
+            val text = line.trim()
+            val lineIndent = line.indentation()
             when {
-                line.startsWith("@") -> found += line
-                insideArguments || net > 0 || skippable -> Unit
+                text.isEmpty() -> break
+                text.startsWith("/*") || text.startsWith("*") || text.startsWith("//") -> Unit
+                "fun " in text -> break
+                lineIndent > indent -> Unit
+                lineIndent == indent && text.startsWith(")") -> Unit
+                lineIndent == indent && text.startsWith("@") -> found += text
                 else -> break
             }
         }
         return found
     }
+
+    private fun String.indentation() = length - trimStart().length
 
     private val TEST_ANNOTATION = Regex("""@\w*Test\b""")
 }

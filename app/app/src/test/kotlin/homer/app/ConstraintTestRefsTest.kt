@@ -211,6 +211,53 @@ class ConstraintTestRefsTest {
         )
     }
 
+    private val layouts =
+        mapOf(
+            "C.kt" to
+                """
+                class Layouts {
+                    @Disabled("x") fun `off inline`() {}
+                    @Test
+                    fun `enabled after an inline disabled one`() {}
+
+                    @Test fun `on inline`() {}
+                    fun `plain after an inline test`() {}
+
+                    @Test fun `first`() {}
+                    // a stray ) in a comment
+                    fun `after a comment`() {}
+
+                    @Test
+                    fun `third`() {}
+                    /** unbalanced ) in KDoc */
+                    fun `after a KDoc`() {}
+
+                    @Test
+                    fun `fifth`() {}
+                    val s = ")"
+                    fun `after a string`() {}
+
+                    @ParameterizedTest(
+                        name = "x",
+                    )
+                    fun `multi-line arguments`() {}
+                }
+                """.trimIndent(),
+        )
+
+    @Test
+    fun `a function resolves by its own annotations, never by an earlier function's`() {
+        assertNull(ConstraintTestRefs.unresolved(TestRef("Layouts", "enabled after an inline disabled one"), layouts))
+        assertNull(ConstraintTestRefs.unresolved(TestRef("Layouts", "multi-line arguments"), layouts))
+        for (name in listOf("off inline", "plain after an inline test", "after a comment", "after a KDoc", "after a string")) {
+            assertEquals(
+                "Layouts has no @Test function `$name`",
+                ConstraintTestRefs.unresolved(TestRef("Layouts", name), layouts),
+                name,
+            )
+        }
+    }
+
     @Test
     fun `whatever the names, a line built in the documented format parses back to the same refs`() =
         runTest {
