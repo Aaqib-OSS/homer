@@ -361,8 +361,9 @@ backend sends: the request and response bodies, the error body, and the `data:` 
 frame. The root list stopped being trust-on-first-use. A fail-closed scan over the `routes/` sources
 (`DtoContractRootsTest`, the home of the rule beside `DtoContract`, whose export it reads) judges the
 route output from source text — every `respond`/`respondNoStore` argument (a constructor, a call
-judged by the callee's declared return type, a name a `val`, a parameter or a lambda parameter binds),
-the `data:` of every `sendEvent` call, and the frame constructors inside every `SseFrame` builder —
+judged by the callee's declared return type, a name a `val`, a parameter or a lambda parameter binds;
+an elvis judged by each operand, a `return` or `throw` operand handing back none), the `data:` of every
+`sendEvent` call, and the frame constructors inside every `SseFrame` builder —
 and fails, naming the type, when the body it reads is neither reachable from a root in `DtoContract`
 nor listed in `DtoContract.routeBodiesNotMirrored`. An argument or payload the scan cannot read is a
 finding of its own, so no body passes unjudged; a new output form is resolved into the scan, never
