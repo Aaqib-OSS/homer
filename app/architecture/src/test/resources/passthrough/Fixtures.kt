@@ -221,10 +221,24 @@ fun fileOverload(a: String) = a
 
 fun viaFileOverload(a: Int) = fileOverload(a)
 
-// Arguments holding a comparison or a lambda arrow still split at their top-level commas.
-fun comparisonArgument(a: Int, b: Int) = target(if (a < b) a else b, b)
+// A forward to a private top-level extension through a receiver is encapsulation at file level.
+private fun Int.fileExtension(a: Int) = a
 
-fun arrowArgument(a: Int, b: Int) = target(a, { c -> log(c) })
+fun viaFileExtension(a: Int, b: Int) = a.fileExtension(b)
+
+// A forward through the companion's name reaches its non-public member.
+class CompanionQualified {
+    fun viaCompanionName(a: Int) = Companion.helper(a)
+
+    companion object {
+        private fun helper(a: Int) = a
+    }
+}
+
+// An object inherits non-public members of its parent class too.
+object InheritingObject : Base() {
+    fun viaInheritedObject(a: Int) = inherited(a)
+}
 
 // A local function is outside the rule.
 fun outerOfLocal(a: Int) {

@@ -83,9 +83,16 @@ class PassThroughMatcherTest {
     }
 
     @Test
-    fun `a comparison or a lambda arrow in an argument does not hide a pass-through`() {
-        assertNull(target("comparisonArgument"))
-        assertNull(target("arrowArgument"))
+    fun `arguments split at their top-level commas whatever comparison or arrow they hold`() {
+        assertEquals(listOf("if (a < b) a else b", " b"), splitArguments("if (a < b) a else b, b"))
+        assertEquals(listOf("{ c -> log(c) }", " b"), splitArguments("{ c -> log(c) }, b"))
+        assertEquals(listOf("a > b", " c"), splitArguments("a > b, c"))
+        assertEquals(listOf("f(a, b)", " [c, d]"), splitArguments("f(a, b), [c, d]"))
+    }
+
+    @Test
+    fun `encapsulation reaches a private top-level extension, a companion by name and an object's parent`() {
+        listOf("viaFileExtension", "viaCompanionName", "viaInheritedObject").forEach { assertNull(target(it), it) }
     }
 
     @Test

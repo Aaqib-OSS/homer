@@ -6,8 +6,10 @@ import com.lemonappdev.konsist.api.declaration.KoClassDeclaration
 import com.lemonappdev.konsist.api.declaration.KoFunctionDeclaration
 import com.lemonappdev.konsist.api.declaration.KoInterfaceDeclaration
 import com.lemonappdev.konsist.api.provider.KoBaseProvider
+import com.lemonappdev.konsist.api.provider.KoCompanionObjectProvider
 import com.lemonappdev.konsist.api.provider.KoFunctionProvider
 import com.lemonappdev.konsist.api.provider.KoParametersProvider
+import com.lemonappdev.konsist.api.provider.KoParentClassProvider
 import com.lemonappdev.konsist.api.provider.KoPropertyProvider
 import com.lemonappdev.konsist.api.provider.modifier.KoModifierProvider
 import kotlin.test.Test
@@ -63,17 +65,30 @@ internal fun passThroughTarget(
     if (parameters.any { it.hasDefaultValue() }) return null
     val forwarded = parameters.map { if (it.hasModifier(KoModifier.VARARG)) "*${it.name}" else it.name }
     val target = forwardedCall(fn.text, forwarded) ?: return null
-    val hidden = nonPublicMembers(owner) + privateFileMembers(fn)
-    return target.takeUnless { reachedNames(target).any { it in hidden } }
+    val fileMembers = privateFileMembers(fn)
+    val hidden = nonPublicMembers(owner) + fileMembers
+    return target.takeUnless { isEncapsulated(target, owner, hidden, fileMembers) }
+}
+
+/**
+ * Whether a forward to [callee] stays inside its class or file: a receiver of the chain, or the bare callee, is in
+ * [hidden]; the called function of a chain is a private top-level function of the file (an extension) or, after the
+ * companion's name, a non-public member of the companion.
+ */
+private fun isEncapsulated(
+    callee: String,
+    owner: KoBaseProvider?,
+    hidden: Set<String>,
+    fileMembers: Set<String>,
+): Boolean {
+    val parts = callee.replace(THIS, "").split('.').map { it.replace(TYPE_ARGUMENTS, "").trimEnd('?', '!') }
+    if (parts.size == 1) return parts.first() in hidden
+    if (parts.dropLast(1).any { it in hidden } || parts.last() in fileMembers) return true
+    val companion = (owner as? KoCompanionObjectProvider)?.companionObject ?: return false
+    return parts.first() == companion.name && parts.last() in nonPublicMembers(companion)
 }
 
 private val TYPE_ARGUMENTS = Regex("""<.*>$""")
-
-/** The names a callee reaches: each receiver of the chain and, for a bare call, the callee, `this`, `?.`, `!!` and `<T>` stripped. */
-private fun reachedNames(callee: String): List<String> {
-    val parts = callee.replace(THIS, "").split('.').map { it.replace(TYPE_ARGUMENTS, "").trimEnd('?', '!') }
-    return if (parts.size > 1) parts.dropLast(1) else parts
-}
 
 /** Names of the private top-level functions and properties of the file declaring [fn]. */
 private fun privateFileMembers(fn: KoFunctionDeclaration): Set<String> {
@@ -95,15 +110,13 @@ private fun KoModifierProvider.isNonPublic() =
 
 /** Names of the non-public properties (constructor properties included) and functions of [owner], its companion and its parent classes. */
 private fun nonPublicMembers(owner: KoBaseProvider?): Set<String> {
-    val sources =
-        listOfNotNull(owner) +
-            (
-                (owner as? KoClassDeclaration)
-                    ?.let {
-                        listOfNotNull(it.companionObject) +
-                            it.parentClasses(indirectParents = true).mapNotNull { parent -> parent.sourceDeclaration?.asClassDeclaration() }
-                    }.orEmpty()
-            )
+    val companion = (owner as? KoCompanionObjectProvider)?.companionObject
+    val parents =
+        (owner as? KoParentClassProvider)
+            ?.parentClasses(indirectParents = true)
+            .orEmpty()
+            .mapNotNull { parent -> parent.sourceDeclaration?.asClassDeclaration() }
+    val sources = listOfNotNull(owner, companion) + parents
     val properties = sources.flatMap { (it as? KoPropertyProvider)?.properties(includeNested = false).orEmpty() }
     val functions = sources.flatMap { (it as? KoFunctionProvider)?.functions(includeNested = false).orEmpty() }
     val constructorParameters = sources.flatMap { (it as? KoClassDeclaration)?.primaryConstructor?.parameters.orEmpty() }
@@ -166,7 +179,7 @@ private fun matchingParen(
     return -1
 }
 
-private fun splitArguments(text: String): List<String> {
+internal fun splitArguments(text: String): List<String> {
     if (text.isBlank()) return emptyList()
     val parts = mutableListOf<String>()
     var depth = 0
