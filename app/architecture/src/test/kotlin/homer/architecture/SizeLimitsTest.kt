@@ -89,6 +89,13 @@ class SizeLimitsTest {
         assertEquals(3_134, staleCap(cap = 3_300, currentMax = 3_134))
     }
 
+    @Test
+    fun `a maximum is measured only when some declaration has a size`() {
+        assertNull(measuredMax(emptyList()), "no declaration")
+        assertNull(measuredMax(listOf(0, 0)), "only zeros")
+        assertEquals(7, measuredMax(listOf(3, 7, 0)))
+    }
+
     /** One measured declaration: its size and the violation to report when it is over the cap. */
     private class Size(
         val value: Int,
@@ -102,8 +109,8 @@ class SizeLimitsTest {
         sizes: List<Size>,
     ) {
         assertNoViolations(rule, sizes.filter { it.value > cap }.map { it.violation })
-        val current = sizes.maxOfOrNull { it.value }
-        if (current == null || current == 0) fail("$rule: $constant ($SOURCE_FILE) measured nothing, so its cap cannot be ratcheted")
+        val current = measuredMax(sizes.map { it.value })
+        if (current == null) fail("$rule: $constant ($SOURCE_FILE) measured nothing, so its cap cannot be ratcheted")
         staleCap(cap, current)?.let { lowerTo ->
             fail(
                 "$rule: $constant ($SOURCE_FILE) is $cap but the current maximum is $current; " +
@@ -158,3 +165,6 @@ internal fun staleCap(
     cap: Int,
     currentMax: Int,
 ): Int? = if (cap - currentMax > slack(cap)) currentMax else null
+
+/** The largest measured value, or null when nothing was measured (no declaration, or only zeros). */
+internal fun measuredMax(values: List<Int>): Int? = values.maxOrNull()?.takeIf { it > 0 }
