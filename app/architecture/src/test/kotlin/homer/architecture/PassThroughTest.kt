@@ -1,0 +1,153 @@
+package homer.architecture
+
+import com.lemonappdev.konsist.api.KoModifier
+import com.lemonappdev.konsist.api.declaration.KoClassDeclaration
+import com.lemonappdev.konsist.api.declaration.KoFunctionDeclaration
+import com.lemonappdev.konsist.api.declaration.KoInterfaceDeclaration
+import com.lemonappdev.konsist.api.provider.KoBaseProvider
+import com.lemonappdev.konsist.api.provider.KoFunctionProvider
+import com.lemonappdev.konsist.api.provider.KoParametersProvider
+import com.lemonappdev.konsist.api.provider.KoPropertyProvider
+import com.lemonappdev.konsist.api.provider.modifier.KoModifierProvider
+import kotlin.test.Test
+
+/**
+ * No pass-through function in the main code of :app, agentdebug and homer-runner: a function whose whole
+ * body is one call forwarding its own parameters, unchanged and in order, is a layer that adds nothing.
+ * A forward to a non-public member of the same class or
+ * object, or through a non-public property of it, is encapsulation, not a finding. It restates root CLAUDE.md §2 ("No abstractions for
+ * single-use code"), which app/CLAUDE.md "Architecture tests" records.
+ */
+class PassThroughTest {
+    @Test
+    fun `main code has no pass-through function`() {
+        val violations =
+            Sources.modules.flatMap { module ->
+                val scope = Sources.main(module)
+                val portMethods = scope.interfaces(includeNested = true).associate { it.name to it.functions().map { f -> f.name }.toSet() }
+                scope.functions(includeNested = true, includeLocal = false).mapNotNull { fn ->
+                    val target = passThroughTarget(fn, portMethods)
+                    target?.let { violation(fn, "${fn.name} only forwards its parameters to $it; call it directly") }
+                }
+            }
+        assertNoViolations("No pass-through function (root CLAUDE.md §2)", violations)
+    }
+}
+
+/**
+ * The callee text when [fn] is a pass-through, else null. Exempt: an `override` or `operator` function, a function
+ * without parameters, one without a body, an interface member (a default method included), a function of a class
+ * implementing an interface of [ports] (name to member names, ADR-0083) that declares a member of that name, and a
+ * forward whose target is a non-public (private or internal) member of the enclosing class or object, or is reached
+ * through a non-public property of it (a constructor property included) — encapsulation, not a layer.
+ */
+internal fun passThroughTarget(
+    fn: KoFunctionDeclaration,
+    ports: Map<String, Set<String>>,
+): String? {
+    if (fn.hasOverrideModifier || fn.hasOperatorModifier || fn.numParameters == 0) return null
+    val owner = fn.containingDeclaration
+    if (owner is KoInterfaceDeclaration) return null
+    if (owner is KoClassDeclaration && owner.parents().any { ports[it.name.substringBefore("<")]?.contains(fn.name) == true }) return null
+    val target = forwardedCall(fn.text, (fn as KoParametersProvider).parameters.map { it.name }) ?: return null
+    val hidden = nonPublicMembers(owner)
+    val reached = receiverRoot(target) ?: target.removePrefix("this.")
+    return target.takeUnless { reached in hidden }
+}
+
+/** The first segment of a receiver chain, `this.` skipped: `jobs` for `jobs.remove`, null for a bare call. */
+internal fun receiverRoot(callee: String): String? {
+    val parts = callee.removePrefix("this.").split('.')
+    return if (parts.size > 1) parts.first().trimEnd('?', '!') else null
+}
+
+private fun KoModifierProvider.isNonPublic() = hasModifier(KoModifier.PRIVATE) || hasModifier(KoModifier.INTERNAL)
+
+/** Names of the properties (constructor properties included) and functions of [owner] that are private or internal. */
+private fun nonPublicMembers(owner: KoBaseProvider?): Set<String> {
+    val properties = (owner as? KoPropertyProvider)?.properties(includeNested = false).orEmpty()
+    val functions = (owner as? KoFunctionProvider)?.functions(includeNested = false).orEmpty()
+    val constructorParameters = (owner as? KoClassDeclaration)?.primaryConstructor?.parameters.orEmpty()
+    val publicFunctions = functions.filterNot { it.isNonPublic() }.map { it.name }.toSet()
+    return (
+        properties.filter { it.isNonPublic() }.map { it.name } +
+            constructorParameters.filter { it.isNonPublic() }.map { it.name } +
+            functions.filter { it.isNonPublic() }.map { it.name }
+    ).toSet() - publicFunctions
+}
+
+private val CALLEE = Regex("""[A-Za-z_][\w.?!]*(<[^()]*>)?""")
+private val NAMED_ARG = Regex("""^[A-Za-z_]\w*\s*=(?!=)\s*""")
+
+/**
+ * The callee when the body of the function declared by [functionText] is exactly one call
+ * (`{ return x(…) }`, `{ x(…) }` or `= x(…)`, a receiver chain allowed) whose arguments are [parameters], each
+ * passed unchanged and in order, else null.
+ */
+internal fun forwardedCall(
+    functionText: String,
+    parameters: List<String>,
+): String? {
+    val code = KotlinText.codeOnly(functionText)
+    val funAt = Regex("""\bfun\b""").find(code)?.range?.last ?: return null
+    val start = KotlinText.bodyStart(code, funAt) ?: return null
+    val body =
+        if (code[start] == '=') {
+            code.substring(start + 1).trim()
+        } else {
+            val end = KotlinText.closingBrace(code, start)
+            code
+                .substring(start + 1, end)
+                .trim()
+                .removePrefix("return")
+                .trim()
+        }
+    val callee = CALLEE.matchAt(body, 0) ?: return null
+    val open = callee.range.last + 1
+    if (open >= body.length || body[open] != '(') return null
+    val close = matchingParen(body, open)
+    if (close != body.length - 1) return null
+    val args = splitArguments(body.substring(open + 1, close)).map { it.trim().replace(NAMED_ARG, "") }
+    return if (args == parameters) body.substring(0, open) else null
+}
+
+private fun matchingParen(
+    text: String,
+    open: Int,
+): Int {
+    var depth = 0
+    for (i in open until text.length) {
+        when (text[i]) {
+            '(' -> depth++
+            ')' -> if (--depth == 0) return i
+        }
+    }
+    return -1
+}
+
+private fun splitArguments(text: String): List<String> {
+    if (text.isBlank()) return emptyList()
+    val parts = mutableListOf<String>()
+    var depth = 0
+    var from = 0
+    text.forEachIndexed { i, c ->
+        when (c) {
+            '(', '[', '{', '<' -> {
+                depth++
+            }
+
+            ')', ']', '}', '>' -> {
+                depth--
+            }
+
+            ',' -> {
+                if (depth == 0) {
+                    parts += text.substring(from, i)
+                    from = i + 1
+                }
+            }
+        }
+    }
+    parts += text.substring(from)
+    return parts.filter { it.isNotBlank() }
+}
