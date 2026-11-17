@@ -8,6 +8,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import io.mockk.unmockkAll
+import io.mockk.verify
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
@@ -511,6 +512,24 @@ class DefaultLockManagerTest {
             assertFailsWith<AnotherProcessStillActive> {
                 lockManager.acquireThenDisplace(lockName, OnKeyCollisionStrategy.SKIP_CURRENT, 3)
             }
+        }
+
+    @Test
+    fun `releaseLock warns when the lock is unknown`() =
+        runTest {
+            lockManager.releaseLock("ghost-lock", 1)
+
+            verify(exactly = 1) { mockLogger.warn(match<String> { it.contains("unknown lock") }, "ghost-lock", 1) }
+        }
+
+    @Test
+    fun `releaseLock warns when the releasing process does not hold the lock`() =
+        runTest {
+            lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.WAIT, 1)
+
+            lockManager.releaseLock("test-lock", 2)
+
+            verify(exactly = 1) { mockLogger.warn(match<String> { it.contains("not a holder") }, 2, "test-lock") }
         }
 
     @Test

@@ -103,7 +103,8 @@ removed on `unregisterConsumer` (ADR-0096).
 
 - **Constraint:** the claim CAS (`tryClaim()`) stays in the taker's own
   `take()`, never in `submit`: the claim route's long-poll relies on
-  nothing suspending after the claim inside `take()`.
+  nothing suspending after the claim inside `take()`. Enforced by
+  `RunnerClaimQueueTest#a reserved waiter cancelled before it resumes hands the request on`.
 
 A run whose agent declares `runnerAffinity` (`{group, waitSec}`) carries a
 `ClaimAffinity`: the key is `(rootProcessId, group)` — the flow root from the

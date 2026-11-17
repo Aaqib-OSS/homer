@@ -7,6 +7,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.exists
 import kotlin.io.path.isExecutable
@@ -224,5 +225,23 @@ class QuestionsWorkspaceSetupTest {
             "Bearer \${HMR_CALLBACK_TOKEN}",
             server["headers"]!!.jsonObject["Authorization"]!!.jsonPrimitive.content,
         )
+    }
+
+    @Test
+    fun `the callback token in the env is never written under the homer directory`(
+        @TempDir root: Path,
+    ) {
+        val marker = "TOKEN-MARKER-9f3a"
+        val ws = workspace(root, env = mapOf(EnvConstants.CALLBACK_TOKEN to marker))
+
+        QuestionsWorkspaceSetup(mcpEnabled = true).materialize(ws)
+
+        val files =
+            Files.walk(ws.config.projectRoot.resolve(".homer")).use { stream ->
+                stream.filter { Files.isRegularFile(it) }.toList()
+            }
+        assertTrue(files.size > 1, "expected the helpers and the mcp config to be written, got $files")
+        val leaking = files.filter { marker in it.readText() }
+        assertTrue(leaking.isEmpty(), "the callback token reached disk in: $leaking")
     }
 }
