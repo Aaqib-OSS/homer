@@ -66,4 +66,8 @@ test('the complexity rule set runs only CognitiveComplexMethod (GH #307)', () =>
   assert.match(complexity, /^ {2}active: true$/m);
   assert.match(complexity, /^ {4}allowedComplexity: 23$/m);
   assert.deepEqual(active, ['CognitiveComplexMethod']);
+  // Unlisted, detekt would run these at their defaults.
+  for (const rule of ['ComplexCondition', 'CyclomaticComplexMethod', 'LargeClass', 'LongMethod', 'LongParameterList', 'NestedBlockDepth', 'TooManyFunctions']) {
+    assert.match(complexity, new RegExp(`^ {2}${rule}:\\n {4}active: false$`, 'm'), `${rule} must be listed active: false`);
+  }
 });

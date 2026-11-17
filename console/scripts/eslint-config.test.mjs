@@ -13,4 +13,14 @@ describe('eslint.config.mjs cognitive complexity (GH #307)', () => {
     expect(block.ignores).toEqual(['**/*.test.{ts,tsx}', 'vitest.setup.ts']);
     expect(Object.keys(block.plugins)).toEqual(['sonarjs']);
   });
+
+  it('enables no other sonarjs rule and spreads no sonarjs preset', () => {
+    const isOff = (setting) => [setting].flat()[0] === 'off' || [setting].flat()[0] === 0;
+    const enabled = config.flatMap((block) =>
+      Object.entries(block.rules ?? {})
+        .filter(([key, setting]) => key.startsWith('sonarjs/') && !isOff(setting))
+        .map(([key]) => key),
+    );
+    expect([...new Set(enabled)]).toEqual(['sonarjs/cognitive-complexity']);
+  });
 });
