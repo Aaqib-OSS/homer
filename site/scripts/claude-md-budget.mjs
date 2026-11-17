@@ -4,9 +4,9 @@
 // their subsystem.
 export const CAPS = {
   'CLAUDE.md': 23876,
-  'app/CLAUDE.md': 48692,
+  'app/CLAUDE.md': 54116,
   'app/app/src/main/kotlin/homer/app/executors/llm/CLAUDE.md': 8379,
-  'app/app/src/main/kotlin/homer/app/runners/CLAUDE.md': 11383,
+  'app/app/src/main/kotlin/homer/app/runners/CLAUDE.md': 11488,
   'app/app/src/main/kotlin/homer/app/services/persistence/CLAUDE.md': 19887,
   'clients/python/homer_langgraph/CLAUDE.md': 4110,
   'console/CLAUDE.md': 33651,
