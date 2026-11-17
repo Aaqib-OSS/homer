@@ -72,6 +72,7 @@ internal class LlmTelemetryHandOff<C>(
         span: Span,
         redactor: SecretRedactor,
     ) {
+        // A kill during the hand-off must stop the step, not let it finish as a success.
         coRunCatching {
             // A non-zero exit's stream is read leniently: a killed CLI's trailing partial line
             // must not take the attempt's tool and message spans with it. Exit 0 stays strict.

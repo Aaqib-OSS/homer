@@ -32,6 +32,7 @@ class ProcessGraphInspectRunner : GraphInspectRunner {
         env: Map<String, String>,
         timeout: Duration,
     ): GraphInspectResult =
+        // A cancelled caller (disconnect, shutdown, kill race) must not become a cached per-command failure.
         coRunCatching {
             // CWE-770: the shared helper caps output at write time.
             // See the ADR-0073 amendment.

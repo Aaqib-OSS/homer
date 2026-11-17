@@ -391,7 +391,7 @@ members nor unused parameters. Every other rule of the `style` set stays off, li
 constructor properties read only while the object is built became plain parameters, and 4 parameters and
 6 destructured variables nothing read were removed.
 
-*Amended (2026-11-17):* GH #289 — `SuspendFunSwallowedCancellation` (`required`) is the rule against
+*Amended (2026-11-17):* GH #289 — `SuspendFunSwallowedCancellation`, enforced by the required `detekt` check, is the rule against
 `runCatching` around suspend calls, the pairing detekt's docs recommend with a cancellation-safe helper,
 now `homer.app.infra.coRunCatching`; no separate rule was added. All 38 `SuspendFunSwallowedCancellation`
 suppressions stay: each is cleanup-before-rethrow, a deliberate cancellation boundary, or a best-effort

@@ -2,7 +2,6 @@ package homer.app.infra
 
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
-import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 
 /**
