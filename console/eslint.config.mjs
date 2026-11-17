@@ -86,11 +86,11 @@ const config = [
     },
   },
   {
-    // Cognitive complexity per function (GH #307); the plugin's recommended preset stays off.
+    // Cognitive complexity per function (GH #307) and nesting depth via core `max-depth` (GH #308); the plugin's recommended preset stays off.
     files: SOURCE_FILES,
     ignores: TEST_FILES,
     plugins: { sonarjs },
-    rules: { 'sonarjs/cognitive-complexity': ['warn', 11] },
+    rules: { 'sonarjs/cognitive-complexity': ['warn', 11], 'max-depth': ['warn', 4] },
   },
   {
     files: ['app/layout.tsx', 'middleware.ts'],
