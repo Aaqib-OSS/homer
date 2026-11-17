@@ -34,8 +34,8 @@ class QueryPlanCaptureTest {
     @Test
     fun `the function of a lambda frame is the function that declared it`() {
         assertEquals(
-            "getAll",
-            QueryPlanCapture.functionOf(frame("homer.app.services.persistence.ProcessQueriesKt\$getAll\$2", "invokeSuspend")),
+            "getAllProcesses",
+            QueryPlanCapture.functionOf(frame("homer.app.services.persistence.ProcessQueriesKt\$getAllProcesses\$2", "invokeSuspend")),
         )
         assertEquals("transitionStatus", QueryPlanCapture.functionOf(frame("homer.app.X", "transitionStatus\$lambda\$0")))
         assertEquals("migrate", QueryPlanCapture.functionOf(frame("homer.app.X\$1", "migrate")))

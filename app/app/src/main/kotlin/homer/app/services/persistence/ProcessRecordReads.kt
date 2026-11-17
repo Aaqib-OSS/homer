@@ -34,13 +34,13 @@ interface ProcessRecordReads {
 
     suspend fun getProcessInfo(processId: Int): ProcessInfo?
 
-    /** The (owner, agentName) a visibility gate reads, or null when the run is gone. See [ProcessRepository.getRunVisibility]. */
+    /** The (owner, agentName) a visibility gate reads, or null when the run is gone. See [ProcessRepository.getProcessVisibility]. */
     suspend fun getProcessVisibility(processId: Int): Pair<String?, String>?
 
     /** [SubRunProgress] of each of [processIds] that still exists, in one batched read. */
     suspend fun getSubRunProgress(processIds: Collection<Int>): Map<Int, SubRunProgress>
 
-    /** See [ProcessRepository.getAll]. */
+    /** See [ProcessRepository.getAllProcesses]. */
     suspend fun getAllProcesses(query: ProcessListQuery = ProcessListQuery()): ProcessListResult
 
     /** See [ProcessRepository.costByTag]. */
@@ -56,7 +56,7 @@ internal class DefaultProcessRecordReads(
 ) : ProcessRecordReads {
     override suspend fun lastProcessId(): Int = repository.lastProcessId()
 
-    override suspend fun getProcessStatus(processId: Int): ProcessStatus = repository.getStatus(processId)
+    override suspend fun getProcessStatus(processId: Int): ProcessStatus = repository.getProcessStatus(processId)
 
     override suspend fun createdRunsOf(agentNames: Collection<String>): List<Pair<Int, String>> = repository.createdRunsOf(agentNames)
 
@@ -64,17 +64,17 @@ internal class DefaultProcessRecordReads(
 
     override suspend fun getRunnerState(processId: Int): RunnerState? = repository.getRunnerState(processId)
 
-    override suspend fun getProcessHistory(processId: Int): List<Pair<Long, ProcessStatus>> = repository.getHistory(processId)
+    override suspend fun getProcessHistory(processId: Int): List<Pair<Long, ProcessStatus>> = repository.getProcessHistory(processId)
 
-    override suspend fun getProcessExecutions(processId: Int): List<ExecutionInfo> = repository.getExecutions(processId)
+    override suspend fun getProcessExecutions(processId: Int): List<ExecutionInfo> = repository.getProcessExecutions(processId)
 
-    override suspend fun getProcessInfo(processId: Int): ProcessInfo? = repository.getInfo(processId)
+    override suspend fun getProcessInfo(processId: Int): ProcessInfo? = repository.getProcessInfo(processId)
 
-    override suspend fun getProcessVisibility(processId: Int): Pair<String?, String>? = repository.getRunVisibility(processId)
+    override suspend fun getProcessVisibility(processId: Int): Pair<String?, String>? = repository.getProcessVisibility(processId)
 
-    override suspend fun getSubRunProgress(processIds: Collection<Int>): Map<Int, SubRunProgress> = repository.subRunProgress(processIds)
+    override suspend fun getSubRunProgress(processIds: Collection<Int>): Map<Int, SubRunProgress> = repository.getSubRunProgress(processIds)
 
-    override suspend fun getAllProcesses(query: ProcessListQuery): ProcessListResult = repository.getAll(query)
+    override suspend fun getAllProcesses(query: ProcessListQuery): ProcessListResult = repository.getAllProcesses(query)
 
     override suspend fun costByTag(
         key: String,

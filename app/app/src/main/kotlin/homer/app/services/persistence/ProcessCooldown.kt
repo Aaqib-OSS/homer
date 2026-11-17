@@ -10,11 +10,11 @@ import org.jetbrains.exposed.v1.jdbc.select
 
 // The cooldown bound's two lookups in the transaction-local form `obtainProcessId` evaluates inside
 // the INSERT's transaction (ADR-0051), plus the subject filter they share, so a keyed and a keyless
-// start cannot scope differently (ADR-0106). The `db.read` forms `CooldownGate` calls stay on
+// start cannot scope differently (ADR-0106). The `read { }` forms `CooldownGate` calls stay on
 // ProcessRepository, where the pre-flight gate can stub them.
 
 // Transaction-local forms of the two reads `CooldownGate` calls, so the authoritative cooldown
-// check in obtainProcessId can run inside the INSERT's transaction. `db.query` opens its own, and
+// check in obtainProcessId can run inside the INSERT's transaction. `query { }` opens its own, and
 // nesting one inside another would deadlock the writer.
 internal fun ProcessRepository.latestRunStartedAtTx(
     agentName: String,

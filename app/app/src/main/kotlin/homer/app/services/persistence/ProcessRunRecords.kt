@@ -122,5 +122,5 @@ internal class DefaultProcessRunRecords(
         tag: String,
         maxTags: Int,
         fromInputsKeys: Set<String>,
-    ): ProcessRepository.RuntimeTagResult = repository.insertRuntimeTag(processId, tag, maxTags, fromInputsKeys)
+    ): ProcessRepository.RuntimeTagResult = repository.addRuntimeTag(processId, tag, maxTags, fromInputsKeys)
 }

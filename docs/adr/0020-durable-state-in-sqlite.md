@@ -304,7 +304,7 @@ primary key, `input_params` JSON text, no foreign key) — the same shape and th
 same co-transactional-delete rule as `process_tags` (ADR-0060, ADR-0048). The
 side row is inserted in the process INSERT's own transaction and never updated,
 so no per-step write touches it. Every read that surfaces the value goes there:
-`getInfo` reads its one row, `getAll` and `costByTag` batch by process id in the
+`getProcessInfo` reads its one row, `getAllProcesses` and `costByTag` batch by process id in the
 same way they already batch tags, and paths that never surface inputs pass none
 and skip the read.
 
@@ -389,7 +389,7 @@ about 100 ms.
 predicate `owner = ? OR agent_name IN (…)` — under the names the `Processes` table
 declares. The migration creates them by hand, because `SchemaUtils.create` only
 indexes a table it creates. An `OR` stays indexable only while both of its sides
-are, so one unindexed column in `getAll`'s predicate turns the whole count back
+are, so one unindexed column in `getAllProcesses`'s predicate turns the whole count back
 into a scan; a new list filter gets its index and its pinned plan in
 `DatabaseMigrationTest` in the same change.
 

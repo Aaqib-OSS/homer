@@ -16,6 +16,7 @@ import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.core.isNull
+import org.jetbrains.exposed.v1.jdbc.JdbcTransaction
 import org.jetbrains.exposed.v1.jdbc.batchInsert
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.select
@@ -42,9 +43,20 @@ internal const val SQLITE_PARAM_CHUNK = 512
  * serialize through the write lock rather than losing updates.
  */
 class ProcessRepository(
-    internal val db: DatabaseService,
+    private val db: DatabaseService,
     internal val jobRegistry: ProcessJobRegistry,
 ) {
+    /**
+     * Runs [block] in one write transaction on the writer handle. The extension functions of this
+     * package — `ProcessQueries.kt`, `ProcessRetention.kt`, `ProcessStepRecords.kt`,
+     * `ProcessRunTags.kt` — reach the database only through this and [read]: [db] is private to the
+     * class, so the handle cannot be opened outside it. See ADR-0020.
+     */
+    internal suspend fun <T> query(block: JdbcTransaction.() -> T): T = db.query(block)
+
+    /** Runs a read-only [block] on the reader handle; see [query]. */
+    internal suspend fun <T> read(block: JdbcTransaction.() -> T): T = db.read(block)
+
     /** Outcome of [obtainProcessId]: the new id plus any terminal row evicted to make room. */
     data class ObtainResult(
         val processId: Int,
@@ -164,7 +176,7 @@ class ProcessRepository(
             )?.let { throw it }
     }
 
-    suspend fun getStatus(processId: Int): ProcessStatus =
+    suspend fun getProcessStatus(processId: Int): ProcessStatus =
         db.read {
             Processes
                 .select(Processes.status)
@@ -280,7 +292,7 @@ class ProcessRepository(
         db.query { Processes.update({ Processes.id eq processId }) { it[endedAt] = null } }
     }
 
-    suspend fun getHistory(processId: Int): List<Pair<Long, ProcessStatus>> =
+    suspend fun getProcessHistory(processId: Int): List<Pair<Long, ProcessStatus>> =
         db.read {
             Processes
                 .select(Processes.history)
@@ -290,7 +302,7 @@ class ProcessRepository(
                 ?: emptyList()
         }
 
-    suspend fun getExecutions(processId: Int): List<ExecutionInfo> =
+    suspend fun getProcessExecutions(processId: Int): List<ExecutionInfo> =
         db.read {
             Processes
                 .select(Processes.executions)
@@ -300,7 +312,7 @@ class ProcessRepository(
                 ?: emptyList()
         }
 
-    suspend fun getInfo(processId: Int): ProcessInfo? =
+    suspend fun getProcessInfo(processId: Int): ProcessInfo? =
         db.read {
             Processes
                 .selectAll()
@@ -311,11 +323,11 @@ class ProcessRepository(
 
     /**
      * The (owner, agentName) pair a visibility gate reads, by primary key, or null when the row
-     * is gone. Projected, not [getInfo]: a gate runs on polled paths, and decoding the row's
+     * is gone. Projected, not [getProcessInfo]: a gate runs on polled paths, and decoding the row's
      * `history`/`executions` blobs plus the side queries to read two columns is the cost
      * SQLite rule 4 forbids there.
      */
-    suspend fun getRunVisibility(processId: Int): Pair<String?, String>? =
+    suspend fun getProcessVisibility(processId: Int): Pair<String?, String>? =
         db.read {
             Processes
                 .select(Processes.owner, Processes.agentName)

@@ -48,7 +48,7 @@ class DefaultProcessRetentionRecordsTest {
             retention.markWorkspacePurged(id, retainedTruncated = true)
 
             assertEquals(emptyList(), retention.getWorkspacePurgeableProcesses(terminal, 10))
-            val info = repository.getInfo(id)
+            val info = repository.getProcessInfo(id)
             assertEquals(Path.of("/ws/1/artifacts"), info?.artifactsDir)
             assertEquals(listOf("*.txt"), info?.retainArtifacts)
             assertEquals(true, info?.retainedTruncated)
@@ -61,8 +61,8 @@ class DefaultProcessRetentionRecordsTest {
 
             retention.clearArtifactsDir(id)
 
-            assertNull(repository.getInfo(id)?.artifactsDir)
-            assertNull(repository.getInfo(id)?.retainedTruncated)
+            assertNull(repository.getProcessInfo(id)?.artifactsDir)
+            assertNull(repository.getProcessInfo(id)?.retainedTruncated)
         }
 
     @Test

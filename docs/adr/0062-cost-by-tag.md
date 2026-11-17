@@ -28,9 +28,9 @@ than open to any key a caller names.
   existed.
 - **§12 rule 7 / CWE-203 (ADR-0060's existing screen).** A tag whose value is
   currently secret must never surface as a breakdown key — the same
-  constraint `getAll`'s `?tag=` filter and its response already enforce.
+  constraint `getAllProcesses`'s `?tag=` filter and its response already enforce.
 - **§12 rule 4.** The candidate row set is bounded by the same
-  `MAX_TAG_SCREENED_ROWS` cap the tag-filtered branch of `getAll` uses, not a
+  `MAX_TAG_SCREENED_ROWS` cap the tag-filtered branch of `getAllProcesses` uses, not a
   new, separately-tuned bound.
 - **TagValidation.KEY_PATTERN allows `_`.** A SQL single-character wildcard,
   so a prefix match built as `LIKE 'key:%'` from a config-declared key would
@@ -78,11 +78,11 @@ Specifics:
   (2026-09-29 amendment: the correlated `EXISTS` planned as a scan of
   `processes`; the candidate query is now `id IN (…)` driven by that index,
   `process_tags_tag_process_id`.)
-- **Bounded the same way `getAll`'s tag-filtered branch is.** The candidate
+- **Bounded the same way `getAllProcesses`'s tag-filtered branch is.** The candidate
   query is capped with `MAX_TAG_SCREENED_ROWS` (10,000) — the same constant,
   not a second bound to keep in sync. (2026-09-29 amendment: the constant is
   unchanged, but the query orders by `id DESC` and fetches one row past it to
-  report `truncated`, so the shape differs from `getAll`'s tag branch.)
+  report `truncated`, so the shape differs from `getAllProcesses`'s tag branch.)
 - **Secret screening happens after the SQL, never in it**, for the same
   reason ADR-0060's `?tag=` filter does: a value that is currently secret
   (an input flipped to `secret: true` since the tag was written, or a
@@ -94,7 +94,7 @@ Specifics:
   secretInputKeys)` function the `/status/all` route already builds. A
   route calling this method without a real screen cannot compile past the
   required, non-nullable parameter — the same fail-closed shape ADR-0060
-  established for `getAll`.
+  established for `getAllProcesses`.
 - **Grouping happens in the application, not `GROUP BY`**, because the
   screen must run per row before a value is allowed to become (or contribute
   to) a group key; a SQL `GROUP BY` would group on the raw, unscreened value
@@ -145,7 +145,7 @@ callback) shape. Availability is bounded by the pre-existing
   `costTrackedTagKeys` and restart/reload rather than querying it ad hoc.
 - Bad: a run carrying two values under one configured key has its cost
   counted once per value (accepted above).
-- Bad: like `getAll`'s screened branch, cost scales with the rows the
+- Bad: like `getAllProcesses`'s screened branch, cost scales with the rows the
   candidate query admits (up to `MAX_TAG_SCREENED_ROWS`), not with the
   number of distinct values returned.
 
@@ -189,7 +189,7 @@ callback) shape. Availability is bounded by the pre-existing
   bounded by the `key:` range of the tag index, at most `maxProcesses` ×
   the per-run tag cap entries.
   Kept end: the **newest** `MAX_TAG_SCREENED_ROWS` runs by process id —
-  the same end `getAll`'s tag-filtered branch already keeps for its
+  the same end `getAllProcesses`'s tag-filtered branch already keeps for its
   default descending order, so a truncated total silently drops the
   oldest matches, never the most recent activity. The endpoint is
   admin-only, so exposing the flag discloses nothing across principals.

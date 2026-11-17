@@ -106,7 +106,7 @@ class DatabaseMigrationTest {
         val dbPath = dir.resolve("fresh.db").toString()
         val svc = DatabaseService(dbPath, logger)
         svc.migrate()
-        // The WHERE shapes ProcessRepository.getAll composes for `total`, alone and with the non-admin visibility OR.
+        // The WHERE shapes ProcessRepository.getAllProcesses composes for `total`, alone and with the non-admin visibility OR.
         val visibility = "(owner = 'u' OR agent_name IN ('a', 'b'))"
         val shapes =
             listOf(
@@ -205,15 +205,15 @@ class DatabaseMigrationTest {
         listOf(
             // ProcessRepository.isArtifactsDirShared
             "SELECT id FROM processes WHERE artifacts_dir = '/w/1' AND id <> 1 LIMIT 1" to "processes_artifacts_dir",
-            // ProcessRepository.isArtifactsDirSharedWithActiveRun: same
+            // ProcessRepository.isWorkspaceSharedWithActiveRun: same
             // artifacts_dir equality, narrowed to live rows so a terminal sibling cannot
             // block cleanup. Still planned on the artifacts_dir index.
             "SELECT id FROM processes WHERE artifacts_dir = '/w/1' AND id <> 1 AND status IN ('CREATED', 'WORKING') LIMIT 1" to
                 "processes_artifacts_dir",
-            // ProcessRepository.getWorkspacePurgeable
+            // ProcessRepository.getWorkspacePurgeableProcesses
             "SELECT * FROM processes WHERE status IN ('FINISHED', 'FAILED', 'KILLED', 'UNKNOWN') AND purge_at IS NOT NULL " +
                 "AND purge_at <= 100 AND artifacts_dir IS NOT NULL AND workspace_purged_at IS NULL" to "processes_workspace_purge",
-            // ProcessRepository.getRecordPurgeable, both arms of the OR
+            // ProcessRepository.getRecordPurgeableProcesses, both arms of the OR
             "SELECT * FROM processes WHERE status IN ('FINISHED', 'FAILED', 'KILLED', 'UNKNOWN') AND purge_at IS NOT NULL " +
                 "AND (artifacts_dir IS NULL OR workspace_purged_at IS NOT NULL) AND ((record_purge_at IS NOT NULL AND " +
                 "record_purge_at <= 100) OR (record_purge_at IS NULL AND purge_at <= 100))" to "processes_record_purge",
@@ -241,10 +241,10 @@ class DatabaseMigrationTest {
             "SELECT id FROM questions WHERE process_id = 1 AND dispatch_bound = 0" to "questions_process_dispatch_bound",
             // QuestionsRepository.openCountByProcess, on every process-list read
             "SELECT process_id FROM questions WHERE status = 'OPEN' AND dispatch_bound = 0" to "questions_status_dispatch_bound",
-            // ProcessRepository.getAll's open-question counts over the page's ids, in the list's read
+            // ProcessRepository.getAllProcesses's open-question counts over the page's ids, in the list's read
             "SELECT process_id FROM questions WHERE status = 'OPEN' AND dispatch_bound = 0 AND process_id IN (1, 2)" to
                 "questions_status_dispatch_bound",
-            // ProcessRepository.getAll's root-visibility read of the page's flow roots
+            // ProcessRepository.getAllProcesses's root-visibility read of the page's flow roots
             "SELECT id, owner, agent_name FROM processes WHERE id IN (1, 2)" to "INTEGER PRIMARY KEY",
             // DispatchRepository.create cap and the DISPATCHING recovery. Any (status, …)
             // index serves it; since v26 the planner may pick dispatches_status_created.
@@ -507,7 +507,7 @@ class DatabaseMigrationTest {
         val dbPath = dir.resolve("fresh.db").toString()
         val svc = DatabaseService(dbPath, logger)
         svc.migrate()
-        // ProcessRepository.getAll with ?tag=: carriesAllTags plus the non-admin visibility.
+        // ProcessRepository.getAllProcesses with ?tag=: carriesAllTags plus the non-admin visibility.
         val sql =
             "SELECT * FROM processes WHERE processes.id IN (SELECT process_tags.process_id FROM process_tags " +
                 "WHERE process_tags.tag IN ('env:a', 'team:b') GROUP BY process_tags.process_id " +
@@ -1097,7 +1097,7 @@ class DatabaseMigrationTest {
     /**
      * LangGraphRunStatusService.subs' two reads, each with the index that must serve it:
      * the thread's continuations (ContinuationRepository.byThread) and the batched sub-run read
-     * (ProcessRepository.subRunProgress). Neither may scan or sort.
+     * (ProcessRepository.getSubRunProgress). Neither may scan or sort.
      */
     private val v27Shapes =
         listOf(
@@ -1117,7 +1117,7 @@ class DatabaseMigrationTest {
 
     /**
      * Plans the SQL [ContinuationRepository.byThread] (for an owned and an unowned run) and
-     * [ProcessRepository.subRunProgress] actually send. The owner is a residual filter on
+     * [ProcessRepository.getSubRunProgress] actually send. The owner is a residual filter on
      * `continuations_thread_id`, never a seek on `continuations_owner`.
      */
     private suspend fun assertV27SentPlans(
@@ -1127,7 +1127,7 @@ class DatabaseMigrationTest {
         SqlStatementRecorder.reset()
         ContinuationRepository(svc).byThread("t-7", "owner-2")
         ContinuationRepository(svc).byThread("t-7", null)
-        ProcessRepository(svc, ProcessJobRegistry()).subRunProgress(listOf(3, 70, 1500))
+        ProcessRepository(svc, ProcessJobRegistry()).getSubRunProgress(listOf(3, 70, 1500))
         val sent = SqlStatementRecorder.statements()
         assertEquals(3, sent.size, "$sent")
         for ((sql, index) in sent.zip(listOf("continuations_thread_id", "continuations_thread_id", "INTEGER PRIMARY KEY"))) {
@@ -1828,7 +1828,7 @@ class DatabaseMigrationTest {
         // End-to-end: ProcessRepository hydrates a migrated row with an empty tag list.
         val db = DatabaseService(dbPath, logger)
         val repo = ProcessRepository(db, ProcessJobRegistry())
-        val info = repo.getInfo(1)
+        val info = repo.getProcessInfo(1)
         assertNotNull(info)
         assertEquals(emptyList(), info.tags)
         db.close()
@@ -2646,7 +2646,7 @@ class DatabaseMigrationTest {
         // "nothing retained" defaults, not as an exception or a non-null sentinel.
         val db = DatabaseService(dbPath, logger)
         val repo = ProcessRepository(db, ProcessJobRegistry())
-        val info = repo.getInfo(1)
+        val info = repo.getProcessInfo(1)
         assertNotNull(info)
         assertEquals(emptyList(), info.retainArtifacts)
         assertEquals(null, info.retainedTruncated)
@@ -2697,7 +2697,7 @@ class DatabaseMigrationTest {
 
         val db = DatabaseService(dbPath, logger)
         val repo = ProcessRepository(db, ProcessJobRegistry())
-        val info = repo.getInfo(1)
+        val info = repo.getProcessInfo(1)
         assertNotNull(info)
         assertEquals(null, info.parentProcessId)
         db.close()
@@ -2771,8 +2771,8 @@ class DatabaseMigrationTest {
 
         val db = DatabaseService(dbPath, logger)
         val repo = ProcessRepository(db, ProcessJobRegistry())
-        assertEquals(null, repo.getInfo(1)?.rootProcessId)
-        assertEquals(null, repo.getInfo(2)?.rootProcessId)
+        assertEquals(null, repo.getProcessInfo(1)?.rootProcessId)
+        assertEquals(null, repo.getProcessInfo(2)?.rootProcessId)
         db.close()
     }
 
@@ -2834,8 +2834,8 @@ class DatabaseMigrationTest {
         // End-to-end: the repository hydrates migrated rows with their inputs intact.
         val db = DatabaseService(dbPath, logger)
         val repo = ProcessRepository(db, ProcessJobRegistry())
-        assertEquals(mapOf("ticket" to "T-1"), repo.getInfo(1)?.inputParams)
-        assertEquals(emptyMap(), repo.getInfo(2)?.inputParams)
+        assertEquals(mapOf("ticket" to "T-1"), repo.getProcessInfo(1)?.inputParams)
+        assertEquals(emptyMap(), repo.getProcessInfo(2)?.inputParams)
 
         // Re-opening an already-migrated file is a no-op: the guard sees no input_params
         // column and must not attempt a second backfill or a second DROP.
@@ -2880,7 +2880,7 @@ class DatabaseMigrationTest {
         val db = DatabaseService(dbPath, logger)
         val repo = ProcessRepository(db, ProcessJobRegistry())
         // COALESCE to '{}' rather than a NULL the side table forbids; reads back as no inputs.
-        assertEquals(emptyMap(), repo.getInfo(1)?.inputParams)
+        assertEquals(emptyMap(), repo.getProcessInfo(1)?.inputParams)
         db.close()
     }
 

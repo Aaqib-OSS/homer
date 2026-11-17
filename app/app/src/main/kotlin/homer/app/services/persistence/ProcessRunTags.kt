@@ -15,13 +15,13 @@ import org.jetbrains.exposed.v1.jdbc.select
  * from the runtime keys, enforced at agent load — are excluded from the count via
  * [fromInputsKeys]. See ADR-0060.
  */
-suspend fun ProcessRepository.insertRuntimeTag(
+suspend fun ProcessRepository.addRuntimeTag(
     processId: Int,
     tag: String,
     maxTags: Int,
     fromInputsKeys: Set<String> = emptySet(),
 ): ProcessRepository.RuntimeTagResult =
-    db.query {
+    query {
         // [sensitive_data_exposure / CWE-459] ProcessTags carries no foreign key by
         // design, so an INSERT would succeed for a processId whose row was already
         // purged — the record purge (remove) and the registration close that gates the
@@ -52,4 +52,4 @@ suspend fun ProcessRepository.insertRuntimeTag(
     }
 
 /** Every tag on a run, in tag order (ORDER BY, served by the (process_id, tag) primary key). */
-suspend fun ProcessRepository.getTags(processId: Int): List<String> = db.read { tagsForTx(processId) }
+suspend fun ProcessRepository.getTags(processId: Int): List<String> = read { tagsForTx(processId) }
