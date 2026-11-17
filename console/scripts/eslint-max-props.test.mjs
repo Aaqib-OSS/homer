@@ -26,8 +26,11 @@ tester.run('homer/max-props', maxProps, {
     // An interface extending a type declared elsewhere, or a generic base, is not counted.
     { code: "import type { Base } from './base'\ninterface P extends Base { a: string; b: string; c: string }\nfunction Card(props: P) { return null }", options: [2] },
     { code: 'interface P extends Omit<Q, "x"> { a: string; b: string; c: string }\nfunction Card(props: P) { return null }', options: [2] },
-    // A circular alias stops instead of recursing.
+    // A circular alias or interface stops instead of recursing.
     { code: 'type P = Q\ntype Q = P\nfunction Card(props: P) { return null }', options: [2] },
+    { code: 'interface P extends Q { a: string }\ninterface Q extends P { b: string }\nfunction Card(props: P) { return null }', options: [2] },
+    // One unresolvable base leaves the type uncounted, even after a resolvable one.
+    { code: "import type { Imported } from './i'\ninterface Base { a: string; b: string }\ninterface P extends Base, Imported { c: string }\nfunction Card(props: P) { return null }", options: [2] },
   ],
   invalid: [
     { code: 'function Card({ a, b, c }) { return null }', options: [2], errors: [tooMany('Card', 3)] },
@@ -47,6 +50,12 @@ tester.run('homer/max-props', maxProps, {
       code: 'interface Base { a: string; b: string }\ninterface P extends Base { c: string }\nfunction Card(props: P) { return null }',
       options: [2],
       errors: [tooMany('Card', 3)],
+    },
+    // A same-file type alias as a base counts too, and so does every base: 1 own + 1 + 2.
+    {
+      code: 'type Base = { a: string }\ninterface Other { b: string; c: string }\ninterface P extends Base, Other { d: string }\nfunction Card(props: P) { return null }',
+      options: [2],
+      errors: [tooMany('Card', 4)],
     },
     // A props type declared after the component still resolves.
     { code: 'function Card(props: P) { return null }\ninterface P { a: string; b: string; c: string }', options: [2], errors: [tooMany('Card', 3)] },
