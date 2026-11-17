@@ -19,7 +19,7 @@ internal object Sources {
     val appMain: KoScope get() = main("app")
     val appTest: KoScope get() = test("app")
 
-    private val repoRoot: File =
+    val repoRoot: File =
         File(System.getProperty("homer.repoRoot") ?: error("homer.repoRoot system property is not set"))
 
     fun repoPath(absolutePath: String): String = File(absolutePath).relativeTo(repoRoot).invariantSeparatorsPath

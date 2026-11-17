@@ -76,7 +76,7 @@ class CommandExecutorFactory(
                 is Command.RunnerCmd -> runnerCmdExecutor
                 is Command.LlmCommand -> llmExecutor(command)
             }
-        @Suppress("UNCHECKED_CAST")
+        @Suppress("UNCHECKED_CAST") // the `when` above picks the executor for this command subtype
         return executor as CommandExecutor<T>
     }
 

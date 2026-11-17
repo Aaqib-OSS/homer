@@ -176,7 +176,7 @@ function useRunAgentForm(open: boolean, agent: AgentInfo, onOpenChange: (open: b
       });
       dispatch({ type: 'RESET', paramValues: initialValues });
     }
-  }, [open, agent]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, agent]); // eslint-disable-line react-hooks/exhaustive-deps -- inputs derives from agent, so agent stands in for it
 
   const handleParamChange = (paramName: string, value: string) => {
     // Validate the changed parameter
