@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { parseReport, testFile, testLine } from './mock-calls.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { parseReport, readLines, testFile, testLine } from './mock-calls.mjs';
 
 const entry = (testClass, name, calls) =>
   JSON.stringify({ testClass, test: name, method: 'Process.waitFor', calls, warnAt: 5000, failAt: 20000 });
@@ -32,4 +35,13 @@ test('each report line is one minor finding at its test, naming the method and t
 
 test('an empty report has no findings', () => {
   assert.deepEqual(parseReport([], () => undefined), []);
+});
+
+test('every worker file is merged and a line two workers recorded counts once', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mock-calls-'));
+  fs.writeFileSync(path.join(dir, 'mock-calls-2.jsonl'), 'a\nb\n');
+  fs.writeFileSync(path.join(dir, 'mock-calls-10.jsonl'), 'b\n\nc\n');
+  fs.writeFileSync(path.join(dir, 'other.jsonl'), 'x\n');
+  assert.deepEqual(readLines(dir), ['b', 'c', 'a']);
+  assert.deepEqual(readLines(fs.mkdtempSync(path.join(os.tmpdir(), 'mock-calls-'))), []);
 });

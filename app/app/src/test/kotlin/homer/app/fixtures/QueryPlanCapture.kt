@@ -80,8 +80,15 @@ class QueryPlanCapture : GlobalStatementInterceptor {
 
     companion object {
         const val DIR_PROPERTY = "homer.queryPlans.dir"
-        const val CAPTURE_FILE = "statements.tsv"
-        const val REPEATS_FILE = "repeats.tsv"
+        const val CAPTURE_PREFIX = "statements"
+        const val REPEATS_PREFIX = "repeats"
+
+        /** The test worker's number under Gradle, `0` outside it: forked test JVMs each write their own file. */
+        private val worker: String = System.getProperty("org.gradle.test.worker") ?: "0"
+
+        /** This JVM's capture files; [QueryPlanReport] merges every worker's. */
+        val CAPTURE_FILE = "$CAPTURE_PREFIX-$worker.tsv"
+        val REPEATS_FILE = "$REPEATS_PREFIX-$worker.tsv"
         const val REPEAT_THRESHOLD = 3
 
         // Statements whose plan reads a table; DDL, PRAGMAs and plain INSERT ... VALUES plan nothing.

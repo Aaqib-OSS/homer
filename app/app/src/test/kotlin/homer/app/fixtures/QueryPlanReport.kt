@@ -118,21 +118,39 @@ object QueryPlanReport {
             .map { (path, line, function, sql) -> Repeat(path, line.toInt(), function, sql) }
             .sortedWith(compareBy({ it.path }, { it.line }))
 
+    /**
+     * The distinct non-blank lines of every `<prefix>*.tsv` in [dir], files in name order; empty when
+     * there is none. Each test worker writes its own file and two may record the same line.
+     */
+    fun mergedLines(
+        dir: File,
+        prefix: String,
+    ): List<String> =
+        dir
+            .listFiles { f -> f.isFile && f.name.startsWith(prefix) && f.name.endsWith(".tsv") }
+            .orEmpty()
+            .sortedBy { it.name }
+            .flatMap { it.readLines() }
+            .filter { it.isNotBlank() }
+            .distinct()
+
     /** `queryPlanReport`: `<capture dir> <report json>`. */
     @JvmStatic
     fun main(args: Array<String>) {
         val (captureDir, out) = args
-        val captured = File(captureDir, QueryPlanCapture.CAPTURE_FILE)
-        check(captured.isFile) { "no captured statements at $captured: run :app:test first" }
-        val lines = captured.readLines().filter { it.isNotBlank() }
+        val dir = File(captureDir)
+        check(dir.listFiles().orEmpty().any { it.name.startsWith(QueryPlanCapture.CAPTURE_PREFIX) && it.name.endsWith(".tsv") }) {
+            "no captured statements in $dir: run :app:test first"
+        }
+        val lines = mergedLines(dir, QueryPlanCapture.CAPTURE_PREFIX)
         // An empty capture means the capture broke, not that every query is fine.
-        check(lines.isNotEmpty()) { "$captured is empty: QueryPlanCapture recorded no production statement" }
+        check(lines.isNotEmpty()) { "$dir has no captured statement: QueryPlanCapture recorded no production statement" }
         val db = Files.createTempFile("homer-query-plans-", ".db").toFile().apply { deleteOnExit() }
         DatabaseService(db.path, LoggerFactory.getLogger(QueryPlanReport::class.java)).apply {
             migrate()
             close()
         }
-        val repeats = repeats(File(captureDir, QueryPlanCapture.REPEATS_FILE).takeIf { it.isFile }?.readLines().orEmpty())
+        val repeats = repeats(mergedLines(dir, QueryPlanCapture.REPEATS_PREFIX))
         val report = DriverManager.getConnection("jdbc:sqlite:${db.path}").use { report(it, lines) }.copy(repeats = repeats)
         File(out).apply { parentFile.mkdirs() }.writeText(json.encodeToString(Report.serializer(), report))
         println(

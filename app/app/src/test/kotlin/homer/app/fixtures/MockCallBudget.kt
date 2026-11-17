@@ -20,7 +20,7 @@ import java.io.File
  *
  * A method called [FAIL_CALLS] times or more fails the test: only a busy loop gets there, as the
  * busiest ordinary test calls one method a few hundred times. One called [WARN_CALLS] times or more
- * is a line in `mock-calls.jsonl` under [DIR_PROPERTY], which the warn-mode `mock-calls` check
+ * is a line in `mock-calls-<worker>.jsonl` under [DIR_PROPERTY], which the warn-mode `mock-calls` check
  * reports (ADR-0082). Registered through `META-INF/services`; the test task enables autodetection
  * for this class only.
  */
@@ -71,7 +71,9 @@ class MockCallBudget(
         const val FAIL_CALLS = 20_000
 
         const val DIR_PROPERTY = "homer.mockCalls.dir"
-        const val REPORT_FILE = "mock-calls.jsonl"
+
+        /** This test worker's report file (`0` outside Gradle); `mock-calls.mjs` merges every worker's. */
+        val REPORT_FILE = "mock-calls-${System.getProperty("org.gradle.test.worker") ?: "0"}.jsonl"
 
         /**
          * Every mock's stub, or null before the first mock exists: mockk sets its gateway up on first
