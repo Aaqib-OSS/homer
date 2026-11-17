@@ -80,10 +80,19 @@ describe('currentMaxima', () => {
   });
 });
 
-describe('currentMaxima without a measured file', () => {
-  it('throws instead of reporting a maximum of 0', () => {
-    expect(() => currentMaxima([])).toThrow('measured no file');
-    expect(() => currentMaxima([result('/c/a.ts', [])])).toThrow('measured no file');
+describe('currentMaxima failing closed', () => {
+  const file = { ruleId: 'max-lines', line: 1, message: 'File has too many lines (120). Maximum allowed is 1.' };
+  const fn = { ruleId: 'max-lines-per-function', line: 4, message: "Function 'f' has too many lines (30). Maximum allowed is 1." };
+
+  it('throws when no file or no function was measured', () => {
+    expect(() => currentMaxima([])).toThrow('no file or no function');
+    expect(() => currentMaxima([result('/c/a.ts', [file])])).toThrow('no file or no function');
+    expect(() => currentMaxima([result('/c/a.ts', [fn])])).toThrow('no file or no function');
+  });
+
+  it('throws on a size-rule message whose count does not parse', () => {
+    const bad = { ruleId: 'max-lines-per-function', line: 1, message: 'Function f is too long.' };
+    expect(() => currentMaxima([result('/c/a.ts', [file, fn, bad])])).toThrow('unreadable probe message');
   });
 });
 

@@ -3,6 +3,7 @@ status: accepted
 date: 2026-10-12
 deciders: Lukáš Vlk
 consulted: ADR-0081
+amended: 2026-10-13, 2026-10-14, 2026-11-04, 2026-11-05, 2026-11-06, 2026-11-11, 2026-11-13, 2026-11-14, 2026-11-15, 2026-11-16, 2026-11-17
 ---
 
 # ADR-0082: Quality checks are reported first and made required one by one

@@ -281,7 +281,7 @@ A new rule whose code still has findings is tagged `@Tag(REPORT_ONLY)` and is *p
 | Each layer imports only itself, the layers below it and the kernel; the kernel only itself | "Layered architecture", "Directory layout" |
 | No import cycle between the top-level packages `homer.app.(*)` (the root package is no slice) | "Layered architecture" |
 
-The size caps ratchet (`SizeLimitsTest`): a cap more than 5% (rounded up, at least 1) above the current maximum fails with the value to lower it to; lower the `MAX_*` constant to that printed value.
+The size caps ratchet (`SizeLimitsTest`): a cap more than 5% of itself (rounded up, at least 1) above the current maximum fails with the value to lower it to; lower the `MAX_*` constant to that printed value.
 
 The layering rule reads a file's layer from the diagram row naming a type the file declares or implements (`Process` counts as Execution, after "Status precedence rules"), else from its package: the root package, `routes/`, `auth/` and `di/` are HTTP; `services/` (with `persistence/`) is Services; `infra/` is Infra, the support code the Infra row's own types are; `executors/` is Executors; `runners/queue/` is Execution, the rest of `runners/` Infra; `models/`, `config/`, `exceptions/` and the root-package constant objects (`EnvConstants.kt`, `SpanAttributes.kt`, `HomerHeaders.kt`) are the kernel. Both rules read imports, not fully qualified names in code. The route walk, the lexer it uses and the origin of the size limits are recorded in [ADR-0082](../docs/adr/0082-quality-reports-report-first.md).
 

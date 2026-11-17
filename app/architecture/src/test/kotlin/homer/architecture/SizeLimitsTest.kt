@@ -102,7 +102,8 @@ class SizeLimitsTest {
         sizes: List<Size>,
     ) {
         assertNoViolations(rule, sizes.filter { it.value > cap }.map { it.violation })
-        val current = sizes.maxOfOrNull { it.value } ?: 0
+        val current = sizes.maxOfOrNull { it.value }
+        if (current == null || current == 0) fail("$rule: $constant ($SOURCE_FILE) measured nothing, so its cap cannot be ratcheted")
         staleCap(cap, current)?.let { lowerTo ->
             fail(
                 "$rule: $constant ($SOURCE_FILE) is $cap but the current maximum is $current; " +

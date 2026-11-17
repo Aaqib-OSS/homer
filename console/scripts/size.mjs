@@ -5,7 +5,7 @@
  * limits. Its own ESLint run: only these two rules run, so they never reach `npm run lint` or the
  * `eslint-warnings` check. Writes `reports/quality/size-console/`.
  *
- * Both caps ratchet (ADR-0082): a cap more than 5% above the current maximum is a finding; lower it to
+ * Both caps ratchet (ADR-0082): a cap more than 5% of itself (rounded up, at least 1) above the current maximum is a finding; lower it to
  * the maximum the finding names.
  */
 import process from 'node:process';
@@ -49,11 +49,15 @@ export function currentMaxima(results) {
   const maxima = { 'max-lines': 0, 'max-lines-per-function': 0 };
   for (const result of results) {
     for (const message of result.messages) {
+      if (!(message.ruleId in maxima)) continue;
       const count = Number(/\((\d+)\)/.exec(message.message)?.[1]);
-      if (message.ruleId in maxima && count > maxima[message.ruleId]) maxima[message.ruleId] = count;
+      if (!Number.isInteger(count)) throw new Error(`size-console: unreadable probe message: ${message.message}`);
+      if (count > maxima[message.ruleId]) maxima[message.ruleId] = count;
     }
   }
-  if (maxima['max-lines'] === 0) throw new Error('size-console: the probe run measured no file');
+  if (maxima['max-lines'] === 0 || maxima['max-lines-per-function'] === 0) {
+    throw new Error('size-console: the probe run measured no file or no function');
+  }
   return maxima;
 }
 
