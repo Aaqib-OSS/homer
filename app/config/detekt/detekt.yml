@@ -2,12 +2,74 @@
 
 comments:
   active: false
+# Only CognitiveComplexMethod (GH #307); every other default-active complexity rule is listed off.
 complexity:
-  active: false
+  active: true
+  CognitiveComplexMethod:
+    active: true
+    allowedComplexity: 23
+  ComplexCondition:
+    active: false
+  CyclomaticComplexMethod:
+    active: false
+  LargeClass:
+    active: false
+  LongMethod:
+    active: false
+  LongParameterList:
+    active: false
+  NestedBlockDepth:
+    active: false
+  TooManyFunctions:
+    active: false
 empty-blocks:
   active: false
+# Only MatchingDeclarationName (GH #309); every other default-active rule is listed off.
+# tools/quality/detekt.test.mjs pins the active set.
 naming:
-  active: false
+  active: true
+  MatchingDeclarationName:
+    active: true
+  BooleanPropertyNaming:
+    active: false
+  ClassNaming:
+    active: false
+  ConstructorParameterNaming:
+    active: false
+  EnumNaming:
+    active: false
+  ForbiddenClassName:
+    active: false
+  FunctionNameMaxLength:
+    active: false
+  FunctionNameMinLength:
+    active: false
+  FunctionNaming:
+    active: false
+  FunctionParameterNaming:
+    active: false
+  InvalidPackageDeclaration:
+    active: false
+  LambdaParameterNaming:
+    active: false
+  MemberNameEqualsClassName:
+    active: false
+  NoNameShadowing:
+    active: false
+  NonBooleanPropertyPrefixedWithIs:
+    active: false
+  ObjectPropertyNaming:
+    active: false
+  PackageNaming:
+    active: false
+  TopLevelPropertyNaming:
+    active: false
+  VariableMaxLength:
+    active: false
+  VariableMinLength:
+    active: false
+  VariableNaming:
+    active: false
 performance:
   active: false
 # Only the unused-code rules (GH #297), listed first; every other default-active rule is listed off.

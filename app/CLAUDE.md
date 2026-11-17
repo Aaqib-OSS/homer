@@ -202,7 +202,7 @@ app/gradlew -p app :app:generateThirdPartyNotices  # regenerate NOTICE + THIRD-P
 app/gradlew -p app --refresh-dependencies --no-configuration-cache --write-verification-metadata pgp,sha256 --export-keys check koverVerify crapReport :app:queryPlanReport detektMain shadowJar dependencyCheckAnalyze :app:pitest  # regenerate gradle/verification-* (ADR-0115) — every task CI runs, the nightly's dependency-check and PIT included
 app/gradlew -p app/buildSrc --refresh-dependencies --no-configuration-cache --write-verification-metadata pgp,sha256 --export-keys check  # regenerate buildSrc/gradle/verification-* (separate build)
 app/gradlew -p app/buildSrc check                  # buildSrc's own ktlint + tests (not part of `-p app check`)
-app/gradlew -p app detektMain -Dorg.gradle.jvmargs="-XX:MaxMetaspaceSize=1g"  # detekt (required in the gate), not in `check`
+app/gradlew -p app detektMain -Dorg.gradle.jvmargs="-XX:MaxMetaspaceSize=1g"  # detekt (required in the gate), not in `check`; also fails a file not named after its single top-level class or object (`MatchingDeclarationName`) and caps cognitive complexity per function (GH #307, threshold in app/config/detekt/detekt.yml)
 app/gradlew -p app :architecture:test              # Konsist architecture rules, required (ADR-0082)
 app/gradlew -p app :architecture:architectureReportOnly  # pending (report-only) rules, none at present; never fails
 ```

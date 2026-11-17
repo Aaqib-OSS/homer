@@ -1,6 +1,7 @@
 import nextTypescript from 'eslint-config-next/typescript';
 import nextCoreWebVitals from 'eslint-config-next/core-web-vitals';
 import jsxA11y from 'eslint-plugin-jsx-a11y';
+import sonarjs from 'eslint-plugin-sonarjs';
 
 // Architecture rules from console/CLAUDE.md, at "warn": `npm run lint` fails on errors only, and
 // `npm run quality:report` reports the warnings (ADR-0082). ESLint replaces a rule's options per
@@ -83,6 +84,13 @@ const config = [
         },
       ],
     },
+  },
+  {
+    // Cognitive complexity per function (GH #307); the plugin's recommended preset stays off.
+    files: SOURCE_FILES,
+    ignores: TEST_FILES,
+    plugins: { sonarjs },
+    rules: { 'sonarjs/cognitive-complexity': ['warn', 11] },
   },
   {
     files: ['app/layout.tsx', 'middleware.ts'],
