@@ -49,5 +49,35 @@ not behaviour. This paragraph is the recorded rationale for that rejection.
   `read`, `control`, `edit`, `debug`, or `role: admin` (ADR-0037). The owner is the principal
   stamped on a run when it was created, and a run is always visible to its owner (ADR-0038).
 
+## Forbidden synonyms
+
+A word that names one of these terms' concepts under another name hides the code and the docs
+that use the term from an exact search, so it stays out of the docs a contributor reads and out
+of main-code identifiers. `site`'s `npm test` enforces this list (`site/scripts/glossary-synonyms.test.mjs`):
+it parses the tables below and fails on a synonym, as a word or as a camelCase / snake_case part
+of an identifier, in the canonical guides and references (the [doc map](../CLAUDE.md) minus
+ADRs, the CHANGELOG and archival docs), in the site pages, in the backend's `src/main` Kotlin
+and in the console's production TypeScript. Comments and string literals in code are not read.
+A hit that is another thing under the same word is listed under *Allowed contexts* with its
+reason; a row that excuses nothing fails the test. The test names no external API, so nothing
+here renames a route, a field, a key or an `HMR_*` variable.
+
+| Synonym | Use instead | Why |
+| --- | --- | --- |
+| `skill` | agent | ADR-0005 retired it; Homer's `skill` is gone from the code, and the word now means a Claude Code skill. |
+
+Measured and left off, because their hits are other things under the same word: `job` (a CI
+job, a Kubernetes `Job`, a coroutine `Job`), `task` (Gradle tasks, LangGraph tasks, the Claude
+`Task` tool), `worker`, `workflow`, `invocation`, `pipeline` and `trigger`.
+
+### Allowed contexts
+
+| Synonym | File | Line contains | Reason |
+| --- | --- | --- | --- |
+| `skill` | docs/glossary.md | retired "skill" as a synonym | The definition of **agent** names the retired word. |
+| `skill` | CLAUDE.md | bundled skill + schema | A Claude Code skill: the authoring plugin bundles one. |
+| `skill` | README.md | plugin bundles a skill | A Claude Code skill: the authoring plugin bundles one. |
+| `skill` | README.md | bundled skill and schema | A Claude Code skill: the authoring plugin bundles one. |
+
 The [ADRs](adr/) and the guides the root `CLAUDE.md` doc map names are the authority; this page
 only fixes the words.

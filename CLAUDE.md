@@ -282,7 +282,7 @@ Two related rules:
 | Server configuration | [`app/SERVER.md`](app/SERVER.md) |
 | JSON schemas (editor autocomplete) | [`app/schemas/homer-config.schema.json`](app/schemas/homer-config.schema.json), [`app/schemas/homer-agent.schema.json`](app/schemas/homer-agent.schema.json) |
 | Architecture decisions | [`docs/adr/`](docs/adr/) |
-| Core terms / glossary (one definition per term: run = process, dispatch, continuation, claim, …) | [`docs/glossary.md`](docs/glossary.md) |
+| Core terms / glossary (one definition per term: run = process, dispatch, continuation, claim, …; its forbidden-synonyms list is enforced by `site`'s `npm test`) | [`docs/glossary.md`](docs/glossary.md) |
 | Quality checks: what is tested, where, and how to run it | [`docs/quality-checks.md`](docs/quality-checks.md); modes in [`tools/quality/checks.json`](tools/quality/checks.json) |
 | Console user flows / features | [`console/README.md`](console/README.md) + [`/CHANGELOG.md`](CHANGELOG.md) (`### Console`) |
 | Console deployment | [`console/DEPLOYMENT.md`](console/DEPLOYMENT.md) |
