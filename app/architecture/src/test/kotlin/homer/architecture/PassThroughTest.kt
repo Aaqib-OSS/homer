@@ -1,6 +1,7 @@
 package homer.architecture
 
 import com.lemonappdev.konsist.api.KoModifier
+import com.lemonappdev.konsist.api.container.KoScope
 import com.lemonappdev.konsist.api.declaration.KoClassDeclaration
 import com.lemonappdev.konsist.api.declaration.KoFunctionDeclaration
 import com.lemonappdev.konsist.api.declaration.KoInterfaceDeclaration
@@ -24,8 +25,8 @@ class PassThroughTest {
         val violations =
             Sources.modules.flatMap { module ->
                 val scope = Sources.main(module)
-                val portMethods = scope.interfaces(includeNested = true).associate { it.name to it.functions().map { f -> f.name }.toSet() }
-                scope.functions(includeNested = true, includeLocal = false).mapNotNull { fn ->
+                val portMethods = portMethods(scope)
+                checkedFunctions(scope).mapNotNull { fn ->
                     val target = passThroughTarget(fn, portMethods)
                     target?.let { violation(fn, "${fn.name} only forwards its parameters to $it; call it directly") }
                 }
@@ -34,13 +35,21 @@ class PassThroughTest {
     }
 }
 
+/** The functions the rule checks: every named function, nested ones included, local ones (inside a body) not. */
+internal fun checkedFunctions(scope: KoScope): List<KoFunctionDeclaration> = scope.functions(includeNested = true, includeLocal = false)
+
+/** Interface name to its member names, for every interface of [scope]. */
+internal fun portMethods(scope: KoScope): Map<String, Set<String>> =
+    scope.interfaces(includeNested = true).associate { it.name to it.functions().map { f -> f.name }.toSet() }
+
 /**
  * The callee text when [fn] is a pass-through, else null. Exempt: an `override` or `operator` function, a function
  * without parameters, one with a parameter default (it supplies something), one without a body, an interface member (a default method included), a function of a class
- * implementing an interface of [ports] (name to member names, ADR-0083) that declares a member of that name, and a
- * forward whose target is a non-public (private or internal) member of the enclosing class or object, or is reached
- * through a non-public property of it (a constructor property included), or a private top-level function or property
- * of the same file — encapsulation, not a layer.
+ * implementing an interface of [ports] (name to member names, ADR-0083) that declares a member of that name — by
+ * name over every implemented interface, since Konsist does not resolve which member a function overrides — and a
+ * forward whose callee, or any receiver before it, is a non-public (private, protected or internal) member of the
+ * enclosing class or object, its companion or a parent class, a constructor property included, or a private top-level
+ * function or property of the same file — encapsulation, not a layer.
  */
 internal fun passThroughTarget(
     fn: KoFunctionDeclaration,
@@ -55,14 +64,15 @@ internal fun passThroughTarget(
     val forwarded = parameters.map { if (it.hasModifier(KoModifier.VARARG)) "*${it.name}" else it.name }
     val target = forwardedCall(fn.text, forwarded) ?: return null
     val hidden = nonPublicMembers(owner) + privateFileMembers(fn)
-    val reached = receiverRoot(target) ?: target.replace(THIS, "")
-    return target.takeUnless { reached in hidden }
+    return target.takeUnless { reachedNames(target).any { it in hidden } }
 }
 
-/** The first segment of a receiver chain, `this.` skipped: `jobs` for `jobs.remove`, null for a bare call. */
-internal fun receiverRoot(callee: String): String? {
-    val parts = callee.replace(THIS, "").split('.')
-    return if (parts.size > 1) parts.first().trimEnd('?', '!') else null
+private val TYPE_ARGUMENTS = Regex("""<.*>$""")
+
+/** The names a callee reaches: each receiver of the chain and, for a bare call, the callee, `this`, `?.`, `!!` and `<T>` stripped. */
+private fun reachedNames(callee: String): List<String> {
+    val parts = callee.replace(THIS, "").split('.').map { it.replace(TYPE_ARGUMENTS, "").trimEnd('?', '!') }
+    return if (parts.size > 1) parts.dropLast(1) else parts
 }
 
 /** Names of the private top-level functions and properties of the file declaring [fn]. */
@@ -80,13 +90,23 @@ private fun privateFileMembers(fn: KoFunctionDeclaration): Set<String> {
     ).toSet() - publicFunctions
 }
 
-private fun KoModifierProvider.isNonPublic() = hasModifier(KoModifier.PRIVATE) || hasModifier(KoModifier.INTERNAL)
+private fun KoModifierProvider.isNonPublic() =
+    hasModifier(KoModifier.PRIVATE) || hasModifier(KoModifier.INTERNAL) || hasModifier(KoModifier.PROTECTED)
 
-/** Names of the properties (constructor properties included) and functions of [owner] that are private or internal. */
+/** Names of the non-public properties (constructor properties included) and functions of [owner], its companion and its parent classes. */
 private fun nonPublicMembers(owner: KoBaseProvider?): Set<String> {
-    val properties = (owner as? KoPropertyProvider)?.properties(includeNested = false).orEmpty()
-    val functions = (owner as? KoFunctionProvider)?.functions(includeNested = false).orEmpty()
-    val constructorParameters = (owner as? KoClassDeclaration)?.primaryConstructor?.parameters.orEmpty()
+    val sources =
+        listOfNotNull(owner) +
+            (
+                (owner as? KoClassDeclaration)
+                    ?.let {
+                        listOfNotNull(it.companionObject) +
+                            it.parentClasses(indirectParents = true).mapNotNull { parent -> parent.sourceDeclaration?.asClassDeclaration() }
+                    }.orEmpty()
+            )
+    val properties = sources.flatMap { (it as? KoPropertyProvider)?.properties(includeNested = false).orEmpty() }
+    val functions = sources.flatMap { (it as? KoFunctionProvider)?.functions(includeNested = false).orEmpty() }
+    val constructorParameters = sources.flatMap { (it as? KoClassDeclaration)?.primaryConstructor?.parameters.orEmpty() }
     val publicFunctions = functions.filterNot { it.isNonPublic() }.map { it.name }.toSet()
     return (
         properties.filter { it.isNonPublic() }.map { it.name } +
@@ -153,11 +173,11 @@ private fun splitArguments(text: String): List<String> {
     var from = 0
     text.forEachIndexed { i, c ->
         when (c) {
-            '(', '[', '{', '<' -> {
+            '(', '[', '{' -> {
                 depth++
             }
 
-            ')', ']', '}', '>' -> {
+            ')', ']', '}' -> {
                 depth--
             }
 

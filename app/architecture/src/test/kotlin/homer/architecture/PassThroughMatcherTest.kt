@@ -29,9 +29,9 @@ class PassThroughMatcherTest {
     @Test
     fun `an override, an operator, a parameterless function and a port method are no finding`() {
         listOf("overridden", "plus2", "parameterless", "abstractFn").forEach { assertNull(target(it), it) }
-        val ports = mapOf("Port" to setOf("portMember"))
-        assertNull(target("portMember", ports))
-        assertEquals("target", target("portNonMember", ports))
+        assertNull(target("portMember"))
+        assertEquals("target", target("portNonMember"))
+        assertNull(target("genericPortMember"))
     }
 
     @Test
@@ -68,12 +68,36 @@ class PassThroughMatcherTest {
         assertNull(target("viaFileState"))
     }
 
-    private fun target(
-        name: String,
-        ports: Map<String, Set<String>> = emptyMap(),
-    ): String? {
-        val fn = fixtures.functions(includeNested = true).single { it.name == name }
-        return passThroughTarget(fn, ports)
+    @Test
+    fun `encapsulation reaches a safe call, any receiver of a chain, a type argument, a companion and a parent class`() {
+        listOf("safeCall", "notNull", "chainHidden", "genericHidden", "viaCompanion", "viaInherited").forEach {
+            assertNull(target(it), it)
+        }
+        assertEquals("outer.inner.get", target("chainPublic"))
+    }
+
+    @Test
+    fun `a public overload of the same name leaves the private target a finding`() {
+        assertEquals("g", target("overloadShadowed"))
+        assertEquals("fileOverload", target("viaFileOverload"))
+    }
+
+    @Test
+    fun `a comparison or a lambda arrow in an argument does not hide a pass-through`() {
+        assertNull(target("comparisonArgument"))
+        assertNull(target("arrowArgument"))
+    }
+
+    @Test
+    fun `a local function is not checked`() {
+        assertNull(checkedFunctions(fixtures).find { it.name == "local" })
+        assertEquals(1, checkedFunctions(fixtures).count { it.name == "outerOfLocal" })
+    }
+
+    private fun target(name: String): String? {
+        val named = fixtures.functions(includeNested = true).filter { it.name == name }
+        val fn = named.singleOrNull() ?: named.single { it.hasBlockBody || it.hasExpressionBody }
+        return passThroughTarget(fn, portMethods(fixtures))
     }
 
     private companion object {

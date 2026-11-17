@@ -46,6 +46,18 @@ abstract class Abstract {
     abstract fun abstractFn(a: Int)
 }
 
+interface Port {
+    fun portMember(a: Int)
+}
+
+interface GenericPort<T> {
+    fun genericPortMember(a: T)
+}
+
+class GenericImplements : GenericPort<Int> {
+    fun genericPortMember(a: Int) = target(a)
+}
+
 class Implements : Port {
     fun portMember(a: Int) = target(a)
 
@@ -148,3 +160,74 @@ private val fileState = mutableListOf<Int>()
 fun viaFileHelper(a: Int) = fileHelper(a)
 
 fun viaFileState(a: Int) = fileState.add(a)
+
+// Encapsulation reaches further than the owner's own members.
+class SafeCall {
+    private val m: M? = null
+
+    fun safeCall(a: Int) {
+        m?.remove(a)
+    }
+
+    fun notNull(a: Int) = m!!.get(a)
+}
+
+class ChainHidden {
+    private val inner = I()
+
+    fun chainHidden(a: Int) = outer.inner.get(a)
+}
+
+class ChainPublic {
+    val inner = I()
+
+    fun chainPublic(a: Int) = outer.inner.get(a)
+}
+
+class GenericHidden {
+    fun genericHidden(a: Int) = g<Int>(a)
+
+    private fun <T> g(a: T) = a
+}
+
+class WithCompanion {
+    fun viaCompanion(a: Int) = helper(a)
+
+    companion object {
+        private fun helper(a: Int) = a
+    }
+}
+
+open class Base {
+    protected fun inherited(a: Int) = a
+}
+
+class Derived : Base() {
+    fun viaInherited(a: Int) = inherited(a)
+}
+
+// A public overload of the same name makes the private one no encapsulation.
+class OverloadShadowed {
+    fun overloadShadowed(a: Int) = g(a)
+
+    private fun g(a: Int) = a
+
+    fun g(a: String) = a
+}
+
+private fun fileOverload(a: Int) = a
+
+fun fileOverload(a: String) = a
+
+fun viaFileOverload(a: Int) = fileOverload(a)
+
+// Arguments holding a comparison or a lambda arrow still split at their top-level commas.
+fun comparisonArgument(a: Int, b: Int) = target(if (a < b) a else b, b)
+
+fun arrowArgument(a: Int, b: Int) = target(a, { c -> log(c) })
+
+// A local function is outside the rule.
+fun outerOfLocal(a: Int) {
+    fun local(b: Int) = target(b)
+    local(a)
+}
