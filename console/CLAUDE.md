@@ -413,6 +413,15 @@ operator. See
 ## Types & backend coupling
 
 - `types/homer.ts` hand-mirrors backend DTOs. **There is no codegen.**
+- **Every wire type lives there** — REST request and response bodies, the
+  `data:` payload of every SSE frame, and the error body (`ErrorResponse`).
+  `lib/api/*` holds no wire interface of its own: a local `interface` or an
+  inline object type for something the backend sends is invisible to the
+  `dto-contract` check, so it drifts unseen. Only a shape the client
+  *builds* from a response (a blob plus its headers, say) is exempt from the
+  backend mirror; declare it in `types/homer.ts` and give it a
+  `CONSOLE_ONLY` reason in `tools/quality/dto-contract.mjs` naming what the
+  console assembles.
 - Adding / changing a backend endpoint requires a same-commit update
   to:
   1. `types/homer.ts` (DTO shape).

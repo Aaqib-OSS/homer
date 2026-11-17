@@ -5,7 +5,19 @@ import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { openStream } from './sse';
 import { queryKeys } from './queries';
 import { useActiveInstanceId } from '@/lib/instances/use-instances';
-import type { LlmEvent, LlmStreamFrame, LlmTurnStatus, LlmUsage, ProcessListResponse } from '@/types/homer';
+import type {
+  LlmEvent,
+  LlmStreamFrame,
+  LlmTurnStatus,
+  LlmUsage,
+  LogChunkFrame,
+  ProcessCmdFrame,
+  ProcessListResponse,
+  ProcessStatusFrame,
+  QuestionAskedFrame,
+  QuestionFrame,
+  RunMessageFrame,
+} from '@/types/homer';
 
 // Only the flow summaries the events are about: a root's, or one already listing the run.
 // A child new to its flow shows up on the summary's own poll or its parent's next event.
@@ -60,16 +72,16 @@ export function useProcessStatusStream() {
     const close = openStream('/api/v1/stream/processes', {
       onEvent(name, data) {
         if (PROCESS_EVENTS.has(name)) {
-          const processId = (data as { processId?: number })?.processId;
+          const processId = (data as Partial<ProcessStatusFrame | ProcessCmdFrame>)?.processId;
           if (typeof processId === 'number') pendingIds.add(processId);
           if (rafId === null) rafId = requestAnimationFrame(flush);
         } else if (MESSAGE_EVENTS.has(name)) {
-          const processId = (data as { processId?: number })?.processId;
+          const processId = (data as Partial<RunMessageFrame>)?.processId;
           if (typeof processId === 'number') {
             queryClient.invalidateQueries({ queryKey: queryKeys.runMessages(processId) });
           }
         } else if (QUESTION_EVENTS.has(name)) {
-          const processId = (data as { processId?: number })?.processId;
+          const processId = (data as Partial<QuestionAskedFrame | QuestionFrame>)?.processId;
           queryClient.invalidateQueries({ queryKey: queryKeys.allQuestions() });
           // openQuestions counts ride the process list / detail responses.
           queryClient.invalidateQueries({ queryKey: queryKeys.allProcesses() });
@@ -95,6 +107,9 @@ export function useAgentReloadStream() {
   useEffect(() => {
     const close = openStream('/api/v1/stream/agents', {
       onEvent(name) {
+        // The payload is the grant-narrowed reload diff (AgentReloadFrame); the frame
+        // itself is the reload-completed signal, so the queries invalidate whatever
+        // the diff holds — an empty diff is a real completed reload.
         if (name === 'agent.reload') {
           queryClient.invalidateQueries({ queryKey: queryKeys.agents() });
         }
@@ -134,14 +149,15 @@ export function useProcessLogStream(
     const close = openStream(path, {
       onEvent(name, data) {
         if (name === 'log.chunk') {
-          // Backend emits `{ offset, content }` where offset is the END byte
-          // position of this chunk and content is the bytes since the
-          // previous chunk's offset (or 0 on first chunk / reconnect).
+          // The wire payload is `{ content }`: the bytes since the previous
+          // chunk. The END byte offset of this chunk rides the frame's `id:`,
+          // which this handler does not read, so `offset` stays optional here
+          // and a payload without it takes the best-effort append below.
           // We can't rely on appending blindly: openStream auto-reconnects
           // on transient errors and the backend restarts at byte 0 unless
           // we pass resumeFromOffset (which we don't), so the post-reconnect
           // first chunk would re-deliver content we already have.
-          const d = data as { offset?: number; content?: string };
+          const d = data as Partial<LogChunkFrame> & { offset?: number };
           const incomingOffset = typeof d.offset === 'number' ? d.offset : -1;
           const incomingContent = d.content ?? '';
           setState((s) => {

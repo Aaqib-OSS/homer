@@ -19,9 +19,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { homerApi, type ArtifactEntry } from '@/lib/api/client';
+import { homerApi } from '@/lib/api/client';
 import { queryKeys } from '@/lib/api/queries';
 import { formatBytes, formatRelativeTime } from '@/lib/utils/format';
+import type { ArtifactEntry } from '@/types/homer';
 
 interface ArtifactPickerDialogProps {
   processId: number;
