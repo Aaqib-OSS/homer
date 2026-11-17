@@ -10,10 +10,20 @@ naming:
   active: false
 performance:
   active: false
-# Only the unused-code rules, on by default (GH #297): UnusedParameter, UnusedPrivateClass,
-# UnusedPrivateFunction, UnusedPrivateProperty, UnusedVariable. Every other default rule is listed off.
+# Only the unused-code rules (GH #297), listed first; every other default-active rule is listed off.
+# tools/quality/detekt.test.mjs pins the active set.
 style:
   active: true
+  UnusedParameter:
+    active: true
+  UnusedPrivateClass:
+    active: true
+  UnusedPrivateFunction:
+    active: true
+  UnusedPrivateProperty:
+    active: true
+  UnusedVariable:
+    active: true
   AbstractClassCanBeConcreteClass:
     active: false
   AbstractClassCanBeInterface:

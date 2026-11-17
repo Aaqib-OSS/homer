@@ -170,9 +170,9 @@ interface Principaled {
 }
 
 /**
- * Parse-time check of a principal's `role`: `admin` if set. The rest of the authority rule (exactly one of
- * `role: admin` or a non-empty `grants`; no leftover `endpoints`) is checked at startup
- * (validateNoLegacyEndpoints), so the error can aggregate principals and name the migration fix.
+ * Parse-time check of a principal's `role`: `admin` if set. The rest of the authority rule is checked at
+ * startup (validateNoLegacyEndpoints): no leftover `endpoints`, and at least one of `role: admin` or a
+ * non-empty `grants` (both is allowed; `role` wins), so the error can name the migration fix.
  */
 internal fun requireValidPrincipalRole(
     role: String?,
