@@ -66,9 +66,11 @@ here renames a route, a field, a key or an `HMR_*` variable.
 | --- | --- | --- |
 | `skill` | agent | ADR-0005 retired it; Homer's `skill` is gone from the code, and the word now means a Claude Code skill. |
 
-Measured and left off, because their hits are other things under the same word: `job` (a CI
-job, a Kubernetes `Job`, a coroutine `Job`), `task` (Gradle tasks, LangGraph tasks, the Claude
-`Task` tool), `worker`, `workflow`, `invocation`, `pipeline` and `trigger`.
+Measured and left off, because their hits are other things under the same word (doc hits /
+identifiers): `job` (94 / 286: CI jobs, Kubernetes `Job`, coroutine `Job`), `task` (27 / 17:
+Gradle tasks, LangGraph tasks, the Claude `Task` tool), `worker` (14 / 24), `workflow` (46 / 83),
+`invocation` (23 / 45: `HMR_INVOCATION_CHAIN` among them), `pipeline` (12 / 2) and `trigger`
+(16 / 47).
 
 ### Allowed contexts
 

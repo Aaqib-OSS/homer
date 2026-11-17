@@ -27,6 +27,7 @@ export function parseForbidden(markdown) {
     const row = cells(line)
     if (row[0] === 'Synonym') { kind = row.length === 2 || row[1] === 'Use instead' ? 'forbidden' : 'allowed'; continue }
     if (/^:?-+:?$/.test(row[0])) continue
+    if (kind === 'forbidden' && !row[1]) throw new Error(`forbidden synonym "${row[0]}" names no term in "Use instead"`)
     if (kind === 'forbidden') forbidden.push({ word: row[0].toLowerCase(), use: row[1] })
     else if (kind === 'allowed') allowed.push({ word: row[0].toLowerCase(), file: row[1], text: row[2], reason: row[3] })
   }

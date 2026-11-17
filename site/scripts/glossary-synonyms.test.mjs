@@ -78,6 +78,7 @@ test('the parser rejects a missing section, an empty list and an allowance for a
   assert.throws(() => parseForbidden('## Forbidden synonyms\n\ntext\n'), /lists no synonym/)
   const orphan = GLOSSARY.replace('| `skill` | README.md', '| `other` | README.md')
   assert.throws(() => parseForbidden(orphan), /"other", which is not a forbidden synonym/)
+  assert.throws(() => parseForbidden(GLOSSARY.replace('| agent |', '|  |')), /names no term/)
   const noReason = GLOSSARY.replace('| a Claude Code skill |', '|  |')
   assert.throws(() => parseForbidden(noReason), /needs a file, a line text and a reason/)
 })
