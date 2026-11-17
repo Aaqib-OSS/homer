@@ -54,10 +54,20 @@ not behaviour. This paragraph is the recorded rationale for that rejection.
 A word that names one of these terms' concepts under another name hides the code and the docs
 that use the term from an exact search, so it stays out of the docs a contributor reads and out
 of main-code identifiers. `site`'s `npm test` enforces this list (`site/scripts/glossary-synonyms.test.mjs`):
-it parses the tables below and fails on a synonym, as a word or as a camelCase / snake_case part
-of an identifier, in the canonical guides and references (the [doc map](../CLAUDE.md) minus
-ADRs, the CHANGELOG and archival docs), in the site pages, in the backend's `src/main` Kotlin
-and in the console's production TypeScript. Comments and string literals in code are not read.
+it parses the tables below and fails on a synonym, as a word or as a camelCase / snake_case
+or letter-digit part of an identifier (`skillName`, `skill2`), in:
+
+- every tracked `*.md` file except `docs/adr/`, the other files under `docs/` (archival, as the
+  root `CLAUDE.md` §9 says; `docs/glossary.md` and `docs/quality-checks.md` stay in), `CHANGELOG.md`,
+  `THIRD-PARTY-LICENSES.md`, `CONTRIBUTORS.md`, `plugins/` (copies) and `.github/`, this section
+  excepted, so the site pages and every package guide are in;
+- `docs/homer-feature-atlas.html`, read as text (tags, scripts and styles dropped);
+- the backend's Kotlin under every `app/*/src/main`, comments and string literals not read, a
+  backticked name read as an identifier;
+- the console's production TypeScript (`app`, `components`, `lib`, `types`, `middleware.ts`; not
+  tests, `components/ui` or `.d.ts`), comments, strings and template literals not read. A
+  regex literal is not recognized, so a quote inside one can hide the rest of its line.
+
 A hit that is another thing under the same word is listed under *Allowed contexts* with its
 reason; a row that excuses nothing fails the test. The test names no external API, so nothing
 here renames a route, a field, a key or an `HMR_*` variable.
@@ -80,6 +90,8 @@ Gradle tasks, LangGraph tasks, the Claude `Task` tool), `worker` (14 / 24), `wor
 | `skill` | CLAUDE.md | bundled skill + schema | A Claude Code skill: the authoring plugin bundles one. |
 | `skill` | README.md | plugin bundles a skill | A Claude Code skill: the authoring plugin bundles one. |
 | `skill` | README.md | bundled skill and schema | A Claude Code skill: the authoring plugin bundles one. |
+| `skill` | docs/homer-feature-atlas.html | the bundled skill teaches | A Claude Code skill: the authoring plugin bundles one. |
+| `skill` | docs/homer-feature-atlas.html | bundles a skill that teaches | A Claude Code skill: the authoring plugin bundles one. |
 
 The [ADRs](adr/) and the guides the root `CLAUDE.md` doc map names are the authority; this page
 only fixes the words.

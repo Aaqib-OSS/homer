@@ -39,29 +39,36 @@ export function parseForbidden(markdown) {
   return { forbidden, allowed, section: lines.slice(start, end).join('\n') }
 }
 
-/** Splits an identifier or a word run into lowercase tokens on camelCase, snake_case and digits' edges. */
+/** Splits an identifier or a word run into lowercase tokens on camelCase, snake_case and letter-digit edges. */
 export function tokens(text) {
   return (text.match(/[A-Za-z][A-Za-z0-9]*/g) ?? []).flatMap((id) =>
-    id.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2').split(' ').map((t) => t.toLowerCase()))
+    id.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Za-z])([0-9])/g, '$1 $2').replace(/([0-9])([A-Za-z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2').split(' ').map((t) => t.toLowerCase()))
 }
 
 // Comments and string literals are not identifiers: Kotlin and TypeScript alike, in one pass so
-// a `//` inside a string or a quote inside a comment is not misread. Newlines are kept.
-const NOT_CODE = /\/\*[\s\S]*?\*\/|\/\/[^\n]*|"""[\s\S]*?"""|"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g
-export function stripNonCode(text) {
-  return text.replace(NOT_CODE, (m) => m.replace(/[^\n]/g, ' '))
-}
+// a `//` inside a string or a quote inside a comment is not misread. Newlines are kept. A backtick
+// is a template literal in TypeScript, but in Kotlin it quotes an identifier, so Kotlin keeps it.
+// A TypeScript regex literal is not recognized: a quote inside one can mask the rest of its line.
+const NOT_KOTLIN = /\/\*[\s\S]*?\*\/|\/\/[^\n]*|"""[\s\S]*?"""|"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/g
+const NOT_TS = new RegExp(`${NOT_KOTLIN.source}|\`(?:[^\`\\\\]|\\\\.)*\``, 'g')
+const blank = (m) => m.replace(/[^\n]/g, ' ')
+export const stripNonCode = (text, lang = 'kotlin') => text.replace(lang === 'ts' ? NOT_TS : NOT_KOTLIN, blank)
+
+// HTML as prose: script and style bodies and tags are dropped, line breaks kept.
+export const stripHtml = (text) => text.replace(/<(script|style)\b[\s\S]*?<\/\1>|<!--[\s\S]*?-->|<[^>]*>/gi, blank)
+
+const clean = { kotlin: (t) => stripNonCode(t, 'kotlin'), ts: (t) => stripNonCode(t, 'ts'), html: stripHtml, prose: (t) => t }
 
 const matches = (lineTokens, word) => lineTokens.some((t) => t === word || t === `${word}s`)
 
 /**
  * Every line of `text` that holds a forbidden synonym and is not an allowed context.
- * @param {{path: string, text: string, kind: 'prose'|'code'}} file
+ * @param {{path: string, text: string, kind: 'prose'|'html'|'kotlin'|'ts'}} file
  * @param {{forbidden: {word: string, use: string}[], allowed: {word: string, file: string, text: string}[]}} rules
  * @param {Set<object>} [used] receives each allowed context that excused a hit
  */
 export function findHits(file, rules, used = new Set()) {
-  const lines = (file.kind === 'code' ? stripNonCode(file.text) : file.text).split('\n')
+  const lines = clean[file.kind](file.text).split('\n')
   const original = file.text.split('\n')
   const hits = []
   lines.forEach((line, i) => {

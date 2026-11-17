@@ -10,21 +10,22 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '../..')
 const tracked = (...patterns) => execFileSync('git', ['-C', root, 'ls-files', '-z', '--cached', ...patterns], { encoding: 'utf8' }).split('\0').filter(Boolean)
 const read = (f) => readFileSync(join(root, f), 'utf8')
 
-// Prose in scope: the guides and references the root CLAUDE.md §9 doc map names as canonical, plus
-// the site's own pages. Not in scope: ADRs and the CHANGELOG (history), the other docs/ files
-// (archival), generated or copied files (THIRD-PARTY-LICENSES, CONTRIBUTORS, the plugin's bundled copies).
+// Scope, as stated in docs/glossary.md: every tracked *.md except PROSE_OUT, the feature atlas as
+// text, the backend's src/main Kotlin and the console's production TypeScript.
 const PROSE_OUT = /^(docs\/(?!glossary\.md$|quality-checks\.md$)|CHANGELOG\.md$|THIRD-PARTY-LICENSES\.md$|CONTRIBUTORS\.md$|plugins\/|\.github\/)/
-// Code in scope: backend main code (every module's src/main) and the console's production
-// files, the file set of console/scripts/size.mjs.
+const ATLAS = 'docs/homer-feature-atlas.html'
+// Code in scope: every module's src/main Kotlin and the console's production files, the file set
+// of console/scripts/size.mjs.
 const KOTLIN = /^app\/[^/]+\/src\/main\/.*\.kt$/
 const CONSOLE = /^console\/((app|components|lib|types)\/.*\.tsx?|middleware\.ts)$/
 const CONSOLE_OUT = /\.test\.|^console\/components\/ui\/|\.d\.ts$/
 
 function scanFiles() {
   const prose = tracked('*.md').filter((f) => !PROSE_OUT.test(f)).map((path) => ({ path, kind: 'prose' }))
+  prose.push({ path: ATLAS, kind: 'html' })
   const code = tracked('app/*.kt', 'console/*.ts', 'console/*.tsx')
     .filter((f) => KOTLIN.test(f) || (CONSOLE.test(f) && !CONSOLE_OUT.test(f)))
-    .map((path) => ({ path, kind: 'code' }))
+    .map((path) => ({ path, kind: path.endsWith('.kt') ? 'kotlin' : 'ts' }))
   return { prose, code }
 }
 
@@ -86,15 +87,16 @@ test('the parser rejects a missing section, an empty list and an allowance for a
 test('tokens split camelCase, snake_case, acronyms and digits', () => {
   assert.deepEqual(tokens('runSkill'), ['run', 'skill'])
   assert.deepEqual(tokens('SKILL_NAME skillId'), ['skill', 'name', 'skill', 'id'])
-  assert.deepEqual(tokens('HTTPServer2 x'), ['http', 'server2', 'x'])
+  assert.deepEqual(tokens('HTTPServer2 x'), ['http', 'server', '2', 'x'])
+  assert.deepEqual(tokens('skill2 v2skill'), ['skill', '2', 'v', '2', 'skill'])
   assert.deepEqual(tokens('a-skill/b'), ['a', 'skill', 'b'])
   assert.deepEqual(tokens('1 2'), [])
 })
 
 test('code comments and string literals are not identifiers', () => {
-  const code = 'val a = "skill" // skill\n/* skill\nskill */ val b = """\nskill\n""" + \'skill\' + `skill ${x}`\nval skill = 1\n'
+  const code = 'val a = "skill" // skill\n/* skill\nskill */ val b = """\nskill\n""" + \'skill\'\nval skill = 1\n'
   assert.equal(stripNonCode(code).split('\n').length, code.split('\n').length)
-  assert.deepEqual(findHits({ path: 'A.kt', text: code, kind: 'code' }, parseForbidden(GLOSSARY)).map((h) => h.line), [6])
+  assert.deepEqual(findHits({ path: 'A.kt', text: code, kind: 'kotlin' }, parseForbidden(GLOSSARY)).map((h) => h.line), [6])
 })
 
 test('prose hits report file, line, and the term to use; allowed contexts excuse only their file and line text', () => {
@@ -108,4 +110,17 @@ test('prose hits report file, line, and the term to use; allowed contexts excuse
   ])
   assert.equal(used.size, 1)
   assert.equal(findHits({ path: 'OTHER.md', text: 'The bundled skill', kind: 'prose' }, rules).length, 1)
+})
+
+test('a Kotlin backticked name is an identifier, a TypeScript template literal is not', () => {
+  const rules = parseForbidden(GLOSSARY)
+  const code = 'fun `skill works`() {}\nconst a = `skill ${x}`\nconst skill2 = 1\n'
+  assert.deepEqual(findHits({ path: 'A.kt', text: code, kind: 'kotlin' }, rules).map((h) => h.line), [1, 2, 3])
+  assert.deepEqual(findHits({ path: 'a.ts', text: code, kind: 'ts' }, rules).map((h) => h.line), [3])
+})
+
+test('HTML is read as text: tags, scripts, styles and comments are not', () => {
+  const rules = parseForbidden(GLOSSARY)
+  const html = '<a class="skill" href="skill">x</a>\n<script>\nvar skill\n</script><style>.skill{}</style>\n<!-- skill -->\n<p>a <b>skill</b></p>'
+  assert.deepEqual(findHits({ path: 'a.html', text: html, kind: 'html' }, rules).map((h) => h.line), [6])
 })
