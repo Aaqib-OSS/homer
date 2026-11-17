@@ -128,6 +128,8 @@ tasks.test {
     jvmArgs("-XX:+EnableDynamicAgentLoading")
     jvmArgs("-Dnet.bytebuddy.experimental=true")
     maxHeapSize = "2g"
+    // GH #286: parallel forks; test capture files are per worker.
+    maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
 
     // Tests resolve repo files against this (homer.app.fixtures.repoRoot), under the name the
     // architecture module uses.

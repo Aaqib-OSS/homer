@@ -194,6 +194,7 @@ export JAVA_HOME=<path to a JDK 25>  # macOS: $(/usr/libexec/java_home -v 25)
 
 app/gradlew -p app :app:test                       # tests only
 app/gradlew -p app ktlintFormat :app:test          # pre-commit
+# :app:test runs in parallel forks (half the cores); its test-time capture files are per worker
 app/gradlew -p app :app:shadowJar                  # fat jar → app/build/libs/homer-<version>-all.jar
 app/gradlew -p app :agentdebug:shadowJar           # CLI debugger
 app/gradlew -p app :homer-runner:shadowJar         # external runner binary
