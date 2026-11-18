@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.43.2] - 2026-11-18
+
 ### Homer
 
 - **Security: the images start the JVM with Base64 intrinsics off** — `homer-app` and `homer-runner` run with `-XX:-UseBASE64Intrinsics`, mitigating Java4Shell (CVE-2026-114938) until the base JRE carries the fix.
