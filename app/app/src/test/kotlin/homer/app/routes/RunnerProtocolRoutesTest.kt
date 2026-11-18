@@ -1135,8 +1135,10 @@ class RunnerProtocolRoutesTest {
                                         channel.writeByteArray(body.copyOfRange(0, 1))
                                         channel.flush()
                                         resume.await()
+                                        // No flush after the last write: the server closes the stream once the
+                                        // tar ends, and the test engine's counted flush throws if that close lands
+                                        // before it returns (GH #332). The engine flushes on return instead.
                                         channel.writeByteArray(body.copyOfRange(1, body.size))
-                                        channel.flush()
                                     }
                                 },
                             )
