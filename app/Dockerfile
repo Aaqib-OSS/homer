@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile for Homer
 # Stage 1: Build the fat jar
-FROM eclipse-temurin:25-jdk-alpine@sha256:c7c3d0bdf7f2bbc5a05a6712ed334d198360105634ea9adf76fca94f381b1e3f AS builder
+FROM eclipse-temurin:25-jdk-alpine-3.23@sha256:9c835a4ba215132c44248947376e270323ccca5a770248dd5cdf6c1711ebfa1f AS builder
 
 WORKDIR /build
 
@@ -62,7 +62,7 @@ RUN zip -q -d app/build/libs/homer-*-all.jar 'org/sqlite/native/*' -x 'org/sqlit
 # sh/bash for local commands and `when:` predicates, su-exec for the entrypoint, curl for the
 # compose health check, python3 + homer_langgraph for the server-side LangGraph inspect and state
 # calls. No agent toolchain; runs that need one go to a runner that has it.
-FROM eclipse-temurin:25-jre-alpine@sha256:e1898fd6a11fc965a994d8ace186fd3585aeb636cf8f05f47a723fcfee0b0918 AS slim
+FROM eclipse-temurin:25-jre-alpine-3.23@sha256:e3ec242a23cf736c024475da9cd2a26f1f9d896840dd797da1bb95d30ed3f659 AS slim
 
 ARG HOMER_VERSION=dev
 ENV HOMER_VERSION=$HOMER_VERSION
@@ -181,7 +181,7 @@ USER root
 # agents it runs decide what else they need; derive from this image to add
 # node/claude, python, docker CLIs and so on. util-linux provides setsid so
 # killed commands take their whole process group with them (ADR-0041).
-FROM eclipse-temurin:25-jre-alpine@sha256:e1898fd6a11fc965a994d8ace186fd3585aeb636cf8f05f47a723fcfee0b0918 AS homer-runner
+FROM eclipse-temurin:25-jre-alpine-3.23@sha256:e3ec242a23cf736c024475da9cd2a26f1f9d896840dd797da1bb95d30ed3f659 AS homer-runner
 
 ARG HOMER_VERSION=dev
 ENV HOMER_VERSION=$HOMER_VERSION
