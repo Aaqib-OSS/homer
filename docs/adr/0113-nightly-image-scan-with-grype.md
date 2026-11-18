@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-11-15
+amended: 2026-11-18
 deciders: Lukáš Vlk
 consulted: ADR-0082, ADR-0086, ADR-0088
 ---
@@ -71,3 +72,14 @@ finding fails the run. `docs/quality-checks.md` § Open backlog tracks the findi
 - Bad: until the backlog is fixed, the job only warns, so a new finding is visible but fails
   nothing.
 - Bad: the job builds three images from scratch every night, with no build cache.
+
+## Amendment (2026-11-18): a failed scan files a tracking issue
+
+Report-first hid the failure: `continue-on-error` kept every nightly run green while the job failed
+on each of its first three runs, among others on 52 OpenJDK CVEs in the pinned JRE, and nobody
+opened its summary. Job `image-scan-alert` now runs after a failed `image-scan` (a finding, or a
+build or scan error) and opens one issue titled "Nightly image scan is failing", or comments on it
+with the run's link when it is already open. The job holds `issues: write` and nothing else, checks
+out no code, and writes no package name into the issue: an npm scope there would mention a GitHub
+account. A person closes the issue once a run passes; the rest of the decision, report-first
+included, stands.
