@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.43.1] - 2026-11-18
+
 ### Homer
 
 - **Fixed: image entrypoint passes `CONFIG_PATH` as one argument** — A config path with spaces or glob characters is no longer split or expanded; an unset or empty `CONFIG_PATH` still passes none.
