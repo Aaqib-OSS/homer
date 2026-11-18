@@ -5,8 +5,10 @@
 set -eu
 
 title='Nightly image scan is failing'
-number=$(gh issue list --state open --search "\"$title\" in:title" --json number,title |
-  jq -r --arg title "$title" 'map(select(.title == $title)) | first | .number // empty')
+# Two steps, not a pipe: sh has no pipefail, so a failed `gh` must fail its own assignment under -e
+# rather than reach jq as empty input and open a duplicate issue.
+issues=$(gh issue list --state open --search "\"$title\" in:title" --json number,title)
+number=$(printf '%s\n' "$issues" | jq -r --arg title "$title" 'map(select(.title == $title)) | first | .number // empty')
 
 if [ -n "$number" ]; then
   gh issue comment "$number" --body "Still failing: $RUN_URL"
