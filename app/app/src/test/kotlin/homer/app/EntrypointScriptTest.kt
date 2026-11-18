@@ -79,31 +79,35 @@ class EntrypointScriptTest {
     @Test
     fun `a CONFIG_PATH with a space is one argument`() =
         assertBothBranches(
-            "[-jar][/app/homer.jar][/etc/homer conf/config.yaml]",
+            "[-XX:-UseBASE64Intrinsics][-jar][/app/homer.jar][/etc/homer conf/config.yaml]",
             mapOf("CONFIG_PATH" to "/etc/homer conf/config.yaml"),
         )
 
     @Test
     fun `a CONFIG_PATH with a glob character is passed literally`() =
-        assertBothBranches("[-jar][/app/homer.jar][*.yaml]", mapOf("CONFIG_PATH" to "*.yaml"))
+        assertBothBranches("[-XX:-UseBASE64Intrinsics][-jar][/app/homer.jar][*.yaml]", mapOf("CONFIG_PATH" to "*.yaml"))
 
     @Test
     fun `a CONFIG_PATH with parameter and command substitution is passed literally`() =
         assertBothBranches(
-            "[-jar][/app/homer.jar][\$HOME/`id`/\$(id)/config.yaml]",
+            "[-XX:-UseBASE64Intrinsics][-jar][/app/homer.jar][\$HOME/`id`/\$(id)/config.yaml]",
             mapOf("CONFIG_PATH" to "\$HOME/`id`/\$(id)/config.yaml"),
         )
 
     @Test
-    fun `an empty CONFIG_PATH passes no argument`() = assertBothBranches("[-jar][/app/homer.jar]", mapOf("CONFIG_PATH" to ""))
+    fun `an empty CONFIG_PATH passes no argument`() =
+        assertBothBranches(
+            "[-XX:-UseBASE64Intrinsics][-jar][/app/homer.jar]",
+            mapOf("CONFIG_PATH" to ""),
+        )
 
     @Test
-    fun `an unset CONFIG_PATH passes no argument`() = assertBothBranches("[-jar][/app/homer.jar]", emptyMap())
+    fun `an unset CONFIG_PATH passes no argument`() = assertBothBranches("[-XX:-UseBASE64Intrinsics][-jar][/app/homer.jar]", emptyMap())
 
     @Test
     fun `JAVA_OPTS is split into its flags`() =
         assertBothBranches(
-            "[-Xmx1g][-Dfoo=bar][-jar][/app/homer.jar][config/config.json]",
+            "[-XX:-UseBASE64Intrinsics][-Xmx1g][-Dfoo=bar][-jar][/app/homer.jar][config/config.json]",
             mapOf("JAVA_OPTS" to "-Xmx1g -Dfoo=bar", "CONFIG_PATH" to "config/config.json"),
         )
 }

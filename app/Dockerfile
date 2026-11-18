@@ -119,7 +119,7 @@ RUN --mount=type=bind,from=builder,source=/build/agentdebug/build/libs,target=/t
 # agentdebug wrapper — always present, errors clearly if JAR absent
 # The single quotes keep ${CONFIG_PATH…} and $@ for the wrapper to expand.
 # hadolint ignore=SC2016
-RUN printf '#!/bin/sh\nset -e\nif [ ! -f /app/agentdebug.jar ]; then\n  echo "Error: agentdebug not available. Rebuild the container with HOMER_DEBUG=1." >&2\n  exit 1\nfi\nexec su-exec homer java --enable-native-access=ALL-UNNAMED \\\n  -jar /app/agentdebug.jar \\\n  --config "${CONFIG_PATH:-config/config.json}" "$@"\n' > /usr/local/bin/agentdebug && \
+RUN printf '#!/bin/sh\nset -e\nif [ ! -f /app/agentdebug.jar ]; then\n  echo "Error: agentdebug not available. Rebuild the container with HOMER_DEBUG=1." >&2\n  exit 1\nfi\nexec su-exec homer java -XX:-UseBASE64Intrinsics --enable-native-access=ALL-UNNAMED \\\n  -jar /app/agentdebug.jar \\\n  --config "${CONFIG_PATH:-config/config.json}" "$@"\n' > /usr/local/bin/agentdebug && \
     chmod +x /usr/local/bin/agentdebug
 
 # Copy entrypoint script as root: ENTRYPOINT runs it as root, so it must not be
@@ -202,6 +202,7 @@ WORKDIR /var/homer-runner
 ENV HOMER_RUNNER_ROOT=/var/homer-runner
 ENV JAVA_OPTS="-Xmx256m"
 
+# -XX:-UseBASE64Intrinsics: CVE-2026-114938 stopgap, as in app/entrypoint.sh.
 # Options come from HOMER_RUNNER_* env vars or the command line:
 #   docker run -e HOMER_RUNNER_URL=... -e HOMER_RUNNER_TOKEN=... -e HOMER_RUNNER_TAGS=linux homer-runner
-ENTRYPOINT ["/bin/sh", "-c", "exec java $JAVA_OPTS --enable-native-access=ALL-UNNAMED -jar /app/homer-runner.jar \"$@\"", "--"]
+ENTRYPOINT ["/bin/sh", "-c", "exec java -XX:-UseBASE64Intrinsics $JAVA_OPTS --enable-native-access=ALL-UNNAMED -jar /app/homer-runner.jar \"$@\"", "--"]
