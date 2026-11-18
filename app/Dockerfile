@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile for Homer
 # Stage 1: Build the fat jar
-FROM eclipse-temurin:25-jdk-alpine@sha256:5ecfde8e5ecde5954ea3721155b345ef56c1d579b940c761318ad4c05959a151 AS builder
+FROM eclipse-temurin:25-jdk-alpine-3.23@sha256:9c835a4ba215132c44248947376e270323ccca5a770248dd5cdf6c1711ebfa1f AS builder
 
 WORKDIR /build
 
@@ -62,7 +62,7 @@ RUN zip -q -d app/build/libs/homer-*-all.jar 'org/sqlite/native/*' -x 'org/sqlit
 # sh/bash for local commands and `when:` predicates, su-exec for the entrypoint, curl for the
 # compose health check, python3 + homer_langgraph for the server-side LangGraph inspect and state
 # calls. No agent toolchain; runs that need one go to a runner that has it.
-FROM eclipse-temurin:25-jre-alpine@sha256:28db6fdf60e38945e43d840c0333aeaec66c15943070104f7586fd3c9d1665b0 AS slim
+FROM eclipse-temurin:25-jre-alpine-3.23@sha256:e3ec242a23cf736c024475da9cd2a26f1f9d896840dd797da1bb95d30ed3f659 AS slim
 
 ARG HOMER_VERSION=dev
 ENV HOMER_VERSION=$HOMER_VERSION
@@ -119,7 +119,7 @@ RUN --mount=type=bind,from=builder,source=/build/agentdebug/build/libs,target=/t
 # agentdebug wrapper — always present, errors clearly if JAR absent
 # The single quotes keep ${CONFIG_PATH…} and $@ for the wrapper to expand.
 # hadolint ignore=SC2016
-RUN printf '#!/bin/sh\nset -e\nif [ ! -f /app/agentdebug.jar ]; then\n  echo "Error: agentdebug not available. Rebuild the container with HOMER_DEBUG=1." >&2\n  exit 1\nfi\nexec su-exec homer java --enable-native-access=ALL-UNNAMED \\\n  -jar /app/agentdebug.jar \\\n  --config "${CONFIG_PATH:-config/config.json}" "$@"\n' > /usr/local/bin/agentdebug && \
+RUN printf '#!/bin/sh\nset -e\nif [ ! -f /app/agentdebug.jar ]; then\n  echo "Error: agentdebug not available. Rebuild the container with HOMER_DEBUG=1." >&2\n  exit 1\nfi\nexec su-exec homer java -XX:-UseBASE64Intrinsics --enable-native-access=ALL-UNNAMED \\\n  -jar /app/agentdebug.jar \\\n  --config "${CONFIG_PATH:-config/config.json}" "$@"\n' > /usr/local/bin/agentdebug && \
     chmod +x /usr/local/bin/agentdebug
 
 # Copy entrypoint script as root: ENTRYPOINT runs it as root, so it must not be
@@ -181,7 +181,7 @@ USER root
 # agents it runs decide what else they need; derive from this image to add
 # node/claude, python, docker CLIs and so on. util-linux provides setsid so
 # killed commands take their whole process group with them (ADR-0041).
-FROM eclipse-temurin:25-jre-alpine@sha256:28db6fdf60e38945e43d840c0333aeaec66c15943070104f7586fd3c9d1665b0 AS homer-runner
+FROM eclipse-temurin:25-jre-alpine-3.23@sha256:e3ec242a23cf736c024475da9cd2a26f1f9d896840dd797da1bb95d30ed3f659 AS homer-runner
 
 ARG HOMER_VERSION=dev
 ENV HOMER_VERSION=$HOMER_VERSION
@@ -202,6 +202,7 @@ WORKDIR /var/homer-runner
 ENV HOMER_RUNNER_ROOT=/var/homer-runner
 ENV JAVA_OPTS="-Xmx256m"
 
+# -XX:-UseBASE64Intrinsics: CVE-2026-114938 stopgap, as in app/entrypoint.sh.
 # Options come from HOMER_RUNNER_* env vars or the command line:
 #   docker run -e HOMER_RUNNER_URL=... -e HOMER_RUNNER_TOKEN=... -e HOMER_RUNNER_TAGS=linux homer-runner
-ENTRYPOINT ["/bin/sh", "-c", "exec java $JAVA_OPTS --enable-native-access=ALL-UNNAMED -jar /app/homer-runner.jar \"$@\"", "--"]
+ENTRYPOINT ["/bin/sh", "-c", "exec java -XX:-UseBASE64Intrinsics $JAVA_OPTS --enable-native-access=ALL-UNNAMED -jar /app/homer-runner.jar \"$@\"", "--"]

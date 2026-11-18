@@ -74,8 +74,13 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || (github.event.schedule == '17 2 * * *' && !github.event.repository.private)
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    # Report-first until the three images are clean (ADR-0113): a failure warns.
+    # Report-first until the three images are clean (ADR-0113): a failure warns, and
+    # image-scan-alert files it as an issue.
     continue-on-error: true
+    outputs:
+      # The Scan step's own outcome, which continue-on-error does not mask: a finding or a grype
+      # error fails it, and a failed build or install leaves it skipped.
+      failed: ${{ steps.scan.outcome != 'success' }}
     env:
       GRYPE_VERSION: 0.121.3
       GRYPE_SHA256: e9da18cc1429e786722e32161288103600efffd8e483c90761f90485bd1bec85
@@ -98,6 +103,7 @@ jobs:
       # Per image: the count per severity, then every High and Critical finding. A scan or a report
       # that cannot be read fails the step, after the other images are scanned.
       - name: Scan
+        id: scan
         run: |
           mkdir grype
           "$RUNNER_TEMP/grype" db update
@@ -130,6 +136,29 @@ jobs:
           name: image-scan
           path: grype/
           retention-days: 7
+
+  # continue-on-error leaves a failed image-scan inside a green run, so it opens one tracking issue,
+  # or comments on the open one, instead (ADR-0113 amendment).
+  image-scan-alert:
+    needs: image-scan
+    if: ${{ !cancelled() && needs.image-scan.outputs.failed == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: tools/quality/image-scan-alert.sh
+          sparse-checkout-cone-mode: false
+      - name: Open or update the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: tools/quality/image-scan-alert.sh
 
   # The backend shards: one per package directory, the matrix of backend-mutation.
   backend-mutation-shards:
