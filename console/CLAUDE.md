@@ -494,12 +494,12 @@ operator. See
 | Command | Purpose |
 | --- | --- |
 | `npm run dev` | Local dev server at `http://localhost:3000` |
-| `npm run lint` | ESLint (eslint-config-next, plus this file's architecture rules and `sonarjs/cognitive-complexity` (GH #307) and `max-depth` (GH #308), each capped at the worst function, at `warn`); fails on errors only |
+| `npm run lint` | ESLint (eslint-config-next, plus this file's architecture rules and `sonarjs/cognitive-complexity` (GH #307) and `max-depth` (GH #308), each capped at the worst function, and `max-params` and `homer/max-props` (props per PascalCase component, `scripts/eslint-max-props.mjs`; GH #311), capped at the worst by `MAX_PARAMS` / `MAX_PROPS` in `eslint.config.mjs` and ratcheted by `size-console`, all at `warn`); fails on errors only |
 | `npm test` | Vitest single run |
 | `npm run test:watch` | Vitest watch mode |
 | `npm run test:coverage` | Vitest single run with V8 coverage → `coverage/` (what CI runs) |
 | `npm run crap` | CRAP score per function from that coverage → `coverage/crap/` ([ADR-0081](../docs/adr/0081-crap-score-gate.md)) |
-| `npm run quality:report` | Report-only ESLint warnings, dependency-cruiser layering, knip unused code and file / function size (`size-console`: files over `MAX_FILE_LINES` and functions over `MAX_FUNCTION_LINES` in `scripts/size.mjs`, ratcheted: a cap more than 5% of itself (rounded up, at least 1) above the current maximum is a finding; in an ESLint run of its own, so not lint warnings) → `reports/quality/`, plus the `types/homer.ts` extract the `dto-contract` check reads → `reports/dto-contract/` ([ADR-0082](../docs/adr/0082-quality-reports-report-first.md)) |
+| `npm run quality:report` | Report-only ESLint warnings, dependency-cruiser layering, knip unused code and file / function size (`size-console`: files over `MAX_FILE_LINES` and functions over `MAX_FUNCTION_LINES` in `scripts/size.mjs`, ratcheted, as are `MAX_PARAMS` / `MAX_PROPS` in `eslint.config.mjs`: a cap more than 5% of itself (rounded up, at least 1) above the current maximum is a finding; in an ESLint run of its own, so not lint warnings) → `reports/quality/`, plus the `types/homer.ts` extract the `dto-contract` check reads → `reports/dto-contract/` ([ADR-0082](../docs/adr/0082-quality-reports-report-first.md)) |
 | `npm run mutation` / `npm run mutation:changed` | Stryker mutation testing, full or of the lines changed since `MUTATE_BASE` (from the working tree with `MUTATE_WORKTREE=1`) → `reports/quality/mutation-console/` (ADR-0082) |
 | `npm run build` | Production build |
 | `npm run start` | Serve the production build |

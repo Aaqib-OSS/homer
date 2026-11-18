@@ -3,11 +3,17 @@ import nextCoreWebVitals from 'eslint-config-next/core-web-vitals';
 import jsxA11y from 'eslint-plugin-jsx-a11y';
 import sonarjs from 'eslint-plugin-sonarjs';
 
+import maxProps from './scripts/eslint-max-props.mjs';
+
 // Architecture rules from console/CLAUDE.md, at "warn": `npm run lint` fails on errors only, and
 // `npm run quality:report` reports the warnings (ADR-0082). ESLint replaces a rule's options per
 // config object instead of merging them, so each file group lists every selector it keeps.
-const SOURCE_FILES = ['**/*.{ts,tsx}'];
-const TEST_FILES = ['**/*.test.{ts,tsx}', 'vitest.setup.ts'];
+export const SOURCE_FILES = ['**/*.{ts,tsx}'];
+export const TEST_FILES = ['**/*.test.{ts,tsx}', 'vitest.setup.ts'];
+
+// Parameters per function and props per component (GH #311), each the worst today; ratcheted by scripts/size.mjs (`size-console`).
+export const MAX_PARAMS = 5;
+export const MAX_PROPS = 14;
 
 const CONSOLE_ENV = [
   "MemberExpression[object.object.name='process'][object.property.name='env'][property.name=/^CONSOLE_/]",
@@ -91,6 +97,12 @@ const config = [
     ignores: TEST_FILES,
     plugins: { sonarjs },
     rules: { 'sonarjs/cognitive-complexity': ['warn', 11], 'max-depth': ['warn', 4] },
+  },
+  {
+    files: SOURCE_FILES,
+    ignores: TEST_FILES,
+    plugins: { homer: { rules: { 'max-props': maxProps } } },
+    rules: { 'max-params': ['warn', MAX_PARAMS], 'homer/max-props': ['warn', MAX_PROPS] },
   },
   {
     files: ['app/layout.tsx', 'middleware.ts'],

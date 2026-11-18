@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import config from '../eslint.config.mjs';
+import config, { MAX_PARAMS, MAX_PROPS, SOURCE_FILES, TEST_FILES } from '../eslint.config.mjs';
+import maxProps from './eslint-max-props.mjs';
 
 describe('eslint.config.mjs cognitive complexity and nesting depth (GH #307, GH #308)', () => {
   const blocks = config.filter((block) => block.rules?.['sonarjs/cognitive-complexity']);
@@ -23,5 +24,18 @@ describe('eslint.config.mjs cognitive complexity and nesting depth (GH #307, GH 
         .map(([key]) => key),
     );
     expect([...new Set(enabled)]).toEqual(['sonarjs/cognitive-complexity']);
+  });
+});
+
+describe('eslint.config.mjs parameter and prop caps (GH #311)', () => {
+  it('caps parameters per function and props per component in production source only', () => {
+    const blocks = config.filter((block) => block.rules?.['homer/max-props']);
+    expect(blocks).toHaveLength(1);
+    const [block] = blocks;
+    expect(block.rules['max-params']).toEqual(['warn', MAX_PARAMS]);
+    expect(block.rules['homer/max-props']).toEqual(['warn', MAX_PROPS]);
+    expect(block.files).toEqual(SOURCE_FILES);
+    expect(block.ignores).toEqual(TEST_FILES);
+    expect(block.plugins.homer.rules['max-props']).toBe(maxProps);
   });
 });
