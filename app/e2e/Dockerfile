@@ -2,7 +2,7 @@
 # (same as app/Dockerfile). The Gradle distribution and the :e2e dependency
 # graph are warmed into their own layer — before the test sources are
 # copied — so editing a test only recompiles, it never re-downloads.
-FROM eclipse-temurin:25-jdk-alpine@sha256:5ecfde8e5ecde5954ea3721155b345ef56c1d579b940c761318ad4c05959a151
+FROM eclipse-temurin:25-jdk-alpine@sha256:c7c3d0bdf7f2bbc5a05a6712ed334d198360105634ea9adf76fca94f381b1e3f
 
 RUN apk add --no-cache bash
 

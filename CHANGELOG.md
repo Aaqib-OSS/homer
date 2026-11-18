@@ -5,6 +5,7 @@
 ### Homer
 
 - **Security: the images start the JVM with Base64 intrinsics off** — `homer-app` and `homer-runner` run with `-XX:-UseBASE64Intrinsics`, mitigating Java4Shell (CVE-2026-114938) until the base JRE carries the fix.
+- **Security: images move to Temurin 25.0.5** — `homer-app` and `homer-runner` ship JRE 25.0.5+8 on a refreshed Alpine base, fixing the known OpenJDK, OpenSSL, musl, expat and p11-kit advisories.
 
 ## [1.43.1] - 2026-11-18
 
