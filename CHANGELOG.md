@@ -10,6 +10,7 @@
 
 ### Console
 
+- **Security: `next` 16.4.5** — The console moves past the November 2026 Next.js advisories, among them cross-client response disclosure in self-hosted apps forwarding fetched responses and an image-optimization SVG bypass.
 - **Fixed: Runners page ignores the `-slim` server image suffix** — A runner on the same release as a slim Homer server is no longer flagged as a version mismatch.
 
 ## [1.43.0] - 2026-11-14
