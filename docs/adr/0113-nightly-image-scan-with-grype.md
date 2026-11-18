@@ -79,7 +79,8 @@ Report-first hid the failure: `continue-on-error` kept every nightly run green w
 on each of its first three runs, among others on 52 OpenJDK CVEs in the pinned JRE, and nobody
 opened its summary. Job `image-scan-alert` now runs after a failed `image-scan` (a finding, or a
 build or scan error) and opens one issue titled "Nightly image scan is failing", or comments on it
-with the run's link when it is already open. The job holds `issues: write` and nothing else, checks
-out no code, and writes no package name into the issue: an npm scope there would mention a GitHub
-account. A person closes the issue once a run passes; the rest of the decision, report-first
-included, stands.
+with the run's link when it is already open. Whether the scan failed is read from the `Scan` step's
+outcome, which `continue-on-error` does not mask. The job holds `issues: write` and `contents:
+read`, checks out only its script (`tools/quality/image-scan-alert.sh`, tested with a `gh` stub),
+and writes no package name into the issue: an npm scope there would mention a GitHub account. A
+person closes the issue once a run passes; the rest of the decision, report-first included, stands.
