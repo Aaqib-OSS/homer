@@ -15,7 +15,6 @@ import java.nio.file.attribute.BasicFileAttributes
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.ExecutorService
-import java.util.concurrent.Future
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadPoolExecutor
@@ -35,6 +34,7 @@ class LocalFileOperations internal constructor(
     private val openTimeoutMs: Long,
     private val beforeOpen: (Path) -> Unit,
 ) : FileOperations {
+    // Test seam: [beforeOpen] runs on the pool thread before every readTextBounded open.
     constructor() : this(OPEN_TIMEOUT_MS, {})
 
     private val logger = LoggerFactory.getLogger(LocalFileOperations::class.java)
@@ -57,7 +57,7 @@ class LocalFileOperations internal constructor(
         var failure: IOException? = null
         val text =
             try {
-                if (PathSafety.isLinkedOrSpecial(path)) null else runBounded(path) { readCapped(path, maxBytes) }
+                if (PathSafety.isLinkedOrSpecial(path)) null else submitBounded(path, "read") { readCapped(path, maxBytes) }
             } catch (e: IOException) {
                 failure = e
                 null
@@ -74,19 +74,6 @@ class LocalFileOperations internal constructor(
         return FileChannel.open(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS).use {
             readWhole(Channels.newInputStream(it), maxBytes)
         }
-    }
-
-    private fun <T> runBounded(
-        path: Path,
-        task: () -> T,
-    ): T {
-        val future =
-            try {
-                OPEN_EXECUTOR.submit(Callable { task() })
-            } catch (_: RejectedExecutionException) {
-                throw IOException("Artifact reader pool saturated; refusing to read $path")
-            }
-        return awaitOpen(future, path)
     }
 
     override fun fileExists(path: Path): Boolean = path.exists()
@@ -158,29 +145,34 @@ class LocalFileOperations internal constructor(
         if (Files.exists(path, LinkOption.NOFOLLOW_LINKS) && !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
             throw IOException("Refusing to read non-regular file: $path")
         }
-        val future =
-            try {
-                OPEN_EXECUTOR.submit(Callable { open() })
-            } catch (_: RejectedExecutionException) {
-                throw IOException("Artifact reader pool saturated; refusing to open $path")
-            }
-        return awaitOpen(future, path)
+        return submitBounded(path, "open", open)
     }
 
-    /** Waits at most [openTimeoutMs] for [future]'s open; every failure surfaces as an [IOException]. */
-    @Suppress("SwallowedException") // unwraps the ExecutionException to the open's own failure
-    private fun <T> awaitOpen(
-        future: Future<T>,
+    /**
+     * Runs [task] on the bounded pool and waits at most [openTimeoutMs]; a full pool, a timeout
+     * (the task is then interrupted) and a task failure all surface as an [IOException].
+     */
+    @Suppress("SwallowedException") // unwraps the ExecutionException to the task's own failure
+    private fun <T> submitBounded(
         path: Path,
-    ): T =
-        try {
+        what: String,
+        task: () -> T,
+    ): T {
+        val future =
+            try {
+                OPEN_EXECUTOR.submit(Callable { task() })
+            } catch (_: RejectedExecutionException) {
+                throw IOException("Artifact reader pool saturated; refusing to $what $path")
+            }
+        return try {
             future.get(openTimeoutMs, TimeUnit.MILLISECONDS)
         } catch (_: TimeoutException) {
             future.cancel(true)
-            throw IOException("Timed out opening artifact (possible non-regular file): $path")
+            throw IOException("Timed out trying to $what artifact (possible non-regular file): $path")
         } catch (e: ExecutionException) {
-            throw (e.cause as? IOException ?: IOException("Failed to open $path", e.cause))
+            throw (e.cause as? IOException ?: IOException("Failed to $what $path", e.cause))
         }
+    }
 
     private companion object {
         const val OPEN_TIMEOUT_MS = 10_000L

@@ -189,8 +189,8 @@ class LocalFileOperationsTest {
 
         assertEquals(null, result)
         assertTrue(elapsedMs < 5_000, "the blocked open must time out, took ${elapsedMs}ms")
-        // Release the pool thread parked in open(2) on the FIFO.
-        runCatching { Files.newOutputStream(file).close() }
+        // Release the pool thread parked in open(2) on the FIFO; its slot must not outlive the test.
+        Files.newOutputStream(file).close()
     }
 
     @Test
@@ -221,5 +221,57 @@ class LocalFileOperationsTest {
         } finally {
             writer.close()
         }
+    }
+
+    @Test
+    fun `readTextBounded returns null for a missing path`() {
+        assertEquals(null, ops.readTextBounded(tempDir.resolve("missing.json"), maxBytes = 1024))
+    }
+
+    @Test
+    fun `readTextBounded returns null for an unreadable file instead of throwing`() {
+        val file = tempDir.resolve("locked.json").also { it.writeText("{}") }
+        val locked = file.toFile().setReadable(false, false)
+        assumeTrue(locked && !Files.isReadable(file), "needs a non-root user")
+        try {
+            assertEquals(null, ops.readTextBounded(file, maxBytes = 1024))
+        } finally {
+            file.toFile().setReadable(true, false)
+        }
+    }
+
+    @Test
+    fun `readTextBounded is refused promptly once the shared pool is full, and every slot comes back`() {
+        val file = tempDir.resolve("ok.json").also { it.writeText("{}") }
+        val release = java.util.concurrent.CountDownLatch(1)
+        val holding = LocalFileOperations(openTimeoutMs = 30_000) { _ -> release.await() }
+        val reads = mutableListOf<java.util.concurrent.CompletableFuture<String?>>()
+        var refusedAt = -1
+        try {
+            // The pool is shared with other tests: park slots until one read is refused.
+            for (i in 0 until 8 + 4) {
+                val read =
+                    java.util.concurrent.CompletableFuture
+                        .supplyAsync { holding.readTextBounded(file, maxBytes = 1024) }
+                reads += read
+                val refused =
+                    runCatching { read.get(1, java.util.concurrent.TimeUnit.SECONDS) }
+                        .let { it.isSuccess && it.getOrNull() == null }
+                if (refused) {
+                    refusedAt = i
+                    break
+                }
+            }
+            assertTrue(refusedAt >= 0, "the pool never refused a read")
+
+            val started = System.nanoTime()
+            assertEquals(null, holding.readTextBounded(file, maxBytes = 1024))
+            assertTrue((System.nanoTime() - started) / 1_000_000 < 2_000, "a full pool must refuse promptly")
+        } finally {
+            release.countDown()
+            reads.forEach { runCatching { it.get(5, java.util.concurrent.TimeUnit.SECONDS) } }
+        }
+        assertTrue(reads.all { it.isDone }, "no read may stay blocked")
+        assertEquals("{}", ops.readTextBounded(file, maxBytes = 1024))
     }
 }
