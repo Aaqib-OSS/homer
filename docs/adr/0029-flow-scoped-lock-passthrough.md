@@ -151,6 +151,8 @@ permanently, so a handful of concurrent reloads wedges the agent. Capturing the
 reference makes acquire and release refer to the same object by construction,
 whatever the map does in between.
 
+*(Amended 2026-11-19: `maxQueuedRuns` no longer defaults to unbounded; it defaults to `10 × maxParallelRuns`. See the amendment in [ADR-0104](0104-lock-before-slot-admission-order.md).)*
+
 ## More Information
 
 - [ADR-0008](0008-recursion-guard-via-invocation-chain-header.md) — invocation-chain

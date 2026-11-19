@@ -58,10 +58,9 @@
       "default": "WAIT"
     },
     "maxQueuedRuns": {
-      "type": ["integer", "null"],
+      "type": "integer",
       "minimum": 0,
-      "default": null,
-      "description": "Under onMaxParallelRuns: WAIT, the maximum number of runs that may be queued waiting for a parallel-run slot. Null (default) = unbounded; a non-null value fails the surplus run once the queue is full. No effect under REJECT."
+      "description": "Under onMaxParallelRuns: WAIT, the maximum number of runs that may be queued waiting for a parallel-run slot or a lock; a surplus run fails once the queue is full. Defaults to 10 x maxParallelRuns. No effect under REJECT."
     },
     "runner": {
       "type": "string",

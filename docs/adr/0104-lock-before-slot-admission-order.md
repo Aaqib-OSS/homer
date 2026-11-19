@@ -224,3 +224,5 @@ Each constraint has a test that asserts the denial path (ADR-0047 rule 8):
   reason keeps the refusal out of the `afterFailure` window.
 - [ADR-0058](0058-parent-child-run-linkage.md) — the lock holder travelling as its own field
   rather than inside the reason.
+
+*(Amended 2026-11-19: the slot queue is always bounded — `maxQueuedRuns` defaults to `10 × maxParallelRuns` and is no longer nullable, so under `WAIT` lock waiters always share that cap and the `maxParallelRuns` fallback applies only under `REJECT`. The queue is always bounded (ADR-0047 rule 4).)*

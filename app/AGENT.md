@@ -239,7 +239,7 @@ mcp:
 | `lockStrategy` | `LockStrategy` | No | Default lock strategy | Concurrency control strategy |
 | `maxParallelRuns` | `Int` | No | `10` | Maximum number of concurrent executions of this agent. Bounds the runs that are actually executing: a run waiting for its `lockStrategy` lock holds no slot. |
 | `onMaxParallelRuns` | `OnMaxParallelRunsStrategy` | No | `WAIT` | Behavior when `maxParallelRuns` is reached: `WAIT` (queue) or `REJECT` (fail immediately) |
-| `maxQueuedRuns` | `Int?` | No | `null` | Under `onMaxParallelRuns: WAIT`, the maximum number of runs that may be queued waiting for a slot **or for a lock** (both queues share this one cap). `null` (default) = the slot queue is unbounded (a surplus run waits indefinitely); lock waiters are still capped at `maxParallelRuns` (see [Admission order](#admission-order-the-lock-comes-before-the-slot)). A non-null value fails the surplus run once the queue is full (the start returns `200`; the run ends `FAILED`), bounding how many process rows one agent can pin. Must be `>= 0`. No effect under `REJECT`, which never queues. |
+| `maxQueuedRuns` | `Int` | No | `10 × maxParallelRuns` | Under `onMaxParallelRuns: WAIT`, the maximum number of runs that may be queued waiting for a slot **or for a lock** (both queues share this one cap). A surplus run fails once the queue is full (the start returns `200`; the run ends `FAILED`), bounding how many process rows one agent can pin. The queue is always bounded; `null` is rejected. Must be `>= 0`. No effect on the slot queue under `REJECT`, which never queues; there lock waiters are capped at `maxParallelRuns` (see [Admission order](#admission-order-the-lock-comes-before-the-slot)). |
 | `cron` | `CronConfig` | No | `null` | Cron schedule configuration |
 | `runner` | `String?` | No | `null` (= `local`) | Alias of the execution backend to run commands on. Omitted = `local` (Homer's host); any other value must match a key in [`AppConfig.runners`](SERVER.md#runners-pluggable-execution-backends); a blank value fails agent load. All commands in the agent run inside the same runner session. Mutually exclusive with `runnerTags`. See [Runner selection](#runner-selection). |
 | `runnerTags` | `List<String>` | No | `[]` | Select a runner by tags instead of alias: any configured runner whose `tags` contain every listed tag may take the run. Shape `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`, at most 32, no duplicates. Mutually exclusive with `runner`; setting both fails agent load. |
@@ -2892,17 +2892,17 @@ workspace:
 fails it immediately — the start is still accepted (`200` with a
 `processId`) and the run ends `FAILED` without executing.
 
-Under `WAIT`, the queue is unbounded by default — a surplus run waits
-indefinitely, and each waiting run pins a process record. Set
-`maxQueuedRuns` to bound that queue: once the given number of runs are
-already waiting, the next one ends `FAILED` immediately (its start still
-returns `200` with a `processId`) instead of piling up.
-`maxQueuedRuns` has no effect under `REJECT` (which never queues).
+Under `WAIT`, the queue is bounded: `maxQueuedRuns` defaults to
+`10 × maxParallelRuns`, and once that many runs are already waiting, the next
+one ends `FAILED` immediately (its start still returns `200` with a
+`processId`) instead of piling up, since each waiting run pins a process
+record. Set `maxQueuedRuns` to tighten or widen the bound; it cannot be
+unbounded. `maxQueuedRuns` has no effect under `REJECT` (which never queues).
 
 ```yaml
 maxParallelRuns: 5        # at most 5 concurrent runs
 onMaxParallelRuns: WAIT   # queue the 6th and beyond
-maxQueuedRuns: 50         # ...but fail the 56th once 50 are queued
+maxQueuedRuns: 20         # ...but fail the 26th once 20 are queued (default: 10 × 5 = 50)
 ```
 
 ### Admission order: the lock comes before the slot
@@ -2913,13 +2913,13 @@ waiting for a lock. With a per-subject key (`mr-{{MR}}`, say) and
 `onCollision: WAIT`, a run queued behind one subject's lock no longer occupies
 a slot, so one busy subject cannot starve the agent's other subjects.
 
-A run waiting for a lock is bounded too. Under `onMaxParallelRuns: WAIT` with
-`maxQueuedRuns` set, lock waiters and slot waiters share that one cap: once
-that many runs are parked in total, the next run ends `FAILED` without
-starting. Otherwise (no `maxQueuedRuns`, or `REJECT`, where `maxQueuedRuns`
-has no meaning) an agent may have at most `maxParallelRuns` runs waiting for a
-lock, and the surplus ends `FAILED`. Every refusal is a `FAILED` run with a
-stored reason; the start itself still returns `200`. See
+A run waiting for a lock is bounded too. Under `onMaxParallelRuns: WAIT`, lock
+waiters and slot waiters share the `maxQueuedRuns` cap: once that many runs are
+parked in total, the next run ends `FAILED` without starting. Under `REJECT`,
+where `maxQueuedRuns` has no meaning, an agent may have at most
+`maxParallelRuns` runs waiting for a lock, and the surplus ends `FAILED`.
+Every refusal is a `FAILED` run with a stored reason; the start itself still
+returns `200`. See
 [Lock Collision Strategies](#lock-collision-strategies) for what each
 `onCollision` value does at which moment.
 

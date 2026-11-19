@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Homer
+
+- **BREAKING: `maxQueuedRuns` defaults to 10 × `maxParallelRuns`** — Runs waiting for a parallel-run slot or, under `WAIT`, a lock share a cap that is bounded by default; a surplus run fails fast, and `null` (unbounded) is no longer accepted.
+
 ## [1.43.2] - 2026-11-18
 
 ### Homer

@@ -31,9 +31,9 @@ data class Agent(
     val cron: CronConfig? = null,
     val maxParallelRuns: Int = 10,
     val onMaxParallelRuns: OnMaxParallelRunsStrategy = OnMaxParallelRunsStrategy.WAIT,
-    // Under `onMaxParallelRuns: WAIT`, max runs queued (suspended) for a slot; null = unbounded.
-    // Bounds the non-evictable process rows one agent can pin.
-    val maxQueuedRuns: Int? = null,
+    // Under `onMaxParallelRuns: WAIT`, max runs queued for a slot or a lock (one shared cap);
+    // default 10 x maxParallelRuns. See ADR-0104.
+    val maxQueuedRuns: Int = (maxParallelRuns.toLong() * 10).coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
     /** Runner alias this agent runs on; null = `local`. Mutually exclusive with [runnerTags]. See ADR-0066. */
     val runner: String? = null,
     /** Tags a runner must serve to take this agent's runs; empty = select by [runner]. See ADR-0066. */
@@ -84,8 +84,9 @@ data class Agent(
         require(inputs == null || queryParams == null) {
             "Agent '$name': set either 'inputs' or legacy 'queryParams', not both"
         }
-        require(maxQueuedRuns == null || maxQueuedRuns >= 0) {
-            "Agent '$name': maxQueuedRuns must be >= 0 (or null for unbounded), got $maxQueuedRuns"
+        require(maxParallelRuns >= 1) { "Agent '$name': maxParallelRuns must be >= 1, got $maxParallelRuns" }
+        require(maxQueuedRuns >= 0) {
+            "Agent '$name': maxQueuedRuns must be >= 0, got $maxQueuedRuns"
         }
         require(runner == null || runnerTags.isEmpty()) {
             "Agent '$name': runner and runnerTags are mutually exclusive"
