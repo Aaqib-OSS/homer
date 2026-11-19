@@ -1,6 +1,6 @@
 /**
- * comment-policy: a comment is a contract (KDoc, JSDoc, a docstring: at most 3 lines) or a constraint (at most 2),
- * cites only ADR, CWE, W and AR ids, and states every suppression's reason. Each rule and area has a ratcheted budget.
+ * comment-policy (ADR-0117): a comment is a contract (KDoc, JSDoc, a docstring: at most 3 lines) or a constraint
+ * (at most 2), cites only ADR, CWE, W and AR ids, and states every suppression's reason. Budgets ratchet per rule and area.
  * Usage (repository root): node tools/quality/comment-policy.mjs [out dir], or `--counts` to print today's counts.
  */
 import fs from 'node:fs';

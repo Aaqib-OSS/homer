@@ -206,3 +206,4 @@ Neither key is a status: `status:` stays one of the four values above.
 | [0114](0114-python-runtime-installs-from-a-hash-pinned-lock.md) | The image's Python runtime installs from a hash-pinned lock, and CI tests and audits that lock | accepted |
 | [0115](0115-gradle-dependency-verification.md) | Gradle verifies every dependency against committed checksums, and signatures where a key is trusted | accepted |
 | [0116](0116-canary-sweep-route-classification.md) | Every route is classified for the redaction canary sweep, and an exemption is a reasoned claim | accepted |
+| [0117](0117-code-says-what-adrs-say-why.md) | Code says what, ADRs say why | accepted |
