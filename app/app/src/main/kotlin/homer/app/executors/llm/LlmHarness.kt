@@ -10,7 +10,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
-/** One LLM coding-harness CLI, as seen by [LlmHarnessExecutor]. Per-consumer instances, not server-wide singletons; an adapter carries only bounded per-instance accounting state. See ADR-0070. */
+/**
+ * One LLM coding-harness CLI, as seen by [LlmHarnessExecutor]. Adapters are stateless;
+ * per-read state lives only in a [translator]. See ADR-0070.
+ */
 interface LlmHarness<C> where C : Command, C : Command.LlmCommand {
     /** Equals the command's [homer.app.models.kind] (`claude`, `codex`, `opencode`). */
     val id: String
@@ -40,8 +43,14 @@ interface LlmHarness<C> where C : Command, C : Command.LlmCommand {
         tier: LlmEscalation,
     ): C
 
-    /** Total: never throws. One raw line may yield several events (Codex items). */
-    fun translate(line: JsonObject): Translation
+    /**
+     * A fresh translation for one read of one attempt's stdout: one sequential traversal, used by one coroutine in
+     * stream order. Total: never throws; one line may yield several events.
+     */
+    fun translator(): (JsonObject) -> Translation
+
+    /** Whether a [translator] carries state across lines, so a stream resumed from a cursor must translate the lines before it. */
+    val translatorKeepsState: Boolean get() = false
 
     /** Judges an attempt; [raw] carries the checks the canonical model does not. Consulted on exit 0, and on a non-zero exit where only [Inspection.Terminal] is honoured. */
     fun inspect(

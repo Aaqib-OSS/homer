@@ -5,6 +5,7 @@
 ### Homer
 
 - **BREAKING: `maxQueuedRuns` defaults to 10 × `maxParallelRuns`** — Runs waiting for a parallel-run slot or, under `WAIT`, a lock share a cap that is bounded by default; a surplus run fails fast, and `null` (unbounded) is no longer accepted.
+- **Fixed: opencode run cost** — A run that resumes an opencode session is charged only its own steps, and steps past the 4 096th in one session are no longer dropped.
 
 ## [1.43.2] - 2026-11-18
 

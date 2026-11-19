@@ -1114,8 +1114,10 @@ event with a successful finish reason (`stop`, `length`, `tool-calls`,
 `content-filter` and `error` fail the attempt, as does a reason a future CLI
 adds. Standalone `error` events are transient retry/reconnect notices and are
 logged, not fatal. Token usage is recorded on the run (`llmAccounting.usage`)
-and as `llm.usage.*` span attributes; the reported USD cost is accumulated per
-session, so the run is charged the whole conversation, not its last step.
+and as `llm.usage.*` span attributes; the reported USD cost is summed over every
+step in the attempt's own stdout, across every session it carries, so the attempt
+is charged all of its steps, not its last one, and never a step of an earlier run
+that resumed the same session.
 
 The prompt arrives on **stdin**, not as a positional argument: the executor
 never emits a message argument, because `opencode run` reads stdin when it is

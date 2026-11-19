@@ -45,6 +45,23 @@ class LlmAttemptPricingTest {
     }
 
     @Test
+    fun `two attempts resuming one opencode session through the same adapter are each charged their own steps`(
+        @TempDir dir: Path,
+    ) {
+        fun step(
+            id: String,
+            cost: Double,
+        ) = """{"type":"step_finish","sessionID":"ses_1","part":{"id":"$id","reason":"stop","cost":$cost}}""" + "\n"
+        val first = dir.resolve("first").also { it.writeText(step("p1", 0.25) + step("p2", 0.5)) }
+        val resumed = dir.resolve("resumed").also { it.writeText(step("p3", 0.125)) }
+        val pricing = LlmAttemptPricing(OpencodeHarness(), resolver(), logger)
+
+        assertEquals(0.75, pricing.scan(first, TestFixtures.mockSpan()).cliCostUsd)
+        assertEquals(0.125, pricing.scan(resumed, TestFixtures.mockSpan()).cliCostUsd)
+        assertEquals(0.75, pricing.scan(first, TestFixtures.mockSpan()).cliCostUsd)
+    }
+
+    @Test
     fun `a cancelled attempt skips the lookup and an attempt without a turn end says so`(
         @TempDir dir: Path,
     ) = runTest {
