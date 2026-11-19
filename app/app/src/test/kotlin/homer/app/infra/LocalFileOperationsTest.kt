@@ -168,4 +168,58 @@ class LocalFileOperationsTest {
 
         assertEquals(3, listed.size)
     }
+
+    @Test
+    fun `readTextBounded returns null within the open timeout when a FIFO replaces the file after the check`() {
+        val file = tempDir.resolve("langgraph.json")
+        file.writeText("{}")
+        val swapping =
+            LocalFileOperations(openTimeoutMs = 300) { path ->
+                Files.delete(path)
+                val made = ProcessBuilder("mkfifo", path.toString()).start().waitFor() == 0
+                check(made) { "mkfifo failed" }
+            }
+        assumeTrue(runCatching { ProcessBuilder("mkfifo", "--help").start().waitFor() }.isSuccess, "needs mkfifo")
+
+        val started = System.nanoTime()
+        val result = swapping.readTextBounded(file, maxBytes = 1024)
+        assertFalse(Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS), "the swap must have happened")
+        assertTrue(Files.exists(file, java.nio.file.LinkOption.NOFOLLOW_LINKS), "the swap must have happened")
+        val elapsedMs = (System.nanoTime() - started) / 1_000_000
+
+        assertEquals(null, result)
+        assertTrue(elapsedMs < 5_000, "the blocked open must time out, took ${elapsedMs}ms")
+        // Release the pool thread parked in open(2) on the FIFO.
+        runCatching { Files.newOutputStream(file).close() }
+    }
+
+    @Test
+    fun `readTextBounded returns null within the timeout when a held-open FIFO has no data, and the pool slot comes back`() {
+        val fifo = tempDir.resolve("held.json")
+        assumeTrue(runCatching { ProcessBuilder("mkfifo", fifo.toString()).start().waitFor() == 0 }.getOrDefault(false), "needs mkfifo")
+        val regular = tempDir.resolve("ok.json").also { it.writeText("{}") }
+        // A writer holds the FIFO open and writes nothing, so open succeeds and the read blocks.
+        val writer =
+            java.nio.channels.FileChannel
+                .open(fifo, java.nio.file.StandardOpenOption.READ, java.nio.file.StandardOpenOption.WRITE)
+        try {
+            val hook =
+                LocalFileOperations(openTimeoutMs = 500) { path ->
+                    if (path == regular) {
+                        Files.delete(path)
+                        Files.move(fifo, path)
+                    }
+                }
+            val started = System.nanoTime()
+            val result = hook.readTextBounded(regular, maxBytes = 1024)
+            val elapsedMs = (System.nanoTime() - started) / 1_000_000
+
+            assertEquals(null, result)
+            assertTrue(elapsedMs < 5_000, "the blocked read must time out, took ${elapsedMs}ms")
+            val normal = tempDir.resolve("normal.json").also { it.writeText("{}") }
+            assertEquals("{}", ops.readTextBounded(normal, maxBytes = 1024))
+        } finally {
+            writer.close()
+        }
+    }
 }

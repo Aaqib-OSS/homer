@@ -2,11 +2,15 @@ package homer.app.infra
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.io.OutputStream
+import java.nio.channels.Channels
+import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.BasicFileAttributes
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutionException
@@ -27,7 +31,14 @@ import kotlin.io.path.readText
  * Default implementation of FileOperations
  * Wraps Kotlin Path extension functions
  */
-class LocalFileOperations : FileOperations {
+class LocalFileOperations internal constructor(
+    private val openTimeoutMs: Long,
+    private val beforeOpen: (Path) -> Unit,
+) : FileOperations {
+    constructor() : this(OPEN_TIMEOUT_MS, {})
+
+    private val logger = LoggerFactory.getLogger(LocalFileOperations::class.java)
+
     override fun fileSize(path: Path): Long =
         // NOFOLLOW: a stat over an agent-writable path must report the link's own
         // size, never the target's — else it is a size/existence oracle for host
@@ -35,6 +46,48 @@ class LocalFileOperations : FileOperations {
         Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS).size()
 
     override fun readText(path: Path): String = path.readText()
+
+    override fun readTextBounded(
+        path: Path,
+        maxBytes: Long,
+    ): String? {
+        if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) return null
+        // CWE-367/CWE-400: open and read run on the bounded, timed pool over an interruptible
+        // channel, so a FIFO swapped in after the check cannot pin the caller.
+        var failure: IOException? = null
+        val text =
+            try {
+                if (PathSafety.isLinkedOrSpecial(path)) null else runBounded(path) { readCapped(path, maxBytes) }
+            } catch (e: IOException) {
+                failure = e
+                null
+            }
+        if (text == null) logger.debug("refusing a linked, non-regular, oversized or unreadable file in {}", path.parent, failure)
+        return text
+    }
+
+    private fun readCapped(
+        path: Path,
+        maxBytes: Long,
+    ): String? {
+        beforeOpen(path)
+        return FileChannel.open(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS).use {
+            readWhole(Channels.newInputStream(it), maxBytes)
+        }
+    }
+
+    private fun <T> runBounded(
+        path: Path,
+        task: () -> T,
+    ): T {
+        val future =
+            try {
+                OPEN_EXECUTOR.submit(Callable { task() })
+            } catch (_: RejectedExecutionException) {
+                throw IOException("Artifact reader pool saturated; refusing to read $path")
+            }
+        return awaitOpen(future, path)
+    }
 
     override fun fileExists(path: Path): Boolean = path.exists()
 
@@ -92,7 +145,7 @@ class LocalFileOperations : FileOperations {
 
     /**
      * Opens [path] for reading: re-assert a regular file (NOFOLLOW) before the open, then run the
-     * blocking `open(2)` on a **bounded** daemon pool capped at [OPEN_TIMEOUT_MS] per open. The [open]
+     * blocking `open(2)` on a **bounded** daemon pool capped at [openTimeoutMs] per open. The [open]
      * lambda opens with `LinkOption.NOFOLLOW_LINKS`, so the symlink check is atomic with the open; the
      * pre-check and pool also catch a same-UID swap to a FIFO/device, which `O_NOFOLLOW` misses. A
      * blocked open cannot exhaust threads: the pool ([MAX_OPEN_THREADS], synchronous handoff) bounds
@@ -114,14 +167,14 @@ class LocalFileOperations : FileOperations {
         return awaitOpen(future, path)
     }
 
-    /** Waits at most [OPEN_TIMEOUT_MS] for [future]'s open; every failure surfaces as an [IOException]. */
+    /** Waits at most [openTimeoutMs] for [future]'s open; every failure surfaces as an [IOException]. */
     @Suppress("SwallowedException") // unwraps the ExecutionException to the open's own failure
     private fun <T> awaitOpen(
         future: Future<T>,
         path: Path,
     ): T =
         try {
-            future.get(OPEN_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            future.get(openTimeoutMs, TimeUnit.MILLISECONDS)
         } catch (_: TimeoutException) {
             future.cancel(true)
             throw IOException("Timed out opening artifact (possible non-regular file): $path")
@@ -130,7 +183,7 @@ class LocalFileOperations : FileOperations {
         }
 
     private companion object {
-        private const val OPEN_TIMEOUT_MS = 10_000L
+        const val OPEN_TIMEOUT_MS = 10_000L
         private const val MAX_OPEN_THREADS = 8
 
         // Bounded: a SynchronousQueue with max MAX_OPEN_THREADS means a submit is

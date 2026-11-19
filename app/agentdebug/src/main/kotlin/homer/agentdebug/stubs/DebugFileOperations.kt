@@ -1,6 +1,7 @@
 package homer.agentdebug.stubs
 
 import homer.app.infra.FileOperations
+import homer.app.infra.LocalFileOperations
 import java.io.OutputStream
 import java.nio.file.Path
 import kotlin.io.path.exists
@@ -11,9 +12,16 @@ import kotlin.io.path.readBytes
 import kotlin.io.path.readText
 
 class DebugFileOperations : FileOperations {
+    private val local = LocalFileOperations()
+
     override fun fileSize(path: Path): Long = if (path.exists()) path.fileSize() else 0L
 
     override fun readText(path: Path): String = if (path.exists()) path.readText() else ""
+
+    override fun readTextBounded(
+        path: Path,
+        maxBytes: Long,
+    ): String? = local.readTextBounded(path, maxBytes)
 
     override fun fileExists(path: Path): Boolean = path.exists()
 

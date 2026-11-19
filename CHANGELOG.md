@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Homer
+
+- **Fixed: LangGraph run status reads a bounded identity file** — An oversized, linked or non-regular `langgraph.json` in a run's artifacts is ignored instead of read whole on every status poll.
+
 ## [1.43.2] - 2026-11-18
 
 ### Homer
