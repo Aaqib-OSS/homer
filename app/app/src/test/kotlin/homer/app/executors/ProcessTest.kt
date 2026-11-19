@@ -865,7 +865,7 @@ class ProcessTest {
 
             processWith(agent, ancestorLockKeys = listOf("shared")).execute(1, mockSpan)
 
-            coVerify { mockParallelRunsManager.acquireSlot(agent.name, any(), any()) }
+            coVerify { mockParallelRunsManager.acquireSlot(agent.name, any(), any(), any()) }
             coVerify { mockParallelRunsManager.releaseSlot(any()) }
         }
 
@@ -1181,6 +1181,7 @@ class ProcessTest {
             val agent =
                 testAgent.copy(
                     maxParallelRuns = 1,
+                    onMaxParallelRuns = OnMaxParallelRunsStrategy.REJECT,
                     lockStrategy = LockStrategy(key = "shared", onCollision = OnKeyCollisionStrategy.WAIT),
                 )
             stubSharedLockKey()
@@ -1189,7 +1190,7 @@ class ProcessTest {
             val first = launch { processFor(agent, emptyMap(), lockManager, parallelRunsManager).execute(2, mockSpan) }
             runCurrent()
 
-            // The lock-wait bound is maxParallelRuns here (maxQueuedRuns is unset): the surplus fails.
+            // Under REJECT the lock-wait bound is maxParallelRuns: the surplus fails.
             assertFailsWith<MaxLockWaitersExceededException> {
                 processFor(agent, emptyMap(), lockManager, parallelRunsManager).execute(3, mockSpan)
             }

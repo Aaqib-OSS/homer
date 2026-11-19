@@ -14,9 +14,8 @@ import java.util.concurrent.atomic.AtomicInteger
 class DefaultParallelRunsManager : ParallelRunsManager {
     private val semaphores = ConcurrentHashMap<String, Semaphore>()
 
-    // Count of runs currently suspended in acquireSlot's WAIT path, per agent. Only
-    // these queued runs hold non-evictable process rows while parked, so this — not
-    // the holder count — is what maxQueuedRuns bounds.
+    // Per agent: slot waiters plus, under WAIT, lock waiters; they pin non-evictable rows,
+    // so this shared count (not the holder count) is what maxQueuedRuns bounds.
     private val waiters = ConcurrentHashMap<String, AtomicInteger>()
 
     // Count of runs currently suspended waiting for a subject lock, per agent, when they
@@ -32,7 +31,7 @@ class DefaultParallelRunsManager : ParallelRunsManager {
         agentName: String,
         maxParallelRuns: Int,
         strategy: OnMaxParallelRunsStrategy,
-        maxQueuedRuns: Int?,
+        maxQueuedRuns: Int,
     ): Semaphore {
         val semaphore = getSemaphore(agentName, maxParallelRuns)
         when (strategy) {
@@ -52,13 +51,9 @@ class DefaultParallelRunsManager : ParallelRunsManager {
     private suspend fun acquireWaiting(
         agentName: String,
         semaphore: Semaphore,
-        maxQueuedRuns: Int?,
+        maxQueuedRuns: Int,
     ) {
-        // Unbounded (default) or a permit is free → no queuing, acquire directly.
-        if (maxQueuedRuns == null || semaphore.tryAcquire()) {
-            if (maxQueuedRuns == null) semaphore.acquire()
-            return
-        }
+        if (semaphore.tryAcquire()) return
         // No free permit: this run would queue. Bound the number of concurrent waiters.
         // Capture the counter reference (not a re-lookup) so a concurrent reload that
         // drops the map entry can't misdirect the decrement — mirrors releasing the
@@ -84,19 +79,16 @@ class DefaultParallelRunsManager : ParallelRunsManager {
         agentName: String,
         maxParallelRuns: Int,
         strategy: OnMaxParallelRunsStrategy,
-        maxQueuedRuns: Int?,
+        maxQueuedRuns: Int,
     ): LockWaitTicket {
-        // A lock waiter and a slot waiter pin the same kind of row while parked, so when the
-        // slot queue exists and is bounded they share its counter and its cap: one combined
-        // bound, and moving runs off the slot queue cannot raise the number of parked rows.
-        // Otherwise (REJECT, or an unbounded slot queue) they get their own counter capped at
-        // maxParallelRuns — the worst case before lock waiters left the slot queue.
-        val sharedCap = maxQueuedRuns?.takeIf { strategy == OnMaxParallelRunsStrategy.WAIT }
-        val count = (if (sharedCap != null) waiters else lockWaiters).computeIfAbsent(agentName) { AtomicInteger(0) }
-        val bound = sharedCap ?: maxParallelRuns
+        // A lock waiter and a slot waiter pin the same kind of row while parked, so under WAIT they
+        // share one counter and cap. Under REJECT there is no slot queue: own counter, capped at maxParallelRuns.
+        val shared = strategy == OnMaxParallelRunsStrategy.WAIT
+        val count = (if (shared) waiters else lockWaiters).computeIfAbsent(agentName) { AtomicInteger(0) }
+        val bound = if (shared) maxQueuedRuns else maxParallelRuns
         if (count.incrementAndGet() > bound) {
             count.decrementAndGet()
-            if (sharedCap != null) throw MaxQueuedRunsExceededException(agentName, sharedCap)
+            if (shared) throw MaxQueuedRunsExceededException(agentName, bound)
             throw MaxLockWaitersExceededException(agentName, bound)
         }
         val freed = AtomicBoolean(false)

@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-24
 deciders: Lukáš Vlk
-amended: 2026-06-24, 2026-09-30, 2026-11-12
+amended: 2026-06-24, 2026-09-30, 2026-11-12, 2026-11-19
 superseded-by: ADR-0030, ADR-0104
 ---
 # ADR-0029: Flow-scoped lock pass-through (`acceptParentLock`)
@@ -128,6 +128,10 @@ ancestor lock keys.**
   provides; the field docs call this out.
 
 ## Amendment (2026-09-30): the parallel-run slot bounds, and why both references are captured
+
+> **Amendment (2026-11-19) — `maxQueuedRuns` is no longer unbounded by default.** It defaults to
+> `10 × maxParallelRuns` and cannot be `null`; see the amendment in
+> [ADR-0104](0104-lock-before-slot-admission-order.md).
 
 Decision point 5 above leaves `maxParallelRuns` untouched; this amendment
 records the two constraints `DefaultParallelRunsManager` implements on top of

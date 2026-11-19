@@ -36,7 +36,7 @@ class DefaultParallelRunsManagerTest {
     fun `acquireSlot REJECT should succeed when under limit`() =
         runTest {
             // Should not throw with 2 slots available and only 1 acquired
-            manager.acquireSlot("agent", maxParallelRuns = 2, strategy = OnMaxParallelRunsStrategy.REJECT)
+            manager.acquireSlot("agent", maxParallelRuns = 2, strategy = OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
 
             assertTrue(true)
         }
@@ -48,13 +48,13 @@ class DefaultParallelRunsManagerTest {
             val maxRuns = 2
 
             // Fill all slots
-            manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.REJECT)
-            manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.REJECT)
+            manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
+            manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
 
             // Third acquisition should fail immediately
             val exception =
                 assertFailsWith<MaxParallelRunsExceededException> {
-                    manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.REJECT)
+                    manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
                 }
 
             assertEquals(
@@ -69,16 +69,16 @@ class DefaultParallelRunsManagerTest {
             val agentName = "agent"
             val maxRuns = 1
 
-            val slot = manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.REJECT)
+            val slot = manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
 
             // Should be full now - verify
             assertFailsWith<MaxParallelRunsExceededException> {
-                manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.REJECT)
+                manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
             }
 
             // Release and re-acquire should succeed
             manager.releaseSlot(slot)
-            manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.REJECT)
+            manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
 
             assertTrue(true)
         }
@@ -90,7 +90,7 @@ class DefaultParallelRunsManagerTest {
         runTest {
             val startTime = System.currentTimeMillis()
 
-            manager.acquireSlot("agent", maxParallelRuns = 5, strategy = OnMaxParallelRunsStrategy.WAIT)
+            manager.acquireSlot("agent", maxParallelRuns = 5, strategy = OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = 10)
 
             val elapsed = System.currentTimeMillis() - startTime
             assertTrue(elapsed < 200, "Slot acquisition should be immediate when slots available, took ${elapsed}ms")
@@ -104,12 +104,12 @@ class DefaultParallelRunsManagerTest {
             var secondAcquired = false
 
             // First acquirer fills all slots
-            val slot1 = manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.WAIT)
+            val slot1 = manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = 10)
 
             // Second acquirer should suspend
             val job =
                 launch {
-                    val slot2 = manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.WAIT)
+                    val slot2 = manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = 10)
                     secondAcquired = true
                     manager.releaseSlot(slot2)
                 }
@@ -130,26 +130,25 @@ class DefaultParallelRunsManagerTest {
     // ========== WAIT queue bound (maxQueuedRuns) Tests ==========
 
     @Test
-    fun `acquireSlot WAIT with null maxQueuedRuns keeps the queue unbounded`() =
+    fun `acquireSlot WAIT rejects the run past maxQueuedRuns`() =
         runTest {
-            val agent = "unbounded"
-            val held = manager.acquireSlot(agent, maxParallelRuns = 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = null)
-            var acquired = 0
-            val jobs =
-                (1..5).map {
-                    launch {
-                        val s = manager.acquireSlot(agent, 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = null)
-                        acquired++
-                        manager.releaseSlot(s)
-                    }
+            val agent = "default-cap"
+            val cap = 10 * 2
+            val held = (1..2).map { manager.acquireSlot(agent, maxParallelRuns = 2, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = cap) }
+            val waiters =
+                (1..cap).map {
+                    launch { manager.acquireSlot(agent, 2, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = cap) }
                 }
-            delay(100)
-            assertEquals(0, acquired, "all five surplus runs should queue, none rejected")
+            runCurrent()
 
-            manager.releaseSlot(held) // drain the queue
-            delay(200)
-            jobs.forEach { it.join() }
-            assertEquals(5, acquired, "every queued run should eventually acquire")
+            val ex =
+                assertFailsWith<MaxQueuedRunsExceededException> {
+                    manager.acquireSlot(agent, 2, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = cap)
+                }
+            assertEquals("Agent '$agent' has reached the maximum of $cap queued runs", ex.message)
+
+            waiters.forEach { it.cancelAndJoin() }
+            held.forEach { manager.releaseSlot(it) }
         }
 
     @Test
@@ -200,12 +199,12 @@ class DefaultParallelRunsManagerTest {
             val maxRuns = 1
 
             // Fill slot
-            manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.WAIT)
+            manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = 10)
 
             // Launch a waiting coroutine
             val job =
                 launch {
-                    manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.WAIT)
+                    manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = 10)
                 }
 
             delay(100)
@@ -214,7 +213,7 @@ class DefaultParallelRunsManagerTest {
             // The slot is still held by the first acquirer
             // A REJECT attempt should fail (slot is still taken)
             assertFailsWith<MaxParallelRunsExceededException> {
-                manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.REJECT)
+                manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
             }
         }
 
@@ -249,19 +248,16 @@ class DefaultParallelRunsManagerTest {
         }
 
     @Test
-    fun `enterLockWait falls back to maxParallelRuns when the slot queue is unbounded`() =
+    fun `enterLockWait under WAIT refuses the waiter past maxQueuedRuns even when maxParallelRuns is smaller`() =
         runTest {
-            val agent = "unbounded-slot-queue"
-            val ticket = manager.enterLockWait(agent, maxParallelRuns = 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = null)
+            val agent = "wait-shared-cap"
+            val tickets = (1..10).map { manager.enterLockWait(agent, 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = 10) }
 
-            val ex =
-                assertFailsWith<MaxLockWaitersExceededException> {
-                    manager.enterLockWait(agent, 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = null)
-                }
-            assertEquals("Agent '$agent' has reached the maximum of 1 runs waiting for a lock", ex.message)
+            assertFailsWith<MaxQueuedRunsExceededException> {
+                manager.enterLockWait(agent, 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = 10)
+            }
 
-            ticket.close()
-            manager.enterLockWait(agent, 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = null).close()
+            tickets.forEach { it.close() }
         }
 
     @Test
@@ -284,24 +280,24 @@ class DefaultParallelRunsManagerTest {
         runTest {
             // Two agents declare the same lock key; the fallback counter is keyed on the agent
             // name, so each parks one waiter against the key without consuming the other's place.
-            val ticketA = manager.enterLockWait("a", maxParallelRuns = 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = null)
-            val ticketB = manager.enterLockWait("b", maxParallelRuns = 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = null)
+            val ticketA = manager.enterLockWait("a", maxParallelRuns = 1, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 5)
+            val ticketB = manager.enterLockWait("b", maxParallelRuns = 1, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 5)
 
             // A second waiter of either agent is over that agent's cap…
             assertFailsWith<MaxLockWaitersExceededException> {
-                manager.enterLockWait("a", 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = null)
+                manager.enterLockWait("a", 1, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 5)
             }
             val ex =
                 assertFailsWith<MaxLockWaitersExceededException> {
-                    manager.enterLockWait("b", 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = null)
+                    manager.enterLockWait("b", 1, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 5)
                 }
             assertEquals("Agent 'b' has reached the maximum of 1 runs waiting for a lock", ex.message)
 
             // …and closing one agent's ticket frees only that agent's place.
             ticketA.close()
-            manager.enterLockWait("a", 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = null).close()
+            manager.enterLockWait("a", 1, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 5).close()
             assertFailsWith<MaxLockWaitersExceededException> {
-                manager.enterLockWait("b", 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = null)
+                manager.enterLockWait("b", 1, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 5)
             }
 
             ticketB.close()
@@ -311,22 +307,22 @@ class DefaultParallelRunsManagerTest {
     fun `closing a lock-wait ticket twice frees one place, and a reload does not misdirect it`() =
         runTest {
             val agent = "idempotent-close"
-            val ticket = manager.enterLockWait(agent, maxParallelRuns = 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = null)
+            val ticket = manager.enterLockWait(agent, maxParallelRuns = 1, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 5)
             ticket.close()
             ticket.close()
 
             // Exactly one place was freed: the cap of 1 is reachable again, no more.
-            manager.enterLockWait(agent, 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = null).close()
+            manager.enterLockWait(agent, 1, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 5).close()
 
             // A reload drops the agent's counters; a ticket captured before it must still free
             // its own counter, not the fresh one a later waiter incremented.
-            val held = manager.enterLockWait(agent, 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = null)
+            val held = manager.enterLockWait(agent, 1, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 5)
             manager.onAgentsReloaded(updated = setOf(agent), removed = emptySet())
             held.close()
 
-            val waiter = manager.enterLockWait(agent, 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = null)
+            val waiter = manager.enterLockWait(agent, 1, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 5)
             assertFailsWith<MaxLockWaitersExceededException> {
-                manager.enterLockWait(agent, 1, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = null)
+                manager.enterLockWait(agent, 1, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 5)
             }
             waiter.close()
         }
@@ -339,26 +335,26 @@ class DefaultParallelRunsManagerTest {
             val maxRuns = 1
 
             // Fill slot for agent A
-            val slotA = manager.acquireSlot("agentA", maxRuns, OnMaxParallelRunsStrategy.REJECT)
+            val slotA = manager.acquireSlot("agentA", maxRuns, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
 
             // Agent B should still have its own available slot
-            manager.acquireSlot("agentB", maxRuns, OnMaxParallelRunsStrategy.REJECT)
+            manager.acquireSlot("agentB", maxRuns, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
 
             // agent A is full, agent B is full — both should reject further
             assertFailsWith<MaxParallelRunsExceededException> {
-                manager.acquireSlot("agentA", maxRuns, OnMaxParallelRunsStrategy.REJECT)
+                manager.acquireSlot("agentA", maxRuns, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
             }
 
             assertFailsWith<MaxParallelRunsExceededException> {
-                manager.acquireSlot("agentB", maxRuns, OnMaxParallelRunsStrategy.REJECT)
+                manager.acquireSlot("agentB", maxRuns, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
             }
 
             // Releasing agent A should not affect agent B
             manager.releaseSlot(slotA)
-            manager.acquireSlot("agentA", maxRuns, OnMaxParallelRunsStrategy.REJECT)
+            manager.acquireSlot("agentA", maxRuns, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
 
             assertFailsWith<MaxParallelRunsExceededException> {
-                manager.acquireSlot("agentB", maxRuns, OnMaxParallelRunsStrategy.REJECT)
+                manager.acquireSlot("agentB", maxRuns, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
             }
         }
 
@@ -375,7 +371,7 @@ class DefaultParallelRunsManagerTest {
             val jobs =
                 (1..6).map {
                     launch {
-                        val slot = manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.WAIT)
+                        val slot = manager.acquireSlot(agentName, maxRuns, OnMaxParallelRunsStrategy.WAIT, maxQueuedRuns = 10)
                         val current = activeCount.incrementAndGet()
                         maxObservedConcurrent.getAndUpdate { max -> if (current > max) current else max }
                         delay(150)
@@ -400,9 +396,9 @@ class DefaultParallelRunsManagerTest {
             val agentName = "agent"
 
             // Establish semaphore at limit=1
-            val slot = manager.acquireSlot(agentName, maxParallelRuns = 1, OnMaxParallelRunsStrategy.REJECT)
+            val slot = manager.acquireSlot(agentName, maxParallelRuns = 1, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
             assertFailsWith<MaxParallelRunsExceededException> {
-                manager.acquireSlot(agentName, maxParallelRuns = 1, OnMaxParallelRunsStrategy.REJECT)
+                manager.acquireSlot(agentName, maxParallelRuns = 1, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
             }
             manager.releaseSlot(slot)
 
@@ -410,10 +406,10 @@ class DefaultParallelRunsManagerTest {
             manager.onAgentsReloaded(updated = setOf(agentName), removed = emptySet())
 
             // Should now allow 2 concurrent slots
-            manager.acquireSlot(agentName, maxParallelRuns = 2, OnMaxParallelRunsStrategy.REJECT)
-            manager.acquireSlot(agentName, maxParallelRuns = 2, OnMaxParallelRunsStrategy.REJECT)
+            manager.acquireSlot(agentName, maxParallelRuns = 2, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
+            manager.acquireSlot(agentName, maxParallelRuns = 2, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
             assertFailsWith<MaxParallelRunsExceededException> {
-                manager.acquireSlot(agentName, maxParallelRuns = 2, OnMaxParallelRunsStrategy.REJECT)
+                manager.acquireSlot(agentName, maxParallelRuns = 2, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
             }
         }
 
@@ -421,15 +417,15 @@ class DefaultParallelRunsManagerTest {
     fun `a slot held across a reload is released to its own semaphore, not the fresh one`() =
         runTest {
             val agent = "reloaded-while-held"
-            val held = manager.acquireSlot(agent, maxParallelRuns = 1, OnMaxParallelRunsStrategy.REJECT)
+            val held = manager.acquireSlot(agent, maxParallelRuns = 1, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
 
             manager.onAgentsReloaded(updated = setOf(agent), removed = emptySet())
-            val fresh = manager.acquireSlot(agent, 1, OnMaxParallelRunsStrategy.REJECT)
+            val fresh = manager.acquireSlot(agent, 1, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
             // A release that re-looked the semaphore up by name would free the fresh one here.
             manager.releaseSlot(held)
 
             assertFailsWith<MaxParallelRunsExceededException> {
-                manager.acquireSlot(agent, 1, OnMaxParallelRunsStrategy.REJECT)
+                manager.acquireSlot(agent, 1, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
             }
             manager.releaseSlot(fresh)
         }
@@ -466,17 +462,17 @@ class DefaultParallelRunsManagerTest {
             val agentName = "removed-agent"
 
             // Establish semaphore at limit=1 (full)
-            manager.acquireSlot(agentName, maxParallelRuns = 1, OnMaxParallelRunsStrategy.REJECT)
+            manager.acquireSlot(agentName, maxParallelRuns = 1, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
 
             // Simulate reload: agent removed
             manager.onAgentsReloaded(updated = emptySet(), removed = setOf(agentName))
 
             // After removal, new acquire with limit=3 should create fresh semaphore
-            manager.acquireSlot(agentName, maxParallelRuns = 3, OnMaxParallelRunsStrategy.REJECT)
-            manager.acquireSlot(agentName, maxParallelRuns = 3, OnMaxParallelRunsStrategy.REJECT)
-            manager.acquireSlot(agentName, maxParallelRuns = 3, OnMaxParallelRunsStrategy.REJECT)
+            manager.acquireSlot(agentName, maxParallelRuns = 3, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
+            manager.acquireSlot(agentName, maxParallelRuns = 3, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
+            manager.acquireSlot(agentName, maxParallelRuns = 3, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
             assertFailsWith<MaxParallelRunsExceededException> {
-                manager.acquireSlot(agentName, maxParallelRuns = 3, OnMaxParallelRunsStrategy.REJECT)
+                manager.acquireSlot(agentName, maxParallelRuns = 3, OnMaxParallelRunsStrategy.REJECT, maxQueuedRuns = 10)
             }
         }
 }

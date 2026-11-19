@@ -55,7 +55,7 @@ always-on "does the production Dockerfile still build" gate.
   claim queue need a claim that is accepted but never answered — a timing
   race, not a black-box assertion. Their sentences are pinned by
   `PreStartFailureReasonTest` and the executor tests, and so is the sixth
-  cause's: the fallback lock-wait refusal (`maxQueuedRuns` unset, the
+  cause's: the fallback lock-wait refusal (`onMaxParallelRuns: REJECT`, the
   waiters capped at `maxParallelRuns`) stores the lock-wait sentence no e2e
   fixture exercises — the `lock-queue-cap` fixture sets `maxQueuedRuns: 0`,
   so its surplus waiter shares the slot queue's counter and stores the
