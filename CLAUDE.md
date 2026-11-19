@@ -129,10 +129,10 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
   still, add no new finding in code you touch. `required` checks fail the
   CI run — among them `diff-coverage`: the lines a pull request adds or
   changes must be at least 80% covered in every file. Write new and changed
-  functions for a CRAP score of at most 8, the `crap` threshold
+  functions for CRAP ≤ 8, the `crap` threshold
   (ADR-0081): in practice cc ≤ 7, since a cc-8 function fails on any
   uncovered line. A check becomes `required`
-  once its backlog is fixed —
+  once its backlog is fixed or budgeted —
   [ADR-0082](docs/adr/0082-quality-reports-report-first.md).
 - **While you work, run the checks on your change:** `node tools/quality/changed.mjs`
   runs the quality checks against the working tree's change since `origin/main`, with
@@ -271,11 +271,9 @@ Two related rules:
 
 - **Don't update every `.md` that mentions the topic** — only the
   canonical one for that surface. Touching peripheral mentions is how
-  drift starts (one file gets updated, the others lag).
-- **Don't update a doc you didn't break.** A refactor inside one
-  service rarely touches user-visible surfaces. Don't open
-  `AGENT.md` "just to be safe" — the diff should reflect what
-  actually changed.
+  drift starts.
+- **Don't update a doc you didn't break.** Don't open `AGENT.md`
+  "just to be safe" — the diff should reflect what changed.
 
 | Surface | Canonical doc |
 | --- | --- |
@@ -306,20 +304,21 @@ Two related rules:
 Everything else under `docs/` or `console/` is archival — do not touch
 unless the task is explicitly "update this doc."
 
-### Comments vs docs — keep code comments sparse
+### Comments: code says what, ADRs say why
 
-Rationale, alternatives considered, and multi-paragraph background do
-**not** belong in inline code comments. They belong in an ADR (§7) or
-the relevant canonical doc above. Verbose comment blocks go stale, bloat
-the diff, and duplicate what the ADR already records.
+[ADR-0117](docs/adr/0117-code-says-what-adrs-say-why.md); `comment-policy`
+checks all code, tests included. A comment is a contract (doc comment,
+≤ 3 lines) or a load-bearing constraint (≤ 2 lines): a non-obvious
+correctness constraint a future editor would otherwise break. The *why*
+lives in the ADR or canonical doc. Cite only `ADR-`, `CWE-`, `W-`, `AR-`
+ids. Review rubric:
 
-Keep an inline comment only when it is **terse and load-bearing** — a
-non-obvious correctness constraint a future editor would otherwise break
-(e.g. "must nest INSIDE `authenticate`: `requestKey` reads the principal
-auth populates first"). State the constraint in one or two lines and
-point to the ADR (`See ADR-XXXX`) for the why. If a comment is
-explaining *why a decision was made*, that's a sign it should be in the
-ADR with a pointer, not in the code.
+- Narrates the next lines → name a function or variable.
+- Deviates from an ADR → fix the code or amend the ADR, same PR.
+- Upstream workaround → `W-NNN`; accepted risk → `AR-NN` (both
+  once #344 part B lands); compatibility path → `removeIn x.y.z`.
+- Never delete a comment and keep the shortcut it described.
+- A test asserts one outcome; its name is what it proves.
 
 ## 10. Schema ↔ model ↔ doc sync (the contract-surface instance of §9)
 
@@ -418,6 +417,7 @@ defending it again — measure its benefit before assuming it has one.
 
 Threat model, and the defect behind each rule:
 [ADR-0047](docs/adr/0047-security-by-design-and-threat-model.md).
+Accepted risks and shortcuts: [ADR-0117](docs/adr/0117-code-says-what-adrs-say-why.md).
 
 ---
 

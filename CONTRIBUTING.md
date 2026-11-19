@@ -93,6 +93,8 @@ procedure as it is performed today — it does not change it.
    - `.env.example` — the commented `# HOMER_VERSION=<version>`.
    - `README.md` — the `version=` line of the image-verification snippet.
    - `DOCKER.md` — the release image tags in its examples.
+   - Remove every compatibility path whose `removeIn` marker the new version
+     reaches: `comment-policy` fails the release commit on each one (ADR-0117).
 2. **Merge** the branch into `main` through a pull request; every check must be
    green, as for any other change.
 3. **Tag** the merge commit with the bare version (`1.43.0`). The tag is

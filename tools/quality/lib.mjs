@@ -188,6 +188,41 @@ export function codeText(source) {
   return stack.length > 0 || depth > 0 ? source : out;
 }
 
+/**
+ * Every comment of a Kotlin source, by the same lexer: `{ kind, start, end, bodyStart, bodyEnd }` offsets,
+ * `kind` being `line`, `block` or `doc` (a KDoc). An unclosed block comment runs to the end of the source.
+ */
+export function kotlinComments(source) {
+  const comments = [];
+  const stack = [];
+  let depth = 0;
+  let open = 0;
+  const block = (end, bodyEnd) => {
+    const doc = source.startsWith('/**', open) && !source.startsWith('/**/', open);
+    comments.push({ kind: doc ? 'doc' : 'block', start: open, end, bodyStart: open + (doc ? 3 : 2), bodyEnd });
+  };
+  for (let i = 0; i < source.length; i++) {
+    if (depth > 0) {
+      const marker = source.slice(i, i + 2);
+      if (marker !== '/*' && marker !== '*/') continue;
+      [depth, i] = [depth + (marker === '/*' ? 1 : -1), i + 1];
+      if (depth === 0) block(i + 1, i - 1);
+    } else if (stack.at(-1)?.quote) {
+      i = stepInLiteral(source, i, stack);
+    } else if (source.startsWith('//', i)) {
+      const end = source.indexOf('\n', i) < 0 ? source.length : source.indexOf('\n', i);
+      comments.push({ kind: 'line', start: i, end, bodyStart: i + 2, bodyEnd: end });
+      i = end - 1;
+    } else if (source.startsWith('/*', i)) {
+      [depth, open, i] = [1, i, i + 1];
+    } else {
+      i = stepInCode(source, i, stack);
+    }
+  }
+  if (depth > 0) block(source.length, source.length);
+  return comments;
+}
+
 /** Runs `main` when the module is the entry point; a thrown error is a real failure (exit 1). */
 export function runMain(meta, main) {
   if (!process.argv[1] || meta.url !== pathToFileURL(path.resolve(process.argv[1])).href) return;

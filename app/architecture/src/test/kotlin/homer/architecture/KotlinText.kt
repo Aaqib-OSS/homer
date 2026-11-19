@@ -6,7 +6,7 @@ package homer.architecture
  */
 internal object KotlinText {
     /** Index just past the literal or comment starting at [start], or [start] when none starts there. */
-    fun skipNonCode(
+    private fun skipNonCode(
         text: String,
         start: Int,
     ): Int =
@@ -69,56 +69,6 @@ internal object KotlinText {
             }
         }
         return out.toString()
-    }
-
-    /**
-     * One flag per line of [text]: true when the line holds comment text only, KDoc included, so a run of
-     * them is a comment block. A line inside a raw string, or code with a trailing comment, is false.
-     */
-    fun commentLines(text: String): List<Boolean> {
-        val comment = commentSpans(text)
-        var offset = 0
-        return text.split('\n').map { line ->
-            val start = offset
-            offset += line.length + 1
-            val nonBlank = line.indices.filterNot { line[it].isWhitespace() }
-            nonBlank.isNotEmpty() && nonBlank.all { comment[start + it] }
-        }
-    }
-
-    /** [text] with code and literal content blanked, so only comment text is left to search. */
-    fun commentText(text: String): String {
-        val comment = commentSpans(text)
-        return buildString(text.length) {
-            text.forEachIndexed { i, c -> append(if (comment[i] || c == '\n') c else ' ') }
-        }
-    }
-
-    /** One flag per character of [text]: true inside a `//` or `/* */` comment, markers included. */
-    private fun commentSpans(text: String): BooleanArray {
-        val comment = BooleanArray(text.length)
-        var i = 0
-        while (i < text.length) {
-            when {
-                text.startsWith("//", i) -> {
-                    val end = text.indexOf('\n', i).let { if (it < 0) text.length else it }
-                    for (k in i until end) comment[k] = true
-                    i = end
-                }
-
-                text.startsWith("/*", i) -> {
-                    val end = text.indexOf("*/", i + 2).let { if (it < 0) text.length else it + 2 }
-                    for (k in i until end) comment[k] = true
-                    i = end
-                }
-
-                else -> {
-                    val next = skipNonCode(text, i)
-                    i = if (next == i) i + 1 else next
-                }
-            }
-        }
-        return comment
     }
 
     /**
