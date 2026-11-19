@@ -273,7 +273,7 @@ Two related rules:
   canonical one for that surface. Touching peripheral mentions is how
   drift starts.
 - **Don't update a doc you didn't break.** Don't open `AGENT.md`
-  "just to be safe" — the diff should reflect what actually changed.
+  "just to be safe" — the diff should reflect what changed.
 
 | Surface | Canonical doc |
 | --- | --- |
@@ -315,8 +315,8 @@ ids. Review rubric:
 
 - Narrates the next lines → name a function or variable.
 - Deviates from an ADR → fix the code or amend the ADR, same PR.
-- Upstream workaround → `W-NNN`; accepted risk → `AR-NN`;
-  compatibility path → `removeIn x.y.z`.
+- Upstream workaround → `W-NNN`; accepted risk → `AR-NN` (both
+  once #344 part B lands); compatibility path → `removeIn x.y.z`.
 - Never delete a comment and keep the shortcut it described.
 - A test asserts one outcome; its name is what it proves.
 

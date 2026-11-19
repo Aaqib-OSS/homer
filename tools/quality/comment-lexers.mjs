@@ -151,7 +151,8 @@ function stepInPython(source, i, state, comments) {
     const [, prefix, quote] = string;
     const end = skipPyString(source, i + prefix.length, quote);
     const bodyStart = i + prefix.length + quote.length;
-    if (state.expectDoc) comments.push({ kind: 'doc', start: i, end, bodyStart, bodyEnd: Math.max(bodyStart, end - quote.length) });
+    const closed = end - quote.length >= bodyStart && source.startsWith(quote, end - quote.length);
+    if (state.expectDoc) comments.push({ kind: 'doc', start: i, end, bodyStart, bodyEnd: closed ? end - quote.length : end });
     [state.expectDoc, state.atLineStart] = [false, false];
     return end - 1;
   }

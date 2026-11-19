@@ -127,6 +127,8 @@ The rollout is a ratchet, as in ADR-0082:
 - The checks are `required` from day one.
 - Each `comment-policy` budget, per rule and area, starts at the count of 2026-11-19, in
   `tools/quality/comment-policy-budgets.json`.
+- The areas are `backend-main`, `backend-test`, `console`, `python`, `infra` and `tools`. `example/`
+  counts as `console` on purpose: its demo plugins are console code.
 - A count over its budget fails with one finding per occurrence.
 - A budget more than its slack above the count fails as stale, naming the value to lower it to. The
   slack is 5% of the budget, rounded up, at least 1.

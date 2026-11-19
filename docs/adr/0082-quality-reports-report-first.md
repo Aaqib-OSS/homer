@@ -436,4 +436,4 @@ The console gets its counterpart of the backend's parameter cap. Its ESLint conf
 
 ## Amendment (2026-11-19): suppression budgets move to `comment-policy`
 
-The `@Suppress` and `eslint-disable` budgets and their reason rules moved from `SuppressionBudgetTest` and `size.mjs` to the `comment-policy` check, which counts a directive only where it takes effect (not inside a string). The `jscpd:ignore-start` and `@Tag(REPORT_ONLY)` budgets stay; ADR-0117 records the check.
+The `@Suppress` and `eslint-disable` budgets and their reason rules moved from `SuppressionBudgetTest` and `size.mjs` to the `comment-policy` check, which counts a directive only where it takes effect (not inside a string). The `jscpd:ignore-start` and `@Tag(REPORT_ONLY)` budgets stay; ADR-0117 records the check. A check may also be `required` from day one, with its existing findings budgeted at today's counts and ratcheted down (ADR-0117); for such a budgeted check, this replaces "required once its backlog is at zero".

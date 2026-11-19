@@ -151,6 +151,27 @@ test('properties and editorconfig: only a line starting with # is a comment', ()
   assert.deepEqual(bodies('line-start', '# one\nkey=a#b\n  # two\n'), ['one', 'two']);
 });
 
+test('at end of input, an unclosed comment runs to the end; an unclosed string, template, heredoc or script block hides the rest; a regex unclosed on its line is division', () => {
+  const cases = [
+    ['kotlin', '/* TODO', ['TODO']],
+    ['kotlin', 'val s = "abc // x', []],
+    ['kotlin', 'val s = """raw // x', []],
+    ['js', '/** TODO', ['TODO']],
+    ['js', 'const t = `abc // x', []],
+    ['js', 'const s = "abc // x', []],
+    ['js', 'x = /abc\n// y', ['y']],
+    ['python', '"""TODO', ['TODO']],
+    ['python', "x = '''abc # y", []],
+    ['shell', 'cat <<EOF\n# not a comment', []],
+    ['shell', 'echo "$(echo # x', []],
+    ['yaml', 'a: "abc # x', []],
+    ['toml', 'a = """abc # x', []],
+    ['css', '/* TODO', ['TODO']],
+    ['vue', '<script>\n/* TODO', []],
+  ];
+  for (const [language, source, expected] of cases) assert.deepEqual(bodies(language, source), expected, `${language}: ${source}`);
+});
+
 const LANGUAGES = ['kotlin', 'js', 'python', 'shell', 'yaml', 'toml', 'line-start', 'css', 'vue'];
 const tricky = fc.string({ unit: fc.constantFrom('/', '*', '#', '"', "'", '`', '$', '{', '}', '\\', '\n', '<', '|', 'a', ' ', ':', '-'), size: 'medium' });
 
