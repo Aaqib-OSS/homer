@@ -4038,12 +4038,18 @@ with `result: null` and an additional `resultRef` object instead:
 ```
 
 Fetch the full (transformed) result by reference with the `homer-result`
-helper, materialized at `{projectRoot}/.homer/bin/homer-result`:
+helper, materialized at `{projectRoot}/.homer/bin/homer-result`. It reads the
+token from `HMR_RESULT_TOKEN`, which you set for the call (Homer never sets
+it): the environment, unlike a command line, is not readable by other users of
+the host. Without it, `homer-result` exits 2 with a usage message.
 
 ```sh
-homer-result --token "$TOKEN"            # writes the result body to stdout
-homer-result --token "$TOKEN" --out r.txt  # or to a file
+HMR_RESULT_TOKEN="$TOKEN" homer-result            # writes the result body to stdout
+HMR_RESULT_TOKEN="$TOKEN" homer-result --out r.txt  # or to a file
 ```
+
+`homer-result --token "$TOKEN"` still works but is deprecated: it prints a
+notice on stderr, and the flag is removed in 1.45.0.
 
 The token is **reusable within its TTL** (`server.dispatch.resultTokenTtlSec`,
 default 3600 s), scoped to that one sub-process's artifact, and audience-bound:

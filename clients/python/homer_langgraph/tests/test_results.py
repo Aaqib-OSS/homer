@@ -10,11 +10,13 @@ import pytest
 from homer_langgraph import results
 
 
-def test_homer_fetch_result_argv_and_body(monkeypatch):
+def test_homer_fetch_result_passes_the_token_in_the_env_not_argv(monkeypatch):
     calls = {}
+    monkeypatch.setenv("PATH", "/homer/bin")
 
-    def fake_run(argv, check, capture_output, text):
+    def fake_run(argv, env, check, capture_output, text):
         calls["argv"] = argv
+        calls["env"] = env
         calls["check"] = check
         return SimpleNamespace(stdout="the big result body")
 
@@ -24,7 +26,9 @@ def test_homer_fetch_result_argv_and_body(monkeypatch):
 
     assert body == "the big result body"
     assert calls["check"] is True
-    assert calls["argv"] == ["homer-result", "--token", "tok-9"]
+    assert calls["argv"] == ["homer-result"]
+    assert calls["env"]["HMR_RESULT_TOKEN"] == "tok-9"
+    assert calls["env"]["PATH"] == "/homer/bin"
 
 
 def test_homer_fetch_result_returns_body_verbatim(monkeypatch):
@@ -36,10 +40,9 @@ def test_homer_fetch_result_returns_body_verbatim(monkeypatch):
 
 
 def test_homer_fetch_result_error_does_not_leak_token(monkeypatch):
-    # On a non-zero exit, the capability token (passed on argv) must not reach
-    # the raised exception or its traceback — otherwise it lands in Homer's
-    # process logs and is replayable within its TTL.
-    def fake_run(argv, check, capture_output, text):
+    # A traceback lands in Homer's process logs, where a live capability token
+    # would be replayable within its TTL: neither the error nor its cause may carry it.
+    def fake_run(argv, env, check, capture_output, text):
         raise subprocess.CalledProcessError(returncode=2, cmd=argv, stderr="boom")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -49,8 +52,6 @@ def test_homer_fetch_result_error_does_not_leak_token(monkeypatch):
             {"processId": 7, "path": "cmd_0.out", "token": "super-secret-tok", "sizeBytes": 99}
         )
 
-    # Token absent from the sanitized message, and the chained CalledProcessError
-    # (whose str() carries the token) is suppressed from the traceback.
+    assert "exit 2" in str(excinfo.value)
     assert "super-secret-tok" not in str(excinfo.value)
-    assert excinfo.value.__cause__ is None
-    assert excinfo.value.__suppress_context__ is True
+    assert "super-secret-tok" not in str(excinfo.value.__cause__)

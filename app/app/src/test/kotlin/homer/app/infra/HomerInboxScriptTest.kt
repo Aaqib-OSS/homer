@@ -39,13 +39,21 @@ class HomerInboxScriptTest {
 
     private val goodEnv = mapOf("HMR_API_URL" to "http://homer.test/", "HMR_CALLBACK_TOKEN" to "tok")
 
-    /** A stub `curl` printing `<body>\n<code>` (the script's `-w '\n%{http_code}'`) and recording its args. */
+    /**
+     * A stub `curl` printing `<body>\n<code>` (the script's `-w '\n%{http_code}'`) and recording
+     * its args followed by the config it reads through `-K`.
+     */
     private fun writeStubCurl(binDir: Path) {
         val stub = binDir.resolve("curl")
         stub.writeText(
             """
             #!/bin/sh
             printf '%s\n' "${'$'}@" > "${'$'}STUB_ARGS"
+            prev=""
+            for a in "${'$'}@"; do
+                [ "${'$'}prev" = "-K" ] && cat "${'$'}a" >> "${'$'}STUB_ARGS"
+                prev="${'$'}a"
+            done
             [ "${'$'}STUB_EXIT" = 0 ] || exit "${'$'}STUB_EXIT"
             printf '%s\n%s' "${'$'}STUB_BODY" "${'$'}STUB_CODE"
             """.trimIndent() + "\n",
@@ -89,7 +97,7 @@ class HomerInboxScriptTest {
 
         assertEquals(0, result.exit, "stderr=${result.stderr}")
         assertEquals(body, result.stdout.trimEnd())
-        assertTrue("http://homer.test/api/v1/callback/messages/take\n" in result.curlArgs, result.curlArgs)
+        assertTrue("url = \"http://homer.test/api/v1/callback/messages/take\"" in result.curlArgs, result.curlArgs)
         assertTrue("Authorization: Bearer tok" in result.curlArgs, result.curlArgs)
     }
 
@@ -115,7 +123,7 @@ class HomerInboxScriptTest {
 
         assertEquals(0, result.exit, "stderr=${result.stderr}")
         assertEquals(body, result.stdout.trimEnd())
-        assertTrue("http://homer.test/api/v1/callback/messages/take?hook=stop\n" in result.curlArgs, result.curlArgs)
+        assertTrue("url = \"http://homer.test/api/v1/callback/messages/take?hook=stop\"" in result.curlArgs, result.curlArgs)
     }
 
     @Test

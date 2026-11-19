@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Homer
+
+- **Fixed: workspace helpers keep tokens off the command line** — `homer-ask`, `homer-dispatch`, `homer-inbox`, `homer-join`, `homer-result` and `homer-tag` pass the callback token, the result token and request bodies to curl outside argv, where other users on the host could read them.
+- **Deprecated: `homer-result --token`** — Pass the result token in `HMR_RESULT_TOKEN` instead; the flag is removed in 1.45.0.
+
 ## [1.43.2] - 2026-11-18
 
 ### Homer
