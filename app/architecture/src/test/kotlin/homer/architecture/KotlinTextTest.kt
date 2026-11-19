@@ -99,40 +99,4 @@ class KotlinTextTest {
     fun `an abstract function has no body`() {
         assertNull(KotlinText.bodyLines("abstract fun f(x: Int): Map<String, Int>"))
     }
-
-    @Test
-    fun `commentLines marks line, block and KDoc lines including the closing marker`() {
-        val text = "// one\n/* two\n * three\n */\nval a = 1\n\n/** five\n * six\n */"
-
-        assertEquals(
-            listOf(true, true, true, true, false, false, true, true, true),
-            KotlinText.commentLines(text),
-        )
-    }
-
-    @Test
-    fun `commentLines does not mark a code line with a trailing comment`() {
-        val text = "val a = 1 // trailing\nval b = $q/* inside a literal */$q"
-
-        assertEquals(listOf(false, false), KotlinText.commentLines(text))
-    }
-
-    @Test
-    fun `commentLines does not mark a raw string line or a URL literal`() {
-        val text = "val u = $q// not a comment$q\nval r = $raw\n// inside\n$raw"
-
-        assertEquals(listOf(false, false, false, false), KotlinText.commentLines(text))
-    }
-
-    @Test
-    fun `commentText exposes comment text only, so a phrase in a literal is invisible`() {
-        val text = "val s = ${q}previous implementation$q // previous implementation\n/* the audit trail */"
-
-        val comments = KotlinText.commentText(text)
-
-        assertEquals(text.length, comments.length)
-        assertEquals(text.lines().size, comments.lines().size)
-        assertEquals(1, Regex("previous implementation").findAll(comments).count())
-        assertEquals(1, Regex("audit trail").findAll(comments).count())
-    }
 }

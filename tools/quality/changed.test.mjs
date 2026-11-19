@@ -6,6 +6,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import {
   changedLinesOf,
+  commentPolicyStep,
   infraLintStep,
   results,
   asPaths,
@@ -38,6 +39,7 @@ const CHECKS = [
   'query-plans',
   'query-repeats',
   'infra-lint',
+  'comment-policy',
 ].map((name) => ({ name, mode: 'required' }));
 const ALL = [...CHECKS, { name: 'mutation-console', mode: 'warn' }, { name: 'mutation-backend', mode: 'warn' }];
 const SRC = 'app/app/src/main/kotlin/homer/app';
@@ -53,27 +55,41 @@ test('parseArgs reads --base and --only and rejects anything else', () => {
 test('a console-only change selects the console checks and the shared ones', () => {
   assert.deepEqual(
     [...selectChecks(['console/lib/a.ts'], ALL)].sort(),
-    ['architecture-console', 'crap', 'diff-coverage', 'duplication', 'eslint-warnings', 'size-console', 'unused-console'],
+    ['architecture-console', 'comment-policy', 'crap', 'diff-coverage', 'duplication', 'eslint-warnings', 'size-console', 'unused-console'],
   );
 });
 
 test('a backend change selects the backend checks, dto-contract only for main sources', () => {
-  const backend = ['architecture-backend', 'crap', 'detekt', 'diff-coverage', 'duplication', 'kotlin-warnings', 'query-plans', 'query-repeats'];
+  const backend = ['architecture-backend', 'comment-policy', 'crap', 'detekt', 'diff-coverage', 'duplication', 'kotlin-warnings', 'query-plans', 'query-repeats'];
   assert.deepEqual([...selectChecks([`${TEST}/ATest.kt`], ALL)].sort(), backend);
   assert.deepEqual([...selectChecks([`${SRC}/A.kt`], ALL)].sort(), [...backend, 'dto-contract'].sort());
   assert.ok(selectChecks(['console/types/homer.ts'], ALL).has('dto-contract'));
 });
 
-test('docs, build scripts, buildSrc and tooling select nothing', () => {
-  const files = ['docs/x.md', 'app/app/build.gradle.kts', 'app/settings.gradle.kts', 'app/buildSrc/src/main/kotlin/CrapScore.kt', 'tools/quality/gate.mjs', 'console/README.md'];
-  assert.equal(selectChecks(files, ALL).size, 0);
+test('docs select nothing; build scripts, buildSrc and tooling select comment-policy alone', () => {
+  assert.equal(selectChecks(['docs/x.md', 'console/README.md'], ALL).size, 0);
+  for (const file of ['app/app/build.gradle.kts', 'app/settings.gradle.kts', 'app/buildSrc/src/main/kotlin/CrapScore.kt', 'tools/quality/gate.mjs']) {
+    assert.deepEqual([...selectChecks([file], ALL)], ['comment-policy'], file);
+  }
 });
 
-test('a shell script, a workflow, a Dockerfile or the hadolint config selects infra-lint alone', () => {
+test('a shell script, a workflow, a Dockerfile or the hadolint config selects infra-lint and comment-policy', () => {
   for (const file of ['app/entrypoint.sh', '.github/workflows/ci.yml', 'console/Dockerfile', 'app/e2e/Dockerfile', '.hadolint.yaml']) {
-    assert.deepEqual([...selectChecks([file], ALL)], ['infra-lint'], file);
+    assert.deepEqual([...selectChecks([file], ALL)], ['infra-lint', 'comment-policy'], file);
   }
-  assert.ok(!selectChecks(['.github/ISSUE_TEMPLATE/bug.yml', 'app/gradlew'], ALL).has('infra-lint'));
+  assert.deepEqual([...selectChecks(['.github/ISSUE_TEMPLATE/bug.yml'], ALL)], ['comment-policy']);
+  assert.equal(selectChecks(['app/gradlew'], ALL).size, 0);
+});
+
+test('a change to any source the comment policy lexes, its budgets or CHANGELOG.md selects comment-policy', () => {
+  const checks = ALL;
+  for (const file of ['console/lib/a.ts', `${SRC}/A.kt`, 'clients/python/homer_langgraph/gates.py', '.github/workflows/ci.yml', 'tools/quality/gate.mjs', 'app/gradle.properties', 'tools/quality/comment-policy-budgets.json', 'CHANGELOG.md']) {
+    assert.ok(selectChecks([file], checks).has('comment-policy'), file);
+  }
+  assert.ok(selectChecks(['app/e2e/fixtures/agents/echo/agent.yaml'], checks).has('comment-policy'), 'a hand-written fixture');
+  for (const file of ['docs/x.md', 'plugins/homer-authoring/schemas/a.json', 'app/app/src/test/resources/claude/a.jsonl', 'app/gradle/wrapper/gradle-wrapper.properties']) {
+    assert.ok(!selectChecks([file], checks).has('comment-policy'), file);
+  }
 });
 
 test('--only narrows the selection and alone selects a warn-mode check', () => {
@@ -273,6 +289,27 @@ test('infraLintStep reports the findings infra-lint wrote into its directory', (
     assert.equal(check, 'infra-lint');
     assert.equal(error, undefined);
     assert.deepEqual(findings.map((f) => [f.path, f.line, f.message]), [[finding.path, 3, finding.message]]);
+  } finally {
+    fs.rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test('commentPolicyStep reports the findings comment-policy wrote, and a thrown error under its own row', () => {
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'changed-comments-'));
+  const reported = [];
+  const finding = { path: 'console/a.ts', line: 1, severity: 'minor', message: 'todo: TODO in a comment' };
+  try {
+    commentPolicyStep((...args) => reported.push(args), ([dir]) => writeCheck(dir, 'comment-policy', 'comments', [finding]), out);
+    commentPolicyStep(
+      (...args) => reported.push(args),
+      () => {
+        throw new Error('tools/quality/comment-policy-budgets.json: unknown rule nope');
+      },
+      out,
+    );
+    assert.deepEqual(reported[0][0], 'comment-policy');
+    assert.deepEqual(reported[0][1].map((f) => [f.path, f.line, f.message]), [['console/a.ts', 1, finding.message]]);
+    assert.deepEqual(reported[1], ['comment-policy', [], 'tools/quality/comment-policy-budgets.json: unknown rule nope']);
   } finally {
     fs.rmSync(out, { recursive: true, force: true });
   }
