@@ -60,7 +60,9 @@ class ClaudeHarness(
 
     override fun terminalStopConfigured(command: Command.Claude): Boolean = command.options.maxTurnsExitCode != null
 
-    override fun translate(line: JsonObject): Translation =
+    override fun translator(): (JsonObject) -> Translation = ::translate
+
+    fun translate(line: JsonObject): Translation =
         when (line.nonBlankString("type")) {
             "system" -> {
                 translateSystem(line)

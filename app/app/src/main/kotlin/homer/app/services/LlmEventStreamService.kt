@@ -245,8 +245,8 @@ class LlmEventStreamService(
 
     /**
      * Emits the translated events of every complete line of [artifact] from
-     * [startOffset] (a line start), skipping the first line's events with index
-     * <= [skipThroughEventIndex]. Polls until the process is terminal or [stopWhen]
+     * [startOffset], skipping the events with index <= [skipThroughEventIndex] of
+     * the line that starts exactly there. Polls until the process is terminal or [stopWhen]
      * holds, then drains the file to its end and returns the offset after the last
      * consumed newline.
      */
@@ -319,14 +319,15 @@ class LlmEventStreamService(
         private val processId: Int,
         private val cmdIndex: Int,
         private val artifact: LlmArtifact,
-        startOffset: Long,
-        // Applies to the first line only: the resumed line's already-delivered events.
-        private var skipThroughEventIndex: Int,
+        // Lines before it are translated, never emitted or warned about, so a resumed cumulative cost counts them (ADR-0074).
+        private val resumeFrom: Long,
+        // Applies only to the line starting exactly at [resumeFrom]: the resumed line's already-delivered events.
+        private val skipThroughEventIndex: Int,
     ) {
-        private val translate = harnesses.getValue(artifact.kind)::translate
+        private val translate = harnesses.getValue(artifact.kind).translator()
         private val held = ByteArrayOutputStream()
-        private var readPos = startOffset
-        var lineStart = startOffset
+        private var readPos = 0L
+        var lineStart = 0L
             private set
 
         // Inside a line already over MAX_LINE_BYTES: discard until its newline.
@@ -361,35 +362,44 @@ class LlmEventStreamService(
             while (i < buf.size) {
                 val nl = buf.indexOfByte(NEWLINE, i)
                 val segmentEnd = if (nl < 0) buf.size else nl
-                if (!skipping && held.size().toLong() + (segmentEnd - i) > MAX_LINE_BYTES) {
-                    held.reset()
-                    skipping = true
-                    logger.warn(
-                        "llm stream dropping a line over {} bytes (process {} cmd {} attempt {})",
-                        MAX_LINE_BYTES,
-                        processId,
-                        cmdIndex,
-                        artifact.attemptIndex,
-                    )
-                }
+                if (!skipping && held.size().toLong() + (segmentEnd - i) > MAX_LINE_BYTES) startDroppingLine()
                 if (!skipping) held.write(buf, i, segmentEnd - i)
                 if (nl < 0) return
-                val thisLineStart = lineStart
-                lineStart = chunkStart + nl + 1
-                val skipThrough = skipThroughEventIndex
-                skipThroughEventIndex = -1
-                if (skipping) {
-                    skipping = false
-                } else {
-                    val line = held.toString(Charsets.UTF_8)
-                    held.reset()
-                    translateLine(line).forEachIndexed { index, event ->
-                        if (index > skipThrough) {
-                            collector.emit(LlmStreamEvent.Event(cmdIndex, artifact.attemptIndex, thisLineStart, index, event))
-                        }
-                    }
-                }
+                endLine(collector, chunkStart + nl + 1)
                 i = nl + 1
+            }
+        }
+
+        private fun startDroppingLine() {
+            held.reset()
+            skipping = true
+            if (lineStart < resumeFrom) return
+            logger.warn(
+                "llm stream dropping a line over {} bytes (process {} cmd {} attempt {})",
+                MAX_LINE_BYTES,
+                processId,
+                cmdIndex,
+                artifact.attemptIndex,
+            )
+        }
+
+        /** Ends the held line at [nextLineStart]; its events are emitted only when it starts at or past [resumeFrom]. */
+        private suspend fun endLine(
+            collector: FlowCollector<LlmStreamEvent>,
+            nextLineStart: Long,
+        ) {
+            val thisLineStart = lineStart
+            lineStart = nextLineStart
+            val resumed = thisLineStart >= resumeFrom
+            val skipThrough = if (thisLineStart == resumeFrom) skipThroughEventIndex else -1
+            val events = if (skipping) emptyList() else translateLine(held.toString(Charsets.UTF_8))
+            skipping = false
+            held.reset()
+            if (!resumed) return
+            redact(events).forEachIndexed { index, event ->
+                if (index > skipThrough) {
+                    collector.emit(LlmStreamEvent.Event(cmdIndex, artifact.attemptIndex, thisLineStart, index, event))
+                }
             }
         }
 
@@ -413,14 +423,17 @@ class LlmEventStreamService(
                 } catch (_: SerializationException) {
                     null
                 } ?: return emptyList()
-            // Redact the decoded event, not the raw line: a \uXXXX-escaped secret is cleartext
-            // only after parsing (CWE-200). An event the mask breaks is dropped. See ADR-0070.
-            return (translate(obj) as? Translation.Events)?.events.orEmpty().mapNotNull { event ->
+            return (translate(obj) as? Translation.Events)?.events.orEmpty()
+        }
+
+        // Redact the decoded event, not the raw line: a \uXXXX-escaped secret is cleartext
+        // only after parsing (CWE-200). An event the mask breaks is dropped. See ADR-0070.
+        private fun redact(events: List<LlmEvent>): List<LlmEvent> =
+            events.mapNotNull { event ->
                 val redacted = redactEvent(event, artifact.redactor)
                 if (redacted == null) logMaskDrop()
                 redacted
             }
-        }
 
         private fun logMaskDrop() {
             if (maskDropLogged) return

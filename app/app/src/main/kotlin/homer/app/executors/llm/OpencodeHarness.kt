@@ -26,7 +26,6 @@ class OpencodeHarness(
     // One step can carry text and a tool call, so a message id is not one model request.
     override val countsModelCalls: Boolean = false
     private val argvBuilder = OpencodeArgvBuilder(textCompiler)
-    private val stepCosts = StepCostTotals()
 
     override fun argv(
         command: Command.Opencode,
@@ -39,32 +38,7 @@ class OpencodeHarness(
     ): Command.Opencode =
         command.copy(options = command.options.copy(model = tier.model, options = tier.options ?: command.options.options))
 
-    override fun translate(line: JsonObject): Translation =
-        when (line.nonBlankString("type")) {
-            "step_start" -> {
-                Translation.Events(listOf(LlmEvent.SessionStart(gateSessionId(line.nonBlankString("sessionID")), model = null)))
-            }
-
-            "text" -> {
-                text(line)
-            }
-
-            "tool_use" -> {
-                toolUse(line)
-            }
-
-            "step_finish" -> {
-                stepFinish(line)
-            }
-
-            "error" -> {
-                transientError(line)
-            }
-
-            else -> {
-                Translation.Ignored
-            }
-        }
+    override fun translator(): (JsonObject) -> Translation = StdoutRead()::translate
 
     override fun inspect(
         events: List<LlmEvent>,
@@ -76,6 +50,50 @@ class OpencodeHarness(
             failedReason = "stream contains a failed 'step_finish' event",
             noSuccessReason = "stdout contains no successful 'step_finish' event",
         )
+
+    /** One read of one attempt's stdout: `step_finish` carries its own step's cost, so the read keeps the running total (ADR-0074). */
+    private inner class StdoutRead {
+        private var total = 0.0
+
+        fun translate(line: JsonObject): Translation =
+            when (line.nonBlankString("type")) {
+                "step_start" -> {
+                    Translation.Events(listOf(LlmEvent.SessionStart(gateSessionId(line.nonBlankString("sessionID")), model = null)))
+                }
+
+                "text" -> {
+                    text(line)
+                }
+
+                "tool_use" -> {
+                    toolUse(line)
+                }
+
+                "step_finish" -> {
+                    stepFinish(line)
+                }
+
+                "error" -> {
+                    transientError(line)
+                }
+
+                else -> {
+                    Translation.Ignored
+                }
+            }
+
+        private fun stepFinish(line: JsonObject): Translation {
+            val part = line["part"] as? JsonObject ?: return Translation.Malformed("step_finish without a part object")
+            val reason = part.nonBlankString("reason") ?: return Translation.Malformed("step_finish without a reason")
+            part.nonBlankString("id") ?: return Translation.Malformed("step_finish without a part id")
+            // CWE-682: a negative or non-finite `cost` in agent-written stdout is no cost at all — an
+            // over-large literal parses to Infinity and would poison the running total for good.
+            val stepCost = (part["cost"] as? JsonPrimitive)?.doubleOrNull?.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
+            // CWE-682: a sum that overflows to Infinity leaves the total where it was.
+            total = (total + stepCost).takeIf { it.isFinite() } ?: total
+            return Translation.Events(listOf(LlmEvent.TurnEnd(status(reason), usage(part["tokens"] as? JsonObject), costUsd = total)))
+        }
+    }
 
     private fun text(line: JsonObject): Translation {
         val part = line["part"] as? JsonObject ?: return Translation.Malformed("text without a part object")
@@ -117,20 +135,6 @@ class OpencodeHarness(
             }
         }
 
-    private fun stepFinish(line: JsonObject): Translation {
-        val part = line["part"] as? JsonObject ?: return Translation.Malformed("step_finish without a part object")
-        val reason = part.nonBlankString("reason") ?: return Translation.Malformed("step_finish without a reason")
-        val stepId = part.nonBlankString("id") ?: return Translation.Malformed("step_finish without a part id")
-        // ADR-0074: `cost` is this step's own, while TurnEnd.costUsd must be cumulative for the
-        // process, so the step's cost is accumulated by session. A stream whose session id does
-        // not gate has no bucket to accumulate in, and reports the step alone.
-        // CWE-682: a negative or non-finite `cost` in agent-written stdout is no cost at all — an
-        // over-large literal parses to Infinity and would poison the cumulative figure for good.
-        val stepCost = (part["cost"] as? JsonPrimitive)?.doubleOrNull?.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
-        val cost = gateSessionId(line.nonBlankString("sessionID"))?.let { stepCosts.add(it, stepId, stepCost) } ?: stepCost
-        return Translation.Events(listOf(LlmEvent.TurnEnd(status(reason), usage(part["tokens"] as? JsonObject), costUsd = cost)))
-    }
-
     private fun status(reason: String): TurnStatus =
         when (reason) {
             // opencode's own FinishReason set: the run ended normally, or on a budget the agent asked for.
@@ -153,60 +157,4 @@ class OpencodeHarness(
 
     // CWE-345: a negative or unparseable token count in agent-written stdout counts as none.
     private fun JsonObject?.count(key: String): Long = ((this?.get(key) as? JsonPrimitive)?.longOrNull ?: 0L).coerceAtLeast(0L)
-}
-
-/**
- * Running per-step cost totals, one bucket per opencode session. ADR-0074 requires `TurnEnd.costUsd` to
- * be cumulative for the harness process, while opencode reports one step's own cost on each `step_finish`,
- * so [OpencodeHarness] accumulates. One instance reads a stdout file more than once (accounting scan and
- * telemetry hand-off), so a step counts once by its id, per instance. The state is bounded (§12 rule 4 —
- * the session id is agent-written, its cardinality untrusted): the bound sheds the eldest bucket, and the
- * scan's full-file re-read rebuilds a live run's cumulative, keeping the charge ADR-0074-correct.
- */
-internal class StepCostTotals {
-    private val sessions = HashMap<String, Session>()
-
-    /** Sessions in insertion order, so the bound knows which bucket is eldest. */
-    private val order = ArrayDeque<String>()
-
-    /** The session's running total once [stepId]'s [cost] is counted; a step already counted leaves it unchanged. */
-    @Synchronized
-    fun add(
-        sessionId: String,
-        stepId: String,
-        cost: Double,
-    ): Double {
-        // Checked before the insert, and only for a session with no bucket yet: eviction makes
-        // room for exactly one new session by dropping one eldest bucket. Clearing every
-        // session instead would restart a mid-stream run's cumulative `TurnEnd.costUsd`, making
-        // the charge depend on when the scan reads the file — the order-dependent under-charge
-        // ADR-0074 forbids.
-        if (!sessions.containsKey(sessionId) && sessions.size >= MAX_TRACKED_SESSIONS) {
-            sessions.remove(order.removeFirstOrNull())
-        }
-        val existing = sessions[sessionId]
-        if (existing != null) return existing.add(stepId, cost)
-        val created = Session()
-        sessions[sessionId] = created
-        order.addLast(sessionId)
-        return created.add(stepId, cost)
-    }
-
-    private class Session {
-        private val counted = HashSet<String>()
-        private var total = 0.0
-
-        fun add(
-            stepId: String,
-            cost: Double,
-        ): Double {
-            if (counted.size < MAX_COUNTED_STEPS && counted.add(stepId)) total += cost
-            return total
-        }
-    }
-
-    private companion object {
-        const val MAX_TRACKED_SESSIONS = 64
-        const val MAX_COUNTED_STEPS = 4_096
-    }
 }

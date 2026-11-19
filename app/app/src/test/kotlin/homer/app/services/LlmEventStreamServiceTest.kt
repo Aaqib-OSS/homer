@@ -306,6 +306,58 @@ class LlmEventStreamServiceTest {
         assertEquals(0.25, (events[4] as LlmEvent.TurnEnd).costUsd)
     }
 
+    private fun opencodeStep(
+        stepId: String,
+        cost: Double,
+    ) = line("""{"type":"step_finish","sessionID":"ses_1","part":{"id":"$stepId","reason":"stop","cost":$cost}}""")
+
+    private fun finishedOpencode(
+        tmp: Path,
+        outs: List<Path>,
+    ): ProcessManager {
+        val pm = finishedCodex(tmp, outs.first())
+        outs.forEachIndexed { cmd, out ->
+            coEvery { pm.getCommandArtifacts(1, cmd) } returns CommandArtifactPaths(out, tmp.resolve("e$cmd"), kind = "opencode")
+        }
+        return pm
+    }
+
+    private suspend fun LlmEventStreamService.costs(
+        cmdIndex: Int,
+        resume: StreamCursor?,
+    ): List<Double?> =
+        streamCommand(1, cmdIndex, resume)
+            .toList()
+            .filterIsInstance<LlmStreamEvent.Event>()
+            .mapNotNull { (it.event as? LlmEvent.TurnEnd)?.costUsd }
+
+    @Test
+    fun `a subscription resumed from a cursor reports a cumulative cost that counts the steps before it`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val out = tmp.resolve("cmd_0.out")
+        out.writeText(opencodeStep("p1", 0.25) + opencodeStep("p2", 0.5) + opencodeStep("p3", 0.125))
+        val service = LlmEventStreamService(finishedOpencode(tmp, listOf(out)), harnesses, TestFixtures.mockLogger(), pollIntervalMs = 10)
+        val secondLineStart = opencodeStep("p1", 0.25).toByteArray().size.toLong()
+
+        assertEquals(listOf(0.75, 0.875), service.costs(0, StreamCursor(0, 0, 0, 0)))
+        assertEquals(listOf(0.875), service.costs(0, StreamCursor(0, 0, secondLineStart, 0)))
+    }
+
+    @Test
+    fun `two commands resuming one opencode session each report only their own steps`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val first = tmp.resolve("cmd_0.out").also { it.writeText(opencodeStep("p1", 0.25) + opencodeStep("p2", 0.5)) }
+        val resumed = tmp.resolve("cmd_1.out").also { it.writeText(opencodeStep("p3", 0.125)) }
+        val service =
+            LlmEventStreamService(finishedOpencode(tmp, listOf(first, resumed)), harnesses, TestFixtures.mockLogger(), pollIntervalMs = 10)
+
+        assertEquals(listOf(0.25, 0.75), service.costs(0, null))
+        assertEquals(listOf(0.125), service.costs(1, null))
+        assertEquals(listOf(0.25, 0.75), service.costs(0, null))
+    }
+
     @Test
     fun `an event the mask makes undecodable is dropped, never sent unmasked, and logged once`(
         @TempDir tmp: Path,
@@ -381,6 +433,17 @@ class LlmEventStreamServiceTest {
         val service = LlmEventStreamService(finishedCodex(tmp, out), harnesses, TestFixtures.mockLogger(), pollIntervalMs = 10)
         val payloads = service.streamCommand(1, 0, StreamCursor(0, 0, toolLineStart, 1)).toList().filterIsInstance<LlmStreamEvent.Event>()
         assertEquals(listOf("turn_end"), payloads.map { typeOf(it.event) })
+    }
+
+    @Test
+    fun `a cursor whose offset falls mid-line delivers every event of the following line`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val (out, toolLineStart) = toolLineFixture(tmp)
+        val service = LlmEventStreamService(finishedCodex(tmp, out), harnesses, TestFixtures.mockLogger(), pollIntervalMs = 10)
+        val payloads = service.streamCommand(1, 0, StreamCursor(0, 0, 5, 0)).toList().filterIsInstance<LlmStreamEvent.Event>()
+        assertEquals(listOf("tool_call", "tool_result", "turn_end"), payloads.map { typeOf(it.event) })
+        assertEquals(toolLineStart to 0, payloads[0].lineOffset to payloads[0].eventIndex)
     }
 
     @Test
@@ -488,6 +551,24 @@ class LlmEventStreamServiceTest {
         assertEquals(oversized.toByteArray().size.toLong(), payloads.single().lineOffset)
         assertEquals(LlmStreamEvent.End, events.last())
         verify(exactly = 1) { logger.warn(match<String> { "over" in it }, LlmEventStreamService.MAX_LINE_BYTES, 1, 0, 0) }
+    }
+
+    @Test
+    fun `resuming past a line over 4 MiB does not warn about it again`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val out = tmp.resolve("cmd_0.out")
+        val oversized = "{\"type\":\"error\",\"message\":\"" + "x".repeat(5 * 1024 * 1024) + "\"}\n"
+        val started = """{"type":"thread.started","thread_id":"t1"}""" + "\n"
+        out.writeText(oversized + started + """{"type":"turn.completed","usage":{}}""" + "\n")
+        val logger = TestFixtures.mockLogger()
+        val service = LlmEventStreamService(finishedCodex(tmp, out), harnesses, logger, pollIntervalMs = 10)
+        val cursor = StreamCursor(0, 0, oversized.toByteArray().size.toLong(), 0)
+
+        val payloads = service.streamCommand(1, 0, cursor).toList().filterIsInstance<LlmStreamEvent.Event>()
+
+        assertEquals(listOf("turn_end"), payloads.map { typeOf(it.event) })
+        verify(exactly = 0) { logger.warn(match<String> { "over" in it }, *anyVararg()) }
     }
 
     @Test

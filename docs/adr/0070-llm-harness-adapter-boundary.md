@@ -91,6 +91,17 @@ non-zero exit's stdout leniently and honouring only a `Terminal` verdict —
 would spend an extra bounded read on the failed attempt of every harness,
 opted in or not.)*
 
+*(Amended 2026-11-19: supersedes the 2026-10-31 amendment. Adapters hold no
+state. `translate` becomes `fun translator(): (JsonObject) -> Translation`, a
+fresh translation for one read of one attempt's stdout, and per-read state lives
+only there: `OpencodeHarness` keeps one running total per read, with no session
+buckets, step-id dedupe or caps. No cost state outlives a read or crosses into
+another run, while `TurnEnd.costUsd` stays cumulative per process
+([ADR-0074](0074-cost-of-an-attempt-that-ends-more-than-one-turn.md)). Each reader —
+the accounting scan, the telemetry hand-off, each `/llm-events` tail — asks for
+its own translator, and a tail resumed from a cursor first translates the lines
+before it, emitting none of them, so its cumulative figure counts them.)*
+
 `id` equals the command's `kind` (`claude`, `codex`, …), and `reportsCost`
 states — once, per adapter, with no default — whether the CLI itself prices
 a run. `translate` is total (never throws) and returns a `Translation`
