@@ -37,7 +37,9 @@ class CodexHarness(
         tier: LlmEscalation,
     ): Command.Codex = command.copy(options = command.options.copy(model = tier.model, options = tier.options ?: command.options.options))
 
-    override fun translate(line: JsonObject): Translation =
+    override fun translator(): (JsonObject) -> Translation = ::translate
+
+    fun translate(line: JsonObject): Translation =
         when (line.nonBlankString("type")) {
             "thread.started" -> {
                 Translation.Events(listOf(LlmEvent.SessionStart(gateSessionId(line.nonBlankString("thread_id")), model = null)))

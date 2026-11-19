@@ -43,7 +43,9 @@ open class FakeHarness(
         tier: LlmEscalation,
     ) = command.copy(options = command.options.copy(model = tier.model, options = tier.options ?: command.options.options))
 
-    override fun translate(line: JsonObject): Translation =
+    override fun translator(): (JsonObject) -> Translation = ::translate
+
+    fun translate(line: JsonObject): Translation =
         when ((line["t"] as? JsonPrimitive)?.contentOrNull) {
             "start" -> {
                 Translation.Events(
