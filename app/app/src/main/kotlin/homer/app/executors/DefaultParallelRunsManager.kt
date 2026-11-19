@@ -14,9 +14,8 @@ import java.util.concurrent.atomic.AtomicInteger
 class DefaultParallelRunsManager : ParallelRunsManager {
     private val semaphores = ConcurrentHashMap<String, Semaphore>()
 
-    // Count of runs currently suspended in acquireSlot's WAIT path, per agent. Only
-    // these queued runs hold non-evictable process rows while parked, so this — not
-    // the holder count — is what maxQueuedRuns bounds.
+    // Per agent: slot waiters plus, under WAIT, lock waiters; they pin non-evictable rows,
+    // so this shared count (not the holder count) is what maxQueuedRuns bounds.
     private val waiters = ConcurrentHashMap<String, AtomicInteger>()
 
     // Count of runs currently suspended waiting for a subject lock, per agent, when they

@@ -181,7 +181,11 @@ env:
     fun agentWithMaxParallelRuns(
         maxParallelRuns: Int = 2,
         strategy: OnMaxParallelRunsStrategy = OnMaxParallelRunsStrategy.WAIT,
-    ) = simpleAgent().copy(maxParallelRuns = maxParallelRuns, onMaxParallelRuns = strategy)
+    ) = simpleAgent().copy(
+        maxParallelRuns = maxParallelRuns,
+        maxQueuedRuns = maxParallelRuns * 10,
+        onMaxParallelRuns = strategy,
+    )
 
     /**
      * Creates an agent with commands that have continueIfFail enabled

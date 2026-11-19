@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-24
 deciders: Lukáš Vlk
-amended: 2026-06-24, 2026-09-30, 2026-11-12
+amended: 2026-06-24, 2026-09-30, 2026-11-12, 2026-11-19
 superseded-by: ADR-0030, ADR-0104
 ---
 # ADR-0029: Flow-scoped lock pass-through (`acceptParentLock`)
@@ -129,6 +129,10 @@ ancestor lock keys.**
 
 ## Amendment (2026-09-30): the parallel-run slot bounds, and why both references are captured
 
+> **Amendment (2026-11-19) — `maxQueuedRuns` is no longer unbounded by default.** It defaults to
+> `10 × maxParallelRuns` and cannot be `null`; see the amendment in
+> [ADR-0104](0104-lock-before-slot-admission-order.md).
+
 Decision point 5 above leaves `maxParallelRuns` untouched; this amendment
 records the two constraints `DefaultParallelRunsManager` implements on top of
 it, which until now lived only in `app/CLAUDE.md` and in that file's comments.
@@ -150,8 +154,6 @@ leaking the slot the run actually holds — and `maxParallelRuns` slots leak
 permanently, so a handful of concurrent reloads wedges the agent. Capturing the
 reference makes acquire and release refer to the same object by construction,
 whatever the map does in between.
-
-*(Amended 2026-11-19: `maxQueuedRuns` no longer defaults to unbounded; it defaults to `10 × maxParallelRuns`. See the amendment in [ADR-0104](0104-lock-before-slot-admission-order.md).)*
 
 ## More Information
 

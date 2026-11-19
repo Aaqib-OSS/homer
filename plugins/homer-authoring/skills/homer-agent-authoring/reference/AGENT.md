@@ -2905,6 +2905,18 @@ onMaxParallelRuns: WAIT   # queue the 6th and beyond
 maxQueuedRuns: 20         # ...but fail the 26th once 20 are queued (default: 10 × 5 = 50)
 ```
 
+<details>
+<summary>JSON format</summary>
+
+```json
+{
+  "maxParallelRuns": 5,
+  "onMaxParallelRuns": "WAIT",
+  "maxQueuedRuns": 20
+}
+```
+</details>
+
 ### Admission order: the lock comes before the slot
 
 A run takes its `lockStrategy` lock first and a parallel-run slot second, so

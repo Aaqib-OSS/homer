@@ -125,8 +125,9 @@ step that validates it is gated with `when: '[ -z "$HMR_LG_THREAD" ]'`.
 - **Where the lock sits in a run's start.** A run takes its subject lock
   first, then a parallel-run slot, then waits in the
   [runner claim queue](../../app/SERVER.md#runner-claim-queue) (ADR-0104).
-  Waiting on the lock holds no parallel-run slot — lock waiters are bounded
-  by `maxQueuedRuns`, else `maxParallelRuns` — and a run waiting on the
+  Waiting on the lock holds no parallel-run slot — lock waiters share the
+  `maxQueuedRuns` cap (default `10 × maxParallelRuns`; under `REJECT`,
+  `maxParallelRuns`) — and a run waiting on the
   lock stays `CREATED`, so it shows up in
   `GET /api/v1/status/all?types=CREATED` and nowhere else.
 - **A `WAIT` lock has no timeout of its own.** The run waits until the holder
@@ -145,8 +146,8 @@ step that validates it is gated with `when: '[ -z "$HMR_LG_THREAD" ]'`.
   also allows one run on the host. The difference is the wait: a run queued
   on a saturated runner fails at the claim TTL, while a run queued on a
   `WAIT` lock waits until the holder ends — a wait bounded by
-  `maxQueuedRuns`, else `maxParallelRuns` (one waiter per agent with the
-  config above);
+  `maxQueuedRuns` (default `10 × maxParallelRuns`; under `REJECT`,
+  `maxParallelRuns`, so one waiter per agent with the config above);
   a run over that bound fails at once instead of queuing. The lock also keeps
   working when the host later gets a second slot for something that does not
   touch the cache.
