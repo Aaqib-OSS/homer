@@ -64,12 +64,14 @@ class HomerHelperScriptsArgvTest {
             echo call >> "${'$'}STUB_DIR/calls"
             printf '%s\n' "${'$'}@" > "${'$'}STUB_DIR/argv"
             prev=""
+            out=/dev/stdout
             for a in "${'$'}@"; do
                 [ "${'$'}prev" = "-K" ] && cat "${'$'}a" > "${'$'}STUB_DIR/config"
                 [ "${'$'}prev" = "--data-binary" ] && [ "${'$'}a" = "@-" ] && cat > "${'$'}STUB_DIR/body"
+                [ "${'$'}prev" = "-o" ] && out="${'$'}a"
                 prev="${'$'}a"
             done
-            printf '%s' "${'$'}STUB_RESPONSE"
+            printf '%s' "${'$'}STUB_RESPONSE" > "${'$'}out"
             """.trimIndent() + "\n",
         )
         stub.setPosixFilePermissions(PosixFilePermissions.fromString("rwxr-xr-x"))
@@ -178,6 +180,29 @@ class HomerHelperScriptsArgvTest {
         assertEquals(2, result.exit, "stderr=${result.stderr}")
         assertTrue("the question id contains a control character" in result.stderr, result.stderr)
         assertEquals(1, curlCalls(), "only the ask reaches curl; the refusal is not retried")
+    }
+
+    @Test
+    fun `homer-result --out writes the body to the file with the token off argv`() {
+        val out = dir.resolve("r.txt")
+        val result =
+            run(
+                "homer-result",
+                listOf("--out", out.toString()),
+                response = "the result",
+                env = mapOf("HMR_RESULT_TOKEN" to RESULT_TOKEN),
+            )
+
+        assertEquals(0, result.exit, "stderr=${result.stderr}")
+        assertEquals("", result.stdout)
+        assertEquals("the result", out.readText())
+        val argv = checkNotNull(recorded("argv")) { "curl was not called" }
+        assertTrue("-o\n$out\n" in argv, "curl must write to the --out file: $argv")
+        assertFalse(RESULT_TOKEN in argv || TOKEN_MARKER in argv, "curl argv must not carry a token: $argv")
+        assertEquals(
+            "url = \"$API/results/$RESULT_TOKEN\"\nheader = \"Authorization: Bearer $ESCAPED_CALLBACK_TOKEN\"\n",
+            recorded("config"),
+        )
     }
 
     @Test

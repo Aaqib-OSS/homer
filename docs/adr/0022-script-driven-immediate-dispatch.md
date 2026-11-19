@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-06-15
+amended: 2026-11-19
 deciders: Lukáš Vlk
 ---
 # ADR-0022: script-driven immediate dispatch — `homer-dispatch`
@@ -99,6 +100,14 @@ callback token and prints the new process id. It keeps its own minimal
 `json_escape` + numeric-field extractor rather than sourcing a shared lib,
 avoiding materialization-path coupling for a tiny amount of duplicated
 plumbing.
+
+### Amendment (2026-11-19): the curl config logic is duplicated per helper too
+
+Every `.homer/bin` helper carries the same `homer_curl` function, which hands
+curl its URL and callback token through a config on fd 3 (#343), so each helper
+stays a self-contained file. A shared materialized `homer-curl` helper was
+rejected because it would couple every helper to a second file; drift between
+the copies is caught by a byte-identity test (`HomerHelperScriptsArgvTest`).
 
 ### Consequences
 
