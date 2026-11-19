@@ -2,14 +2,17 @@ package homer.app.services
 
 import homer.app.executors.CommandArtifactPaths
 import homer.app.executors.llm.CodexHarness
+import homer.app.executors.llm.LlmHarness
 import homer.app.executors.llm.OpencodeHarness
 import homer.app.fixtures.TestFixtures
 import homer.app.infra.SecretRedactor
+import homer.app.models.Command
 import homer.app.models.ExecutionInfo
 import homer.app.models.LlmEvent
 import homer.app.models.LlmEventJson
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
+import homer.app.models.Translation
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.int
 import io.kotest.property.arbitrary.long
@@ -25,6 +28,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assumptions
@@ -39,6 +43,7 @@ import java.nio.file.StandardOpenOption
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.io.path.appendText
 import kotlin.io.path.createDirectories
@@ -444,6 +449,32 @@ class LlmEventStreamServiceTest {
         val payloads = service.streamCommand(1, 0, StreamCursor(0, 0, 5, 0)).toList().filterIsInstance<LlmStreamEvent.Event>()
         assertEquals(listOf("tool_call", "tool_result", "turn_end"), payloads.map { typeOf(it.event) })
         assertEquals(toolLineStart to 0, payloads[0].lineOffset to payloads[0].eventIndex)
+    }
+
+    /** Codex's stateless translation, counting the lines it is handed. */
+    private class CountingCodex(
+        private val codex: CodexHarness = CodexHarness(),
+    ) : LlmHarness<Command.Codex> by codex {
+        val translated = AtomicInteger()
+
+        override fun translator(): (JsonObject) -> Translation =
+            { line ->
+                translated.incrementAndGet()
+                codex.translate(line)
+            }
+    }
+
+    @Test
+    fun `a stateless harness resumes at the cursor without translating the lines before it`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val (out, toolLineStart) = toolLineFixture(tmp)
+        val counting = CountingCodex()
+        val service =
+            LlmEventStreamService(finishedCodex(tmp, out), mapOf("codex" to counting), TestFixtures.mockLogger(), pollIntervalMs = 10)
+        val payloads = service.streamCommand(1, 0, StreamCursor(0, 0, toolLineStart, 0)).toList().filterIsInstance<LlmStreamEvent.Event>()
+        assertEquals(listOf("tool_result", "turn_end"), payloads.map { typeOf(it.event) })
+        assertEquals(2, counting.translated.get())
     }
 
     @Test

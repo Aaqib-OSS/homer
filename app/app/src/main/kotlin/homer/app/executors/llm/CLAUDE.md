@@ -102,7 +102,8 @@ translation `translator()` returns for one read (see "LLM cost accounting" above
    and root §10.
 1. Implement `LlmHarness<C>` in `executors/llm/MyHarness.kt` (`id` — the command's
    kind, which keys the `LlmEventStreamService` map and names the `llm/<id>/` fixture
-   directory; argv, translator, inspect, escalated; `reportsCost` false if the CLI has no notion of its own USD cost;
+   directory; argv, translator, inspect, escalated; `translatorKeepsState` true if a translator carries
+   state across lines; `reportsCost` false if the CLI has no notion of its own USD cost;
    `countsModelCalls` false unless each message id is one model request).
 2. Add a captured-stream fixture under
    `src/test/resources/llm/<id>/` and a `MyHarnessTest`.

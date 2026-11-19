@@ -74,6 +74,7 @@ class OpencodeHarnessTest {
         assertEquals("opencode", harness.id)
         assertTrue(harness.reportsCost)
         assertFalse(harness.countsModelCalls)
+        assertTrue(harness.translatorKeepsState)
     }
 
     @Test

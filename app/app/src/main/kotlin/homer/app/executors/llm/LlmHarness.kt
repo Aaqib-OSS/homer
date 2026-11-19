@@ -43,8 +43,14 @@ interface LlmHarness<C> where C : Command, C : Command.LlmCommand {
         tier: LlmEscalation,
     ): C
 
-    /** A fresh translation for one read of one attempt's stdout. Total: never throws; one line may yield several events. */
+    /**
+     * A fresh translation for one read of one attempt's stdout: one sequential traversal, used by one coroutine in
+     * stream order. Total: never throws; one line may yield several events.
+     */
     fun translator(): (JsonObject) -> Translation
+
+    /** Whether a [translator] carries state across lines, so a stream resumed from a cursor must translate the lines before it. */
+    val translatorKeepsState: Boolean get() = false
 
     /** Judges an attempt; [raw] carries the checks the canonical model does not. Consulted on exit 0, and on a non-zero exit where only [Inspection.Terminal] is honoured. */
     fun inspect(

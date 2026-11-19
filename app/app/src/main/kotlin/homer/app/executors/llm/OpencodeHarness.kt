@@ -38,6 +38,9 @@ class OpencodeHarness(
     ): Command.Opencode =
         command.copy(options = command.options.copy(model = tier.model, options = tier.options ?: command.options.options))
 
+    // Each read keeps its running cost total.
+    override val translatorKeepsState: Boolean = true
+
     override fun translator(): (JsonObject) -> Translation = StdoutRead()::translate
 
     override fun inspect(
@@ -51,7 +54,10 @@ class OpencodeHarness(
             noSuccessReason = "stdout contains no successful 'step_finish' event",
         )
 
-    /** One read of one attempt's stdout: `step_finish` carries its own step's cost, so the read keeps the running total (ADR-0074). */
+    /**
+     * One read of one attempt's stdout. `step_finish` carries its own step's cost, so `TurnEnd.costUsd` is the read's
+     * running total: the whole process's cost, summed over every session the stdout carries (ADR-0074).
+     */
     private inner class StdoutRead {
         private var total = 0.0
 

@@ -97,10 +97,15 @@ fresh translation for one read of one attempt's stdout, and per-read state lives
 only there: `OpencodeHarness` keeps one running total per read, with no session
 buckets, step-id dedupe or caps. No cost state outlives a read or crosses into
 another run, while `TurnEnd.costUsd` stays cumulative per process
-([ADR-0074](0074-cost-of-an-attempt-that-ends-more-than-one-turn.md)). Each reader —
-the accounting scan, the telemetry hand-off, each `/llm-events` tail — asks for
-its own translator, and a tail resumed from a cursor first translates the lines
-before it, emitting none of them, so its cumulative figure counts them.)*
+([ADR-0074](0074-cost-of-an-attempt-that-ends-more-than-one-turn.md)): the
+running total is the whole process's cost, summed over every session that stdout
+carries (a subagent's included), where the per-session buckets charged only the
+largest. One translator serves one sequential traversal. Each reader — the
+accounting scan, the telemetry hand-off, each `/llm-events` tail — asks for its
+own translator. A tail resumed from a cursor of a harness whose translator keeps
+state (`val translatorKeepsState`, true for opencode) first translates the lines
+before the cursor, emitting none of them, so its cumulative figure counts them;
+any other harness's tail seeks straight to the cursor.)*
 
 `id` equals the command's `kind` (`claude`, `codex`, …), and `reportsCost`
 states — once, per adapter, with no default — whether the CLI itself prices

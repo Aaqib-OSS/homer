@@ -319,15 +319,16 @@ class LlmEventStreamService(
         private val processId: Int,
         private val cmdIndex: Int,
         private val artifact: LlmArtifact,
-        // Lines before it are translated, never emitted or warned about, so a resumed cumulative cost counts them (ADR-0074).
+        // A translator that keeps state also reads the lines before it, never emitting or warning about them (ADR-0074).
         private val resumeFrom: Long,
         // Applies only to the line starting exactly at [resumeFrom]: the resumed line's already-delivered events.
         private val skipThroughEventIndex: Int,
     ) {
-        private val translate = harnesses.getValue(artifact.kind).translator()
+        private val harness = harnesses.getValue(artifact.kind)
+        private val translate = harness.translator()
         private val held = ByteArrayOutputStream()
-        private var readPos = 0L
-        var lineStart = 0L
+        private var readPos = if (harness.translatorKeepsState) 0L else resumeFrom
+        var lineStart = readPos
             private set
 
         // Inside a line already over MAX_LINE_BYTES: discard until its newline.
