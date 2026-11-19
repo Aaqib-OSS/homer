@@ -32,10 +32,11 @@ import kotlin.io.path.readText
  */
 class LocalFileOperations internal constructor(
     private val openTimeoutMs: Long,
+    private val executor: ExecutorService = OPEN_EXECUTOR,
     private val beforeOpen: (Path) -> Unit,
 ) : FileOperations {
-    // Test seam: [beforeOpen] runs on the pool thread before every readTextBounded open.
-    constructor() : this(OPEN_TIMEOUT_MS, {})
+    // Test seam: [beforeOpen] runs on the pool thread before every readTextBounded open; [executor] is its pool.
+    constructor() : this(OPEN_TIMEOUT_MS, OPEN_EXECUTOR, {})
 
     private val logger = LoggerFactory.getLogger(LocalFileOperations::class.java)
 
@@ -160,7 +161,7 @@ class LocalFileOperations internal constructor(
     ): T {
         val future =
             try {
-                OPEN_EXECUTOR.submit(Callable { task() })
+                executor.submit(Callable { task() })
             } catch (_: RejectedExecutionException) {
                 throw IOException("Artifact reader pool saturated; refusing to $what $path")
             }
