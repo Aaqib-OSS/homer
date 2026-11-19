@@ -129,10 +129,10 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
   still, add no new finding in code you touch. `required` checks fail the
   CI run — among them `diff-coverage`: the lines a pull request adds or
   changes must be at least 80% covered in every file. Write new and changed
-  functions for a CRAP score of at most 8, the `crap` threshold
+  functions for CRAP ≤ 8, the `crap` threshold
   (ADR-0081): in practice cc ≤ 7, since a cc-8 function fails on any
   uncovered line. A check becomes `required`
-  once its backlog is fixed —
+  once its backlog is fixed or budgeted —
   [ADR-0082](docs/adr/0082-quality-reports-report-first.md).
 - **While you work, run the checks on your change:** `node tools/quality/changed.mjs`
   runs the quality checks against the working tree's change since `origin/main`, with
