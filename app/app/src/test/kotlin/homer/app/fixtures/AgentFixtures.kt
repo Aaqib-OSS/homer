@@ -5,7 +5,6 @@ import homer.app.models.ClaudeCmdOptions
 import homer.app.models.CmdArgsTokenizer
 import homer.app.models.Command
 import homer.app.models.LlmPrompt
-import homer.app.models.OnMaxParallelRunsStrategy
 
 /**
  * Test fixtures for Agent models
@@ -174,14 +173,6 @@ env:
             cmd: echo
           invalid: [
         """.trimIndent()
-
-    /**
-     * Creates an agent with a specific maxParallelRuns limit
-     */
-    fun agentWithMaxParallelRuns(
-        maxParallelRuns: Int = 2,
-        strategy: OnMaxParallelRunsStrategy = OnMaxParallelRunsStrategy.WAIT,
-    ) = simpleAgent().copy(maxParallelRuns = maxParallelRuns, onMaxParallelRuns = strategy)
 
     /**
      * Creates an agent with commands that have continueIfFail enabled

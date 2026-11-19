@@ -91,10 +91,26 @@ non-zero exit's stdout leniently and honouring only a `Terminal` verdict —
 would spend an extra bounded read on the failed attempt of every harness,
 opted in or not.)*
 
+*(Amended 2026-11-19: supersedes the 2026-10-31 amendment. Adapters hold no
+state. `translate` becomes `fun translator(): (JsonObject) -> Translation`, a
+fresh translation for one read of one attempt's stdout, and per-read state lives
+only there: `OpencodeHarness` keeps one running total per read, with no session
+buckets, step-id dedupe or caps. No cost state outlives a read or crosses into
+another run, while `TurnEnd.costUsd` stays cumulative per process
+([ADR-0074](0074-cost-of-an-attempt-that-ends-more-than-one-turn.md)): the
+running total is the whole process's cost, summed over every session that stdout
+carries (a subagent's included), where the per-session buckets charged only the
+largest. One translator serves one sequential traversal. Each reader — the
+accounting scan, the telemetry hand-off, each `/llm-events` tail — asks for its
+own translator. A tail resumed from a cursor of a harness whose translator keeps
+state (`val translatorKeepsState`, true for opencode) first translates the lines
+before the cursor, emitting none of them, so its cumulative figure counts them;
+any other harness's tail seeks straight to the cursor.)*
+
 `id` equals the command's `kind` (`claude`, `codex`, …), and `reportsCost`
 states — once, per adapter, with no default — whether the CLI itself prices
-a run. `translate` is total (never throws) and returns a `Translation`
-(`Events`, `Ignored`, or `Malformed(reason)`); `inspect` judges an attempt
+a run. The translation `translator()` returns is total (never throws) and
+yields a `Translation` (`Events`, `Ignored`, or `Malformed(reason)`); `inspect` judges an attempt
 and returns `Success`, `Malformed(reason)`, or
 `Terminal(exitCode)` for a recoverable stop the agent opted into
 (Claude's `error_max_turns`). The executor consults it on exit 0, and — when

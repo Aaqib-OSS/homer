@@ -5,6 +5,7 @@ import homer.app.models.ClaudeCmdOptions
 import homer.app.models.Command
 import homer.app.models.CostSource
 import homer.app.models.LlmAccounting
+import homer.app.models.LlmEvent
 import homer.app.models.LlmPrompt
 import io.mockk.every
 import io.mockk.mockk
@@ -233,6 +234,29 @@ class LlmAttemptOutputTest {
             )
 
         assertEquals(1, failure.result.exitCode)
+    }
+
+    @Test
+    fun `each read of an opencode stdout through the same adapter reports only its own steps`(
+        @TempDir dir: Path,
+    ) {
+        fun step(
+            id: String,
+            cost: Double,
+        ) = """{"type":"step_finish","sessionID":"ses_1","part":{"id":"$id","reason":"stop","cost":$cost}}""" + "\n"
+        val first = dir.resolve("first").also { it.writeText(step("p1", 0.25) + step("p2", 0.5)) }
+        val resumed = dir.resolve("resumed").also { it.writeText(step("p3", 0.125)) }
+        val opencode = LlmAttemptOutput(OpencodeHarness(), LoggerFactory.getLogger(LlmAttemptOutputTest::class.java))
+
+        fun costs(out: Path) =
+            opencode
+                .readLeniently(out, TestFixtures.mockSpan())
+                .events
+                .filterIsInstance<LlmEvent.TurnEnd>()
+                .map { it.costUsd }
+        assertEquals(listOf(0.25, 0.75), costs(first))
+        assertEquals(listOf(0.125), costs(resumed))
+        assertEquals(listOf(0.25, 0.75), costs(first))
     }
 
     @Test

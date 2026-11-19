@@ -207,10 +207,11 @@ curl -fsS -H "Authorization: Bearer $HOMER_PRODUCT_TOKEN" \
   is owned by `product`, and anyone holding that token sees all of them.
   Homer cannot tell two people or two agents behind the same token apart.
   Give each consuming team its own principal.
-- **Concurrency is bounded, volume is not.** With the default
-  `onMaxParallelRuns: WAIT` and no `maxQueuedRuns`, a caller in a loop can
-  queue runs without limit. Set `maxQueuedRuns`, a `cooldown`, or a cost
-  limit if the caller is not trusted to behave.
+- **Concurrency is bounded, and so is the queue.** With the default
+  `onMaxParallelRuns: WAIT`, `maxQueuedRuns` defaults to
+  `10 × maxParallelRuns`, and a surplus run fails fast. Tighten
+  `maxQueuedRuns`, or set a `cooldown` or a cost limit, if the caller is not
+  trusted to behave.
 - **Every call stands alone.** Homer keeps no conversation between calls.
   The caller puts all the context a question needs into `message`.
 
