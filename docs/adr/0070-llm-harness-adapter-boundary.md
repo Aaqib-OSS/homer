@@ -109,8 +109,8 @@ any other harness's tail seeks straight to the cursor.)*
 
 `id` equals the command's `kind` (`claude`, `codex`, …), and `reportsCost`
 states — once, per adapter, with no default — whether the CLI itself prices
-a run. `translate` is total (never throws) and returns a `Translation`
-(`Events`, `Ignored`, or `Malformed(reason)`); `inspect` judges an attempt
+a run. The translation `translator()` returns is total (never throws) and
+yields a `Translation` (`Events`, `Ignored`, or `Malformed(reason)`); `inspect` judges an attempt
 and returns `Success`, `Malformed(reason)`, or
 `Terminal(exitCode)` for a recoverable stop the agent opted into
 (Claude's `error_max_turns`). The executor consults it on exit 0, and — when
