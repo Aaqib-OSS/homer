@@ -21,6 +21,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { main as commentPolicy, reads as commentPolicyReads } from './comment-policy.mjs';
 import { compare as compareDtos } from './dto-contract.mjs';
 import { coverageLookup, isConsoleSource, isKotlinSource, measure, toFindings as coverageFindings } from './diff-coverage.mjs';
 import { main as duplication } from './duplication.mjs';
@@ -76,6 +77,7 @@ export function selectChecks(files, checks, only) {
     ...(front ? ['mutation-console'] : []),
     ...(files.some((f) => APP_MAIN.test(f)) ? ['mutation-backend'] : []),
     ...(files.some(infraReads) ? ['infra-lint'] : []),
+    ...(files.some(commentPolicyReads) ? ['comment-policy'] : []),
   ]);
   return new Set(
     checks
@@ -440,6 +442,16 @@ export function infraLintStep(report, run = infraLint, out = path.join(OUT, 'inf
   }
 }
 
+/** Runs comment-policy into `out` and reports its findings; an error it throws (a broken budget file, say) is an error of the check. */
+export function commentPolicyStep(report, run = commentPolicy, out = path.join(OUT, 'comment-policy')) {
+  try {
+    run([out]);
+    report('comment-policy', readCodeQuality(path.join(out, 'gl-code-quality-comment-policy.json')));
+  } catch (error) {
+    report('comment-policy', [], error.message);
+  }
+}
+
 /** One gate-style row per check: `not run`, `error`, `ok`, `failed` (required) or `warning` (warn mode). */
 export function results(checks, found, errors, changed) {
   const rows = [{ name: 'build', mode: 'required' }, ...checks].map((check) => {
@@ -497,6 +509,7 @@ export function main(argv) {
     });
   }
   if (selected.has('infra-lint')) infraLintStep(report);
+  if (selected.has('comment-policy')) commentPolicyStep(report);
   const rows = results(checks, found, errors, changed);
   const notes = [
     unmeasured.length ? `Not measured (no related test; CI's full run decides crap and diff-coverage):\n${unmeasured.map((f) => `  ${f}`).join('\n')}` : '',
