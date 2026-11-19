@@ -139,10 +139,11 @@ test('todo: an upper-case TODO, FIXME or XXX is never allowed; the lower-case wo
 });
 
 test('narration: past-implementation phrases, but a purpose "used to" with another verb stays', () => {
-  for (const comment of ['// the previous implementation', '// previously a map', '// used to hold the lock', '// audit #3 found it']) {
+  for (const comment of ['// the previous implementation', '// previously a map', '// used to hold the lock', '// used to be a map', '// used to read it', '// used to carry state', '// used to have a lock', '// Previously a map', '// audit #3 found it']) {
     assert.ok(rulesOf('A.kt', comment).includes('narration@1'), comment);
   }
   assert.deepEqual(rulesOf('A.kt', '// used to scope the reads'), []);
+  assert.deepEqual(rulesOf('A.kt', '// the cache no longer holds it'), []);
 });
 
 test('isReasonText needs three real characters and no bare to-do marker', () => {
@@ -172,6 +173,7 @@ test('suppression-reason: on its line, or a comment-only line directly above', (
   assert.deepEqual(rulesOf('a.ts', '// eslint-disable-next-line no-x -- why\nx()'), ['suppression@1']);
   assert.deepEqual(rulesOf('a.ts', '// the API needs it\n// eslint-disable-next-line no-x\nx()'), ['suppression@2']);
   assert.deepEqual(rulesOf('a.ts', '// eslint-disable-next-line no-x\nx()'), ['suppression@1', 'suppression-reason@1']);
+  assert.deepEqual(rulesOf('a.ts', '// the API needs it\n\n// eslint-disable-next-line no-x\nx()'), ['suppression@3', 'suppression-reason@3']);
   assert.deepEqual(rulesOf('a.ts', 'y() // a note on code\n// eslint-disable-next-line no-x\nx()'), ['suppression@2', 'suppression-reason@2']);
   assert.deepEqual(rulesOf('a.ts', '// eslint-disable-next-line no-a -- why\n// eslint-disable-next-line no-x\nx()'), ['suppression@1', 'suppression@2', 'suppression-reason@2']);
   assert.deepEqual(rulesOf('a.ts', 'const s = "// eslint-disable-next-line";'), []);
@@ -188,6 +190,7 @@ test('a Kotlin @Suppress is code: its reason is on its line, inside it or on a /
   assert.equal(reasons('@Suppress("A")\nfun f() {}'), 1);
   assert.equal(reasons('/** A doc. */\n@Suppress("A")\nfun f() {}'), 1);
   assert.equal(reasons('@Suppress("A") // TODO\nfun f() {}'), 1);
+  assert.equal(reasons('// why\n\n@Suppress("A")\nfun f() {}'), 1, 'a blank line breaks the link');
   assert.equal(reasons('@Suppress("A(")\nfun f() {} // next line\'s comment'), 1);
   assert.equal(only('suppression', 'A.kt', 'val s = "@Suppress("\n// @Suppress("A")').length, 0);
 });

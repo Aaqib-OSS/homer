@@ -3,7 +3,7 @@ status: accepted
 date: 2026-10-12
 deciders: Lukáš Vlk
 consulted: ADR-0081
-amended: 2026-10-13, 2026-10-14, 2026-11-04, 2026-11-05, 2026-11-06, 2026-11-11, 2026-11-13, 2026-11-14, 2026-11-15, 2026-11-16, 2026-11-17
+amended: 2026-10-13, 2026-10-14, 2026-11-04, 2026-11-05, 2026-11-06, 2026-11-11, 2026-11-13, 2026-11-14, 2026-11-15, 2026-11-16, 2026-11-17, 2026-11-19
 ---
 
 # ADR-0082: Quality checks are reported first and made required one by one
@@ -433,3 +433,7 @@ Every tracked `CLAUDE.md` has a byte cap in `site/scripts/claude-md-budget.mjs`,
 ## Amendment (2026-11-17): parameter and prop caps in the console (GH #311)
 
 The console gets its counterpart of the backend's parameter cap. Its ESLint config enables core `max-params` and a local rule, `homer/max-props` (`console/scripts/eslint-max-props.mjs`), both at `warn`, so they report through the required `eslint-warnings` check. `homer/max-props` counts the props of a function named in PascalCase, declared or held by a variable (directly or wrapped, as in `memo(...)`): the keys its first parameter destructures, or the members of its type when that type is written inline or declared in the same file (an interface with the members it inherits from the same-file interfaces and type aliases it extends). `eslint-plugin-react` has no prop-count rule, and a props type imported from another file is not counted, since resolving it would need type information the lint run does not load. Each cap is today's worst value, so the caps add no finding: `MAX_PARAMS = 5` (`app/(auth)/login/page.tsx`, `components/processes/artifact-output-tabs.tsx`) and `MAX_PROPS = 14` (`CurrentCommandBox`), both in `console/eslint.config.mjs`. They ratchet like the size caps (GH #306): `size-console` runs a probe over the files they cover and reports a cap more than 5% of itself (rounded up, at least 1) above the current maximum. The two constants live in `eslint.config.mjs`, which `size.mjs` imports, rather than in `size.mjs` beside `MAX_FILE_LINES`: the lint config needs the values on every `npm run lint`, and importing `size.mjs` there would load its own ESLint run into the config. Unlike the size caps, these also cover the shadcn primitives under `components/ui/`, as the cognitive-complexity and nesting-depth caps do: their `forwardRef` components take two parameters and props typed by React, which the rule does not count, so a regenerated primitive stays within the caps.
+
+## Amendment (2026-11-19): suppression budgets move to `comment-policy`
+
+The `@Suppress` and `eslint-disable` budgets and their reason rules moved from `SuppressionBudgetTest` and `size.mjs` to the `comment-policy` check, which counts a directive only where it takes effect (not inside a string). The `jscpd:ignore-start` and `@Tag(REPORT_ONLY)` budgets stay; ADR-0117 records the check.
