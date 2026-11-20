@@ -156,11 +156,8 @@ open class AgentFilesService(
                 ?: return FileOpResult.NotFound("Agent '$agentName' not found")
         if (!agent.writable) return FileOpResult.Forbidden("Agent directory is read-only")
 
-        // Cap incoming payload before we touch disk OR hand it to the
-        // YAML/JSON parser. Without this an authenticated caller could
-        // PUT a 1 GB agent.yaml body — the write would land on disk,
-        // and the subsequent agentsService.reload() would readText()
-        // the lot. Audit P1 #14.
+        // Capped before the write lands and the reload reads the file whole to parse it
+        // (CWE-400, ADR-0047 rule 4).
         val sizeBytes = content.toByteArray(Charsets.UTF_8).size.toLong()
         if (sizeBytes > maxConfigFileBytes) {
             return FileOpResult.BadRequest(

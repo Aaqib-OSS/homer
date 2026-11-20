@@ -17,12 +17,8 @@ class ArtifactService(
     private val maxListEntries: Int = MAX_ARTIFACT_LIST_ENTRIES,
 ) {
     /**
-     * Pre-flight size check for [path]. Returns success with the file size
-     * when it is within [maxArtifactBytes]; failure with an
-     * [ArtifactTooLargeException] otherwise. Used by the artifact route to
-     * answer with `413 Payload Too Large` before opening the stream, so a
-     * caller-induced multi-GB download cannot turn into a sustained
-     * bandwidth/time DoS. Audit P1 #18.
+     * The size of [path], or an [ArtifactTooLargeException] over [maxArtifactBytes]; the artifact route
+     * answers `413` with it before opening the stream (CWE-400, ADR-0047 rule 4).
      */
     fun checkArtifactSize(path: Path): Result<Long> {
         val size = fileOperations.fileSize(path)

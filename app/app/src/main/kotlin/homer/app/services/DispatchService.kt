@@ -28,10 +28,8 @@ import kotlin.time.ExperimentalTime
 enum class DispatchStatus { PENDING, DISPATCHING, DISPATCHED, FAILED, CANCELLED }
 
 /**
- * What a dispatch is made of. A [SINGLE] dispatch is one question and one dispatch row —
- * today's ask-and-dispatch. A [GROUP] dispatch is N questions answered independently, the
- * target fired once after the last of them, with all N answers aggregated in question order.
- * See ADR-0109.
+ * A [SINGLE] dispatch is one question and one dispatch row. A [GROUP] dispatch is N questions answered
+ * independently; the target fires once after the last, with all N answers in question order. See ADR-0109.
  */
 enum class DispatchKind { SINGLE, GROUP }
 
@@ -107,8 +105,6 @@ internal class DispatchService(
         ttlSec: Int?,
     ): CreateResult {
         val registration = questionsService.liveRegistration(originProcessId)
-        // A reserved name would place the operator's answer nowhere — or, before the
-        // reservedControlParams merge was narrowed, into the target's PATH.
         validatePayloadParam(answerParam, "answerParam", params)
         questionsService.validateQuestionInput(text, options)
         val effectiveTtl = ttlSec ?: config.defaultTtlSec

@@ -41,8 +41,6 @@ class LlmTelemetryService(
         prompt: String,
         parentSpan: Span,
         redactor: SecretRedactor,
-        // A caller with no step keeps the historical span name; the one production
-        // caller is `LlmHarnessExecutor`, pinned by its own test.
         step: LlmStepInfo,
         // Split across the attempt's turn ends by [LlmTurnCosts.allocate].
         resolvedCostUsd: Double?,

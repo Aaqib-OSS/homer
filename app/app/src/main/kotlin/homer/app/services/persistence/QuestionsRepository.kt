@@ -32,7 +32,7 @@ import org.jetbrains.exposed.v1.jdbc.update
 class QuestionsRepository(
     private val db: DatabaseService,
 ) {
-    /** Result of an atomic answer attempt (mirrors the old in-`Mutex` guard). */
+    /** Outcome of [markAnswered]: the OPEN check and the update share one transaction, so one answer wins. */
     sealed interface AnswerResult {
         data object NotFound : AnswerResult
 
