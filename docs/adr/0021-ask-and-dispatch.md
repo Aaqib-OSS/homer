@@ -235,3 +235,11 @@ between registration and the answer, and a dispatch registered while the target 
 not start it then. The fire settles the dispatch `FAILED` ("no longer an allowed dispatch
 target") and starts nothing. Registration still refuses a target that does not opt in, so an
 obviously wrong dispatch fails fast instead of waiting for an answer.
+
+## Amendment (2026-11-20): the claim refuses a lapsed row
+
+**Crash safety** above describes the claim as PENDING→`DISPATCHING`. The claim also refuses a row
+whose `expires_at` has passed, whether or not the TTL sweep has moved it yet. The sweep runs only
+every `sweepIntervalSec`, so a claim on status alone would let an answer fire a dispatch whose TTL
+lapsed since the last tick. The continuations of ADR-0023 share the same claim, so a lapsed
+continuation does not fire when its watched run ends either.

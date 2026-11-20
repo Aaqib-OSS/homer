@@ -33,20 +33,16 @@ import org.jetbrains.exposed.v1.jdbc.selectAll
  */
 suspend fun ProcessRepository.getAllProcesses(listQuery: ProcessListQuery): ProcessListResult {
     requireListGuards(listQuery)
-    // AND semantics for repeated ?tag=: a row must carry ALL de-duplicated
-    // tags, matched in SQL by carriesAllTags (GROUP BY ... HAVING COUNT = n):
-    // a correlated EXISTS for a scoped caller, an index-driven id IN (SELECT ...)
-    // for an admin. Nothing is materialized in the application. No match → empty
-    // page, never an error, so "no such tag" and "no such tag you can see" are
-    // one answer. See ADR-0058 and ADR-0060.
+    // Repeated ?tag= values AND in SQL ([carriesAllTags]); no match is an empty page, never an
+    // error, so "no such tag" and "none you can see" read alike (ADR-0060).
     val dedupedTags = listQuery.tags.distinct()
     val order = Processes.id to if (listQuery.orderAsc) SortOrder.ASC else SortOrder.DESC
     val offset = listQuery.offset
     val limit = listQuery.limit
     val canSeeRoot = listQuery.canSeeRoot
     return read {
-        // [information_disclosure / CWE-200] An invisible or missing root reads exactly
-        // like an empty flow, never like "no filter". §12.
+        // An invisible or missing root reads exactly like an empty flow, never like "no filter"
+        // (CWE-200, ADR-0058).
         val rootProcessId = listQuery.rootProcessId
         if (rootProcessId != null) {
             val canSee = checkNotNull(canSeeRoot) { "requireListGuards admits no rootProcessId without canSeeRoot" }
@@ -58,17 +54,15 @@ suspend fun ProcessRepository.getAllProcesses(listQuery: ProcessListQuery): Proc
             Processes.selectAll().where {
                 withAccessFilter(rowFilter(listQuery), dedupedTags, listQuery.visibleOwner, listQuery.visibleAgents)
             }
-        // [CWE-203] Apply the display-redaction screen per row before
-        // accepting a tag match: the SQL predicate above matches unredacted values.
-        // See ADR-0060 for why the screen cannot live in the SQL predicate.
+        // The display-redaction screen runs per row before a tag match counts: the SQL predicate
+        // matches unredacted values (CWE-203, ADR-0060).
         val screenTags = listQuery.screenTags
         if (dedupedTags.isNotEmpty() && screenTags != null) {
             return@read screenedPageTx(query, order, dedupedTags, screenTags, offset, limit, canSeeRoot)
         }
         // Planned on the v23 indexes; a new predicate here needs one too (DatabaseMigrationTest pins the plans).
         val total = query.count().toInt()
-        // offset is caller-chosen and unbounded above; past the end the page
-        // is empty by definition, so skip the scan SQLite would otherwise
+        // offset is caller-chosen and unbounded: past the end the page is empty, so skip the
         // walk-and-discard through the whole table.
         if (offset >= total) return@read pageResultTx(emptyList(), total, canSeeRoot)
         val rows =
@@ -82,10 +76,9 @@ suspend fun ProcessRepository.getAllProcesses(listQuery: ProcessListQuery): Proc
 }
 
 /**
- * [getAllProcesses]'s fail-closed argument checks: a tag-filtered read without a screen cannot honour the
- * display redaction, so the call never leads to a `?tag=` oracle (ADR-0060); an
- * ungated `?rootProcessId=` lists the visible rows of a hidden flow, an existence oracle for its
- * root (CWE-200, ADR-0058).
+ * [getAllProcesses]'s fail-closed argument checks: a tag filter without a screen would be a `?tag=` oracle past
+ * the display redaction (ADR-0060), and an ungated `?rootProcessId=` an existence oracle for a hidden root
+ * (CWE-200, ADR-0058).
  */
 private fun requireListGuards(listQuery: ProcessListQuery) {
     if (listQuery.tags.distinct().isNotEmpty() && listQuery.screenTags == null) {
@@ -130,12 +123,8 @@ private fun withAccessFilter(
 ): Op<Boolean> {
     var filtered = cond
     if (dedupedTags.isNotEmpty()) {
-        // [denial_of_service / CWE-400] A SQL subquery, never an app-side id
-        // list: that would grow with every visible matching run and cap out
-        // at SQLite's bound-parameter limit. Only an admin (no visibility
-        // filter) gets the index-driven form: its cost follows every run with
-        // the tag, so for a scoped caller its timing would count other
-        // principals' runs. See ADR-0060 (2026-09-29 amendment).
+        // A SQL subquery, never an app-side id list (CWE-400). Only an admin gets the index-driven
+        // form, whose timing would count runs a scoped caller cannot see (ADR-0060).
         filtered = filtered and carriesAllTags(dedupedTags, indexDriven = visibleAgents == null)
     }
     // null visibleAgents = admin = no visibility filter; an empty set is "owner only".
@@ -158,10 +147,8 @@ private fun ProcessRepository.screenedPageTx(
     limit: Int,
     canSeeRoot: ((owner: String?, agentName: String) -> Boolean)?,
 ): ProcessListResult {
-    // [CWE-400] SQL-level bound, not only the
-    // caller's `limit`: without it the whole candidate set is fetched into
-    // the application before the screen runs. Tags arrive in one batched
-    // IN-list read (the paging path's helper), never per row.
+    // Bounded in SQL, not only by `limit`, so the candidate set is never fetched whole before the
+    // screen; tags arrive in one batched IN read, never per row (CWE-400, ADR-0060).
     val rows =
         query
             .orderBy(order)
@@ -214,8 +201,8 @@ private fun openQuestionCountsTx(ids: List<Int>): Map<Int, Int> {
     return counts
 }
 
-// [sensitive_data_exposure / CWE-200] The ids among [rootIds] whose row exists and passes
-// [canSeeRoot]; a missing row fails closed. By primary key, only the columns the check reads.
+// The ids among [rootIds] whose row exists and passes [canSeeRoot]; a missing row fails closed
+// (CWE-200). By primary key, only the columns the check reads.
 private fun visibleRootIdsTx(
     rootIds: List<Int>,
     canSeeRoot: (owner: String?, agentName: String) -> Boolean,
@@ -232,12 +219,9 @@ private fun visibleRootIdsTx(
 }
 
 /**
- * Groups [Processes.costUsd] by tag value for `key`. [screenTags] MUST be applied per row
- * before grouping — never in SQL — to honour the CWE-203 secret-screen invariant. The
- * candidate query is bounded at [maxRows] (default [MAX_TAG_SCREENED_ROWS]; overridable
- * only for tests), newest runs first, and [CostByTagResult.truncated] reports whether more
- * candidates existed than fit that bound. Rows are read through [Processes.recordReadColumns],
- * so [screenTags] never sees `history`/`executions`/`runner_state`. See ADR-0062.
+ * Sums [Processes.costUsd] by the value of each [key] tag, with [screenTags] applied per row before grouping, never
+ * in SQL (CWE-203). The candidates are the newest [maxRows] (overridden only by tests), read through
+ * [Processes.recordReadColumns]; [CostByTagResult.truncated] reports that more existed. See ADR-0062.
  */
 suspend fun ProcessRepository.costByTag(
     key: String,
@@ -246,10 +230,8 @@ suspend fun ProcessRepository.costByTag(
 ): CostByTagResult =
     read {
         val prefix = "$key:"
-        // Range bound instead of `LIKE`: every character TagValidation allows in a
-        // key or value sorts strictly between ':' (0x3A) and ';' (0x3B), so this
-        // matches exactly `key:*` with none of the `_`/`%` wildcard ambiguity a
-        // `LIKE` pattern built from a caller-influenced key would carry. See ADR-0062.
+        // A range bound, never `LIKE`: every character TagValidation allows sorts between ':' and ';',
+        // so this matches exactly `key:*`, with no wildcard (ADR-0062).
         val exclusiveUpperBound = "$key;"
         // Fetch one row past the bound to detect truncation, then drop it: ORDER BY
         // id DESC keeps the newest maxRows candidates when there are more than that.
@@ -275,12 +257,11 @@ suspend fun ProcessRepository.costByTag(
         CostByTagResult(totals, truncated)
     }
 
-// Both forms match a run whose tags include every requested tag: (process_id, tag) is
-// unique, so a group of n rows means all n are present. [indexDriven]:
-// `id IN (SELECT process_id FROM process_tags WHERE tag IN (...) GROUP BY process_id
-// HAVING COUNT = n)`, driven by process_tags_tag_process_id. Otherwise a
-// correlated EXISTS probed per row the visibility clause admits, so its cost never
-// depends on runs the caller cannot see. See ADR-0060.
+/**
+ * Rows carrying every one of [dedupedTags]. [indexDriven] is an `id IN (… HAVING COUNT = n)` subquery on
+ * `process_tags_tag_process_id`; otherwise a correlated EXISTS per row the visibility clause admits, so
+ * its cost never depends on runs the caller cannot see. See ADR-0060.
+ */
 private fun carriesAllTags(
     dedupedTags: List<String>,
     indexDriven: Boolean,

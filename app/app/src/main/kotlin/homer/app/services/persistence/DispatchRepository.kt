@@ -34,12 +34,9 @@ import org.jetbrains.exposed.v1.jdbc.union
 import org.jetbrains.exposed.v1.jdbc.update
 
 /**
- * Durable access to ask-and-dispatch records. SQLite is authoritative (ADR-0020); the
- * question + dispatch rows are created in one transaction so the pending cap and the
- * question insert can never race apart. See ADR-0021. A SINGLE dispatch is one question
- * and one dispatch row; a GROUP dispatch (ADR-0109) is one dispatch row with `kind = GROUP`
- * and a synthetic `question_id` sentinel, plus N ordered member rows in
- * [DispatchGroupQuestions]. Every read and teardown covers both shapes.
+ * Durable ask-and-dispatch records (ADR-0021). A SINGLE dispatch is one question and one dispatch row;
+ * a GROUP (ADR-0109) is one `kind = GROUP` row with a synthetic `question_id`, plus N ordered member
+ * rows in [DispatchGroupQuestions]. Every read and teardown covers both shapes.
  */
 class DispatchRepository(
     private val db: DatabaseService,
@@ -76,12 +73,9 @@ class DispatchRepository(
         }
 
     /**
-     * Inserts a GROUP [dispatch] row, its N [questions] (each one's index in the list is its
-     * `position`) and their member rows, all in one transaction — so a refused group leaves no
-     * question and no member row behind, and a created one is never observably partial. Refused
-     * by the global PENDING cap, or by the asking process's open-question cap counted over its
-     * dispatch-bound questions (a group adds up to `dispatch.maxGroupSize` in one call). See
-     * ADR-0109.
+     * Inserts a GROUP [dispatch], its [questions] (list index = `position`) and their member rows in
+     * one transaction. Refused at the global PENDING cap, or when the asker's open dispatch-bound
+     * questions plus [questions] exceed [maxOpenPerProcess], leaving no row behind. See ADR-0109.
      */
     suspend fun createGroup(
         questions: List<Question>,
@@ -185,18 +179,15 @@ class DispatchRepository(
         }
 
     /**
-     * The member questions of GROUP dispatch [dispatchId] in `position` order — the order their
-     * answers are aggregated in — each with its answer, or null while it is still OPEN. Empty for
-     * a SINGLE dispatch. This is the group's fire gate: the target starts only once no answer is
-     * null. See ADR-0109.
+     * The member questions of GROUP dispatch [dispatchId] in `position` order, each with its answer or
+     * null while OPEN; empty for a SINGLE. The group fires only once no answer is null (ADR-0109).
      */
     suspend fun groupMembers(dispatchId: Int): List<GroupMember> = db.read { groupMembersTx(listOf(dispatchId))[dispatchId].orEmpty() }
 
     /**
-     * Deletes settled dispatches (every status but PENDING and DISPATCHING) created before
-     * [cutoff], with their dispatch-bound questions and a group's member rows, in batches of at
-     * most [batchSize] ([FiredRecords.pruneSettled]). Returns the number of dispatches deleted.
-     * See ADR-0021, ADR-0109.
+     * Deletes settled dispatches created before [cutoff] with their dispatch-bound questions and a
+     * group's member rows, in batches of at most [batchSize] ([FiredRecords.pruneSettled]). Returns
+     * the number of dispatches deleted. See ADR-0021, ADR-0109.
      */
     suspend fun pruneSettled(
         cutoff: Long,
@@ -215,9 +206,7 @@ class DispatchRepository(
 
     /**
      * Claims a PENDING dispatch for firing (PENDING→DISPATCHING). False if it was no longer
-     * PENDING **or** its TTL has lapsed. The expiry predicate is load-bearing: the periodic
-     * sweep flips expired rows to CANCELLED only every sweepIntervalSec, so without it a
-     * lapsed-but-unswept dispatch would still fire when its question is answered.
+     * PENDING or its TTL has lapsed, swept or not (ADR-0021).
      */
     suspend fun claim(id: Int): Boolean = records.claim(id)
 
@@ -244,10 +233,9 @@ class DispatchRepository(
         }
 
     /**
-     * Releases a claimed (DISPATCHING) dispatch back to PENDING, keeping its dispatch-bound
-     * question — the drain-refusal counterpart of [markFailed]: the start never happened, so
-     * the answer must survive for the next boot's `refirePendingAnswered` (ADR-0102). Deliberately
-     * not [transition], which deletes the question on every settled state.
+     * Releases a claimed dispatch back to PENDING and keeps its question, so a drain-refused start's
+     * answer survives for the next boot's `refirePendingAnswered` (ADR-0102). Not [transition],
+     * which deletes the question.
      */
     suspend fun releaseForRetry(id: Int): Boolean =
         db.query {
@@ -317,11 +305,9 @@ class DispatchRepository(
         }
 
     /**
-     * Cancels PENDING dispatches past [now] and deletes their questions, atomically.
-     * Returns the cancelled dispatches (for event emission). The `db.read` pre-check (served
-     * by `dispatches_status_expires`, same as the write below) lets an idle sweep tick skip
-     * the write lock entirely; the write re-applies the full predicate, so a row claimed
-     * between the pre-check and the write is still left alone.
+     * Cancels the PENDING dispatches lapsed at [now] with their questions in one transaction and returns
+     * them. An idle tick's `read { }` pre-check takes no write lock, and the write re-applies the
+     * predicate, so a row claimed in between stays. Both are served by `dispatches_status_expires`.
      */
     suspend fun expirePending(now: Long): List<Dispatch> {
         if (!records.anyDue(records.lapsedAt(now))) return emptyList()
@@ -331,7 +317,7 @@ class DispatchRepository(
                     .selectAll()
                     .where { records.lapsedAt(now) }
                     .map { it.toDispatch() }
-            // One UPDATE over the same predicate, not one per row (SQLite rule 2): inside this
+            // One UPDATE over the same predicate, not one per row: inside this
             // write transaction it matches exactly the rows just read.
             Dispatches.update({ records.lapsedAt(now) }) { it[Dispatches.status] = DispatchStatus.CANCELLED.name }
             deleteBoundQuestions(lapsed.map { it.questionId })
@@ -367,11 +353,9 @@ class DispatchRepository(
         }
 
     /**
-     * markDispatched / markFailed both land the dispatch in a terminal state, so the
-     * dispatch-bound question has served its purpose and is deleted in the same transaction —
-     * the question lifecycle is owned by the dispatch, not the long-gone asking process. A
-     * group's member questions go with it; its member rows stay until the settled-row prune,
-     * so a settled group still reports the question ids it was registered with. ADR-0021, ADR-0109.
+     * Moves dispatch [id] from [from] through [body] and, in the same transaction, deletes its
+     * dispatch-bound question or a group's member questions; the member rows stay until the
+     * settled-row prune. ADR-0021, ADR-0109.
      */
     private suspend fun transition(
         id: Int,

@@ -35,12 +35,10 @@ import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.union
 import org.jetbrains.exposed.v1.jdbc.update
 
-// SQLite's implicit rowid: continuation_watches has no declared single-column primary key (its
-// PK is the composite (continuation_id, watched_process_id)), so rowid is the only column that
-// captures insertion order — the order watchesByContinuationTx's ORDER BY must reproduce.
-// Exposed has no typed accessor for it, so this is a minimal raw Expression rather than a real
-// column declaration (declaring "rowid" as a Table column would make schema creation emit
-// `CREATE TABLE ... (rowid ...)`, colliding with SQLite's own implicit one).
+/**
+ * `continuation_watches`' implicit SQLite `rowid`, the only column that follows registration order, as a raw
+ * expression: declared as a `Table` column, `rowid` would be created as a real column of its own.
+ */
 private object ContinuationWatchesRowId : Expression<Long>() {
     override fun toQueryBuilder(queryBuilder: QueryBuilder) {
         queryBuilder.append("rowid")
@@ -68,10 +66,9 @@ class ContinuationRepository(
         }
 
     /**
-     * Inserts a JOIN continuation plus its N [watches] rows in one transaction. The continuation
-     * row carries `kind = JOIN` and the sentinel `watched_process_id = 0` so the single-watch
-     * trigger never matches it; the real watched set lives in `continuation_watches`. Returns the
-     * new id, or null if the PENDING cap is reached (no rows inserted). See ADR-0026.
+     * Inserts a `kind = JOIN` continuation and its [watches] rows in one transaction; the sentinel
+     * `watched_process_id = 0` keeps the single-watch trigger off it (ADR-0026). Returns the new id,
+     * or null at the PENDING cap, with nothing inserted.
      */
     suspend fun createJoin(
         continuation: Continuation,
@@ -162,11 +159,9 @@ class ContinuationRepository(
         }
 
     /**
-     * Every continuation of any status that [owner] registered for LangGraph thread [threadId], in
-     * id order (the order a full-table read returned them in). Served by `continuations_thread_id`,
-     * whose entries for one key are already in id order, so there is no sort; the owner is a
-     * residual filter. [threadId] is agent-supplied and only ever bound as an equality parameter.
-     * A null [owner] matches only unowned rows, never every owner's. See ADR-0044.
+     * Every continuation of any status that [owner] registered for LangGraph thread [threadId], in id
+     * order, served by `continuations_thread_id` with no sort. [threadId] is agent-supplied and only
+     * bound as an equality parameter; a null [owner] matches only unowned rows. See ADR-0044.
      */
     suspend fun byThread(
         threadId: String,
@@ -220,9 +215,7 @@ class ContinuationRepository(
 
     /**
      * Claims a PENDING continuation for firing (PENDING→DISPATCHING). False if it was no longer
-     * PENDING **or** its TTL has lapsed. The expiry predicate is load-bearing: the periodic sweep
-     * flips expired rows to EXPIRED only every sweepIntervalSec, so without it a lapsed-but-unswept
-     * continuation would still fire when its watched process terminates.
+     * PENDING or its TTL has lapsed, swept or not (ADR-0021).
      */
     suspend fun claim(id: Int): Boolean = records.claim(id)
 
@@ -238,10 +231,9 @@ class ContinuationRepository(
         }
 
     /**
-     * Returns a DISPATCHING continuation to PENDING for a later retry: counts the attempt,
-     * records the transient reason, and schedules [nextAttemptAt]. Used instead of
-     * [markFailed] when the fire failed for a reason that may clear on its own (capacity,
-     * cost cap) — see ContinuationService.
+     * Returns a DISPATCHING continuation to PENDING, counting the attempt, recording [error] and
+     * scheduling [nextAttemptAt]: a transient fire failure's path, where [markFailed] is a
+     * permanent one's (ADR-0023).
      */
     suspend fun releaseForRetry(
         id: Int,
@@ -298,10 +290,9 @@ class ContinuationRepository(
         }
 
     /**
-     * Moves PENDING continuations past [now] to EXPIRED. Returns them. The `db.read` pre-check
-     * (served by `continuations_status_expires`, same as the write below) lets an idle sweep
-     * tick skip the write lock entirely; the write re-applies the full predicate, so a row
-     * claimed between the pre-check and the write is still left alone.
+     * Moves the PENDING continuations lapsed at [now] to EXPIRED and returns them. An idle tick's
+     * `read { }` pre-check takes no write lock, and the write re-applies the predicate, so a row
+     * claimed in between stays. Both are served by `continuations_status_expires`.
      */
     suspend fun expirePending(now: Long): List<Continuation> {
         if (!records.anyDue(records.lapsedAt(now))) return emptyList()
@@ -312,7 +303,7 @@ class ContinuationRepository(
                     .where { records.lapsedAt(now) }
                     .toList()
                     .toContinuations()
-            // One UPDATE over the same predicate, not one per row (SQLite rule 2): inside this
+            // One UPDATE over the same predicate, not one per row: inside this
             // write transaction it matches exactly the rows just read.
             Continuations.update({ records.lapsedAt(now) }) { it[Continuations.status] = ContinuationStatus.EXPIRED.name }
             lapsed.map { it.copy(status = ContinuationStatus.EXPIRED) }
@@ -357,11 +348,8 @@ class ContinuationRepository(
         }
 
     /**
-     * Maps a page of JOIN-and-SINGLE continuation rows to [Continuation]s, loading every JOIN
-     * row's `continuation_watches` in one batched, chunked `IN` read instead of one query per row
-     * — the `ProcessRepository.tagsByProcessTx` pattern. A single-row read (`get`,
-     * `cancel`) goes through this too, with a one-element list, so it shares the same helper.
-     * Must run inside the caller's transaction, db.read or db.query alike.
+     * Maps continuation rows to [Continuation]s, loading every JOIN row's watches in one batched
+     * read, never one per row. Runs inside the caller's `read { }` or `query { }` transaction.
      */
     private fun List<ResultRow>.toContinuations(): List<Continuation> {
         val joinIds =
@@ -372,11 +360,10 @@ class ContinuationRepository(
         return map { it.toContinuation(watchesById[it[Continuations.id]] ?: emptyList()) }
     }
 
-    // Chunked IN read of a JOIN page's watches, the ProcessRepository.tagsByProcessTx pattern.
-    // ORDER BY continuation_id, rowid is the order contract: rowid is registration order,
-    // which a join's members keep, and SQLite promises no order without it. The index
-    // continuation_watches_continuation_id (since schema v5) serves it with no sort
-    // (DatabaseMigrationTest). Each id lands in one chunk, so no join's watches straddle two.
+    /**
+     * The watches of each JOIN continuation in [ids], each list in registration order (`rowid`),
+     * in chunked `IN` reads that `continuation_watches_continuation_id` serves with no sort.
+     */
     private fun watchesByContinuationTx(ids: List<Int>): Map<Int, List<JoinWatch>> {
         if (ids.isEmpty()) return emptyMap()
         val byId = mutableMapOf<Int, MutableList<JoinWatch>>()
