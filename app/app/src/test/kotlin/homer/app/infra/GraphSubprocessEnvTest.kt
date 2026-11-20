@@ -18,6 +18,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 /** The environment a `homer_langgraph` inspect or state subprocess gets (ADR-0027 amendment of 2026-11-20). */
@@ -54,14 +55,19 @@ class GraphSubprocessEnvTest {
                 "PATH" to "/usr/local/bin:/usr/bin",
                 "HOME" to "/home/homer",
                 "LANG" to "C.UTF-8",
-                "LC_ALL" to "C.UTF-8",
-                "LC_CTYPE" to "en_US.UTF-8",
                 "TMPDIR" to "/var/tmp",
                 "VIRTUAL_ENV" to "/opt/venv",
                 "PYTHONHOME" to "/opt/python",
-            )
+            ) + localeCategories.associateWith { "C.UTF-8" }
 
         assertEquals(allowlisted + ("PYTHONWARNINGS" to "ignore"), graphSubprocessEnv(allowlisted + secrets, emptyMap()))
+    }
+
+    @Test
+    fun `an LC_ name that is not a locale category does not pass`() {
+        val env = graphSubprocessEnv(mapOf("LC_SECRET" to "smuggled", "LC_TERMINAL" to "iTerm2", "LC_" to "x"), emptyMap())
+
+        assertEquals(mapOf("PYTHONWARNINGS" to "ignore"), env)
     }
 
     @Test
@@ -87,7 +93,7 @@ class GraphSubprocessEnvTest {
     }
 
     @Test
-    fun `a real subprocess sees only the allowlisted server env and the agent env`() =
+    fun `a real subprocess gets the filtered server env and the agent env`() =
         runBlocking {
             val python =
                 executable(
@@ -109,8 +115,32 @@ class GraphSubprocessEnvTest {
         }
 
     @Test
+    fun `a real server variable outside the allowlist is not visible to a real subprocess`() =
+        runBlocking {
+            val dropped = droppedRealServerNames()
+            assertTrue(dropped.isNotEmpty(), "precondition: the JVM env must hold a name outside the allowlist")
+
+            val outcome =
+                runBoundedGraphSubprocess(
+                    python = executable("exec /usr/bin/env").toString(),
+                    args = listOf("inspect", "--module", "pkg.mod", "--json"),
+                    env = emptyMap(),
+                    timeout = 10.seconds,
+                )
+
+            val childNames =
+                (outcome as GraphSubprocessOutcome.Exited)
+                    .stdout
+                    .lines()
+                    .map { it.substringBefore('=') }
+                    .toSet()
+            assertEquals(emptySet(), dropped intersect childNames)
+        }
+
+    @Test
     fun `the production default reads the real server env through the allowlist only`() =
         runBlocking {
+            assertTrue(droppedRealServerNames().isNotEmpty(), "precondition: the JVM env must hold a name outside the allowlist")
             var childEnv: Map<String, String> = emptyMap()
 
             runBoundedGraphSubprocess(
@@ -144,9 +174,30 @@ class GraphSubprocessEnvTest {
             }
         }
 
-    /** Independent of the production matcher: the documented names plus the `LC_` locale prefix. */
+    /** Independent of the production constant: the names the ADR-0027 amendment of 2026-11-20 lists. */
     private fun allowedByOracle(name: String): Boolean =
-        name in setOf("PATH", "HOME", "LANG", "TMPDIR", "VIRTUAL_ENV", "PYTHONHOME") || name.startsWith("LC_")
+        name in setOf("PATH", "HOME", "LANG", "TMPDIR", "VIRTUAL_ENV", "PYTHONHOME") || name in localeCategories
+
+    private val localeCategories =
+        listOf(
+            "LC_ALL",
+            "LC_CTYPE",
+            "LC_NUMERIC",
+            "LC_TIME",
+            "LC_COLLATE",
+            "LC_MONETARY",
+            "LC_MESSAGES",
+            "LC_PAPER",
+            "LC_NAME",
+            "LC_ADDRESS",
+            "LC_TELEPHONE",
+            "LC_MEASUREMENT",
+            "LC_IDENTIFICATION",
+        )
+
+    /** Real JVM env names the filter drops, minus those `/bin/sh` exports on its own. */
+    private fun droppedRealServerNames(): Set<String> =
+        System.getenv().keys.filterTo(mutableSetOf()) { !allowedByOracle(it) && it !in setOf("PWD", "OLDPWD", "SHLVL", "_") }
 
     private val names: Arb<String> =
         Arb.choice(
@@ -157,6 +208,10 @@ class GraphSubprocessEnvTest {
                 "LC_ALL",
                 "LC_",
                 "LC_CTYPE",
+                "LC_MESSAGES",
+                "LC_IDENTIFICATION",
+                "LC_SECRET",
+                "LC_TERMINAL",
                 "TMPDIR",
                 "VIRTUAL_ENV",
                 "PYTHONHOME",

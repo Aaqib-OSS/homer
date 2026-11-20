@@ -92,9 +92,29 @@ internal suspend fun runBoundedGraphSubprocess(
         }
     }
 
-/** Server env names a `homer_langgraph` subprocess keeps; a trailing `*` matches a prefix. Every other server variable is dropped. See the ADR-0027 amendment of 2026-11-20. */
-internal val GRAPH_SERVER_ENV_ALLOWLIST: List<String> =
-    listOf("PATH", "HOME", "LANG", "LC_*", "TMPDIR", "VIRTUAL_ENV", "PYTHONHOME")
+/** Server env names a `homer_langgraph` subprocess keeps, matched exactly; every other server variable is dropped. See the ADR-0027 amendment of 2026-11-20. */
+internal val GRAPH_SERVER_ENV_ALLOWLIST: Set<String> =
+    setOf(
+        "PATH",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "LC_NUMERIC",
+        "LC_TIME",
+        "LC_COLLATE",
+        "LC_MONETARY",
+        "LC_MESSAGES",
+        "LC_PAPER",
+        "LC_NAME",
+        "LC_ADDRESS",
+        "LC_TELEPHONE",
+        "LC_MEASUREMENT",
+        "LC_IDENTIFICATION",
+        "TMPDIR",
+        "VIRTUAL_ENV",
+        "PYTHONHOME",
+    )
 
 /** The [GRAPH_SERVER_ENV_ALLOWLIST] entries of [serverEnv], overlaid by the agent's [agentEnv]; `PYTHONWARNINGS` defaults to `ignore`. */
 internal fun graphSubprocessEnv(
@@ -102,16 +122,11 @@ internal fun graphSubprocessEnv(
     agentEnv: Map<String, String>,
 ): Map<String, String> =
     buildMap {
-        putAll(serverEnv.filterKeys(::isAllowlistedServerEnvName))
+        putAll(serverEnv.filterKeys { it in GRAPH_SERVER_ENV_ALLOWLIST })
         putAll(agentEnv)
         // Keep import-time deprecation warnings (e.g. LangChain's) out of the error
         // we surface to the console; warnings are non-fatal here.
         putIfAbsent("PYTHONWARNINGS", "ignore")
-    }
-
-private fun isAllowlistedServerEnvName(name: String): Boolean =
-    GRAPH_SERVER_ENV_ALLOWLIST.any { entry ->
-        if (entry.endsWith('*')) name.startsWith(entry.dropLast(1)) else name == entry
     }
 
 /** `<python> -m homer_langgraph [args]` with exactly [childEnv]: the JDK's copy of the server env is cleared first. */
