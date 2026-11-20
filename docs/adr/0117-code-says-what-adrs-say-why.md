@@ -87,8 +87,8 @@ deferred in a comment.
 | Shortcut | Record | What makes it expire | Lands in |
 | --- | --- | --- | --- |
 | Deviation from an ADR | An amendment to that ADR | — | PR A (rubric) |
-| Upstream workaround | A `W-NNN` entry in the registry `docs/workarounds.md`: the upstream issue, the watched source and exact version, the exit condition, the location | A test fails when a watched version moves, so each upgrade re-checks the entry | PR B |
-| Accepted risk | An `AR-NN` id on its row in [`SECURITY.md`](../../SECURITY.md#accepted-risks), which names the ADR | A test fails on an `AR-NN` with no row | PR B |
+| Upstream workaround | A `W-NNN` entry in the registry [`docs/workarounds.md`](../workarounds.md): the upstream issue, the watched source and exact version, the exit condition, the location | `decision-records` fails when a watched version moves, so each upgrade re-checks the entry | PR B (`decision-records`) |
+| Accepted risk | An `AR-NN` id on its row in [`SECURITY.md`](../../SECURITY.md#accepted-risks), which names the ADR | `decision-records` fails on an `AR-NN` with no row | PR B (`decision-records`) |
 | Compatibility path | A `removeIn x.y.z` comment, the one form in every language: `// removeIn x.y.z` in Kotlin, TypeScript and JavaScript, `# removeIn x.y.z` in shell, YAML and Python, `@removeIn x.y.z` in JSDoc. Kotlin gets no annotation: one with no users would be dead code | `comment-policy` fails once the newest released version in `CHANGELOG.md` reaches `x.y.z` | PR A |
 
 ### Suppressions
@@ -116,8 +116,7 @@ amendment of 2026-11-19).
 | Rule | Enforced by |
 | --- | --- |
 | Comment length, citations, shortcut words, `TODO`, past narration, suppression reasons and budget, `removeIn` | `comment-policy` (`tools/quality/comment-policy.mjs`), `required` |
-| `W-NNN` entries and watched versions | the registry test (PR B) |
-| `AR-NN` ids | the `SECURITY.md` test (PR B) |
+| `W-NNN` entries and watched versions; `AR-NN` ids; every `W-NNN` and `AR-NN` a comment cites resolves | `decision-records` (`tools/quality/decision-records.mjs`), `required` |
 | Finite limits; zero skipped tests | tests in PR C |
 | Python lint | `ruff`, `required` (PR D) |
 | Narration of the next lines, deviations, a test asserting one outcome under a name that says what it proves | the review rubric in the root `CLAUDE.md` §9 |

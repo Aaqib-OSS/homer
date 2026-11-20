@@ -6,8 +6,6 @@ import path from 'node:path';
 import { test } from 'node:test';
 import {
   changedLinesOf,
-  commentPolicyStep,
-  infraLintStep,
   results,
   asPaths,
   buildFailures,
@@ -19,6 +17,7 @@ import {
   kotlinFile,
   parseArgs,
   relatedTests,
+  reportStep,
   scope,
   selectChecks,
 } from './changed.mjs';
@@ -40,6 +39,7 @@ const CHECKS = [
   'query-repeats',
   'infra-lint',
   'comment-policy',
+  'decision-records',
 ].map((name) => ({ name, mode: 'required' }));
 const ALL = [...CHECKS, { name: 'mutation-console', mode: 'warn' }, { name: 'mutation-backend', mode: 'warn' }];
 const SRC = 'app/app/src/main/kotlin/homer/app';
@@ -55,29 +55,29 @@ test('parseArgs reads --base and --only and rejects anything else', () => {
 test('a console-only change selects the console checks and the shared ones', () => {
   assert.deepEqual(
     [...selectChecks(['console/lib/a.ts'], ALL)].sort(),
-    ['architecture-console', 'comment-policy', 'crap', 'diff-coverage', 'duplication', 'eslint-warnings', 'size-console', 'unused-console'],
+    ['architecture-console', 'comment-policy', 'crap', 'decision-records', 'diff-coverage', 'duplication', 'eslint-warnings', 'size-console', 'unused-console'],
   );
 });
 
 test('a backend change selects the backend checks, dto-contract only for main sources', () => {
-  const backend = ['architecture-backend', 'comment-policy', 'crap', 'detekt', 'diff-coverage', 'duplication', 'kotlin-warnings', 'query-plans', 'query-repeats'];
+  const backend = ['architecture-backend', 'comment-policy', 'crap', 'decision-records', 'detekt', 'diff-coverage', 'duplication', 'kotlin-warnings', 'query-plans', 'query-repeats'];
   assert.deepEqual([...selectChecks([`${TEST}/ATest.kt`], ALL)].sort(), backend);
   assert.deepEqual([...selectChecks([`${SRC}/A.kt`], ALL)].sort(), [...backend, 'dto-contract'].sort());
   assert.ok(selectChecks(['console/types/homer.ts'], ALL).has('dto-contract'));
 });
 
-test('docs select nothing; build scripts, buildSrc and tooling select comment-policy alone', () => {
+test('docs select nothing; build scripts, buildSrc and tooling select comment-policy and decision-records alone', () => {
   assert.equal(selectChecks(['docs/x.md', 'console/README.md'], ALL).size, 0);
   for (const file of ['app/app/build.gradle.kts', 'app/settings.gradle.kts', 'app/buildSrc/src/main/kotlin/CrapScore.kt', 'tools/quality/gate.mjs']) {
-    assert.deepEqual([...selectChecks([file], ALL)], ['comment-policy'], file);
+    assert.deepEqual([...selectChecks([file], ALL)], ['comment-policy', 'decision-records'], file);
   }
 });
 
-test('a shell script, a workflow, a Dockerfile or the hadolint config selects infra-lint and comment-policy', () => {
+test('a shell script, a workflow, a Dockerfile or the hadolint config selects infra-lint, comment-policy and decision-records', () => {
   for (const file of ['app/entrypoint.sh', '.github/workflows/ci.yml', 'console/Dockerfile', 'app/e2e/Dockerfile', '.hadolint.yaml']) {
-    assert.deepEqual([...selectChecks([file], ALL)], ['infra-lint', 'comment-policy'], file);
+    assert.deepEqual([...selectChecks([file], ALL)], ['infra-lint', 'comment-policy', 'decision-records'], file);
   }
-  assert.deepEqual([...selectChecks(['.github/ISSUE_TEMPLATE/bug.yml'], ALL)], ['comment-policy']);
+  assert.deepEqual([...selectChecks(['.github/ISSUE_TEMPLATE/bug.yml'], ALL)], ['comment-policy', 'decision-records']);
   assert.equal(selectChecks(['app/gradlew'], ALL).size, 0);
 });
 
@@ -90,6 +90,16 @@ test('a change to any source the comment policy lexes, its budgets or CHANGELOG.
   for (const file of ['docs/x.md', 'plugins/homer-authoring/schemas/a.json', 'app/app/src/test/resources/claude/a.jsonl', 'app/gradle/wrapper/gradle-wrapper.properties']) {
     assert.ok(!selectChecks([file], checks).has('comment-policy'), file);
   }
+});
+
+test('the records, a watched version file or any source the comment policy reads selects decision-records', () => {
+  for (const file of ['SECURITY.md', 'docs/workarounds.md', 'clients/python/requirements.lock']) {
+    assert.deepEqual([...selectChecks([file], ALL)], ['decision-records'], file);
+  }
+  for (const file of ['app/gradle/libs.versions.toml', 'console/package.json', 'console/lib/a.ts', `${SRC}/A.kt`, 'console/Dockerfile']) {
+    assert.ok(selectChecks([file], ALL).has('decision-records'), file);
+  }
+  assert.ok(!selectChecks(['docs/x.md'], ALL).has('decision-records'));
 });
 
 test('--only narrows the selection and alone selects a warn-mode check', () => {
@@ -278,12 +288,12 @@ test('formatFindings prints path:line, a bare path for line 0, the outside marke
   );
 });
 
-test('infraLintStep reports the findings infra-lint wrote into its directory', () => {
+test('reportStep reports the findings infra-lint wrote into its directory', () => {
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'changed-infra-'));
   const reported = [];
   const finding = { path: '.github/workflows/ci.yml', line: 3, severity: 'major', message: 'zizmor artipacked: credential persistence' };
   try {
-    infraLintStep((...args) => reported.push(args), ([dir]) => writeCheck(dir, 'infra-lint', 'lint', [finding]), out);
+    reportStep('infra-lint', (...args) => reported.push(args), ([dir]) => writeCheck(dir, 'infra-lint', 'lint', [finding]), out);
     assert.equal(reported.length, 1);
     const [check, findings, error] = reported[0];
     assert.equal(check, 'infra-lint');
@@ -294,13 +304,14 @@ test('infraLintStep reports the findings infra-lint wrote into its directory', (
   }
 });
 
-test('commentPolicyStep reports the findings comment-policy wrote, and a thrown error under its own row', () => {
+test('reportStep reports the findings comment-policy wrote, and a thrown error under its own row', () => {
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'changed-comments-'));
   const reported = [];
   const finding = { path: 'console/a.ts', line: 1, severity: 'minor', message: 'todo: TODO in a comment' };
   try {
-    commentPolicyStep((...args) => reported.push(args), ([dir]) => writeCheck(dir, 'comment-policy', 'comments', [finding]), out);
-    commentPolicyStep(
+    reportStep('comment-policy', (...args) => reported.push(args), ([dir]) => writeCheck(dir, 'comment-policy', 'comments', [finding]), out);
+    reportStep(
+      'comment-policy',
       (...args) => reported.push(args),
       () => {
         throw new Error('tools/quality/comment-policy-budgets.json: unknown rule nope');
@@ -315,9 +326,40 @@ test('commentPolicyStep reports the findings comment-policy wrote, and a thrown 
   }
 });
 
+test('reportStep reports the findings decision-records wrote, and a thrown error under its own row', () => {
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'changed-records-'));
+  const reported = [];
+  const finding = { path: 'docs/workarounds.md', line: 5, severity: 'minor', message: 'W-001: gradle:ktor is now 3.5.1, not 3.5.0' };
+  try {
+    reportStep('decision-records', (...args) => reported.push(args), ([dir]) => writeCheck(dir, 'decision-records', 'records', [finding]), out);
+    reportStep(
+      'decision-records',
+      (...args) => reported.push(args),
+      () => {
+        throw new Error('EACCES: docs/workarounds.md');
+      },
+      out,
+    );
+    assert.deepEqual(reported[0][0], 'decision-records');
+    assert.deepEqual(reported[0][1].map((f) => [f.path, f.line, f.message]), [['docs/workarounds.md', 5, finding.message]]);
+    assert.deepEqual(reported[1], ['decision-records', [], 'EACCES: docs/workarounds.md']);
+  } finally {
+    fs.rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test('reportStep runs the check into its own directory under reports/quality/changed, and a run that wrote nothing reports none', () => {
+  const reported = [];
+  const runs = [];
+  reportStep('decision-records', (...args) => reported.push(args), (argv) => runs.push(argv));
+  assert.deepEqual(runs, [[path.join('reports', 'quality', 'changed', 'decision-records')]]);
+  assert.deepEqual(reported, [['decision-records', []]]);
+});
+
 test('a tool infra-lint cannot run is an error of the check, and an error row fails the diff mode', () => {
   const reported = [];
-  infraLintStep(
+  reportStep(
+    'infra-lint',
     (...args) => reported.push(args),
     () => {
       throw new Error('hadolint did not run (ENOENT)');

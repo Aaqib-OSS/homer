@@ -50,7 +50,7 @@ export function areaOf(file) {
 }
 
 /** 1-based line of an offset, by a binary search over the line starts. */
-function lineIndex(text) {
+export function lineIndex(text) {
   const starts = [0];
   for (let i = 0; i < text.length; i++) if (text[i] === '\n') starts.push(i + 1);
   return (offset) => {
