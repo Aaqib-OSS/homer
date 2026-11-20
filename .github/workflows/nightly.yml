@@ -29,7 +29,7 @@ jobs:
   # Fails on a CVE at or above the configured CVSS threshold (app/app/build.gradle.kts).
   dependency-check:
     if: github.event_name == 'workflow_dispatch' || (github.event.schedule == '17 2 * * *' && !github.event.repository.private)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -72,7 +72,7 @@ jobs:
   # and rollout in ADR-0113.
   image-scan:
     if: github.event_name == 'workflow_dispatch' || (github.event.schedule == '17 2 * * *' && !github.event.repository.private)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     # Report-first until the three images are clean (ADR-0113): a failure warns, and
     # image-scan-alert files it as an issue.
@@ -142,7 +142,7 @@ jobs:
   image-scan-alert:
     needs: image-scan
     if: ${{ !cancelled() && needs.image-scan.outputs.failed == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -165,7 +165,7 @@ jobs:
     if: >-
       (github.event.schedule == '41 1 * * 0' && !github.event.repository.private)
       || (github.event_name == 'workflow_dispatch' && inputs.full-backend-mutation)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       shards: ${{ steps.shards.outputs.shards }}
@@ -175,7 +175,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version: '24.22.3'
       - id: shards
         run: |
           shards=$(node tools/quality/pit-full.mjs shards)
@@ -185,7 +185,7 @@ jobs:
   # shard leaves the merged report partial.
   backend-mutation:
     needs: backend-mutation-shards
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 360
     continue-on-error: true
     strategy:
@@ -203,7 +203,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version: '24.22.3'
       - env:
           SHARD: ${{ matrix.shard }}
         run: node tools/quality/pit-full.mjs run "$SHARD"
@@ -218,7 +218,7 @@ jobs:
   backend-mutation-report:
     needs: [backend-mutation-shards, backend-mutation]
     if: always() && needs.backend-mutation-shards.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     continue-on-error: true
     steps:
@@ -227,7 +227,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version: '24.22.3'
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: backend-mutation-*
@@ -251,7 +251,7 @@ jobs:
     if: >-
       (github.event.schedule == '41 1 * * 0' && !github.event.repository.private)
       || (github.event_name == 'workflow_dispatch' && inputs.full-console-mutation)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 360
     continue-on-error: true
     steps:
@@ -260,7 +260,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version: '24.22.3'
           cache: npm
           cache-dependency-path: console/package-lock.json
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

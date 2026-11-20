@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   pr-policy-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -32,7 +32,7 @@ jobs:
   # Free on public repositories only. A known-bad package fails here, before any review reads
   # the pull request.
   dependency-review:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
@@ -43,7 +43,7 @@ jobs:
   # and trust model: docs/quality-checks.md). The script, the pinned release and the rules all come
   # from the base, never from the pull request, which must not rewrite the rule it is checked against.
   secret-scan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -73,7 +73,7 @@ jobs:
     # Runs whatever pr-policy-tests concluded: a skipped required check counts as passed, so a
     # pull request that breaks the tests must not skip the gate with them (CWE-285, ADR-0090).
     if: ${{ !cancelled() && github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.user.login != 'renovate[bot]' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       # The base branch's copy of the check, never the pull request's: a pull request must not

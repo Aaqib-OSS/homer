@@ -188,7 +188,7 @@ class ReleaseWorkflowGateTest {
             "$release job `image-builds` no longer labels each platform image with its entry's image name and " +
                 "version, tag suffix included; job `images` relies on them to refuse another entry's digest.",
         )
-        for ((platform, runner) in listOf("linux/amd64" to "ubuntu-latest", "linux/arm64" to "ubuntu-24.04-arm")) {
+        for ((platform, runner) in listOf("linux/amd64" to "ubuntu-24.04", "linux/arm64" to "ubuntu-24.04-arm")) {
             val at = builds.indexOf("- name: $platform")
             assertTrue(
                 at >= 0 && "runner: $runner" in builds.drop(at).take(3),
