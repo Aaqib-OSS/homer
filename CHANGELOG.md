@@ -26,6 +26,10 @@
 - **Fixed: the log tail after a restart follows the run's recorded output file** — `GET /api/v1/stream/processes/{processId}/logs` serves the stdout/stderr path the step recorded instead of guessing `cmd_N`, and answers `404` when the step recorded no file or a path that is not a file directly inside the run's artifacts.
 - **Changed: a continuation marks a transformed result too large to deliver** — A resume payload whose result is over the 4 MiB transform cap now carries `resultTooLarge: true`, and `homer_fanout` reports it on stderr. See [ADR-0025](docs/adr/0025-capability-token-result-read.md).
 
+### Console
+
+- **Added: removing a saved instance from the instance switcher** — Each row of the header picker deletes the instance and its bearer token; the last instance cannot be removed, and removing the active one signs out of it and switches to another.
+
 ## [1.43.2] - 2026-11-18
 
 ### Homer

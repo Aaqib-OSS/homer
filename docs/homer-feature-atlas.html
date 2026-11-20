@@ -3502,7 +3502,9 @@ HOMER_LOG_DIR=/app/workspace</code></pre>
           <p>One console can point at several backends: add an instance from the login screen (which toggles between
             Password and Token sign-in — Token only when <code>CONSOLE_ALLOW_BEARER=true</code>, which also makes Token
             the mode the form opens in), switch the active one from
-            the header picker; bearer tokens are namespaced per instance. Sign-in itself is on only with
+            the header picker, and remove a saved one from its row there &mdash; the last instance cannot be removed,
+            and removing the active one signs out of it and switches to another; bearer tokens are namespaced per
+            instance. Sign-in itself is on only with
             <code>CONSOLE_AUTH_ENABLED=true</code>. An optional allowlist pins which backends may
             be entered at all (and the CSP <code>connect-src</code> with it). Opening a page without a session
             prompts you to sign in (no &ldquo;session expired&rdquo; wording) and returns you to that page afterwards.</p>
