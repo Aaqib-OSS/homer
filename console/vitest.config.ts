@@ -20,6 +20,9 @@ export default defineConfig({
       // setup.test.ts asserts the URL each label builds from them.
       exclude: ['**/*.test.*', 'components/ui/**', '**/*.d.ts', 'lib/monaco/*.worker.ts'],
     },
+    // yaml.worker.test.ts mocks the worker bootstrap monaco-yaml installs; an
+    // externalized dependency bypasses the module runner, so it stays inline.
+    server: { deps: { inline: ['monaco-yaml'] } },
   },
   resolve: {
     alias: {
