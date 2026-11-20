@@ -159,10 +159,10 @@ export function parseProcessListParams(searchParams: Pick<URLSearchParams, 'get'
   const order = searchParams.get('order') === 'asc' ? 'asc' : 'desc';
   const offset = intAtLeast(searchParams.get('offset'), 0) ?? 0;
   const parentProcessId = intAtLeast(searchParams.get('parent'), 1);
-  // A `parent` filter drops the roots view: children have no flow to summarize (ADR-0058).
+  // A `parent` filter overrides the roots view: a run's children have no flow to summarize.
   const rootsView = searchParams.get('view') === 'roots';
   const showRoots = rootsView && parentProcessId === undefined;
-  // `tag` is one comma-joined value: runs carrying every listed subject tag (ADR-0060).
+  // `tag` is one comma-joined URL value; a run must carry every listed subject tag (ADR-0060).
   const selectedTags = tagFilters(searchParams.get('tag'));
   const hasFilters = anyFilter(selectedStatuses, selectedAgent, parentProcessId, selectedTags);
   return {

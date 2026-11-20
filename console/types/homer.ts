@@ -143,7 +143,7 @@ export interface ProcessInfo {
   tags?: string[];
   /**
    * Why the run FAILED before any command started (claim timeout, lock skip, run cap, full
-   * queue); absent otherwise. It names the blocking run only if the reader may see it (ADR-0058).
+   * queue); absent otherwise. A reader who cannot see the blocking run learns nothing about it (ADR-0098).
    */
   failureReason?: string | null;
   // Why and where this run was stopped gracefully; null for a run no graceful stop
