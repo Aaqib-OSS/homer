@@ -16,11 +16,9 @@ import homer.app.runners.queue.PendingClaim
 import homer.app.runners.queue.StaticRunnerConsumer
 
 /**
- * Generic backend kind for [alias] — `local` for the built-in runner, the
- * configured backend type (`ssh` / `kubernetes` / `external`) otherwise, and
- * `unknown` for an alias no longer in config (e.g. a run served by a runner that
- * was later removed). One mapping serves `GET /api/v1/runners`, `/health` and the
- * non-admin status response. See ADR-0077.
+ * Generic backend kind for [alias]: `local` for the built-in runner, the configured backend type (`ssh` / `kubernetes` /
+ * `external`), or `unknown` for an alias no longer in config. One mapping serves `GET /api/v1/runners`, `/health` and
+ * the non-admin status response (ADR-0077).
  */
 fun runnerType(
     config: AppConfig,

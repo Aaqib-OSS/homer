@@ -24,12 +24,9 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Runs each command as one `cmd` op on the claimed instance. Output arrives as ordered chunks
- * through [OutputSink] into the same stdout/stderr files every other runner writes, stdout through
- * the Claude line filter when one is set, so log tailing and result parsing above the session do
- * not change. Timeout is enforced by the instance (`timedOut` in the result); Homer bounds the wait
- * for that result by `timeoutMs + heartbeatTimeoutSec`, plus the interrupt grace when one is set,
- * because the instance then stops the command gracefully before it answers (ADR-0066, ADR-0108).
+ * Runs each command as one `cmd` op on the claimed instance; ordered chunks reach the usual stdout/stderr files through
+ * [OutputSink], stdout through the Claude line filter when set. The instance enforces the timeout, and Homer waits for
+ * its result at most `timeoutMs + heartbeatTimeoutSec`, plus the interrupt grace when set (ADR-0066, ADR-0108).
  */
 class ExternalShellExecutor(
     private val session: ExternalRunnerSession,
@@ -61,18 +58,13 @@ class ExternalShellExecutor(
         interruptGrace: Duration?,
     ): CommandResult {
         // jscpd:ignore-end
-        // No Dispatchers.IO hop here: opening the two files is one fast syscall each, and
-        // everything else below (submit/select/await) is a suspension, not blocking IO. The
-        // session must stay deterministic under runTest's virtual time; the real blocking IO
-        // of a cmd (chunk writes) happens in the route handlers, not here.
+        // No Dispatchers.IO hop: only suspensions follow (chunk writes run in the routes), keeping runTest deterministic.
         val sink = openSink(stdOut, stdErr, stdOutFilter)
         val op = cmdOp(command, stdIn, env, timeout, interruptGrace)
         session.registerSink(op.opId, sink)
         val kill = KillCause()
-        // With a grace the command's own timeout is a soft deadline: the instance stops it
-        // gracefully, so the wait for the result is extended by the grace rather than failing
-        // the step the moment the instance has not answered. A grace that is absent leaves the
-        // bound exactly as it was.
+        // With a grace, the timeout is a soft deadline the instance stops the command at gracefully, so the wait
+        // for its result grows by the grace.
         val deadline = timeout + (interruptGrace ?: Duration.ZERO) + heartbeatTimeout
         return try {
             val deferred = session.mailbox.submit(op)
@@ -128,8 +120,8 @@ class ExternalShellExecutor(
         )
 
     /**
-     * Waits for the instance's result, the sink's cap trip or [deadline], whichever settles first;
-     * the interrupt Homer sends at [timeout] is best-effort and cancelled once the result settles.
+     * Waits for the instance's result, the sink's cap trip or [deadline], whichever settles first. The interrupt sent at
+     * [timeout] is cancelled once the result settles; a lost one ends in the instance's own kill (ADR-0108).
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun awaitOutcome(
@@ -141,9 +133,6 @@ class ExternalShellExecutor(
         deadline: Duration,
     ): Outcome =
         coroutineScope {
-            // The instance stops the command at its own timeout too, but the interrupt is
-            // Homer's to send as well: it is best-effort, and a lost one still ends in the
-            // instance's kill path. Cancelled as soon as the result settles either way.
             val softStop =
                 interruptGrace?.let {
                     launch {
@@ -181,10 +170,8 @@ class ExternalShellExecutor(
     }
 
     /**
-     * The command's result from the instance's [result]; throws, setting [kill]'s matching
-     * flag, when it is no clean exit, when the instance reports no output chunk counts, and
-     * when it reports output Homer never received. Suspends for at most one [INCOMPLETE_OUTPUT_WAIT] while that last chunk
-     * arrives.
+     * The command's result from the instance's [result]; throws, setting [kill]'s matching flag, on a non-clean exit,
+     * missing chunk counts or output Homer never received. Suspends at most one [INCOMPLETE_OUTPUT_WAIT] for a last chunk.
      */
     private suspend fun doneResult(
         result: OpResult,
@@ -194,9 +181,7 @@ class ExternalShellExecutor(
         stdErr: Path,
         timeout: Duration,
     ): CommandResult {
-        // The cap-trip and the result raced select's registration order; select
-        // picked Done first, but the sink may already have dropped bytes — don't return
-        // a clean result over silently truncated output.
+        // select may pick Done over a cap trip it raced, and a sink that dropped bytes must not yield a clean result.
         capError(sink, kill)
         if (result.timedOut) {
             kill.byTimeout = true
@@ -209,9 +194,8 @@ class ExternalShellExecutor(
                         (result.error?.let { session.sanitizedError(it) } ?: "no exit code reported"),
                 )
         requireCompleteOutput(result, sink, kill)
-        // The wait above lets chunk posts land, and one of them can be the chunk that
-        // crossed the cap — its append consumes the seq, drops the bytes and closes the
-        // very gap the wait was for. Re-checked so no clean result passes over them.
+        // A chunk that landed during that wait can have crossed the cap: its seq closes the gap while its bytes are
+        // dropped, so the cap is checked again.
         capError(sink, kill)
         return CommandResult(exitCode = exitCode, stdOut = stdOut, stdErr = stdErr)
     }
@@ -227,12 +211,9 @@ class ExternalShellExecutor(
     }
 
     /**
-     * Fails the step when the instance reports no chunk counts, or more chunks for a stream than
-     * Homer holds: the step's output is truncated, and a clean `CommandResult` over it would let a `!<claude>` step
-     * die on a missing `result` event instead of on the real cause. One bounded wait first, never a
-     * loop — the instance reports its exit after its last post, but the two ride different
-     * connections, so the last chunk can still be in flight (§12 rules 4–5). A cap that trips
-     * during the check is the cap error, not a clean or merely incomplete result ([capError]).
+     * Fails the step when the instance reports no chunk counts, or more chunks for a stream than Homer holds after one
+     * bounded wait: the last chunk rides another connection than the result (ADR-0066). A cap that trips meanwhile is the
+     * cap error ([capError]).
      */
     private suspend fun requireCompleteOutput(
         result: OpResult,
@@ -272,10 +253,8 @@ class ExternalShellExecutor(
     }
 
     /**
-     * Refuses a count that cannot be real before any wait is spent on it. Only negativity is
-     * impossible: a chunk may be empty (the accept side advances the per-stream sequence for a
-     * zero-byte chunk), so no count past [maxOutputBytes] is impossible and an implausibly large
-     * but positive one is answered by the completeness check instead, after the same bounded wait.
+     * Refuses a negative count, the only impossible one, before any wait is spent on it: a zero-byte chunk still advances
+     * the sequence, so a large positive count is left to the completeness check.
      */
     private fun requirePossibleCounts(counts: Map<String, Long>) {
         counts.forEach { (stream, count) ->

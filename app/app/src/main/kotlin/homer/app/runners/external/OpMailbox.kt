@@ -8,12 +8,7 @@ import kotlinx.coroutines.selects.select
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration
 
-/**
- * Ops for one external session, in order, plus the result each one is waiting
- * for. `next` is a `select` over the channel and a timeout rather than
- * `withTimeoutOrNull { receive() }`: the latter can drop an element that arrived
- * exactly as the timeout fired. See ADR-0066.
- */
+/** Ops for one external session, in order, plus the result each one is waiting for (ADR-0066). */
 class OpMailbox {
     private val ops = Channel<RunnerOp>(Channel.UNLIMITED)
     private val pending = ConcurrentHashMap<String, CompletableDeferred<OpResult>>()
@@ -39,6 +34,7 @@ class OpMailbox {
         ops.trySend(op)
     }
 
+    // A select, not withTimeoutOrNull { receive() }: that one can drop an op that arrives as the timeout fires.
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun next(timeout: Duration): RunnerOp? =
         select {

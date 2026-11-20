@@ -189,3 +189,20 @@ A `cmd` result must carry both `stdoutChunks` and `stderrChunks`, and one withou
 completeness, so it is refused rather than trusted. The wire fields stay optional, because the other
 ops share `OpResult` and report no counts, which is consistent with (10); the check refuses at the
 point of use, not at decode.
+
+## Amendment (2026-11-20): bounds an external session holds itself
+
+- **`next` long-polls.** At most three `next` long-polls may be parked on one session; a fourth is
+  refused. Each holds a connection and a coroutine for a full poll window, and an instance's own
+  bound (its open claim polls plus its sessions, within its `concurrency`) covers `claim` only, so
+  without this an authenticated instance could park any number of them (§12 rule 4). Three, not
+  two: `homer-runner` keeps one dedicated poller open, and a `next` that carries a result and loses
+  the race for the following op stays parked for a full poll window while the worker already runs
+  that op. The bound covers the wait, never the result a poll carries: the route applies that
+  result before it takes a slot.
+- **The last output chunk.** A `cmd` result whose chunk counts are ahead of the output Homer holds
+  is waited on once, for a fixed 2 s, and then fails the step as output-incomplete. The instance
+  reports its exit after its last post, but the two ride different connections, so the last chunk
+  can still be in flight; the wait is that flight, not a retry budget (§12 rule 5). A clean result
+  over truncated output is never returned: a `!<claude>` step would then fail on a missing `result`
+  event instead of on its real cause.

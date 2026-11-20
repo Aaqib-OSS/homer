@@ -5,11 +5,8 @@ import kotlinx.coroutines.CompletableDeferred
 import java.io.OutputStream
 
 /**
- * Ordered, capped writer for one `cmd` op's two output streams. Chunks are
- * appended in `seq` order per stream; a gap or repeat is refused (the instance
- * retries in order). A chunk that would take a stream past [maxBytesPerStream]
- * is refused whole and trips [capTripped], which the executor turns into the same
- * output-cap kill every other runner applies (`OutputCapExceededException`).
+ * Ordered, capped writer for one `cmd` op's two output streams. Chunks are appended in `seq` order per stream, a gap
+ * or repeat refused; a chunk that would take a stream past [maxBytesPerStream] is refused whole and trips [capTripped].
  */
 class OutputSink(
     private val stdout: OutputStream,
@@ -44,9 +41,8 @@ class OutputSink(
             nextSeq[stream] = expected + 1
             if (capTripped.isCompleted) return
             val total = written.getValue(stream) + bytes.size
-            // Refuse the whole chunk that would cross the cap, before it reaches the file:
-            // Homer owns this write, so the bound is exact here rather than overshot by up
-            // to one chunk the way a post-write check would leave it (§12 rule 4).
+            // The whole chunk that would cross the cap is refused before it reaches the file, so the bound is exact
+            // rather than overshot by up to one chunk (ADR-0047 rule 4).
             if (total > maxBytesPerStream) {
                 capTripped.complete(Unit)
                 return

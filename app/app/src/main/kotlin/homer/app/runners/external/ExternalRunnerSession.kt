@@ -20,10 +20,8 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * What an `upload` op sends: the tar route packs [local]; a regular file is packed
- * under `remoteRelative`'s last segment. [excludes] are root-relative paths the pack
- * must leave out — they ride here rather than on the op, because packing stays
- * server-side (the op protocol gains no field).
+ * What an `upload` op sends: the tar route packs [local], a regular file under `remoteRelative`'s last segment.
+ * [excludes] are root-relative paths the pack leaves out; they ride here, not on the op, because packing is server-side.
  */
 class UploadSource(
     val local: Path,
@@ -42,12 +40,9 @@ class DownloadTarget(
 }
 
 /**
- * A `RunnerSession` whose primitives run on a pull-mode instance: each one is a
- * `RunnerOp` the instance fetches through `next` and answers with an `OpResult`.
- * Tars and output ride their own routes and are matched to the op by id. Every
- * wait is bounded by the spec deadlines; a lost instance fails the pending op
- * through [fail]. `root` from `createWorkspace` is only used for env values and
- * is never opened on Homer's host (§12). See ADR-0066.
+ * A `RunnerSession` whose primitives are `RunnerOp`s a pull-mode instance fetches through `next` and answers with an
+ * `OpResult`; tars and output ride their own routes, matched by op id (ADR-0066). Every wait is bounded, a lost instance
+ * fails the pending op through [fail], and the `createWorkspace` root only feeds env values, never a host path (ADR-0047).
  */
 class ExternalRunnerSession(
     val id: String,
@@ -156,12 +151,8 @@ class ExternalRunnerSession(
     }
 
     /**
-     * At most [MAX_NEXT_POLLS] `next` long-polls may be parked on one session:
-     * each holds a connection and a coroutine for a full poll window, and the
-     * session's own instance bound (`tryAcquirePoll`) covers `claim` only, so
-     * without this an authenticated instance could park unbounded polls here
-     * (§12 rule 4). The bound covers the wait, never the result a poll carries —
-     * the route applies `completed` before acquiring.
+     * Takes one of this session's [MAX_NEXT_POLLS] `next` long-poll slots, false when none is free. It bounds the wait,
+     * never the result a poll carries: the route applies `completed` before acquiring (ADR-0066).
      */
     fun tryAcquireNextPoll(): Boolean {
         while (true) {
@@ -176,12 +167,8 @@ class ExternalRunnerSession(
     }
 
     /**
-     * At most one request per transfer may be in flight on this session — per op for a tar, per op
-     * and stream for output (§12 rule 4). Each holds a `Dispatchers.IO` thread and a connection for
-     * up to `transferTimeoutSec`, and nothing else stops an instance repeating one request
-     * concurrently; with this the total follows the ops Homer itself issued, not the caller.
-     * `homer-runner` overlaps them only when it retries an output post that timed out on its side.
-     * [key] is the op id, plus `/stream` for output. Returns the token [endTransfer] takes, or null when [key] is already in flight.
+     * Admits one request per transfer on this session: per op for a tar, per op and stream for output (ADR-0066). [key] is
+     * the op id, plus `/stream` for output. Returns the token [endTransfer] takes, or null when [key] is already in flight.
      */
     fun tryBeginTransfer(key: String): Any? {
         val token = Any()
@@ -246,11 +233,8 @@ class ExternalRunnerSession(
     }
 
     /**
-     * The instance writes [OpResult.error] and this text reaches logs and the run's failure
-     * message, so it is attacker-controlled data sanitised at the point of use (§12 rule 2):
-     * newlines become spaces so it cannot forge a log line, and it is capped so it cannot
-     * flood the log. Internal, not private: [ExternalShellExecutor] carries the same field
-     * of the same instance into its own exception text and must use this one sanitiser.
+     * The instance-written [error], made safe for logs and failure messages: capped at [MAX_ERROR_CHARS], newlines turned
+     * into spaces (ADR-0047 rule 2). [ExternalShellExecutor] must use this one sanitiser for the same field.
      */
     internal fun sanitizedError(error: String?): String {
         val raw = error ?: return "unknown error"
@@ -263,13 +247,7 @@ class ExternalRunnerSession(
         /** Longest instance-supplied error text carried into an exception message. */
         const val MAX_ERROR_CHARS = 512
 
-        /**
-         * Three, not two: the reference runner keeps one dedicated poller open, and a
-         * result-carrying `next` that loses the race for the following op stays parked
-         * for a full poll window while the worker already executes that op and posts its
-         * own result. Poller + one parked delivery + one delivering is the legitimate
-         * maximum; a fourth concurrent poll is a misbehaving instance.
-         */
+        /** `next` long-polls one session may park: a poller, a parked delivery and one delivering (ADR-0066). */
         const val MAX_NEXT_POLLS = 3
     }
 }

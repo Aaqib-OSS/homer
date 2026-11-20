@@ -17,11 +17,8 @@ import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * One `!<external>` alias: the token its instances authenticate with, the live
- * instance registry and the heartbeat sweep. Implements [Runner] only for the
- * facets `QueuedRunner` reads (`isRemote`, `runnerEnv`, `sysEnvBackedEnvNames`);
- * sessions are created by [deliverClaim] when an instance's long-poll takes a
- * request, never by [openSession]. See ADR-0066.
+ * One `!<external>` alias (ADR-0066): its token, live instance registry and heartbeat sweep. A [Runner] only for the
+ * facets `QueuedRunner` reads; sessions come from [deliverClaim] when an instance's long-poll takes a request.
  */
 class ExternalRunnerDomain(
     override val alias: String,
@@ -75,11 +72,8 @@ class ExternalRunnerDomain(
             )
         synchronized(registerLock) {
             if (instances.size >= config.maxInstances) throw TooManyRunnerInstancesException(alias, config.maxInstances)
-            // One live instance per declared name: `runnerAffinity` names an instance by that name,
-            // so two of them would make the preference ambiguous. A draining instance is on its way
-            // out and a swept one is gone, so neither holds the name — a reconnecting runner is not
-            // locked out. Checked under the same lock as the insert, or two simultaneous
-            // registrations would both pass. See ADR-0099.
+            // One live instance per declared name (ADR-0099); a draining one no longer holds it. Checked under the
+            // insert's lock, or two simultaneous registrations would both pass.
             if (name != null && instances.values.any { !it.draining && it.declaredName == name }) {
                 throw RunnerRegistrationRejectedException(alias, "instance name '$name' is already used by a live instance")
             }
@@ -99,8 +93,7 @@ class ExternalRunnerDomain(
 
     /** The instance name [requested], null when absent or blank; rejected unless it has a tag's shape. */
     private fun validatedName(requested: String?): String? {
-        // Names are logged (claim/next), so an unvalidated one is a log-injection vector — the
-        // route never validates this itself. Same shape as a tag: safe to log verbatim. §12.
+        // Names are logged and the route does not validate them: the tag shape keeps them safe to log verbatim.
         val name = requested?.takeIf { it.isNotBlank() }
         if (name != null && !RunnerTagValidation.PATTERN.matches(name)) {
             throw RunnerRegistrationRejectedException(alias, "name must match ${RunnerTagValidation.PATTERN}")
@@ -109,15 +102,10 @@ class ExternalRunnerDomain(
     }
 
     /**
-     * The version [requested], null when absent or blank; rejected unless it has a tag's shape.
-     * The field stays optional (ADR-0066: the runner and Homer upgrade independently), but an
-     * instance writes it, so an unbounded one would be stored and later shown to operators.
+     * The version [requested], null when absent or blank (optional per ADR-0066); rejected unless it has a tag's shape,
+     * which keeps runner-written text safe to log and show to admins. The rejection never echoes the raw value.
      */
     private fun validatedVersion(requested: String?): String? {
-        // The version is logged with the registration and shown to console admins, so an
-        // unvalidated one is both a log-injection vector and unbounded runner-written text. Same
-        // shape as a tag: safe to log and render verbatim, and the rejection never echoes the raw
-        // value. §12.
         val version = requested?.takeIf { it.isNotBlank() }
         if (version != null && !RunnerTagValidation.PATTERN.matches(version)) {
             throw RunnerRegistrationRejectedException(alias, "version must match ${RunnerTagValidation.PATTERN}")
@@ -147,21 +135,16 @@ class ExternalRunnerDomain(
     }
 
     /**
-     * Hands the claimed [request] to [instance]: completes it with a session opened here, or with
-     * `null` when the run stopped waiting (the session is closed and the claim reads as unmatched).
-     * A failure before it is answered fails the request instead of leaving the run parked for its
-     * full claim TTL.
+     * Hands the claimed [request] to [instance]: completes it with a session opened here, or returns null when the run
+     * stopped waiting. A failure before it is answered fails the request rather than leaving the run parked for its TTL.
      */
     @Suppress("SuspendFunSwallowedCancellation") // fails the claim under NonCancellable and rethrows
     suspend fun deliverClaim(
         instance: ExternalRunnerInstance,
         request: ClaimRequest,
     ): ClaimResponse? {
-        // Once take() hands us `request` it is CLAIMED and off the deque: nobody else
-        // will ever complete or fail it. `delivered` tracks whether we reached a point
-        // where the request was answered one way or another, so a failure before that
-        // (openSession throwing, or this coroutine dying) fails the request instead of
-        // leaving the waiting run parked for its full claim TTL.
+        // A claimed request is off the queue, so nothing else will ever answer it: until `delivered`, a failure here
+        // must fail it.
         var delivered = false
         var session: ExternalRunnerSession? = null
         try {

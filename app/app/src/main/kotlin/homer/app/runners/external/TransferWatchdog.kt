@@ -13,12 +13,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Bounds one transfer handler in time. `transferTimeoutSec` is otherwise enforced only in
- * `ExternalRunnerSession.await`, and a bound living in another component is not a bound (§12
- * rule 4): without this a stalled instance pins a `Dispatchers.IO` thread — the pool every SQLite
- * transaction uses — for as long as it likes. `withTimeout` alone cannot enforce it: the copy
- * blocks the thread on the peer's socket and never observes cancellation. At the deadline a
- * watchdog calls [release], failing the blocked read or write — the ADR-0064 shape. CWE-400.
+ * Bounds one transfer handler by `transferTimeoutSec`: at the deadline a watchdog calls [release], failing the read or
+ * write blocked on the peer's socket, which `withTimeout` alone never interrupts (ADR-0066 decision 7, ADR-0064; CWE-400).
  */
 @Suppress("SuspendFunSwallowedCancellation") // rethrows the caller's cancellation; maps only the cancelled channel
 internal suspend fun <T> ExternalRunnerDomain.withTransferTimeout(
