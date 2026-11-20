@@ -231,8 +231,10 @@ gets `401` with no fallback to the session cookie. Every other request is
 answered for its cookie, exactly as invariant 7 describes. The secured routes keep
 `FirstSuccessful` in `apiAuth` order, so a request carrying both credentials can
 be described by `/me` as the bearer principal while a secured route acts as the
-cookie user. For example, a same-origin bearer console with a stale header and a
-leftover valid cookie. That gap is UI-only: both credentials belong to the same
+cookie user. For example, a same-origin bearer console holding a valid token next to
+a leftover cookie of another user. (A stale token is a different case: `/me` answers
+`401`, and the console falls back to `/heartbeat`, which the cookie passes, so it
+shows no capabilities.) That gap is UI-only: both credentials belong to the same
 holder, and every route still authorizes the principal it authenticated. Why the
 console needs this: [ADR-0059](0059-console-plugins-are-runtime-loaded-modules.md)
 (amendment of 2026-11-20).

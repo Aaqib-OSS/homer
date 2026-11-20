@@ -157,6 +157,8 @@ What same-origin buys, and what it does not:
   compromise, no CORS to configure, no DNS or TLS to trust, and no remote host
   that can change a plugin's contents after the fact. `script-src 'self'`
   covers the import on its own merits.
+  > **Amendment (2026-11-20) — `'self'` does not cover the import.** Under `'strict-dynamic'` the browser
+  > ignores `'self'`; see the amendment "the strict CSP admits a plugin import" below.
 - **It does not sandbox anything.** A requirement decides who may *load* a
   plugin and nothing more. Once loaded, the plugin has the operator's
   privileges; the backend authorizer remains the real boundary for the data it
@@ -219,7 +221,7 @@ is the defect this amendment removes.
 
 ## Amendment (2026-11-20): the strict CSP admits a plugin import through the trusted bundle, not `'self'`
 
-`script-src 'self'` does not cover the plugin import, as the decision above says: once `'strict-dynamic'` is
+`script-src 'self'` does not cover the plugin import, contrary to the decision above: once `'strict-dynamic'` is
 present, the browser ignores `'self'` and every host source. The `import()` takes the fetch options of the
 bundle script that issues it, so it is admitted by that script's nonce when the dashboard page was loaded
 directly, and by `'strict-dynamic'` as a non-parser-inserted load when the bundle arrived by client

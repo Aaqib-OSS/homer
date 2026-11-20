@@ -28,7 +28,7 @@
 
 - **Security: bearer-mode sign-in no longer grants admin** — A bearer token now sees only the pages, controls and plugins its own role and grants allow, and none of the admin ones against a server too old to report them. See [ADR-0059](docs/adr/0059-console-plugins-are-runtime-loaded-modules.md).
 - **Security: one strict Content-Security-Policy on every route** — The agent file editor route no longer allows inline scripts, `eval` or `blob:` workers; it gets the same nonce policy as every other page.
-- **Security: a bearer token saved before multi-instance support no longer outlives sign-out** — The console deletes that old copy on every load instead of keeping it next to the default instance's token, so signing out removes the token from browser storage.
+- **Security: a bearer token saved before multi-instance support is deleted on load** — The console deletes that old copy on every load instead of keeping it next to the default instance's token, so a token it removes (expired or rejected) is gone from browser storage.
 
 ## [1.43.2] - 2026-11-18
 
