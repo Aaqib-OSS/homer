@@ -223,3 +223,24 @@ home next to `allowed-licenses.json`.
 - Parallels the existing npm-side gate (`build-homer-console` LGPL-3.0
   `libvips` check) noted in the `[1.17.0]` CHANGELOG entry under
   `### Build / CI` — this ADR is the Gradle-side counterpart.
+
+## Amendment (2026-11-20): Console notice generator rules
+
+The rules `console/scripts/third-party-licenses.mjs` follows, kept here rather than in comments:
+
+- **Pruned subtrees.** The prune removes a skipped package's whole directory, nested
+  `node_modules` included, so the skip tests the lock path, not its last segment; otherwise the
+  gate would depend on whether the npm version unpacked what the prune drops.
+- **Platform-restricted packages.** A package the lock restricts by `os` or `cpu` is read from the
+  lock alone, since only the copy one machine unpacks knows its holders and reading it would make
+  the gate fail on the other platform. A package with no declared license fails the run unless
+  `LICENSE_OVERRIDES` names the license its own file ships.
+- **Attribution lines.** They come from `NOTICE` files when the package ships one, else from
+  `LICENSE` files, and a license steward (the Free Software Foundation) is never a holder. A line
+  opens with `copyright`; matching it anywhere would pull in clauses such as "Grant of Copyright
+  License", and an all-caps `COPYRIGHT HOLDERS` warranty line is not a holder either.
+- **Untrusted input (CWE-22, CWE-59).** The lock key must resolve, also after `realpath`, inside
+  `node_modules`; a `LICENSE` or `NOTICE` symlink is never followed. A body containing a region
+  marker is rejected, so dependency text cannot move the region boundary.
+- **No dependencies.** The script uses Node built-ins only, as a dependency of its own would be
+  one more package to inventory.

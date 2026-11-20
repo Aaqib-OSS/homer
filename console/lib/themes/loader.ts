@@ -25,22 +25,9 @@ export interface ThemeEntry {
 }
 
 /**
- * Why a `CONSOLE_THEMES` entry is not usable, or `null` when it is fine.
- *
- * An entry is `name:/path.css`, split at the **first** colon, so a remote path
- * arrives here as either a name the pattern rejects (`ht`/`https` are fine, but
- * the path then starts with `//`) or a path the pattern rejects. Only same-origin
- * stylesheets are accepted, which is what keeps `font-src 'self'` and
- * `style-src 'self'` sufficient for a theme and its fonts. See ADR-0069.
- *
- * The rejections that matter:
- *  - `//evil.example/a.css` is *protocol-relative*. It reads as local but
- *    resolves to a foreign origin — a theme there would be a third party
- *    restyling the console and reading the operator's referrer.
- *  - `..` is rejected even inside an otherwise valid-looking path, so an entry
- *    can never climb out of the directory the operator meant.
- *  - A built-in name is rejected because the entry would silently redefine the
- *    look of `light`/`dark`/… for a switch the user thinks they know.
+ * Why a `CONSOLE_THEMES` entry (`name:/path.css`, split at the first colon) is
+ * not usable, or `null`. Only same-origin stylesheets pass, including no
+ * protocol-relative `//host` path, no `..` and no built-in name. See ADR-0069.
  */
 export function checkThemeEntry(entry: string): string | null {
   const colon = entry.indexOf(':');
@@ -83,10 +70,8 @@ export interface ThemeEntryParse {
 }
 
 /**
- * Validates a list of `name:/path.css` entries into the ones the console can
- * load. Every drop is reported rather than thrown: one bad entry must never keep
- * the console — or the other themes — from rendering. On a duplicate name the
- * first entry wins.
+ * Validates `name:/path.css` entries into the ones the console can load. Drops
+ * are reported, not thrown, and the first entry wins a duplicate name.
  */
 export function resolveThemeEntries(entries: readonly string[]): ThemeEntryParse {
   const resolved: ThemeEntry[] = [];
@@ -112,11 +97,9 @@ export function resolveThemeEntries(entries: readonly string[]): ThemeEntryParse
 }
 
 /**
- * {@link resolveThemeEntries} over the raw `CONSOLE_THEMES` env value. The split
- * is the grammar-free `splitCommaList`, not the plugins' `parsePluginEntries`:
- * the two grammars only coincide today, and a future change to plugin splitting
- * (`@requirement` handling, quoting) must not silently change which theme
- * entries survive. See ADR-0069.
+ * {@link resolveThemeEntries} over the raw `CONSOLE_THEMES` env value, split with
+ * `splitCommaList` rather than the plugins' parser so the grammars stay
+ * independent. See ADR-0069.
  */
 export function parseThemeEntries(raw: string | undefined | null): ThemeEntryParse {
   return resolveThemeEntries(splitCommaList(raw));
@@ -160,19 +143,9 @@ function pairRejection(named: Partial<ThemeModes>, names: readonly string[]): st
 }
 
 /**
- * Parses `CONSOLE_THEME_MODES` (`light:<name>,dark:<name>`) into the pair the
- * switcher and `next-themes` use to hide the built-ins. Both names must be in
- * `names` — the surviving `CONSOLE_THEMES` entries — so a mode can only ever
- * name a theme the console can actually load; a built-in name is therefore
- * rejected the same way an unknown one is (it never survives `checkThemeEntry`).
- *
- * All-or-nothing: any malformed value yields no pair plus one reason, never a
- * half-applied setting, so a typo cannot hide three of the four built-ins. An
- * absent or blank value is not a rejection — nothing was configured, so nothing
- * is logged. Like `parseThemeEntries` it splits with the grammar-free
- * `splitCommaList` and validates on its own: this is a `<mode>:<name>` grammar,
- * not the themes' `name:<path>` one, and the two must not silently couple. See
- * ADR-0069.
+ * Parses `CONSOLE_THEME_MODES` (`light:<name>,dark:<name>`) into the pair that
+ * hides the built-ins; both names must be in `names`. All-or-nothing, and a
+ * blank value is not a rejection. See ADR-0069.
  */
 export function parseThemeModes(
   raw: string | undefined | null,
@@ -197,18 +170,9 @@ export function parseThemeModes(
 }
 
 /**
- * The paths among `entries` that are absent from the document's loaded
- * stylesheets. A `<link>` that 404s never lands in `document.styleSheets` and is
- * otherwise silent — the theme's class applies no tokens, so every token falls
- * back to the `:root` (light) values — so this is what turns a missing theme
- * file into a visible reason.
- *
- * Each entry is compared per entry as a resolved same-origin URL, not by bare
- * suffix: a suffix would let an unrelated sheet whose href happens to end in
- * the path stand in for the theme (hiding a real 404) and collapses two names
- * sharing one file into one report. Resolution goes through the document base,
- * so a path written relative still matches; in jsdom `StyleSheet.href` may stay
- * as written, which the exact match also accepts.
+ * The paths among `entries` absent from the document's loaded stylesheets, so a
+ * theme file that 404s becomes a visible reason. Each path is matched as a
+ * resolved URL, never by suffix. See ADR-0069.
  */
 export function missingThemeStylesheets(
   entries: ThemeEntry[],

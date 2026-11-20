@@ -103,6 +103,19 @@ data class SchemaErrorBody(
 )
 
 @Serializable
+data class MeGrant(
+    val agents: List<String>,
+    val actions: List<String>,
+)
+
+@Serializable
+data class Me(
+    val username: String,
+    val role: String? = null,
+    val grants: List<MeGrant> = emptyList(),
+)
+
+@Serializable
 data class Heartbeat(
     val status: String,
     val version: String = "dev",

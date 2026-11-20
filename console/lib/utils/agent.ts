@@ -1,11 +1,8 @@
 import type { AgentInfo, AgentInput, AgentParameterTransformer } from '@/types/homer';
 
 /**
- * Returns the declared inputs for an agent, preferring the canonical
- * `inputs` field and falling back to the deprecated `queryParams` alias.
- *
- * Callers should use this helper instead of reading either field directly
- * so the deprecation can be removed without touching call sites.
+ * Returns the declared inputs for an agent: `inputs`, else the `queryParams` alias.
+ * Callers use this instead of reading either field, so the alias can go in one place.
  */
 export function getAgentInputs(
   agent:

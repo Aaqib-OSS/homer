@@ -16,9 +16,7 @@ import { appConfig } from '@/lib/config/app-config';
 import { formatCost } from '@/lib/utils/format';
 import { PROCESS_STATUS_FILTERS, parseProcessListParams, type ProcessListParams } from '@/lib/utils/process';
 
-// Root rows whose Flow cell fetches a summary, in visible-page order. Each
-// column cell is one request, so the count is bounded here rather than growing
-// with the page (§12 rule 4).
+// Each Flow cell is one request, so the rows that fetch a summary are capped (ADR-0047 rule 4).
 const FLOW_ROWS_WITH_SUMMARY = 20;
 
 // Root runs only vs every run; both buttons are toggles, so each says whether it is pressed.
@@ -168,9 +166,7 @@ function listActions(params: ProcessListParams, setParams: SetParams) {
 
 type ListActions = ReturnType<typeof listActions>;
 
-// Render prop for the Flow cell: a summary for the capped rows, a dash past the
-// cap. Passing it only for the roots view is what keys both the column and its
-// header.
+// Flow cell renderer: a summary for capped rows, a dash past the cap. Passed only in the roots view.
 function flowSummaryRenderer(showRoots: boolean, summaryRootIds: number[]) {
   return showRoots
     ? (process: ProcessInfo) =>

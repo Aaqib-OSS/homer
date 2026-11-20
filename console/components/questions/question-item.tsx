@@ -38,10 +38,8 @@ const markdownClasses =
   '[&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground ' +
   '[&_a]:underline';
 
-// A markdown image (`![alt](url)`) is not raw HTML, so react-markdown's
-// default escaping does not stop it — a rendered <img> would beacon the
-// operator's browser to an agent-supplied URL on inbox view. Render the alt
-// text instead of the image so no network request is ever made.
+// A markdown image is not raw HTML, so react-markdown's escaping misses it, and an <img>
+// would beacon the browser to an agent-supplied URL: render the alt text (ADR-0047 rule 2).
 const markdownComponents: Components = {
   img: ({ alt }) => (alt ? <span>{alt}</span> : null),
 };

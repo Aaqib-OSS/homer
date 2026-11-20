@@ -16,9 +16,8 @@ const base: LangGraphRunStatus = {
   errors: { b: 'RuntimeError: boom' },
 };
 
-// A node's <title> duplicates its <text> label, so a node group is found by
-// iterating [data-node-id] groups rather than a CSS.escape'd selector (jsdom
-// may not implement CSS.escape).
+// A node's <title> duplicates its <text>, so find the group by iterating [data-node-id]
+// rather than a CSS.escape'd selector, which jsdom may lack.
 const nodeGroup = (container: HTMLElement, id: string): Element => {
   const groups = container.querySelectorAll('[data-node-id]');
   for (const g of Array.from(groups)) {
@@ -99,11 +98,8 @@ describe('WorkflowStatus', () => {
   });
 
   it('survives and tints a node named after an Object.prototype member', () => {
-    // Node ids are agent-authored; "constructor" must resolve through an
-    // own-property check, not fall through to the inherited function (§12
-    // rule 2) — a plain object with no "constructor" key still inherits one.
-    // JSON.parse gives "__proto__" an own key, as the API response does; a
-    // literal would set the prototype instead.
+    // Node ids are agent-authored: "constructor" needs an own-property check (ADR-0047 rule 2).
+    // JSON.parse gives "__proto__" an own key, as the API does; a literal would set the prototype.
     const status = {
       ...base,
       topology: { nodes: [{ id: 'constructor' }, { id: '__proto__' }], edges: [] },

@@ -58,10 +58,9 @@ function InstanceRow({
 }
 
 /**
- * Picks the active Homer instance, removes a saved one, and routes to the login
- * screen to add a new one. Switching resets the query cache + re-probes auth
- * (via `useAuth().switchInstance`); landing on /processes avoids a stale detail
- * route from the previous instance.
+ * Picks the active Homer instance, removes a saved one, or routes to login to add one.
+ * Switching resets the query cache and re-probes auth (`useAuth().switchInstance`), then
+ * lands on /processes so no stale detail route remains.
  */
 export function InstanceSwitcher() {
   const { instances, activeInstanceId, removeInstance } = useInstances();

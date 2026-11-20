@@ -15,9 +15,8 @@ const BOX_CLASS: Record<NodeTint, string> = {
   failed: 'fill-red-500/15 stroke-red-600',
   parked: 'fill-amber-500/15 stroke-amber-600',
   pending: 'fill-blue-500/15 stroke-blue-600',
-  // Parked node whose sub-agent run(s) already finished: green body (the
-  // agent's work is done) with the parked amber dashed ring (the join hasn't
-  // resolved, so the node itself has not completed yet).
+  // Parked node whose sub-agent runs finished: green body (work done) with the
+  // amber dashed ring (the join has not resolved).
   subDone: 'fill-green-500/15 stroke-amber-600 [stroke-dasharray:4_3]',
 };
 
@@ -57,9 +56,8 @@ function nodeTint(
   return Object.hasOwn(BOX_CLASS, nodeStatus) ? (nodeStatus as NodeTint) : undefined;
 }
 
-// Node ids and sub-map keys are agent-authored: a name like "constructor" or
-// "toString" must not resolve to an inherited Object.prototype member instead
-// of "nothing here" (§12 rule 2). Own-property lookups, not `?.[id]`.
+// Own-property lookups, not `?.[id]`: an agent-authored id like "constructor" must not
+// resolve to an inherited member (ADR-0047 rule 2).
 function ownNodeStatus(
   nodes: Record<string, string> | null | undefined,
   id: string
@@ -196,9 +194,8 @@ function Legend({ threadId }: { threadId: LangGraphRunStatus['threadId'] }) {
 }
 
 export function WorkflowStatus({ status }: { status: LangGraphRunStatus }) {
-  // Collapsed by default: a node keeps every sub it ever dispatched, so this list
-  // grows for the life of the thread, and the in-graph dots already carry the
-  // per-node progress. (Hooks stay above the early returns.)
+  // Collapsed by default: a node keeps every sub it dispatched, so the list grows for the
+  // thread's life. (Hooks stay above the early returns.)
   const [subsOpen, setSubsOpen] = useState(false);
   // Mirror of the per-sub command dots, pinned inside the graph's node boxes
   // (hooks stay above the early returns per the rules of hooks).
@@ -245,9 +242,8 @@ export function WorkflowStatus({ status }: { status: LangGraphRunStatus }) {
           onToggle={() => setSubsOpen((open) => !open)}
         />
       )}
-      {/* Outside the subs block on purpose: the runtime caps a node's interrupt
-          history, and dropping the oldest entries has to be said even when
-          nothing matched a continuation and no sub line is rendered at all. */}
+      {/* Outside the subs block: the runtime caps a node's interrupt history, and that
+          truncation must show even when no sub line renders. */}
       <TruncatedSubsNote nodes={status.subsTruncated} />
       {nodeErrors.map(([node, message]) => (
         <p key={node} className="text-sm text-destructive">

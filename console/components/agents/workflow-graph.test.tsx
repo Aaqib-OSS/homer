@@ -13,9 +13,8 @@ const topology: LangGraphTopology = {
   ],
 };
 
-// A node's <title> (full id) duplicates its <text> label, so look it up by
-// iterating data-node-id groups rather than relying on CSS.escape (jsdom may
-// not implement it) or a single-match query.
+// A node's <title> duplicates its <text> label, so find the group by iterating
+// data-node-id rather than via CSS.escape, which jsdom may lack.
 const nodeGroup = (container: HTMLElement, id: string): SVGGElement => {
   const groups = container.querySelectorAll('[data-node-id]');
   for (const g of Array.from(groups)) {
@@ -115,9 +114,8 @@ describe('WorkflowGraph', () => {
   });
 
   it('survives nodes named after Object.prototype members with an empty dotsByNode', () => {
-    // dotsByNode?.[node.id] on a plain object inherits Object.prototype's own
-    // members (constructor, toString, …) instead of returning undefined —
-    // dotRow would then be called with a non-array and throw (§12 rule 2).
+    // A plain-object lookup inherits Object.prototype members like constructor,
+    // handing dotRow a non-array and throwing (ADR-0047 rule 2).
     const ids = ['constructor', 'toString', '__proto__', 'hasOwnProperty'];
     render(
       <WorkflowGraph
@@ -199,9 +197,8 @@ describe('WorkflowGraph nodeDetails popover', () => {
     expect(screen.getByText('review details')).toBeInTheDocument();
     expect(screen.queryByText('plan details')).not.toBeInTheDocument();
 
-    // The first popover's FocusScope schedules its onCloseAutoFocus from a
-    // setTimeout(0); flush it so a late, wrongly-unguarded dismiss of the
-    // second popover would show up here instead of only in a later test.
+    // Flush the first popover's setTimeout(0) onCloseAutoFocus so a late, unguarded
+    // dismiss of the second popover shows up here, not in a later test.
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.getByText('review details')).toBeInTheDocument();
     expect(screen.queryByText('plan details')).not.toBeInTheDocument();

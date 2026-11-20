@@ -1,11 +1,12 @@
 package homer.app
 
+import homer.app.auth.bearerCredential
 import homer.app.auth.installPasswordSessions
 import homer.app.auth.passwordSessionProvider
+import homer.app.auth.principalFor
 import homer.app.infra.HmacReplayCache
 import homer.app.infra.HmacVerifier
 import homer.app.infra.PasswordVerifier
-import homer.app.infra.matchesTokenConstantTime
 import homer.app.models.AuthConfig
 import homer.app.models.AuthConfig.Bearer
 import homer.app.routes.ApiDeps
@@ -31,12 +32,13 @@ private val logger = LoggerFactory.getLogger("homer.app.Application")
 
 /**
  * Outcome of [configureAuth]: the registered provider names (in registration
- * order), plus the [AuthConfig.Password] scheme and HMAC body-capture attribute
+ * order), plus the [AuthConfig.Password] and [AuthConfig.Bearer] schemes and HMAC body-capture attribute
  * key that downstream routing / [ApiDeps] wiring needs to reference.
  */
 internal class AuthSetup(
     val authNames: List<String>,
     val passwordScheme: AuthConfig.Password?,
+    val bearerScheme: AuthConfig.Bearer?,
     val hmacBodyKey: AttributeKey<ByteArray>,
 )
 
@@ -50,10 +52,7 @@ internal fun io.ktor.server.auth.AuthenticationConfig.buildBearerProvider(scheme
     provider("auth-bearer") {
         authenticate { context ->
             val call = context.call
-            val authHeader = call.request.headers[HttpHeaders.Authorization]
-            val tokenCredential =
-                authHeader
-                    ?.let { if (it.startsWith("Bearer ", ignoreCase = true)) it.substring(7).trim() else null }
+            val tokenCredential = bearerCredential(call.request.headers[HttpHeaders.Authorization])
 
             if (tokenCredential == null) {
                 context.challenge("BearerAuth", AuthenticationFailedCause.NoCredentials) { challenge, c ->
@@ -63,11 +62,9 @@ internal fun io.ktor.server.auth.AuthenticationConfig.buildBearerProvider(scheme
                 return@authenticate
             }
 
-            val matchingEntry =
-                scheme.tokens.entries
-                    .firstOrNull { matchesTokenConstantTime(it.value.token, tokenCredential) }
+            val principal = scheme.principalFor(tokenCredential)
 
-            if (matchingEntry == null) {
+            if (principal == null) {
                 context.challenge("BearerAuth", AuthenticationFailedCause.InvalidCredentials) { challenge, c ->
                     c.respond(HttpStatusCode.Unauthorized)
                     challenge.complete()
@@ -75,7 +72,7 @@ internal fun io.ktor.server.auth.AuthenticationConfig.buildBearerProvider(scheme
                 return@authenticate
             }
 
-            context.principal(UserIdPrincipal(matchingEntry.key))
+            context.principal(UserIdPrincipal(principal))
         }
     }
 }
@@ -157,7 +154,7 @@ internal fun hmacBodyCapturePlugin(hmacBodyKey: AttributeKey<ByteArray>) =
  * configured scheme.
  * Install order is load-bearing: Sessions and DoubleReceive + HmacBodyCapture BEFORE
  * Authentication (each provider reads what those install). Returns the provider names in
- * registration order plus the Password scheme and HMAC body key.
+ * registration order plus the Password and Bearer schemes and the HMAC body key.
  */
 internal fun Application.configureAuth(
     schemes: List<AuthConfig>,
@@ -167,6 +164,7 @@ internal fun Application.configureAuth(
     // provider can read call.sessions.get<HomerSession>(). Combined.init
     // guarantees at most one Password scheme. ADR-0011.
     val passwordScheme = schemes.filterIsInstance<AuthConfig.Password>().singleOrNull()
+    val bearerScheme = schemes.filterIsInstance<AuthConfig.Bearer>().singleOrNull()
     installPasswordAuthSessions(passwordScheme, passwordVerifier)
 
     val hmacBodyKey = AttributeKey<ByteArray>("HmacBody")
@@ -178,7 +176,7 @@ internal fun Application.configureAuth(
 
     val authNames = installAuthProviders(schemes, hmacBodyKey)
 
-    return AuthSetup(authNames = authNames, passwordScheme = passwordScheme, hmacBodyKey = hmacBodyKey)
+    return AuthSetup(authNames = authNames, passwordScheme = passwordScheme, bearerScheme = bearerScheme, hmacBodyKey = hmacBodyKey)
 }
 
 /**

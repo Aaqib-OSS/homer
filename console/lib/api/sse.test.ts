@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock @microsoft/fetch-event-source BEFORE importing sse.ts so the
-// mock applies to the module under test. Use vi.hoisted so the mock
-// functions are defined before vi.mock's hoisted call site.
+// Mock fetch-event-source before importing sse.ts; vi.hoisted defines the mock
+// functions before vi.mock's hoisted call.
 const { fetchEventSourceMock, notifyAuthExpiredMock } = vi.hoisted(() => ({
   fetchEventSourceMock: vi.fn(),
   notifyAuthExpiredMock: vi.fn(),

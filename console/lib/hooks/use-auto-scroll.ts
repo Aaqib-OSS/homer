@@ -14,15 +14,8 @@ function scrollContainerOf(element: HTMLElement): HTMLElement | null {
 }
 
 /**
- * Sticky auto-scroll: when `enabled` is true, scrolls the given sentinel into
- * view on every change to `deps`, but only if the user is already near the
- * bottom of the nearest scrollable ancestor (within `threshold` px). This keeps
- * a live stream pinned to the bottom without yanking the viewport away from a
- * user who has scrolled up to read earlier content.
- *
- * The sentinel is a zero-height element rendered at the end of the scrollable
- * content; pass its ref. When no scrollable ancestor is found (e.g. jsdom with
- * no layout), it falls back to a best-effort `scrollIntoView`.
+ * While `enabled`, scrolls `sentinelRef` into view on every change to `deps` when
+ * its scroll container is within `threshold` px of the bottom (always, if none).
  */
 export function useAutoScroll(
   sentinelRef: RefObject<HTMLElement | null>,
@@ -35,12 +28,11 @@ export function useAutoScroll(
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
     const container = scrollContainerOf(sentinel);
-    // No scroll container found (or jsdom with no layout): best-effort scroll.
+    // No scroll container (e.g. jsdom): scroll unconditionally.
     if (!container) {
       sentinel.scrollIntoView?.({ block: 'end' });
       return;
     }
-    // Sticky: only follow the stream if the user is already near the bottom.
     const distanceFromBottom =
       container.scrollHeight - container.scrollTop - container.clientHeight;
     if (distanceFromBottom < threshold) {

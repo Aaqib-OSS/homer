@@ -10,7 +10,7 @@ import { formatRelativeTime, formatTimestamp } from '@/lib/utils/format';
 import type { RunnerFilterView, RunnerInstanceStatus, RunnerQueueStatusResponse, RunnerStatus } from '@/types/homer';
 
 function capacity(inUse: number, concurrency?: number | null) {
-  return `${inUse} / ${concurrency ?? 'unbounded'}`;
+  return `${inUse} / ${concurrency ?? '—'}`;
 }
 
 function describeFilter(filter: RunnerFilterView) {
@@ -91,10 +91,7 @@ function stripSlim(version: string) {
   return version.endsWith('-slim') ? version.slice(0, -'-slim'.length) : version;
 }
 
-// The instance's self-reported version, with an exclamation mark when it differs from Homer's.
-// Both sides render as React text; the comparison is exact string equality on the release, with
-// the image variant stripped from both sides. A version the instance did not report reads as
-// unknown and is never flagged.
+// The instance's reported version, flagged when its release differs from Homer's (image variant ignored).
 function InstanceVersion({ version, homerVersion }: { version?: string | null; homerVersion?: string }) {
   if (!version) return <span className="text-muted-foreground">unknown</span>;
   const mismatch = !!homerVersion && stripSlim(version) !== stripSlim(homerVersion);

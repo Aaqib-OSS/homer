@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-09-26
 deciders: Lukáš Vlk
-amended: 2026-10-08
+amended: 2026-10-08, 2026-11-20
 ---
 # ADR-0069: Console themes are same-origin stylesheets loaded at runtime
 
@@ -252,3 +252,24 @@ The built-ins therefore remain the default for Homer's own deployment; a
 deployment that names a pair opts into a closed theme list, and does so at deploy
 time through the same `window.__HOMER_CONFIG__` path as `CONSOLE_THEMES`.
 
+## Amendment (2026-11-20): font variable, pre-paint nonce and the missing-sheet probe
+
+- The root layout exposes the body font as the `--font-inter` variable on `<html>` (where `:root`
+  resolves it), not as a font-family class on `<body>`: a class on `<body>` outranks the
+  `--font-family-sans` token, so no theme could set its own font.
+- The layout's `x-nonce` reaches `Providers` as a `nonce` prop: `next-themes` renders its pre-paint
+  `<script>` inline, which the production CSP blocks without the request's nonce, so the stored (or default)
+  theme would otherwise apply only after React mounts.
+- The missing-stylesheet probe runs on the window `load` event, not at mount: a healthy sheet may still
+  be in flight and absent from `document.styleSheets` at mount, so probing earlier logs a false error
+  on every slow network.
+- `CONSOLE_THEMES` and `CONSOLE_THEME_MODES` are split with the grammar-free `splitCommaList` and
+  validated by their own parsers, not the plugins': the `name:<path>`, `<mode>:<name>` and plugin
+  `@requirement` grammars only coincide today, and a change to one must not change which entries of
+  another survive. A `//host/a.css` path is protocol-relative: it reads as local but resolves to a
+  foreign origin, which would let a third party restyle the console and read the operator's referrer.
+- A `CONSOLE_THEME_MODES` value is all-or-nothing: any malformed segment yields no pair and one logged
+  reason, so a typo cannot hide some of the built-ins; a blank value configures nothing and logs nothing.
+- The missing-stylesheet probe matches each entry's path as a resolved URL against the loaded sheets,
+  not by suffix: a suffix would let an unrelated sheet ending in the same path hide a real 404 and would
+  merge two names sharing one file into one report.

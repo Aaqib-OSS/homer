@@ -32,10 +32,7 @@ function normalizeMode(raw: string | null | undefined): InstanceMode | null {
   return raw === 'cookie' || raw === 'bearer' ? raw : null;
 }
 
-// The URL's `mode`, else the saved instance's, else the deployment default —
-// bearer when the operator allows it, because `CONSOLE_ALLOW_BEARER=true` marks
-// a bearer-only backend that cannot accept a password. Always cookie when
-// bearer is off, whatever the URL or a saved instance says.
+// Always cookie unless bearer is allowed (ADR-0011).
 function initialMode(
   allowBearer: boolean,
   raw: string | null | undefined,
@@ -44,11 +41,9 @@ function initialMode(
   return allowBearer ? (normalizeMode(raw) ?? saved ?? 'bearer') : 'cookie';
 }
 
-// Client-side courtesy cooldown after a 429 from the login limiter. Matches the
-// server's default `loginRateLimit.refillPeriod` (60s); it only gates the button
-// so a frustrated user can't keep hammering login and draining the refilling
-// bucket. If the server's window differs, a premature retry just re-arms it.
-const RATE_LIMIT_COOLDOWN_SECONDS = 60;
+// The backend's default `server.loginRateLimit.refillPeriod` (ADR-0011); a cross-origin 429's
+// Retry-After is not readable, so a server with another period re-arms on a premature retry.
+const LOGIN_REFILL_PERIOD_SECONDS = 60;
 
 // Username (cookie mode only) and password, or the bearer token in its place.
 function CredentialFields({
@@ -118,9 +113,7 @@ function LoginButton({
   );
 }
 
-// The trust state of the endpoint. An endpoint supplied via the URL that is not
-// one of the operator's saved instances is attacker-suppliable: a link to this
-// trusted origin can point the credential POST at any host.
+// A URL-supplied endpoint outside the saved instances is attacker-suppliable (ADR-0011).
 function endpointTrust(
   instances: Instance[],
   endpointParam: string | null,
@@ -136,9 +129,6 @@ function endpointTrust(
   })();
   const urlSeededUntrusted =
     seededEndpoint != null && !instances.some((i) => i.baseUrl === seededEndpoint);
-  // Whether the endpoint currently in the field is one the operator already
-  // trusts (a saved instance). Editing a link-seeded endpoint to a known
-  // instance clears the confirmation requirement below.
   const currentEndpointTrusted = (() => {
     try {
       return instances.some((i) => i.baseUrl === normalizeBaseUrl(endpoint));
@@ -146,10 +136,6 @@ function endpointTrust(
       return false;
     }
   })();
-  // A link-seeded endpoint that isn't a saved instance must be explicitly
-  // confirmed before login: without this, a shared `?endpoint=attacker` link
-  // silently redirects the operator's credential/token POST to that origin. A
-  // manually-typed endpoint is the operator's own trust decision and is not gated.
   return { urlSeededUntrusted, requiresTrustConfirmation: urlSeededUntrusted && !currentEndpointTrusted };
 }
 
@@ -166,17 +152,12 @@ function checkEndpoint(
     return { error: err instanceof Error ? err.message : 'Invalid endpoint URL' };
   }
 
-  // When the operator has pinned an allowlist, reject an off-allowlist endpoint
-  // here with a clear message (the CSP connect-src would otherwise block the
-  // request opaquely): an attacker-supplied endpoint is refused, not just
-  // warned about.
+  // An off-allowlist endpoint is refused before the request (ADR-0011).
   if (!isOriginAllowed(baseUrl, allowedOrigins)) {
     return { error: 'This endpoint is not in this console’s allowed backend list.' };
   }
 
-  // A link-seeded, untrusted endpoint must be explicitly confirmed before the
-  // credential POST. The button is also disabled until then; this guard is the
-  // belt-and-suspenders backstop.
+  // The button is disabled until the endpoint is confirmed; this re-checks at submit (ADR-0011).
   if (blocked) {
     return { error: 'Confirm you trust this endpoint before signing in.' };
   }
@@ -214,9 +195,7 @@ function SessionExpiredNotice() {
   );
 }
 
-// The neutral sibling of SessionExpiredNotice, for a reader who was sent here
-// from a console page without ever having a session. Deliberately not an alert:
-// nothing went wrong.
+// The neutral sibling of SessionExpiredNotice, for a reader who never had a session.
 function SignInPrompt() {
   return (
     <div
@@ -318,7 +297,7 @@ function useLoginSubmit(
       return;
     }
     activateInstance(store, checked.baseUrl, attempt.mode);
-    // Drop anything cached for a previously-active instance before logging in.
+    // Drop anything cached for the prior instance before logging in.
     queryClient.clear();
 
     setIsLoading(true);
@@ -343,10 +322,7 @@ function LoginForm() {
   const expired = searchParams?.get('expired') === '1';
   const nextParam = searchParams?.get('next') ?? null;
 
-  // Bearer mode is opt-in (CONSOLE_ALLOW_BEARER): its token lives in localStorage
-  // and is XSS-exfiltratable, so the console is cookie-only unless the operator
-  // enables it. When off, ignore any bearer request (URL param or saved instance)
-  // and never offer the toggle. See ADR-0011.
+  // Off: ignore any bearer request and never offer the toggle (ADR-0011).
   const allowBearer = appConfig.auth.allowBearer;
   const active = store.instances.find((i) => i.id === store.activeInstanceId);
   const endpointParam = searchParams?.get('endpoint') ?? null;
@@ -362,7 +338,7 @@ function LoginForm() {
     { endpoint: endpointField.endpoint, blocked: endpointField.blocked, mode, username, password },
     nextParam,
     endpointField.reveal,
-    () => setCooldown(RATE_LIMIT_COOLDOWN_SECONDS),
+    () => setCooldown(LOGIN_REFILL_PERIOD_SECONDS),
   );
   const bearerMode = mode === 'bearer';
 

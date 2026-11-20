@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-10-02
 deciders: Lukáš Vlk
-amended: 2026-10-08, 2026-10-09
+amended: 2026-10-08, 2026-10-09, 2026-11-20
 ---
 # ADR-0073: LangGraph topology is structured data, drawn by the console
 
@@ -138,6 +138,17 @@ holds the same single permit and interpreter for the same at most 15 s, and the
 total is already bounded by the per-service permits and the `maxQueueWait` shed
 (ADR-0027, ADR-0044), which cancellation cannot bypass. The exposure is late
 release of work the caller was entitled to start, not an unbounded resource.
+
+## Amendment (2026-11-20): dagre never sees an agent-authored id
+
+Node ids come from the agent, and dagre keys its graph by plain object
+properties, so an id such as `constructor`, `toString` or `__proto__` is
+mishandled or crashes the layout. The console therefore gives dagre only
+index-based internal ids and maps them back to the real ones afterwards
+(ADR-0047 rule 2: validate at the point of use). A dagre failure is still
+caught and answered like an over-cap graph (the fallback list), so an id shape
+nobody anticipated cannot take the page down. Self-loops are drawn by the
+console, not by dagre, whose points for them land away from the node.
 
 ## More Information
 

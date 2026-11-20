@@ -1,9 +1,5 @@
-// A console plugin with no framework and no build step: plain DOM, plain ES
-// module. The console only requires a default export with `mount`, so React is
-// a choice the plugin makes, not part of the contract.
-//
-// This file is what the console imports — there is no build output. See
-// README.md, and console/lib/plugins/types.ts for the authoritative contract.
+// A framework-free, build-free console plugin: this file is what the console imports.
+// The contract is console/lib/plugins/types.ts.
 
 /** Console theme tokens are plain CSS vars, so a plugin inherits the active theme. */
 const CSS = `

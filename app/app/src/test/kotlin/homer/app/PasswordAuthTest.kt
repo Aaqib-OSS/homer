@@ -154,7 +154,7 @@ class PasswordAuthTest {
     fun `login issues a session expiring sessionTtlMin minutes after the login second`() =
         testApplication {
             // sessionTtlMin = 7 keeps `*` and `/` apart: 7 / 60 is 0, so a mutant that divides
-            // would stamp the login second itself instead of a lifetime of 420 s (UnsecuredRoutes.kt:99).
+            // would stamp the login second itself instead of a lifetime of 420 s (`sessionAuthRoutes` in UnsecuredRoutes.kt).
             val ttlScheme = scheme.copy(sessionTtlMin = 7)
             application {
                 installAuthRoutes(ttlScheme)
@@ -372,7 +372,7 @@ class PasswordAuthTest {
     /**
      * Seeds a session expiring [offsetSec] seconds after a fresh wall-clock second, then reads `/me`:
      * the route must refuse `exp == now` and accept `exp == now + 1`, the two sides of its
-     * `session.exp <= Instant.now()` boundary (UnsecuredRoutes.kt:112).
+     * `session.exp <= Instant.now()` boundary (`respondSessionMe` in UnsecuredRoutes.kt).
      */
     private fun meWithSessionExpiringIn(
         offsetSec: Long,

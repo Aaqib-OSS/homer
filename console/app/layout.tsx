@@ -11,9 +11,7 @@ import { parseThemeEntries, parseThemeModes } from "@/lib/themes/loader";
 // Force dynamic rendering so process.env is read at request time, not baked at build time
 export const dynamic = 'force-dynamic';
 
-// A variable, not `inter.className`: a font-family class on <body> outranks the
-// `--font-family-sans` token, so no theme could set its own font. It sits on
-// <html> because `:root` resolves `var(--font-inter)` there.
+// A variable on <html>, not a class on <body>, so a theme can set its font (ADR-0069).
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
@@ -33,14 +31,10 @@ export default async function RootLayout({
   );
   for (const reason of rejectedThemes) console.error(`[themes] ignoring ${reason}`);
 
-  // One mapping per render: the `name:path` string is the interchange format
-  // between layout, config and switcher (mirroring how `pluginEntries` rides
-  // `__HOMER_CONFIG__` — see ADR-0069), so both consumers must agree on it.
+  // The `name:path` string is the interchange format between layout, config and switcher (ADR-0069).
   const themeEntryStrings = themeEntries.map(({ name, path }) => `${name}:${path}`);
 
-  // The light/dark pair may only name themes the operator actually configured,
-  // so it is resolved against the survivors above. A malformed value is ignored
-  // whole — the built-ins stay — and logged once, like a rejected entry.
+  // The light/dark pair may only name configured themes; a malformed value is ignored whole (ADR-0069).
   const { modes: themeModes, rejected: rejectedThemeModes } = parseThemeModes(
     process.env.CONSOLE_THEME_MODES,
     themeEntries.map(({ name }) => name),
@@ -64,11 +58,7 @@ export default async function RootLayout({
   return (
     <html lang="en" className={inter.variable} suppressHydrationWarning>
       <body>
-        {/* One same-origin stylesheet per configured theme. React hoists these
-            into <head>; a failed load is non-fatal (the theme's class applies no
-            tokens, so every token falls back to the `:root` (light) values) and
-            `Providers` reports it. CSP already covers them: `style-src 'self'` /
-            `font-src 'self'`. See ADR-0069. */}
+        {/* One same-origin stylesheet per configured theme; the CSP already covers it (ADR-0069). */}
         {themeEntries.map(({ name, path }) => (
           <link key={name} rel="stylesheet" precedence="theme" href={path} />
         ))}

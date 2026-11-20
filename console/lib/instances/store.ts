@@ -25,21 +25,12 @@ const INSTANCES_KEY = 'homer_instances';
 /** Id/label of the instance seeded from the deployment's build/runtime config. */
 export const DEFAULT_INSTANCE_ID = 'default';
 
-/**
- * Per-instance bearer-token localStorage key. Namespacing by instance id keeps
- * tokens for different backends from clobbering each other (the legacy
- * single-instance console used the bare `appConfig.auth.tokenKey`).
- */
+/** Per-instance bearer-token localStorage key, so tokens for different backends never clobber each other. */
 export function tokenKeyFor(id: string): string {
   return `${appConfig.auth.tokenKey}::${id}`;
 }
 
-/**
- * The seeded default's auth mode: bearer when the deployment configures a
- * bearer backend or offers bearer sign-in at all (`CONSOLE_ALLOW_BEARER`, which
- * marks a bearer-only stack), so a fresh install opens on the Token form and
- * probes `/heartbeat` instead of asking for a password the backend rejects.
- */
+/** The seeded default's mode: bearer when the deployment configures or offers it, so a bearer-only stack opens on the Token form. */
 function defaultInstanceMode(): InstanceMode {
   return appConfig.auth?.mode === 'bearer' || appConfig.auth?.allowBearer ? 'bearer' : 'cookie';
 }
@@ -54,18 +45,16 @@ function seedDefault(): InstancesState {
 }
 
 /**
- * Copy a pre-existing legacy bearer token (stored under the un-namespaced
- * `appConfig.auth.tokenKey`) into the seeded default instance's namespaced key
- * so users upgrading from the single-instance console are not silently logged
- * out. Idempotent: only runs when the namespaced key is still empty.
+ * Settles a token under the single-instance console's bare `appConfig.auth.tokenKey`: copies it to the
+ * default instance's key when `copy` and that key is empty, then deletes the bare key. @removeIn 1.46.0
  */
-function migrateLegacyToken(): void {
+function migrateUnnamespacedToken({ copy }: { copy: boolean }): void {
   if (typeof window === 'undefined') return;
-  const legacy = localStorage.getItem(appConfig.auth.tokenKey);
+  const unnamespaced = localStorage.getItem(appConfig.auth.tokenKey);
+  if (unnamespaced === null) return;
   const namespaced = tokenKeyFor(DEFAULT_INSTANCE_ID);
-  if (legacy !== null && localStorage.getItem(namespaced) === null) {
-    localStorage.setItem(namespaced, legacy);
-  }
+  if (copy && localStorage.getItem(namespaced) === null) localStorage.setItem(namespaced, unnamespaced);
+  localStorage.removeItem(appConfig.auth.tokenKey);
 }
 
 function isValidState(value: unknown): value is InstancesState {
@@ -87,25 +76,27 @@ function persist(state: InstancesState): void {
   localStorage.setItem(INSTANCES_KEY, JSON.stringify(state));
 }
 
+/** The persisted state, with its active id resolving to an instance; null when absent, invalid or corrupt. */
+function storedState(): InstancesState | null {
+  const raw = localStorage.getItem(INSTANCES_KEY);
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isValidState(parsed)) return null;
+    if (parsed.instances.some((i) => i.id === parsed.activeInstanceId)) return parsed;
+    return { ...parsed, activeInstanceId: parsed.instances[0].id };
+  } catch {
+    return null;
+  }
+}
+
 function readState(): InstancesState {
   if (typeof window === 'undefined') return seedDefault();
-  const raw = localStorage.getItem(INSTANCES_KEY);
-  if (raw) {
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      if (isValidState(parsed)) {
-        // Guarantee the active id still resolves to an instance.
-        if (parsed.instances.some((i) => i.id === parsed.activeInstanceId)) {
-          return parsed;
-        }
-        return { ...parsed, activeInstanceId: parsed.instances[0].id };
-      }
-    } catch {
-      /* corrupt — fall through to a fresh seed */
-    }
-  }
+  const stored = storedState();
+  // A stored state means the copy ran in an earlier session: an empty default key is a sign-out.
+  migrateUnnamespacedToken({ copy: stored === null });
+  if (stored) return stored;
   const seeded = seedDefault();
-  migrateLegacyToken();
   persist(seeded);
   return seeded;
 }

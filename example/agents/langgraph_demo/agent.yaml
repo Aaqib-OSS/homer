@@ -4,9 +4,8 @@ description: Demonstrates the !<langgraph> command launching the Python homer_la
 dispatch:
   enabled: true
 env:
-  # Makes approval_flow.py (next to this file) importable, for runs and for
-  # the console's graph introspection alike. /app/agents is the compose mount
-  # of example/agents (docker-compose.yml); change the path if you move the agent.
+  # Makes approval_flow.py importable; /app/agents is the compose mount of
+  # example/agents, so change the path if you move the agent.
   PYTHONPATH: /app/agents/langgraph_demo
 commands:
   - !<langgraph>

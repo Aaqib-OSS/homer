@@ -1,9 +1,7 @@
 /**
- * Shared dot-row styling for LangGraph sub-command progress: the fill color
- * per command state (commandDotColor) and the x-positions for a row of dots
- * inside a node box of a given width (dotRow). Consumed by the in-graph dots
- * in components/agents/workflow-graph.tsx and the sub-progress row in
- * components/processes/workflow-status.tsx, so both stay visually identical.
+ * Dot-row styling for LangGraph sub-command progress: the fill per command state and the
+ * x-positions of a row of dots in a node box. Shared by workflow-graph.tsx and
+ * workflow-status.tsx so both stay identical.
  */
 
 const DOT_FILL: Record<string, string> = {
@@ -21,9 +19,8 @@ export function commandDotColor(state: string): string {
 export const DOT_RADIUS = 2.5;
 const DOT_SPACING = 7;
 export const BOTTOM_INSET = 5;
-// Overflow clamp: keep the row inside the rect (EDGE_INSET margin each side);
-// compress spacing down to MIN_SPACING (dots just apart), then drop the
-// oldest commands -- the tail (latest + running) is the informative part.
+// Overflow clamp: keep the row inside the EDGE_INSET margins, compress spacing to MIN_SPACING,
+// then drop the oldest commands; the tail (latest + running) is the informative part.
 const EDGE_INSET = 4;
 const MIN_SPACING = 5.5;
 

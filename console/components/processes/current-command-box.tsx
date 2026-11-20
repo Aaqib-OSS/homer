@@ -12,9 +12,8 @@ interface CurrentCommandBoxProps {
   command: string;
   commandStart: number | null;
   executionsLength: number;
-  // Index of the command currently running, from the status API's in-memory
-  // tracking; falls back to executionsLength when null (older servers / a
-  // restart). Used for both the artifact paths and the /llm-events `cmd`.
+  // Running command's index from the status API's in-memory tracking, null after a restart;
+  // falls back to executionsLength. Used for artifact paths and the /llm-events `cmd`.
   currentCommandIndex?: number | null;
   // Command tag of the running command; passed through to the output tabs
   // as `kind` to gate the Conversation view.

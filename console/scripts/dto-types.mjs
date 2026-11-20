@@ -1,13 +1,8 @@
 #!/usr/bin/env node
 /**
- * Console side of the `dto-contract` check (ADR-0082): the shape of every interface and type alias in
- * `types/homer.ts`, the hand-written mirror of the backend DTOs, read with the TypeScript compiler API.
- * Writes `reports/dto-contract/console-dtos.json`; tools/quality/dto-contract.mjs compares it with the
- * backend's export.
- *
- * A type is coarse: string, number, boolean, unknown, a string-literal union (`enum`), `list`, `map`,
- * a `ref` to a declaration by name, an inline `object`, or a `union` of those; `nullable` marks a
- * union with `null`.
+ * Console side of the `dto-contract` check (ADR-0082): writes `reports/dto-contract/console-dtos.json`,
+ * the coarse shape (string, number, boolean, `enum`, `list`, `map`, `ref`, `object`, `union`,
+ * `nullable`) of every type in `types/homer.ts`, for tools/quality/dto-contract.mjs to compare.
  */
 import fs from 'node:fs';
 import path from 'node:path';

@@ -574,8 +574,10 @@ toggle when `CONSOLE_ALLOW_BEARER=true`:
   [`../docs/adr/0011-cookie-based-console-auth.md`](../docs/adr/0011-cookie-based-console-auth.md).
 - **`bearer`** (requires `CONSOLE_ALLOW_BEARER=true`) — legacy
   single-token flow. The username field is hidden and the token is
-  stored in `localStorage`. Use for transition only; CLI / MCP / webhook
-  clients are the supported audience for bearer.
+  stored in `localStorage`. The console shows what the token's own role
+  and grants allow; against a server too old to report them, the token
+  gets no admin pages and no grants. Use for transition only; CLI / MCP /
+  webhook clients are the supported audience for bearer.
 
 Opening a console page without a session sends you to the login screen with
 the page you asked for and a neutral "Sign in to continue" prompt. The "Your
@@ -590,7 +592,8 @@ value is ignored rather than followed. `CONSOLE_ALLOW_BEARER=true` also makes
 an explicit `?mode=` parameter or the active instance's saved mode still wins.
 
 The console reads the caller's capabilities from `GET /api/v1/auth/me`
-(`{username, role, grants}`) and hides controls the user can't use:
+(`{username, role, grants}`), for a session or a bearer token alike, and
+hides controls the user can't use:
 admin-only nav (Costs, Schedules, Reload, Runners), per-agent Edit/Debug (require
 `edit`/`debug` on that agent), per-process Kill (requires `control` on
 the agent, or ownership of the run), and Retry (requires `run` on the
@@ -808,8 +811,9 @@ authenticated user can open the plugin.
 **Only same-origin `.js`/`.mjs` paths are accepted.** A remote URL, a protocol-relative
 `//host/p.js`, a `data:` URL, or anything containing `..` is rejected and
 logged. Plugin code comes off the console's own disk — there is no network fetch
-to intercept, no foreign origin to allowlist, and `script-src 'self'` already
-covers the import.
+to intercept and no foreign origin to allowlist. The console's CSP admits the import
+via its own trusted scripts (their nonce or `'strict-dynamic'`), never by origin, as
+`'self'` is ignored, so this path check alone keeps plugin code local.
 
 Each module is imported once per session. Its default export declares the route
 it claims, its sidebar label, and a `mount` function that renders it (access
@@ -950,7 +954,7 @@ which records the sandboxed-iframe option to revisit first.
 | `GET /api/v1/health` | Runner/health status (used for the orphan-pod-sweep banner) |
 | `POST /api/v1/auth/login` | Mint a session cookie (cookie auth mode) |
 | `POST /api/v1/auth/logout` | Clear the session cookie (idempotent) |
-| `GET /api/v1/auth/me` | Probe the cookie session and return `{ username, role, grants }` |
+| `GET /api/v1/auth/me` | Return `{ username, role, grants }` for the session cookie or bearer token |
 | `GET /api/v1/artifacts` | Fetch or download artifact files from process executions |
 | `GET /api/v1/artifacts/list` | List artifact files for a process |
 | `GET /api/v1/costs` | Rolling-window LLM harness (Claude/Codex/opencode) spend snapshot (used by `/costs` page) |

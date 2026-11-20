@@ -69,9 +69,7 @@ describe('useAuthExpiredHandler', () => {
   });
 
   it('marks an expiry for a bearer token the backend rejected on page load', () => {
-    // The reader returns with a token that has already expired: no render of
-    // this mount ever said 'authed', so the stored credential is the only
-    // evidence that there was a session to expire.
+    // No render said 'authed': the stored credential is the only evidence of a session.
     activateBearerInstance();
     localStorage.setItem(ACTIVE_TOKEN_KEY, 'stale-bearer');
     renderHarness(new QueryClient(), 'loading');
@@ -87,10 +85,7 @@ describe('useAuthExpiredHandler', () => {
   });
 
   it('still reaches the redirect when storage denies the credential read', () => {
-    // With storage blocked (denied cookie/storage), both reads inside
-    // sessionExisted throw. The recovery must treat that as "no session" and
-    // carry on — like removeActiveToken — instead of stranding the reader on
-    // a dead page with stale per-user caches.
+    // Blocked storage makes sessionExisted throw; recovery treats it as no session and redirects.
     activateBearerInstance();
     localStorage.setItem(ACTIVE_TOKEN_KEY, 'stale-bearer');
     const getItem = vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
@@ -164,9 +159,7 @@ describe('useAuthExpiredHandler', () => {
     const client = new QueryClient();
     const clearSpy = vi.spyOn(client, 'clear');
     renderHarness(client);
-    // Simulates the production feedback loop: queryClient.clear() refetches
-    // still-mounted queries, whose 401s re-fire the bus before the /login
-    // navigation commits (pathname still the dashboard route).
+    // clear() refetches mounted queries whose 401s re-fire the bus before /login commits.
     act(() => {
       notifyAuthExpired('http-401');
       notifyAuthExpired('http-401');
