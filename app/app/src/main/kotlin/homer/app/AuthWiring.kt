@@ -154,7 +154,7 @@ internal fun hmacBodyCapturePlugin(hmacBodyKey: AttributeKey<ByteArray>) =
  * configured scheme.
  * Install order is load-bearing: Sessions and DoubleReceive + HmacBodyCapture BEFORE
  * Authentication (each provider reads what those install). Returns the provider names in
- * registration order plus the Password scheme and HMAC body key.
+ * registration order plus the Password and Bearer schemes and the HMAC body key.
  */
 internal fun Application.configureAuth(
     schemes: List<AuthConfig>,

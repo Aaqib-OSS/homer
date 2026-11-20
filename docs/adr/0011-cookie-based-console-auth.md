@@ -125,8 +125,9 @@ edits to `Application.kt` / `SessionAuth.kt` must keep them:
    `/me` reads the session directly so it isn't mis-authenticated as
    the bearer principal by `FirstSuccessful`.
 
-   > **Amendment (2026-11-20) — `/me` answers a bearer header first and the session
-   > otherwise, still outside `FirstSuccessful`; see the amendment below.**
+   > **Amendment (2026-11-20) — `/me` answers a bearer header first when a `bearer` scheme
+   > is configured and the session otherwise, still outside `FirstSuccessful`; see the
+   > amendment below.**
 8. **`provider("auth-session")`, not `session<T>()`.** Ktor 3.4's
    built-in `session<T>()` provider does not give access to
    `call.request.path()` for the per-user endpoint check. The
