@@ -378,7 +378,7 @@ live registered instances. See [ADR-0066](../docs/adr/0066-external-pull-runners
 ```json
 {
   "runners": [
-    { "alias": "local", "kind": "local", "tags": [], "concurrency": 10, "inUse": 0, "instances": null },
+    { "alias": "local", "kind": "local", "tags": [], "concurrency": 100, "inUse": 0, "instances": null },
     { "alias": "gpu-box", "kind": "ssh", "tags": ["gpu"], "concurrency": 2, "inUse": 1, "instances": null },
     {
       "alias": "workers",

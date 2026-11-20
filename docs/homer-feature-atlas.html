@@ -2494,7 +2494,7 @@ sftpTransferTimeoutSeconds: 60 # per-operation SFTP deadline (default 300)</code
         <article class="f">
           <h3>Kubernetes runner <span class="where">server config</span></h3>
           <p>One ephemeral pod per run with a pod-local <code>emptyDir</code> workspace; content moves as gzip'd tar over
-            the exec channel. The image must ship <code>tar</code> and <code>gzip</code>. <code>maxRunSeconds</code> is a
+            the exec channel. The image must ship <code>tar</code> and <code>gzip</code>. <code>maxRunSeconds</code> (default 24 h) is a
             hard run limit Kubernetes enforces on the pod, even while Homer is down; opt-in <code>gracefulStopSeconds</code>
             puts a soft deadline in front of it, interrupting the running step so the agent's <code>onStop:</code> steps can
             save state before the pod goes; opt-in <code>workload: Job</code> runs
@@ -2509,8 +2509,8 @@ sftpTransferTimeoutSeconds: 60 # per-operation SFTP deadline (default 300)</code
     resources: { limits: { cpu: "2", memory: 2Gi } }
     homerApiUrl: http://homer.homer.svc.cluster.local:8080
     workload: Job        # default Pod
-    maxRunSeconds: 7200
-    gracefulStopSeconds: 300  # soft deadline 300 s earlier; needs maxRunSeconds</code></pre>
+    maxRunSeconds: 7200       # default 86400
+    gracefulStopSeconds: 300  # soft deadline 300 s earlier</code></pre>
         </article>
 
         <article class="f">

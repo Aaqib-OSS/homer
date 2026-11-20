@@ -58,7 +58,7 @@ class ExternalShellExecutor(
         interruptGrace: Duration?,
     ): CommandResult {
         // jscpd:ignore-end
-        // No Dispatchers.IO hop: only suspensions follow (chunk writes run in the routes), keeping runTest deterministic.
+        // No Dispatchers.IO hop, for runTest determinism: past two fast file opens only suspensions follow (routes write chunks).
         val sink = openSink(stdOut, stdErr, stdOutFilter)
         val op = cmdOp(command, stdIn, env, timeout, interruptGrace)
         session.registerSink(op.opId, sink)
@@ -274,7 +274,7 @@ class ExternalShellExecutor(
         /**
          * How long one `cmd` waits for chunks its instance reported but Homer has not received,
          * once, before failing the step as output-incomplete. Seconds, and fixed: the wait is
-         * the instance's last post still being in flight, not a retry budget (§12 rule 5).
+         * the instance's last post still being in flight, not a retry budget (ADR-0047 rule 5, CWE-400).
          */
         internal val INCOMPLETE_OUTPUT_WAIT = 2.seconds
     }

@@ -73,7 +73,7 @@ internal class RunAgentExecutor(
             throw e
         } catch (e: HomerException) {
             // A refused dispatch (cycle, depth, cost cap, validation) exits 255 like a denied hop,
-            // so continueIfFail and finishExitCode apply (ADR-0030).
+            // so continueIfFail and finishExitCode apply (ADR-0039).
             context.stdErr.writeText(e.message ?: "agent dispatch failed")
             CommandResult(exitCode = 255, stdOut = context.stdOut, stdErr = context.stdErr)
         }

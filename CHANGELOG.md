@@ -9,9 +9,10 @@
 - **Deprecated: `homer-result --token`** — Pass the result token in `HMR_RESULT_TOKEN` instead; the flag is removed in 1.45.0.
 - **Fixed: LangGraph run status reads a bounded identity file** — An oversized, linked or non-regular `langgraph.json` in a run's artifacts is ignored instead of read whole on every status poll.
 - **BREAKING: `maxQueuedRuns` defaults to 10 × `maxParallelRuns`** — Runs waiting for a parallel-run slot or, under `WAIT`, a lock share a cap that is bounded by default; a surplus run fails fast, and `null` (unbounded) is no longer accepted.
-- **BREAKING: runner limits are finite by default** — `concurrency` defaults to 100 on `server.localRunner` and 10 on `ssh` and `kubernetes` runners, and no longer accepts `null`, `kubernetes.maxRunSeconds` defaults to 86400 and no longer accepts `null`, and `ssh.sftpTransferTimeoutSeconds` no longer accepts `null`. See [ADR-0066](docs/adr/0066-external-pull-runners-and-unified-claim-queue.md).
+- **BREAKING: runner limits are finite by default** — `concurrency` (default 100 on `server.localRunner`, 10 on `ssh` and `kubernetes`), `kubernetes.maxRunSeconds` (default 86400) and `ssh.sftpTransferTimeoutSeconds` no longer accept `null`. See [ADR-0066](docs/adr/0066-external-pull-runners-and-unified-claim-queue.md).
 - **BREAKING: external runners must report output chunk counts** — A `cmd` result without them, from a runner older than 1.37.1, now fails the step instead of skipping the completeness check. See [ADR-0066](docs/adr/0066-external-pull-runners-and-unified-claim-queue.md).
 - **Fixed: opencode run cost** — A run that resumes an opencode session is charged only its own steps, and steps past the 4 096th in one session are no longer dropped.
+- **Fixed: Claude raw options next to variadic flags** — A raw `options` list that starts with a bare value is no longer taken as a `--file`, `--add-dir` or `--mcp-config` value.
 - **Fixed: a Kubernetes exec channel closed without a status fails as lost** — Such a step now fails with `ExecChannelLost` and kills its leftover command, instead of reporting exit code -1. See [ADR-0103](docs/adr/0103-a-lost-exec-channel-kills-and-fails-without-reattach.md).
 
 ## [1.43.2] - 2026-11-18

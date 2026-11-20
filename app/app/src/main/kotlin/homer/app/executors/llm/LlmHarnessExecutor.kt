@@ -267,8 +267,8 @@ class LlmHarnessExecutor<C>(
 
     /**
      * Accounts an aborted attempt uncancellably and hands off its telemetry, which `execute` never does here; a failure
-     * is logged, as the caller rethrows. A stop-interrupted attempt also gives [ExecutionContext.facts] its spend and
-     * CLI session id, for the step's row and `HMR_STOP_SESSION_ID` (ADR-0108).
+     * is logged, never thrown, so the caller rethrows the attempt's own exception. A stop-interrupted attempt also gives
+     * [ExecutionContext.facts] its spend and CLI session id, for the step's row and `HMR_STOP_SESSION_ID` (ADR-0108).
      */
     @Suppress("SuspendFunSwallowedCancellation") // NonCancellable inside; its caller rethrows the original
     private suspend fun accountAborted(

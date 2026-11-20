@@ -201,11 +201,18 @@ point of use, not at decode.
   that op. The bound covers the wait, never the result a poll carries: the route applies that
   result before it takes a slot.
 - **The last output chunk.** A `cmd` result whose chunk counts are ahead of the output Homer holds
-  is waited on once, for a fixed 2 s, and then fails the step as output-incomplete. The instance
-  reports its exit after its last post, but the two ride different connections, so the last chunk
-  can still be in flight; the wait is that flight, not a retry budget (§12 rule 5). A clean result
-  over truncated output is never returned: a `!<claude>` step would then fail on a missing `result`
-  event instead of on its real cause.
+  is waited on once, for a fixed 2 s; if chunks are still missing, the step fails as
+  output-incomplete. The instance reports its exit after its last post, but the two ride different
+  connections, so the last chunk can still be in flight; the wait is that flight, not a retry budget
+  (§12 rule 5). A clean result over truncated output is never returned: a `!<claude>` step would
+  then fail on a missing `result` event instead of on its real cause.
+
+## Amendment (2026-11-20): a draining instance releases its declared name
+
+ADR-0099 holds a declared instance name to one live instance per domain. A draining instance, one
+that deregistered and is finishing its last sessions, no longer holds the name, and a swept one is
+gone. So a `homer-runner` that restarts under the same name registers at once instead of being
+refused until its previous instance's drain ends.
 
 ## Amendment (2026-11-20): a claimed run waits once more for its session
 

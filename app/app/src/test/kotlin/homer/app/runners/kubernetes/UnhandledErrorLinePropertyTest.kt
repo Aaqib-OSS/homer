@@ -28,7 +28,7 @@ class UnhandledErrorLinePropertyTest {
     private val separators = Arb.element(" ", "\n", "\t ", " : ")
 
     @Test
-    fun `the line never holds the exec URL, a covered env value raw or encoded, or more than 512 chars`() =
+    fun `the output is one line of at most 512 chars without the exec URL or a covered env value raw or encoded`() =
         runTest {
             val cases =
                 Arb.bind(Arb.list(values, 1..5), Arb.list(filler, 0..6), separators, Arb.long()) { env, words, separator, seed ->
@@ -47,6 +47,7 @@ class UnhandledErrorLinePropertyTest {
 
                 assertFalse(line.contains("command="), "the exec URL must not survive: $line")
                 assertTrue(line.length <= TERMINATION_MESSAGE_MAX_CHARS, "the line is bounded: ${line.length}")
+                assertFalse(line.any { it == '\n' || it == '\r' }, "the output is one line: $line")
                 env.filter { it.length >= MIN_SCREENED_SECRET_LENGTH }.forEach { value ->
                     assertFalse(line.contains(value), "covered value '$value' leaked raw: $line")
                     val form = URLEncoder.encode(value, StandardCharsets.UTF_8)

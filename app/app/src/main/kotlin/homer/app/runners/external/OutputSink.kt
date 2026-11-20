@@ -24,7 +24,7 @@ class OutputSink(
         seq: Long,
         bytes: ByteArray,
     ) {
-        // Local bound (§12 rule 4): a chunk over the wire cap must not consume a seq or
+        // Local bound (ADR-0047 rule 4, CWE-770): a chunk over the wire cap must not consume a seq or
         // reach the sequence bookkeeping below — trust the instance's own claim otherwise.
         require(bytes.size <= RunnerProtocol.MAX_OUTPUT_CHUNK_BYTES) {
             "output chunk of ${bytes.size} bytes exceeds ${RunnerProtocol.MAX_OUTPUT_CHUNK_BYTES}"

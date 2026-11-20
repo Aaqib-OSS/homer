@@ -72,8 +72,8 @@ class ExternalRunnerDomain(
             )
         synchronized(registerLock) {
             if (instances.size >= config.maxInstances) throw TooManyRunnerInstancesException(alias, config.maxInstances)
-            // One live instance per declared name (ADR-0099); a draining one no longer holds it. Checked under the
-            // insert's lock, or two simultaneous registrations would both pass.
+            // One live instance per declared name (ADR-0099); a draining one releases it, so its restarted runner re-registers (ADR-0066).
+            // Checked under the insert's lock, or two simultaneous registrations would both pass.
             if (name != null && instances.values.any { !it.draining && it.declaredName == name }) {
                 throw RunnerRegistrationRejectedException(alias, "instance name '$name' is already used by a live instance")
             }
@@ -93,7 +93,7 @@ class ExternalRunnerDomain(
 
     /** The instance name [requested], null when absent or blank; rejected unless it has a tag's shape. */
     private fun validatedName(requested: String?): String? {
-        // Names are logged and the route does not validate them: the tag shape keeps them safe to log verbatim.
+        // Names are logged and the route does not validate them: the tag shape keeps them safe to log verbatim (ADR-0047 rule 2, CWE-117).
         val name = requested?.takeIf { it.isNotBlank() }
         if (name != null && !RunnerTagValidation.PATTERN.matches(name)) {
             throw RunnerRegistrationRejectedException(alias, "name must match ${RunnerTagValidation.PATTERN}")

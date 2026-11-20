@@ -41,7 +41,7 @@ class ExternalRunnerInstance(
     /**
      * At most `concurrency` claim polls may be open at once, counting live sessions
      * too — an open poll can turn into one more session, so a poll and a session
-     * both hold a share of the same budget (§12 rule 4).
+     * both hold a share of the same budget (ADR-0047 rule 4, CWE-770).
      */
     fun tryAcquirePoll(): Boolean {
         while (true) {

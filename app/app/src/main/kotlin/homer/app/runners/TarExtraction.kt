@@ -180,7 +180,7 @@ internal object TarExtraction {
     /**
      * The permission set to apply to an extracted file: 0755 when the entry carries the
      * owner-exec bit, 0644 otherwise. Never the entry's own bits — the tar is
-     * attacker-controlled (§12, ADR-0047).
+     * attacker-controlled (ADR-0047 rule 2, CWE-732).
      */
     private fun normalizedPermissions(mode: Int): Set<PosixFilePermission> =
         if (mode and TarStreams.OWNER_EXECUTE_BIT != 0) EXECUTABLE_PERMISSIONS else NON_EXECUTABLE_PERMISSIONS
