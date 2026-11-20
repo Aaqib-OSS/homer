@@ -352,80 +352,28 @@ describe('useProcessLogStream', () => {
     };
   }
 
-  it('appends a strictly-continuing chunk', async () => {
+  it('appends each chunk to the buffer, in order', async () => {
     const { emit, read } = mountAndCapture();
-    emit('log.chunk', { offset: 5, content: 'hello' });
-    await waitFor(() => expect(read().offset).toBe(5));
-    expect(read().content).toBe('hello');
-    emit('log.chunk', { offset: 11, content: ' world' });
-    await waitFor(() => expect(read().offset).toBe(11));
-    expect(read().content).toBe('hello world');
+    emit('log.chunk', { content: 'hello' });
+    emit('log.chunk', { content: ' world' });
+    await waitFor(() => expect(read().content).toBe('hello world'));
+    expect(read().offset).toBe(11);
   });
 
-  it('drops a chunk whose offset is at-or-behind our buffer (reconnect echo)', async () => {
+  it('advances the offset by UTF-8 bytes, not UTF-16 units', async () => {
     const { emit, read } = mountAndCapture();
-    emit('log.chunk', { offset: 5, content: 'hello' });
-    await waitFor(() => expect(read().offset).toBe(5));
-    // Reconnect re-emits bytes we already have. Backend sends offset=5,
-    // content='hello' from byte 0 again. Must not duplicate.
-    emit('log.chunk', { offset: 5, content: 'hello' });
-    expect(read().content).toBe('hello');
-    expect(read().offset).toBe(5);
+    emit('log.chunk', { content: 'café' });
+    emit('log.chunk', { content: ' 🚀' });
+    await waitFor(() => expect(read().content).toBe('café 🚀'));
+    expect(read().offset).toBe(5 + 5);
   });
 
-  it('drops a chunk whose offset is exactly our buffer offset even when its content differs', async () => {
+  it('appends nothing for a chunk without content', async () => {
     const { emit, read } = mountAndCapture();
-    emit('log.chunk', { offset: 5, content: 'hello' });
-    await waitFor(() => expect(read().offset).toBe(5));
-
-    // The reconnect re-delivered a window ending at the same byte offset, so no
-    // bytes are missing: the buffer must be left exactly as it was, not replaced
-    // by the re-delivered window (which the identical-content echo above cannot
-    // tell apart from a drop).
-    emit('log.chunk', { offset: 5, content: 'HELLO' });
-
-    expect(read().content).toBe('hello');
-    expect(read().offset).toBe(5);
-  });
-
-  it('appends a chunk with no numeric offset as a best-effort continuation', async () => {
-    const { emit, read } = mountAndCapture();
-    emit('log.chunk', { offset: 5, content: 'hello' });
-    await waitFor(() => expect(read().offset).toBe(5));
-
-    // A legacy payload shape (`{ content }` only) carries no offset to compare,
-    // so it is appended and the offset advances by the chunk's UTF-8 byte
-    // length — 3 for 'abc', 2 for 'é'.
-    emit('log.chunk', { content: 'abc' });
-    expect(read().content).toBe('helloabc');
-    expect(read().offset).toBe(8);
-
-    emit('log.chunk', { content: 'é' });
-    expect(read().content).toBe('helloabcé');
-    expect(read().offset).toBe(10);
-  });
-
-  it('after a reconnect, when the file has grown, replaces buffer with the new snapshot', async () => {
-    const { emit, read } = mountAndCapture();
-    emit('log.chunk', { offset: 5, content: 'hello' });
-    await waitFor(() => expect(read().offset).toBe(5));
-    // Reconnect: file is now 11 bytes, backend sends from 0.
-    emit('log.chunk', { offset: 11, content: 'hello world' });
-    await waitFor(() => expect(read().offset).toBe(11));
-    // Replaced, not appended. If we'd appended we'd see 'hellohello world' (16 chars).
-    expect(read().content).toBe('hello world');
-  });
-
-  it('handles multi-byte UTF-8 — byte length, not char length, drives continuation', async () => {
-    // "café" is 5 bytes UTF-8 (c=1, a=1, f=1, é=2). Buffer offset reflects bytes.
-    const { emit, read } = mountAndCapture();
-    emit('log.chunk', { offset: 5, content: 'café' });
-    await waitFor(() => expect(read().offset).toBe(5));
-    expect(read().content).toBe('café');
-    // Append a strict continuation: 6 more bytes (" road" — 5 chars, 5 bytes).
-    emit('log.chunk', { offset: 10, content: ' road' });
-    await waitFor(() => expect(read().offset).toBe(10));
-    expect(read().content).toBe('café road');
+    emit('log.chunk', { content: 'a' });
+    emit('log.chunk', {});
+    await waitFor(() => expect(read().offset).toBe(1));
+    expect(read().content).toBe('a');
   });
 
   it('marks ended on log.end', async () => {

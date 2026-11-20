@@ -149,49 +149,14 @@ export function useProcessLogStream(
     const close = openStream(path, {
       onEvent(name, data) {
         if (name === 'log.chunk') {
-          // The wire payload is `{ content }`: the bytes since the previous
-          // chunk. The END byte offset of this chunk rides the frame's `id:`,
-          // which this handler does not read, so `offset` stays optional here
-          // and a payload without it takes the best-effort append below.
-          // We can't rely on appending blindly: openStream auto-reconnects
-          // on transient errors and the backend restarts at byte 0 unless
-          // we pass resumeFromOffset (which we don't), so the post-reconnect
-          // first chunk would re-deliver content we already have.
-          const d = data as Partial<LogChunkFrame> & { offset?: number };
-          const incomingOffset = typeof d.offset === 'number' ? d.offset : -1;
-          const incomingContent = d.content ?? '';
-          setState((s) => {
-            if (incomingOffset < 0) {
-              // Old/unexpected payload shape — best-effort append.
-              return {
-                content: s.content + incomingContent,
-                offset: s.offset + byteLength(incomingContent),
-                ended: s.ended,
-              };
-            }
-            const incomingByteLen = byteLength(incomingContent);
-            const expectedPrev = incomingOffset - incomingByteLen;
-            if (expectedPrev === s.offset) {
-              // Strict continuation of our current buffer — append.
-              return {
-                content: s.content + incomingContent,
-                offset: incomingOffset,
-                ended: s.ended,
-              };
-            }
-            if (incomingOffset <= s.offset) {
-              // Reconnect re-delivered bytes we already have — drop.
-              return s;
-            }
-            // Gap (we lost bytes somehow) or restart from a different
-            // baseline — replace the buffer so the dialog shows what the
-            // backend currently has rather than splice corruption.
-            return {
-              content: incomingContent,
-              offset: incomingOffset,
-              ended: s.ended,
-            };
-          });
+          // A reconnect resumes after the last chunk: its frame id is the end offset, which
+          // openStream resends as `Last-Event-ID`, so every chunk continues the buffer.
+          const content = (data as Partial<LogChunkFrame>).content ?? '';
+          setState((s) => ({
+            content: s.content + content,
+            offset: s.offset + byteLength(content),
+            ended: s.ended,
+          }));
         } else if (name === 'log.end') {
           setState((s) => ({ ...s, ended: true }));
         }
