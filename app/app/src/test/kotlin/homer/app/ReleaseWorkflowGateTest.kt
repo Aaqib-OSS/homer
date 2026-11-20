@@ -32,6 +32,21 @@ class ReleaseWorkflowGateTest {
             .takeWhile { it.isBlank() || it.startsWith("    ") || it.trimStart().startsWith("#") }
     }
 
+    /** The one literal `runs-on:` label of release.yml's jobs, which the image matrix's runners must follow. */
+    private fun releaseRunnerLabel(): String {
+        val labels =
+            File(repoRoot, release)
+                .readLines()
+                .mapNotNull { Regex("""^ {4}runs-on: (\S+)$""").find(it)?.groupValues?.get(1) }
+                .filterNot { it.startsWith("\${{") }
+                .toSet()
+        assertTrue(
+            labels.size == 1 && Regex("""ubuntu-\d{2}\.\d{2}""").matches(labels.single()),
+            "$release runs its jobs on $labels; expected one pinned `ubuntu-NN.NN` label for the image matrix to follow.",
+        )
+        return labels.single()
+    }
+
     /** The `if:` of job [job] in [workflow], or null when the job has none. */
     private fun jobCondition(
         workflow: String,
@@ -188,7 +203,8 @@ class ReleaseWorkflowGateTest {
             "$release job `image-builds` no longer labels each platform image with its entry's image name and " +
                 "version, tag suffix included; job `images` relies on them to refuse another entry's digest.",
         )
-        for ((platform, runner) in listOf("linux/amd64" to "ubuntu-24.04", "linux/arm64" to "ubuntu-24.04-arm")) {
+        val label = releaseRunnerLabel()
+        for ((platform, runner) in listOf("linux/amd64" to label, "linux/arm64" to "$label-arm")) {
             val at = builds.indexOf("- name: $platform")
             assertTrue(
                 at >= 0 && "runner: $runner" in builds.drop(at).take(3),

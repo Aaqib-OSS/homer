@@ -13,7 +13,8 @@
     "pip-compile",
     "dockerfile",
     "docker-compose",
-    "github-actions"
+    "github-actions",
+    "custom.regex"
   ],
   "gradle": {
     "managerFilePatterns": [
@@ -22,6 +23,16 @@
       "/^app/buildSrc/src/main/kotlin/.+\\.gradle\\.kts$/"
     ]
   },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "The release image matrix names its runners in `runner:` values, which the github-actions manager does not read.",
+      "managerFilePatterns": ["/^\\.github/workflows/release\\.yml$/"],
+      "matchStrings": ["runner:\\s*(?<depName>ubuntu)-(?<currentValue>\\d+\\.\\d+(?:-arm)?)\\s"],
+      "datasourceTemplate": "github-runners",
+      "versioningTemplate": "docker"
+    }
+  ],
   "pip-compile": {
     "managerFilePatterns": [
       "/^clients/python/requirements(-test)?\\.lock$/",
@@ -74,6 +85,11 @@
     },
     {
       "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "The release matrix's runners move with every other job's runs-on label.",
+      "matchDatasources": ["github-runners"],
       "groupName": "GitHub Actions"
     },
     {
