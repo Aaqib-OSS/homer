@@ -10,7 +10,7 @@ import { formatRelativeTime, formatTimestamp } from '@/lib/utils/format';
 import type { RunnerFilterView, RunnerInstanceStatus, RunnerQueueStatusResponse, RunnerStatus } from '@/types/homer';
 
 function capacity(inUse: number, concurrency?: number | null) {
-  return `${inUse} / ${concurrency ?? 'unbounded'}`;
+  return `${inUse} / ${concurrency ?? '—'}`;
 }
 
 function describeFilter(filter: RunnerFilterView) {

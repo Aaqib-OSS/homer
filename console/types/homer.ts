@@ -546,7 +546,7 @@ export interface RunnerStatus {
   alias: string;
   kind: 'local' | 'ssh' | 'kubernetes' | 'external';
   tags: string[];
-  /** null = unbounded */
+  /** Finite on a configured runner; null on an external row, whose instances carry their own. */
   concurrency?: number | null;
   inUse: number;
   /** external domains only */

@@ -44,7 +44,7 @@ describe('RunnersPage', () => {
   it('lists configured runners with kind and permits in use', () => {
     mockRunners({
       data: { runners: [
-        { alias: 'local', kind: 'local', tags: ['e2e'], concurrency: null, inUse: 0, instances: null },
+        { alias: 'local', kind: 'local', tags: ['e2e'], concurrency: 100, inUse: 0, instances: null },
         { alias: 'mac', kind: 'ssh', tags: [], concurrency: 2, inUse: 1, instances: null },
       ] },
       isLoading: false, error: null,
@@ -53,7 +53,17 @@ describe('RunnersPage', () => {
     expect(screen.getByRole('heading', { name: 'Runners' })).toBeInTheDocument();
     expect(screen.getByText('mac')).toBeInTheDocument();
     expect(screen.getByText('1 / 2')).toBeInTheDocument();
-    expect(screen.getByText('0 / unbounded')).toBeInTheDocument();
+    expect(screen.getByText('0 / 100')).toBeInTheDocument();
+  });
+
+  it('never calls a configured runner unbounded, even when its concurrency is missing', () => {
+    mockRunners({
+      data: { runners: [{ alias: 'local', kind: 'local', tags: [], concurrency: null, inUse: 3, instances: null }] },
+      isLoading: false, error: null,
+    });
+    render(<RunnersPage />);
+    expect(screen.getByText('3 / —')).toBeInTheDocument();
+    expect(screen.queryByText(/unbounded/)).not.toBeInTheDocument();
   });
 
   it('shows each external instance with its name, tags and a draining badge', () => {
