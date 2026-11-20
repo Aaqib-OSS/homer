@@ -113,24 +113,17 @@ left the `homer-app-tests` build for its own job for the same reason — its
 Analysis API loads into the Gradle daemon and that job ran out of memory
 (ADR-0082).
 
-## Amendment (2026-11-20): the Artifactory remote build cache is read-only
-
-The remote cache pushed only when `CI_COMMIT_REF_PROTECTED` was `true`. That is a
-GitLab CI variable, and the upstream pipeline that set it ended with the mirror
-([ADR-0085](0085-one-way-github-mirror-during-migration.md)). The flag is gone, so
-the remote cache is read-only in every environment: Gradle's default for a remote
-cache. GitHub CI never turns it on, since it sets no Artifactory variable; its
-Gradle cache is `setup-gradle`'s, which only the default branch writes.
-
 ## Amendment (2026-11-20): the optional Artifactory build path is retired
 
 The decision above kept the Artifactory gate for builds that set `ARTIFACTORY_URL`,
 `ARTIFACTORY_USER` and `ARTIFACTORY_TOKEN`, "such as the upstream pipeline during the migration".
-The migration is over, and no supported build sets the three. The path is removed:
+The migration is over ([ADR-0085](0085-one-way-github-mirror-during-migration.md)), and no
+supported build sets the three. The path is removed:
 
 - the plugin and dependency repository gates in both settings scripts and
   `gradle/artifactory.settings.gradle.kts`;
-- the remote build cache, read-only since the amendment above, with nothing that writes it;
+- the remote build cache, which pushed only when `CI_COMMIT_REF_PROTECTED` was `true`: a GitLab CI
+  variable that ended with the upstream pipeline, so nothing wrote the cache any more;
 - the BuildKit secret mounts in `app/Dockerfile` and `app/e2e/Dockerfile`, the `build.secrets` and
   the E2E runner's run-time pass-through in `docker-compose.e2e.yml`;
 - `DOCKER.md` § Artifactory build secrets, and the tests that guarded the path
@@ -139,6 +132,6 @@ The migration is over, and no supported build sets the three. The path is remove
 The accepted risk of the E2E runner holding the credentials, AR-03 in `SECURITY.md`, goes with the
 pass-through; its id is not reused. Every build now resolves from Maven Central and the Gradle
 Plugin Portal, as CI already did, and Gradle dependency verification
-([ADR-0115](0115-gradle-dependency-verification.md)) checks what they serve. An environment that
-meets the `429` again has the Gradle user-home cache as its remedy, as CI does, not a proxy in this
-repository.
+([ADR-0115](0115-gradle-dependency-verification.md)) checks what they serve. CI's Gradle cache is
+`setup-gradle`'s, which only the default branch writes. An environment that meets the `429` again
+has the Gradle user-home cache as its remedy, as CI does, not a proxy in this repository.

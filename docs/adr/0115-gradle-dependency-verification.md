@@ -111,6 +111,6 @@ a bump without regeneration looks like.
 
 The scope paragraph above names the optional Artifactory proxy and its settings file
 (`gradle/artifactory.settings.gradle.kts`). That build path was retired by
-[ADR-0084's 2026-11-20 amendment](0084-github-actions-ci-on-hosted-runners.md), so artifacts come only
+[ADR-0084's 2026-11-20 amendment](0084-github-actions-ci-on-hosted-runners.md#amendment-2026-11-20-the-optional-artifactory-build-path-is-retired), so artifacts come only
 from Maven Central and the Plugin Portal. Verification is unchanged: it is keyed by
 `group:module:version`, whoever serves the artifact.
