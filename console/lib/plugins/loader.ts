@@ -57,7 +57,8 @@ function splitEntry(entry: string): [string, string | undefined] {
 
 /**
  * Why a `CONSOLE_PLUGINS` entry is not loadable, or `null`: a same-origin `.js`/`.mjs` path, no `//host` or `..`, and
- * a known requirement (ADR-0059). `'strict-dynamic'` admits the import, not `'self'`, so this check keeps it local.
+ * a known requirement. The CSP admits the import via the trusted bundle (its nonce or `'strict-dynamic'`), never by
+ * origin, as `'self'` is ignored, so this check alone keeps plugin code local (ADR-0059).
  */
 export function checkPluginEntry(entry: string): string | null {
   const [path, requires] = splitEntry(entry);

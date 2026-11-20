@@ -805,8 +805,9 @@ authenticated user can open the plugin.
 **Only same-origin `.js`/`.mjs` paths are accepted.** A remote URL, a protocol-relative
 `//host/p.js`, a `data:` URL, or anything containing `..` is rejected and
 logged. Plugin code comes off the console's own disk — there is no network fetch
-to intercept and no foreign origin to allowlist; the console's CSP admits the
-import as a load from its own trusted scripts (`'strict-dynamic'`).
+to intercept and no foreign origin to allowlist. The console's CSP admits the import
+via its own trusted scripts (their nonce or `'strict-dynamic'`), never by origin, as
+`'self'` is ignored, so this path check alone keeps plugin code local.
 
 Each module is imported once per session. Its default export declares the route
 it claims, its sidebar label, and a `mount` function that renders it (access

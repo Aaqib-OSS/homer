@@ -244,8 +244,9 @@ know. `ctx.navigate` wraps `router.push`.
 path and nothing else — a remote URL, a protocol-relative `//host/p.js` (reads
 as local, resolves foreign), a `data:`/`blob:`/`javascript:` URL, or any `..` is
 rejected before the import. Do not "helpfully" widen this: it is the whole
-reason plugin code cannot come from anywhere but the operator's disk: the CSP
-would not stop a foreign import, which `'strict-dynamic'` admits and `'self'` cannot narrow.
+reason plugin code cannot come from anywhere but the operator's disk: the CSP admits
+the import via the trusted bundle (its nonce or `'strict-dynamic'`), never by origin, as
+`'self'` is ignored (ADR-0059).
 
 **A sub-path change is a remount.** The App Router discards the page subtree when
 the catch-all params change — measured, not assumed: a plugin counting its own

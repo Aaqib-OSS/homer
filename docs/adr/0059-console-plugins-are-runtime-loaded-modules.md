@@ -217,6 +217,15 @@ the reported role and grants. Against a server that predates this (a `404`, or a
 grants nothing: no role, no grants, and no run counted as its own. It never falls back to admin — failing open
 is the defect this amendment removes.
 
+## Amendment (2026-11-20): the strict CSP admits a plugin import through the trusted bundle, not `'self'`
+
+`script-src 'self'` does not cover the plugin import, as the decision above says: once `'strict-dynamic'` is
+present, the browser ignores `'self'` and every host source. The `import()` takes the fetch options of the
+bundle script that issues it, so it is admitted by that script's nonce when the dashboard page was loaded
+directly, and by `'strict-dynamic'` as a non-parser-inserted load when the bundle arrived by client
+navigation; either way the policy checks no origin, so `checkPluginEntry`'s same-origin rule alone keeps
+plugin code local.
+
 ## Pros and Cons of the Options
 
 ### Remote runtime modules
