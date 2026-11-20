@@ -151,6 +151,11 @@ function unmarkedAmendments(docs) {
   return found
 }
 
+// An italic `*(Amended …)*`, `*Amended (date):*` or `*Superseded …*` note is none of the README forms:
+// an amendment is a `## Amendment (date)` section or a `> **Amendment (date)` blockquote.
+const ITALIC_AMENDMENT = /(?:^|[^*])\*\(?(?:Amended|Superseded)\b/m
+const italicAmendments = (docs) => [...docs].filter(([, { text }]) => ITALIC_AMENDMENT.test(text)).map(([number]) => `${number}: an italic amendment note`)
+
 const withFrontMatter = (frontMatter, body) => `---\n${frontMatter}\n---\n${body}`
 
 test('both reference forms are recognised', () => {
@@ -249,6 +254,19 @@ test('an amendment must be dated and a supersession must name an ADR file', () =
     '9987: `amended: 2026-02-01` does not list 2026-02-03',
     '9986: `amended: 2026-02-01` does not list 2026-02-05',
   ])
+})
+
+test('an italic amendment note is rejected, the README forms are not', () => {
+  const italic = (note) => ['9980', { name: '9980-italic.md', text: withFrontMatter('status: accepted', `# ADR-9980: Italic\n\nA decision. ${note}\n`) }]
+  for (const note of ['*(Amended 2026-01-02: x)*', '*(Superseded by ADR-0001: x)*', '*Amended (2026-01-02):* x', '*Amended 2026-01-02: x*', '*Superseded by ADR-0001*']) {
+    assert.deepEqual(italicAmendments(new Map([italic(note)])), ['9980: an italic amendment note'], note)
+  }
+  const forms = '## Amendment (2026-01-02): x\n\n> **Amendment (2026-01-02) —** x\n\n**Amended (2026-01-02):** bold is not italic\n'
+  assert.deepEqual(italicAmendments(new Map([['9981', { name: '9981-forms.md', text: withFrontMatter('status: accepted', forms) }]])), [])
+})
+
+test('no ADR carries an italic amendment note', () => {
+  assert.deepEqual(italicAmendments(adrDocs()), [])
 })
 
 test('every ADR status is one the ADR README defines', () => {
