@@ -98,7 +98,7 @@ export function parseRisks(text) {
   const at = start < 0 ? -1 : lines.findIndex((l, i) => i > start && (end < 0 || i < end) && l.trim().startsWith('|'));
   if (at < 0) return { rows: [], findings: [finding(RISKS, 1, 'no accepted-risks table under "## Accepted risks"')] };
   const table = tableAt(lines, at, RISKS, end < 0 ? lines.length : end);
-  if (table.header[0] !== 'ID') return { rows: [], findings: [finding(RISKS, at + 1, 'the accepted-risks table must start with an ID column')] };
+  if (table.header[0] !== 'ID') return { rows: [], findings: [...table.findings, finding(RISKS, at + 1, 'the accepted-risks table must start with an ID column')] };
   const rows = table.rows.map(({ line, cells }) => ({ line, id: unquote(cells[0]) }));
   const malformed = rows.filter((r) => !/^AR-\d{2}$/.test(r.id)).map((r) => finding(RISKS, r.line, `accepted risk without an AR-NN id (two digits): "${r.id}"`));
   return { rows, findings: [...table.findings, ...malformed, ...duplicates(RISKS, rows)] };

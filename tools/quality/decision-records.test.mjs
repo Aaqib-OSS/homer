@@ -184,6 +184,8 @@ test('parseRisks wants an ID column and a unique AR-NN id on every row', () => {
   );
   const noId = '## Accepted risks\n\n| Finding | Where |\n|---|---|\n| f | w |\n';
   assert.match(parseRisks(noId).findings[0].message, /must start with an ID column/);
+  const noIdBroken = '## Accepted risks\n\n| Finding | Where |\n| f | w |\n';
+  assert.deepEqual(parseRisks(noIdBroken).findings.map((f) => /must start with an ID column/.test(f.message)).sort(), [false, true], 'shape findings survive a missing ID column');
   assert.match(parseRisks('# Security\n').findings[0].message, /no accepted-risks table/);
 });
 
