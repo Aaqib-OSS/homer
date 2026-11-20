@@ -189,7 +189,7 @@ internal class AgentRunStarter(
 }
 
 // Flow-root id a write path may carry: [candidate] only when the root row exists and [principal]
-// can see it under the read union (ADR-0037); a missing root fails closed (null). §12.
+// can see it under the read union (ADR-0037); a missing root fails closed (null). ADR-0047 rule 3.
 internal suspend fun ProcessManager.visibleRootProcessId(
     principal: String?,
     authorizer: Authorizer,
@@ -202,7 +202,7 @@ internal suspend fun ProcessManager.visibleRootProcessId(
     }
 
 // The origin's own root when it has one, else the origin itself; a derived root the principal
-// cannot see is dropped, never replaced by the origin's id. See ADR-0058. §12.
+// cannot see is dropped, never replaced by the origin's id. See ADR-0058, ADR-0047 rule 3.
 internal suspend fun ProcessManager.visibleOriginRootProcessId(
     originProcessId: Int,
     principal: String?,

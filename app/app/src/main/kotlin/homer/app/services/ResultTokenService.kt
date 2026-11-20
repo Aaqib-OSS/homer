@@ -12,12 +12,9 @@ import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
 /**
- * Mints and resolves capability tokens for read-by-reference fetch of large
- * continuation results. A token is scoped to one (watched process, artifact
- * path) and audience-bound to the continuation's target agent, and is reusable
- * within its TTL (a resumed graph re-runs the node and re-fetches idempotently).
- * Its lifetime is independent of the continuation row that minted it (it lives
- * in its own table). See ADR-0025.
+ * Mints and resolves capability tokens for fetching a large continuation result by reference. A token covers one (watched
+ * process, artifact path), is audience-bound to the continuation's target agent, is reusable within its TTL and lives in
+ * its own table, independent of the continuation row. See ADR-0025.
  */
 @OptIn(ExperimentalTime::class)
 internal class ResultTokenService(
@@ -29,11 +26,8 @@ internal class ResultTokenService(
     private val secureRandom = SecureRandom()
 
     /**
-     * Mints a token authorizing a fetch of [path] from process [watchedProcessId]'s
-     * artifacts, optionally [transformer]-mapped at fetch time. The token is
-     * audience-bound to [consumerAgent] (the continuation's target) — only a caller
-     * running that agent may redeem it. Expires after `config.resultTokenTtlSec`
-     * (floored in config). Returns the token string.
+     * Mints and returns a token for fetching [path] from process [watchedProcessId]'s artifacts, [transformer]-mapped at
+     * fetch time when set. Only a caller running [consumerAgent] may redeem it, until `config.resultTokenTtlSec` passes.
      */
     suspend fun mint(
         watchedProcessId: Int,

@@ -46,10 +46,8 @@ class WorkspacePurgeService(
     }
 
     /**
-     * Two sweeps, two lifetimes: `workspace.purgeAfter` governs the directory on disk,
-     * `workspace.retain.recordFor` the process row. The row must outlive the directory, or a
-     * `/processes/{id}` link would 404 while the run's status, steps, exit codes and cost are still
-     * wanted. See ADR-0048.
+     * Retries the held eviction deletes, then runs two sweeps over due rows: `workspace.purgeAfter` for the directory and
+     * `workspace.retain.recordFor` for the row, which outlives the directory. See ADR-0048 and ADR-0053.
      */
     suspend fun purgeExpired() {
         val now = System.currentTimeMillis() / 1000
@@ -81,14 +79,11 @@ class WorkspacePurgeService(
         } else if (process.retainArtifacts.isNotEmpty()) {
             retainedCount = pruneToRetained(process, artifactsDir)
         } else {
-            // Assert containment before deleting: artifactsDir is read back
-            // from the DB, so a poisoned/crafted path must not steer this
-            // recursive delete outside the configured workspace root.
+            // artifactsDir is read back from the database, so the delete is containment-checked
+            // against the workspace root (CWE-22, ADR-0053).
             artifactsDir.parent?.let { PathSafety.deleteContainedRecursively(workspaceRoot, it) }
-            // Clear only after a successful delete (or a deliberate skip): the column doubles as the
-            // "already swept" marker, so a failed delete leaves it set and the next sweep retries
-            // instead of orphaning the directory. Clearing it also drops the row out of another
-            // process's shared-dir check, as removing the row would.
+            // Cleared only after the delete: `artifacts_dir` is the swept marker, so a failed delete is retried (ADR-0048).
+            // Clearing also drops the row from another process's shared-dir check, as removing the row would.
             processManager.clearArtifactsDir(process.id)
         }
         if (retainedCount > 0) {
@@ -134,10 +129,8 @@ class WorkspacePurgeService(
         val result =
             ArtifactRetention.prune(workspaceRoot, artifactsDir, process.retainArtifacts, maxRetainedArtifactBytes)
         if (result.keptFiles == 0) {
-            // Every matched file can still have overflowed the cap (kept nothing,
-            // truncated = true) — record that so retainedTruncated isn't silently
-            // dropped just because this path clears artifactsDir like the
-            // nothing-matched case. See ADR-0053.
+            // Every match can have overflowed the cap: record retainedTruncated even though
+            // this clears artifactsDir like the nothing-matched case. See ADR-0053.
             processManager.clearArtifactsDir(process.id, retainedTruncated = result.truncated.takeIf { it })
             return 0
         }
@@ -150,9 +143,8 @@ class WorkspacePurgeService(
     private suspend fun purgeRecords(now: Long) {
         for (process in processManager.getRecordPurgeableProcesses(terminalStatuses, now)) {
             coRunCatching {
-                // A retained row still owns its pruned directory; it dies with the record.
-                // Delete before removing the row — a failed delete keeps the row so the
-                // next sweep retries, same ordering invariant as the workspace sweep.
+                // A retained row owns its pruned directory: delete it before the row, so a failed
+                // delete keeps the row for the next sweep (ADR-0048, ADR-0053).
                 process.artifactsDir?.let { artifactsDir ->
                     if (processManager.isArtifactsDirShared(artifactsDir, process.id)) {
                         logger.info(

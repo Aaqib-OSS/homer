@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-06-12
 deciders: Lukáš Vlk
+amended: 2026-11-20
 ---
 # ADR-0019: Human-in-the-loop questions — per-process callback tokens, in-memory lifecycle, MCP SSE response mode
 
@@ -106,3 +107,20 @@ the JSON-RPC request id; exotic tokens just drop the notification).
   request timeout reset by progress notifications.
 - [`app/SERVER.md`](../../app/SERVER.md) `server.questions`;
   [`app/AGENT.md`](../../app/AGENT.md) "Asking the operator questions".
+
+## Amendment (2026-11-20): no question stays OPEN once its run's registration closes
+
+The questions are durable since ADR-0020, but the callback-token registrations stay in memory, and
+`QuestionsService` keeps one invariant between the two: no question stays `OPEN` in a run whose
+registration is closed or removed.
+
+- A run's terminal transition, and startup reconciliation, close its registration and expire its
+  open questions. The closed registration stays until the run's record is purged or evicted, so a
+  helper that calls after the run ended gets `409`, not `401`.
+- One coroutine mutex serializes registration changes against the registration check in `ask`. The
+  mutex is never held across a database write, so `ask` inserts the question outside it and then
+  re-reads the registration. A question whose registration was closed in the meantime is expired,
+  and one whose registration was removed is deleted.
+- The insert and that re-check run non-cancellable, so a committed insert always reaches the
+  re-check, even when the caller is cancelled on the way back.
+- Token resolution does not take the mutex.

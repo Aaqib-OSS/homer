@@ -27,11 +27,9 @@ import kotlinx.serialization.json.put
 import org.slf4j.Logger
 
 /**
- * Builds the per-request MCP [Server] for the `/mcp/questions` endpoint:
- * six tools (`ask_user`, `check_answer`, `ask_user_and_wait`, `ask_and_dispatch`,
- * `ask_and_dispatch_group`, `check_messages`) closed over the processId resolved from the
- * caller's `HMR_CALLBACK_TOKEN`. A fresh Server is built per POST, same stateless pattern as
- * [McpToolFactory]. See ADR-0019, ADR-0097 and ADR-0109.
+ * Builds a fresh MCP [Server] per POST to `/mcp/questions`, stateless like [McpToolFactory]: six tools (`ask_user`, `check_answer`,
+ * `ask_user_and_wait`, `ask_and_dispatch`, `ask_and_dispatch_group`, `check_messages`) closed over the processId of the caller's
+ * `HMR_CALLBACK_TOKEN`. See ADR-0019, ADR-0097 and ADR-0109.
  */
 internal class QuestionsMcpToolFactory(
     private val questionsService: QuestionsService,
@@ -197,9 +195,8 @@ internal class QuestionsMcpToolFactory(
             val question = askFromRequest(processId, request)
             val progressToken = request.params.meta?.progressToken
 
-            // Hold in short chunks rather than one long await: between chunks a
-            // progress notification keeps bytes flowing on the SSE response so
-            // spec-compliant clients reset their request timeout (ADR-0019).
+            // Short chunks, not one long await: a progress notification between chunks
+            // lets a spec-compliant client reset its request timeout (ADR-0019).
             var waitedSec = 0
             var latest = question
             while (latest.status == QuestionsService.QuestionStatus.OPEN && waitedSec < ttlSec) {
@@ -248,10 +245,8 @@ internal class QuestionsMcpToolFactory(
     }
 
     /**
-     * Best-effort `notifications/progress`. Claude Code (TS SDK) sets the
-     * progressToken to the JSON-RPC request id, so it doubles as the
-     * relatedRequestId that routes the event onto this POST's SSE stream;
-     * for clients with exotic tokens the send fails and is skipped.
+     * Sends `notifications/progress` onto this POST's SSE stream, routed by `relatedRequestId = progressToken`.
+     * A send that fails, as for a token that is not the request id, is logged and skipped (ADR-0019).
      */
     private suspend fun sendProgress(
         connection: ClientConnection,

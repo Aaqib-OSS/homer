@@ -153,7 +153,7 @@ class LogTailService(
     }
 
     /**
-     * Emits the bytes of [file] past [offset] as chunks of at most [MAX_READ_BYTES] (§12 rule 4,
+     * Emits the bytes of [file] past [offset] as chunks of at most [MAX_READ_BYTES] (ADR-0047 rule 4,
      * CWE-400) and returns the offset after the last emitted byte. A chunk ends on a whole UTF-8
      * character; the incomplete tail is re-read next time, except at the file's end when [atEnd].
      */

@@ -33,12 +33,9 @@ class ProcessEventBroadcaster(
     }
 
     /**
-     * A per-subscriber view of the event stream. The underlying [MutableSharedFlow] uses
-     * [BufferOverflow.DROP_OLDEST], so a collector that falls behind silently loses its oldest unread
-     * events, and `tryEmit` cannot report this — under DROP_OLDEST it always returns `true`. Drops are
-     * therefore detected here, consumer-side, by watching for gaps in the monotonic sequence id; each
-     * subscriber owns its own gap state, so one slow client is the only one charged. Gap detection runs
-     * on the raw stream, before any downstream `filter`, so filtered-out events are never mistaken for drops.
+     * A per-subscriber view of the event stream. [BufferOverflow.DROP_OLDEST] hides drops from `tryEmit`, so each subscriber
+     * counts the gaps in the sequence ids it sees, charging only the slow client. It counts on the raw stream, before any
+     * downstream `filter`, so a filtered-out event is never taken for a drop.
      */
     fun subscribe(): Flow<ProcessEvent> =
         flow {

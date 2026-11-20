@@ -168,7 +168,7 @@ class LangGraphRunStatusService(
     }
 
     // [runtimeTraversed] kept only where each pair is a real edge of [topology]: its source is
-    // agent-writable checkpoint data, so Homer re-checks it (§12 rule 2). See ADR-0075.
+    // agent-writable checkpoint data, so Homer re-checks it (ADR-0047 rule 2). See ADR-0075.
     private fun traversed(
         runtimeTraversed: List<LangGraphEdgeRef>?,
         topology: LangGraphTopology?,
