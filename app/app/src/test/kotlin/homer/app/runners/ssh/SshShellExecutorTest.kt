@@ -29,6 +29,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import java.io.IOException
+import java.net.SocketTimeoutException
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.createDirectories
@@ -367,7 +368,8 @@ class SshShellExecutorTest {
     ) = runTest {
         val refusing = EmbeddedSshServer(refuseExec = true).also { it.start() }
         try {
-            val envValue = "SECRET-MARK-3f9a1c"
+            // Distinctive, keyword-free: a value the generic secret pattern keys on would fail the pull-request scan.
+            val envValue = "UNIQUE-STEP-VALUE-3f9a1c"
             val (exception, events) =
                 captureAllEvents {
                     assertThrows<SshExecRefusedException> {
@@ -400,7 +402,7 @@ class SshShellExecutorTest {
     fun `a failed channel open fails the step with the refusal message and no server text`(
         @TempDir local: Path,
     ) = runTest {
-        val serverText = "no more channels: SECRET-MARK-3f9a1c"
+        val serverText = "no more channels: UNIQUE-STEP-VALUE-3f9a1c"
         val channel = mockk<ChannelExec>(relaxed = true)
         val openFuture = mockk<OpenFuture>()
         every { openFuture.verify(any<Long>()) } throws SshChannelOpenException(1L, 1, serverText)
@@ -426,10 +428,31 @@ class SshShellExecutorTest {
     fun `a timed out or dropped channel open is a lost connection, not a refusal`(
         @TempDir local: Path,
     ) = runTest {
-        val serverText = "connection dropped mid-handshake: SECRET-MARK-3f9a1c"
+        val serverText = "connection dropped mid-handshake: UNIQUE-STEP-VALUE-3f9a1c"
+        val exception = openFailsWith(IOException(serverText), local)
+        assertFalse(exception.message.orEmpty().contains(serverText), "the transport text must not be quoted")
+        val chain = generateSequence(exception as Throwable?) { it.cause }.toList()
+        assertTrue(
+            chain.none { it is SshExecRefusedException || it.message.orEmpty().contains(serverText) },
+            "a dropped handshake is not a refusal and names no server text",
+        )
+    }
+
+    @Test
+    fun `a channel open that times out instead of dropping is the same lost connection`(
+        @TempDir local: Path,
+    ) = runTest {
+        openFailsWith(SocketTimeoutException("open timed out"), local)
+    }
+
+    /** `cmd` against a mocked session whose exec channel fails to open with [failure]: the step error it produces. */
+    private suspend fun openFailsWith(
+        failure: Exception,
+        local: Path,
+    ): SshConnectionLostException {
         val channel = mockk<ChannelExec>(relaxed = true)
         val openFuture = mockk<OpenFuture>()
-        every { openFuture.verify(any<Long>()) } throws IOException(serverText)
+        every { openFuture.verify(any<Long>()) } throws failure
         every { channel.open() } returns openFuture
         val session = mockk<ClientSession>(relaxed = true)
         every { session.createExecChannel(any()) } returns channel
@@ -439,12 +462,8 @@ class SshShellExecutorTest {
                 SshShellExecutor(session, workdir.toString())
                     .cmd(listOf("echo", "hello"), local.resolve("o"), local.resolve("e"), null, emptyMap(), 10.seconds)
             }
-        assertFalse(exception.message.orEmpty().contains(serverText), "the transport text must not be quoted")
-        val chain = generateSequence(exception as Throwable?) { it.cause }.toList()
-        assertTrue(
-            chain.none { it is SshExecRefusedException || it.message.orEmpty().contains(serverText) },
-            "a dropped handshake is not a refusal and names no server text",
-        )
+        assertContains(exception.message.orEmpty(), "SSH channel open failed")
+        return exception
     }
 
     @Test
