@@ -127,6 +127,22 @@ class LogTailServiceTest {
     }
 
     @Test
+    fun `resolve refuses an artifacts directory that is a symlink`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val outside = tmp.resolve("outside").createDirectories()
+        outside.resolve("cmd_0.out").writeText("x")
+        val artifactsDir = Files.createSymbolicLink(tmp.resolve("artifacts"), outside)
+        val processManager = processManagerWithoutJob()
+        coEvery { processManager.getProcessInfo(1) } returns processInfo(id = 1, artifactsDir = artifactsDir)
+        coEvery { processManager.getCommandArtifacts(1, 0) } returns null
+
+        val service = LogTailService(processManager, TestFixtures.mockLogger())
+
+        assertNull(service.resolve(1, 0, LogTailService.Stream.OUT))
+    }
+
+    @Test
     fun `resolve prefers the tracked path over the default cmd_N naming`(
         @TempDir tmp: Path,
     ) = runTest {

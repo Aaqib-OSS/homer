@@ -45,6 +45,8 @@ class LogTailService(
     ): Path? {
         val info = processManager.getProcessInfo(processId) ?: return null
         val artifactsDir = info.artifactsDir ?: return null
+        // A run can swap its artifacts directory for a symlink, which assertContained follows (CWE-59).
+        if (Files.isSymbolicLink(artifactsDir)) return null
         val candidate =
             trackedPath(processId, cmdIndex, stream, artifactsDir)
                 ?: persistedOrDefaultPath(info.executions.getOrNull(cmdIndex), cmdIndex, stream, artifactsDir)

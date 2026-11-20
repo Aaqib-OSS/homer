@@ -103,6 +103,8 @@ class LlmEventStreamService(
     ): LlmArtifact? {
         val info = processManager.getProcessInfo(processId) ?: return null
         val dir = info.artifactsDir ?: return null
+        // A run can swap its artifacts directory for a symlink, which assertContained follows (CWE-59).
+        if (Files.isSymbolicLink(dir)) return null
         val tracked = processManager.getCommandArtifacts(processId, cmdIndex)
         if (tracked != null) return trackedArtifact(dir, tracked)
         // Not tracked (restart since the run): the persisted execution row.
