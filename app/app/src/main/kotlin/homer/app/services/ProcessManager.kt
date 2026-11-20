@@ -5,7 +5,6 @@ import homer.app.executors.CommandArtifactPaths
 import homer.app.executors.RunKiller
 import homer.app.executors.RunRecords
 import homer.app.executors.RunWorkRecords
-import homer.app.infra.PathSafety
 import homer.app.infra.ProcessJobRegistry
 import homer.app.models.ExecutionInfo
 import homer.app.models.LlmAccounting
@@ -54,7 +53,7 @@ class ProcessManager(
     // Configured workspace root (`workspaceRootPath`). Eviction's workspace delete
     // is asserted to stay inside it before running, so a poisoned persisted path
     // cannot steer the recursive delete outside the workspace tree.
-    private val workspaceRoot: Path = Path.of("."),
+    workspaceRoot: Path = Path.of("."),
     // Capacity eviction skips the WorkspacePurgeService path, so per-process
     // state held elsewhere (question registrations) must be released here.
     private val onProcessEvicted: suspend (Int) -> Unit = {},
@@ -98,6 +97,8 @@ class ProcessManager(
     // 3); a settlement landing between a step's map read and its row write can buffer unapplied
     // — accepted and recorded in ADR-0089. Cleared with the process.
     private val unappliedSettlements = ConcurrentHashMap<Int, MutableMap<LlmAccounting, LlmAccounting>>()
+
+    private val evictedWorkspaceCleanup = EvictedWorkspaceCleanup(workspaceRoot, logger, ::isArtifactsDirShared)
 
     override suspend fun setCommandArtifacts(
         processId: Int,
@@ -157,7 +158,7 @@ class ProcessManager(
                 evicted.agentName,
                 evicted.status,
             )
-            deleteEvictedWorkspace(evicted)
+            evicted.artifactsDir?.let { evictedWorkspaceCleanup.delete(evicted.id, it) }
             // Capacity eviction deletes the row directly in the repository, bypassing
             // removeProcess — without this, an evicted process's tracked artifact paths
             // would leak in memory for the rest of the server's uptime (root CLAUDE.md
@@ -172,31 +173,8 @@ class ProcessManager(
         return result.processId
     }
 
-    /**
-     * Deletes an evicted run's workspace directory. Capacity eviction bypasses
-     * [WorkspacePurgeService], so without this the process row is dropped while its
-     * on-disk workspace orphans and accumulates until the disk fills. Best-effort:
-     * the row is already gone, so a failed delete cannot be retried — it is logged,
-     * not thrown. Skipped when another process still references the directory (shared
-     * fixed-path workspaces), mirroring the purge sweep's guard.
-     */
-    private suspend fun deleteEvictedWorkspace(evicted: ProcessRepository.EvictedProcess) {
-        val artifactsDir = evicted.artifactsDir ?: return
-        if (isArtifactsDirShared(artifactsDir, evicted.id)) {
-            logger.info(
-                "Skipping workspace deletion for evicted process {}: {} is still referenced by another process",
-                evicted.id,
-                artifactsDir.parent,
-            )
-            return
-        }
-        val workspaceDir = artifactsDir.parent ?: return
-        // Assert containment before deleting: artifactsDir is read back from the DB,
-        // not the freshly-validated workspace config, so a poisoned/crafted path must
-        // not be able to steer this recursive delete outside the workspace root.
-        runCatching { PathSafety.deleteContainedRecursively(workspaceRoot, workspaceDir) }
-            .onFailure { logger.warn("Failed to delete workspace for evicted process {}: {}", evicted.id, it.message) }
-    }
+    /** Retries the evicted workspaces whose delete failed; the workspace purge sweep calls it every tick. */
+    suspend fun retryEvictedWorkspaceDeletes() = evictedWorkspaceCleanup.retryPending()
 
     suspend fun setProcessStatus(
         processId: Int,

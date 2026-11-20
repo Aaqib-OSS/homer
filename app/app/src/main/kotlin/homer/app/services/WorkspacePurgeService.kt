@@ -53,6 +53,8 @@ class WorkspacePurgeService(
      */
     suspend fun purgeExpired() {
         val now = System.currentTimeMillis() / 1000
+        coRunCatching { processManager.retryEvictedWorkspaceDeletes() }
+            .onFailure { e -> logger.error("Failed to retry evicted workspace deletes: {}", e.message, e) }
         purgeWorkspaces(now)
         purgeRecords(now)
     }

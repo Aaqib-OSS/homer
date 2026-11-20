@@ -62,6 +62,25 @@ class WorkspacePurgeServiceTest {
     }
 
     @Test
+    fun `purgeExpired retries the held eviction deletes before both sweeps`() =
+        runTest {
+            service.purgeExpired()
+
+            coVerify(exactly = 1) { processManager.retryEvictedWorkspaceDeletes() }
+        }
+
+    @Test
+    fun `a failing eviction retry does not stop the sweeps`() =
+        runTest {
+            coEvery { processManager.retryEvictedWorkspaceDeletes() } throws IllegalStateException("db down")
+
+            service.purgeExpired()
+
+            coVerify(exactly = 1) { processManager.getWorkspacePurgeableProcesses(any(), any()) }
+            coVerify(exactly = 1) { processManager.getRecordPurgeableProcesses(any(), any()) }
+        }
+
+    @Test
     fun `purgeExpired removes process and workspace when purgeAt has passed`() =
         runTest {
             val tmpDir = Files.createTempDirectory("homer-test")
