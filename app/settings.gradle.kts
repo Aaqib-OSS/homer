@@ -46,12 +46,8 @@ dependencyResolutionManagement {
     }
 }
 
-// Remote build cache in Artifactory, enabled only when the ARTIFACTORY_* environment
-// variables are set (GitHub CI sets none of them, ADR-0084). Entries are pushed only
-// when CI_COMMIT_REF_PROTECTED is "true" (GitLab CI's protected-ref flag; GitHub Actions
-// does not set it): any other build can read the cache but cannot seed entries that a
-// protected build would later reuse. Remote-cache errors are non-fatal in
-// Gradle, so an unreachable cache degrades to a slower build, not a red one.
+// Read-only remote build cache in Artifactory, on only when all three ARTIFACTORY_* variables
+// are set; GitHub CI sets none and caches through setup-gradle (ADR-0084).
 buildCache {
     val artifactoryUrl = providers.environmentVariable("ARTIFACTORY_URL").orNull?.takeIf { it.isNotBlank() }
     val artifactoryUser = providers.environmentVariable("ARTIFACTORY_USER").orNull?.takeIf { it.isNotBlank() }
@@ -65,7 +61,6 @@ buildCache {
                 username = artifactoryUser
                 password = artifactoryToken
             }
-            isPush = providers.environmentVariable("CI_COMMIT_REF_PROTECTED").orNull == "true"
         }
     }
 }

@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-10-14
 deciders: Lukáš Vlk
-amended: 2026-11-15
+amended: 2026-11-15, 2026-11-20
 ---
 
 # ADR-0084: GitHub Actions CI on GitHub-hosted runners, without Artifactory
@@ -112,3 +112,12 @@ already running with a **larger** heap is reused and its settings come from
 left the `homer-app-tests` build for its own job for the same reason — its
 Analysis API loads into the Gradle daemon and that job ran out of memory
 (ADR-0082).
+
+## Amendment (2026-11-20): the Artifactory remote build cache is read-only
+
+The remote cache pushed only when `CI_COMMIT_REF_PROTECTED` was `true`. That is a
+GitLab CI variable, and the upstream pipeline that set it ended with the mirror
+([ADR-0085](0085-one-way-github-mirror-during-migration.md)). The flag is gone, so
+the remote cache is read-only in every environment: Gradle's default for a remote
+cache. GitHub CI never turns it on, since it sets no Artifactory variable; its
+Gradle cache is `setup-gradle`'s, which only the default branch writes.
