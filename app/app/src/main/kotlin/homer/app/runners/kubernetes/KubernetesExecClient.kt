@@ -5,8 +5,11 @@ import homer.app.models.MIN_SCREENED_SECRET_LENGTH
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
-/** io.kubernetes.client.Exec's initial statusCode, returned when the exec websocket closed without a status. */
+/** client-java's exec exit value after a websocket failure; a close with no usable `v1.Status` leaves `-1` instead. */
 internal const val EXEC_NO_EXIT_STATUS_SENTINEL = -1975219
+
+/** Whether an exec exit value means no exit status arrived: client-java reports that as a negative value (ADR-0103). */
+internal fun isNoExitStatus(exitValue: Int): Boolean = exitValue < 0
 
 /**
  * Seam over io.kubernetes.client.Exec so KubernetesShellExecutor can

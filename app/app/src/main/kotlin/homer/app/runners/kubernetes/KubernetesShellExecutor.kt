@@ -231,9 +231,8 @@ class KubernetesShellExecutor(
         env: Map<String, String>,
     ): Int {
         val exit = runCatching { remote.exitValue() }
-        // client-java's ExecProcess can RETURN its no-exit-status sentinel instead of throwing when
-        // the websocket closed without a v1.Status (e.g. a refused 101 upgrade): a channel failure.
-        val code = exit.getOrNull()?.takeIf { it != EXEC_NO_EXIT_STATUS_SENTINEL }
+        // client-java returns, not throws, a negative value when the channel failed or closed without a status.
+        val code = exit.getOrNull()?.takeUnless(::isNoExitStatus)
         if (code == 0) return 0
         failIfPodStopped(patient = code in SIGNAL_EXITS)
         if (code != null) return code

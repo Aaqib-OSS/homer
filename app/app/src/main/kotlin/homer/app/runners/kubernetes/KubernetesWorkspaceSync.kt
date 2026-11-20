@@ -160,9 +160,9 @@ class KubernetesWorkspaceSync(
         }
     }
 
-    /** Renders an exit code for error messages, naming the client's channel-loss sentinel. */
+    /** Renders an exit code for error messages, naming client-java's "no exit status" values. */
     private fun describeExit(exit: Int): String =
-        if (exit == EXEC_NO_EXIT_STATUS_SENTINEL) "no exit status (exec channel closed — websocket failure)" else "exit $exit"
+        if (isNoExitStatus(exit)) "no exit status (exec channel failed or closed without one)" else "exit $exit"
 
     /** Concurrently drains stderr so a full pipe can't stall the transfer. */
     private fun drain(source: InputStream): Drained {

@@ -626,8 +626,8 @@ class KubernetesShellExecutorTest {
         @TempDir tmp: Path,
     ) = runTest {
         val api = runningPodApi()
-        // client-java's ExecProcess returns -1975219 from exitValue() when the
-        // websocket closed without a status (e.g. the 101 upgrade was refused).
+        // client-java's ExecProcess returns -1975219 from exitValue() after a websocket failure
+        // (e.g. the 101 upgrade was refused).
         val proc = fakeProcess(stdout = "", stderr = "", exit = EXEC_NO_EXIT_STATUS_SENTINEL)
         val client = KubernetesExecClient { _, _, _, _ -> proc }
         val seen = mutableListOf<PodTermination>()
@@ -724,6 +724,25 @@ class KubernetesShellExecutorTest {
 
         assertTrue(killedBeforeFailing, "the leftover command must be killed before the step fails: $started")
         verify { proc.destroyForcibly() }
+    }
+
+    @Test
+    fun `a channel closed without a status fails as lost and kills the leftover command`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val started = mutableListOf<List<String>>()
+        val proc = fakeProcess(stdout = "", stderr = "", exit = EXEC_CLOSED_WITHOUT_STATUS)
+        val client =
+            KubernetesExecClient { _, _, argv, _ ->
+                started += argv
+                proc
+            }
+        val executor = KubernetesShellExecutor(client, runningPodApi(), "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS)
+
+        val thrown = assertFailsWith<PodFailedDuringExecutionException> { run(executor, tmp) }
+
+        assertEquals(EXEC_CHANNEL_LOST, thrown.reason)
+        assertTrue(started.any { it == KILL_ARGV }, "the leftover command must be killed: $started")
     }
 
     @Test
@@ -1637,5 +1656,8 @@ class KubernetesShellExecutorTest {
     private companion object {
         /** The pod-wide kill the channel-loss path runs, as the executor's killInsidePod starts it. */
         val KILL_ARGV = listOf("sh", "-c", "kill -KILL -1")
+
+        /** client-java's ExecProcess exit value after its websocket closed with no usable `v1.Status`. */
+        const val EXEC_CLOSED_WITHOUT_STATUS = -1
     }
 }
