@@ -173,3 +173,7 @@ rule above no longer holds: a runner serves at most ten runs at once unless conf
 a surplus run waits in the claim queue and fails at the claim TTL as before. A Kubernetes run pod's
 `maxRunSeconds` likewise defaults to 86400 s (24 h), so every pod carries an `activeDeadlineSeconds`.
 Pull-mode instances were already bounded by their announced `concurrency`.
+The "run holds its permit for its whole duration" consequence above is now reachable under default
+settings on every runner, `local` included: a `RunAgent` child, a dispatched child or a `runnerCmd`
+step that targets its parent's runner can wait for a permit that never frees once ten parents hold
+them all. Operators with such chains raise `concurrency` to cover the deepest chain.

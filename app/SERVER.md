@@ -3048,7 +3048,7 @@ default `Pod` mode; only the object that owns the pod changes.
   can save state. The soft deadline is measured from the pod's
   `status.startTime`, clamped to the earlier of it and the creation time
   Homer recorded, so a skewed pod-reported value may shorten the deadline
-  but never extend it. It needs both bounds configured, and it is
+  but never extend it. It needs `gracefulStopSeconds` set, and it is
   deliberately **not** set on the pod: `activeDeadlineSeconds` stays the
   bound the kubelet enforces, so a stop phase that overruns the remaining
   seconds ends exactly as it would without the feature. See

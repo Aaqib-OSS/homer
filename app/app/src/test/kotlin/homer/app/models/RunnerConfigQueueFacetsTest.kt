@@ -41,7 +41,8 @@ $extra""",
 
     @Test
     fun `a concurrency of zero is rejected on every runner type`() {
-        assertThrows<IllegalArgumentException> { RunnerConfig.Kubernetes(image = "img", concurrency = 0).validate("k8s") }
+        val k = assertThrows<IllegalArgumentException> { RunnerConfig.Kubernetes(image = "img", concurrency = 0).validate("k8s") }
+        assertTrue(k.message!!.contains("concurrency must be >= 1"), k.message)
         assertThrows<IllegalArgumentException> { LocalRunnerConfig(concurrency = 0) }
         val ex = assertThrows<IllegalArgumentException> { ssh("concurrency: 0").validate("box") }
         assertTrue(ex.message!!.contains("concurrency must be >= 1"), ex.message)

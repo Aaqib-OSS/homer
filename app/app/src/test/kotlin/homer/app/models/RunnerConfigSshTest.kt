@@ -240,12 +240,14 @@ extraUploads:
 
     @Test
     fun `an explicit null sftpTransferTimeoutSeconds is rejected`() {
-        assertFailsWith<Exception> {
-            Yaml.default.decodeFromString(
-                RunnerConfig.serializer(),
-                "!<ssh>\nhost: h\nuser: u\nauth: !<agent> {}\nremoteWorkspaceRoot: /ws\nsftpTransferTimeoutSeconds: null",
-            )
-        }
+        val ex =
+            assertFailsWith<com.charleskorn.kaml.YamlException> {
+                Yaml.default.decodeFromString(
+                    RunnerConfig.serializer(),
+                    "!<ssh>\nhost: h\nuser: u\nauth: !<agent> {}\nremoteWorkspaceRoot: /ws\nsftpTransferTimeoutSeconds: null",
+                )
+            }
+        assertTrue(ex.message.contains("sftpTransferTimeoutSeconds"), ex.message)
     }
 
     @Test

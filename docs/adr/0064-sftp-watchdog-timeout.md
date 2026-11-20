@@ -1,9 +1,12 @@
 ---
 status: accepted
 date: 2026-09-16
+amended: 2026-11-20
 deciders: Lukáš Vlk
 ---
 # ADR-0064: SFTP blocking-I/O timeout via a watchdog coroutine
+
+> **Amendment (2026-11-20) — `sftpTransferTimeoutSeconds` no longer accepts `null`.** The deadline is always on, default 300 s, so a `null` that disabled the bound (below) is rejected.
 
 ## Context and Problem Statement
 

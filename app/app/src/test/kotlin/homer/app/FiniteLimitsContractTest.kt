@@ -77,6 +77,9 @@ class FiniteLimitsContractTest {
         val expected =
             listOf(
                 "Agent.maxQueuedRuns",
+                "kubernetes.concurrency",
+                "ssh.concurrency",
+                "LocalRunnerConfig.concurrency",
                 "external.maxInstances",
                 "ClaudeCmdOptions.maxTurns",
                 "DispatchConfig.maxPending",

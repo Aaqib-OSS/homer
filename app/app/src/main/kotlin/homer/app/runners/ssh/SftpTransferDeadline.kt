@@ -20,12 +20,12 @@ import kotlin.time.Duration
  * [WorkspaceSync]'s deadline on blocking SFTP round trips: opens a client per operation
  * and bounds every call, including the client's own close, by [transferTimeout]
  * (CWE-400). `withTimeout` cannot interrupt a blocked JVM read, so a
- * watchdog closes [session] instead. A null [transferTimeout] leaves calls unbounded.
+ * watchdog closes [session] instead.
  * See ADR-0064.
  */
 internal class SftpTransferDeadline(
     private val session: ClientSession,
-    private val transferTimeout: Duration?,
+    private val transferTimeout: Duration,
     private val openSftp: (ClientSession) -> SftpClient,
     private val logger: Logger,
 ) {
@@ -67,7 +67,6 @@ internal class SftpTransferDeadline(
     // the session instead. Invariants and rejected alternatives: See ADR-0064 (SFTP blocking-I/O timeout via a watchdog coroutine).
     @Suppress("SuspendFunSwallowedCancellation") // rethrows the caller's cancellation; maps only the watchdog close
     suspend fun <T> withTransferTimeout(block: suspend () -> T): T {
-        val timeout = transferTimeout ?: return block()
         val timedOut = AtomicBoolean(false)
         try {
             return coroutineScope {
@@ -76,9 +75,9 @@ internal class SftpTransferDeadline(
                 // the blocking copy and would never run a same-dispatcher watchdog.
                 val watchdog =
                     launch(Dispatchers.Default) {
-                        delay(timeout)
+                        delay(transferTimeout)
                         timedOut.set(true)
-                        logger.warn("SFTP transfer exceeded the {} deadline; closing the session to unblock it", timeout)
+                        logger.warn("SFTP transfer exceeded the {} deadline; closing the session to unblock it", transferTimeout)
                         runCatching { session.close(true) }
                     }
                 try {
@@ -90,7 +89,7 @@ internal class SftpTransferDeadline(
         } catch (e: Throwable) {
             // The caller's own cancellation (a killed run) stays a cancellation past the deadline.
             if (e is CancellationException) currentCoroutineContext().ensureActive()
-            if (timedOut.get()) throw IOException("SFTP transfer timed out after $timeout (peer stalled?)", e)
+            if (timedOut.get()) throw IOException("SFTP transfer timed out after $transferTimeout (peer stalled?)", e)
             throw e
         }
     }

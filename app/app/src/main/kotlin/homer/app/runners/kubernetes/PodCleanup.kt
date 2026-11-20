@@ -41,13 +41,13 @@ object PodCleanup {
         namespace: String,
         podName: String,
         ttlSeconds: Long,
-        existingDeadlineSeconds: Long? = null,
+        existingDeadlineSeconds: Long,
     ): Boolean {
         // Kubernetes only lowers an existing activeDeadlineSeconds, never raises it (422): set it
-        // only when unset or ttl is lower, else label only. "add" overwrites, so it fits either way.
+        // only when ttl is lower, else label only.
         val label = PodLabels.KEPT_LABEL_OP
         val patch =
-            if (existingDeadlineSeconds == null || ttlSeconds < existingDeadlineSeconds) {
+            if (ttlSeconds < existingDeadlineSeconds) {
                 "[\n" +
                     """{"op":"add","path":"/spec/activeDeadlineSeconds","value":$ttlSeconds},""" + "\n" +
                     label + "\n]"

@@ -82,7 +82,7 @@ internal class WorkloadTeardown(
     fun keep(
         podName: String,
         ttlSeconds: Long,
-        existingDeadlineSeconds: Long?,
+        existingDeadlineSeconds: Long,
     ): Boolean {
         val kept = PodCleanup.keepWithTtl(api, namespace, podName, ttlSeconds, existingDeadlineSeconds)
         val job = jobName ?: return kept

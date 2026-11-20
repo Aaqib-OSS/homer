@@ -42,7 +42,7 @@ class PodCleanupTest {
     fun `keepWithTtl sends the TTL patch as a JSON Patch, not application json`() {
         val seen = mutableListOf<Request>()
 
-        val kept = PodCleanup.keepWithTtl(interceptedCoreV1Api(seen), "homer", "pod-1", ttlSeconds = 900)
+        val kept = PodCleanup.keepWithTtl(interceptedCoreV1Api(seen), "homer", "pod-1", ttlSeconds = 900, existingDeadlineSeconds = 86_400)
 
         assertTrue(kept)
         assertEquals(listOf("PATCH"), seen.map { it.method })
@@ -64,7 +64,7 @@ class PodCleanupTest {
         val seen = mutableListOf<Request>()
         val api = interceptedCoreV1Api(seen) { if (it.method == "PATCH") 415 else 200 }
 
-        assertFalse(PodCleanup.keepWithTtl(api, "homer", "pod-1", ttlSeconds = 900)) // must not throw
+        assertFalse(PodCleanup.keepWithTtl(api, "homer", "pod-1", ttlSeconds = 900, existingDeadlineSeconds = 86_400)) // must not throw
 
         val delete = seen.single { it.method == "DELETE" }
         assertTrue(delete.url.encodedPath.endsWith("/namespaces/homer/pods/pod-1"), delete.url.toString())
@@ -75,14 +75,17 @@ class PodCleanupTest {
         val seen = mutableListOf<Request>()
         val api = interceptedCoreV1Api(seen) { if (it.method == "PATCH") 404 else 200 }
 
-        assertFalse(PodCleanup.keepWithTtl(api, "homer", "pod-1", ttlSeconds = 900), "a vanished pod is not kept") // must not throw
+        assertFalse(
+            PodCleanup.keepWithTtl(api, "homer", "pod-1", ttlSeconds = 900, existingDeadlineSeconds = 86_400),
+            "a vanished pod is not kept",
+        ) // must not throw
 
         assertEquals(emptyList(), seen.filter { it.method == "DELETE" })
     }
 
     private fun keepPatchBody(
         ttl: Long,
-        existing: Long?,
+        existing: Long,
         seen: MutableList<Request> = mutableListOf(),
     ): String {
         PodCleanup.keepWithTtl(interceptedCoreV1Api(seen), "homer", "pod-1", ttl, existing)
@@ -95,18 +98,6 @@ class PodCleanupTest {
             ?.groupValues
             ?.get(1)
             ?.toLong()
-
-    @Test
-    fun `keepWithTtl without an existing deadline sends today's patch`() {
-        val body = keepPatchBody(900, null)
-        assertEquals(
-            "[\n" +
-                "{\"op\":\"add\",\"path\":\"/spec/activeDeadlineSeconds\",\"value\":900},\n" +
-                "{\"op\":\"add\",\"path\":\"/metadata/labels/homer.app~1kept\",\"value\":\"true\"}\n" +
-                "]",
-            body,
-        )
-    }
 
     @Test
     fun `keepWithTtl lowers a later existing deadline`() {
