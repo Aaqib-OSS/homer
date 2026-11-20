@@ -100,11 +100,12 @@ The runtime invokes them by bare name, so a run without `PATH` cannot park.
 When a fan-out sub's result exceeds Homer's inline cap (64 KiB), the resume
 payload arrives with `result: null` and a `resultRef` capability token instead.
 `homer_fanout` detects this and calls `homer_fetch_result(ref)` (in
-`results.py`), which shells out to the `homer-result` wrapper to GET
-`/api/v1/callback/results/<token>` and splices the full (server-side
-transformed) value back into `result` — so graph code always sees a normal
-payload. The fetch is an idempotent GET and the token is reusable within its
-TTL, so re-running the node on resume is safe. If the fetch fails for a sub
+`results.py`), which shells out to the `homer-result` wrapper with the token
+in `HMR_RESULT_TOKEN` to GET `/api/v1/callback/results/<token>` and splices
+the full (server-side transformed) value back into `result` — so graph code
+always sees a normal payload. The fetch is an idempotent GET and the token is
+reusable within its TTL, so re-running the node on resume is safe. If the
+fetch fails for a sub
 that did not `FINISHED`, `homer_fanout` keeps `result: null`, reports on
 stderr and returns the payload — the graph's own status check (retry, park)
 must get to run; a fetch failure for a `FINISHED` sub still raises. Above

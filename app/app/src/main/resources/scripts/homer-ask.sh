@@ -46,6 +46,23 @@ die() {
     exit 2
 }
 
+# Runs curl on URL $1 with options $2...; the URL and bearer token reach curl as a
+# config on fd 3, never argv, which other users on the host can read (CWE-214).
+homer_curl() {
+    # A line break would end the config line and let the value inject curl options.
+    case "$1$HMR_CALLBACK_TOKEN" in
+        *[[:cntrl:]]*) die "the request URL or HMR_CALLBACK_TOKEN contains a control character" ;;
+    esac
+    cfg_url=$(printf '%s' "$1" | sed 's/[\\"]/\\&/g')
+    cfg_token=$(printf '%s' "$HMR_CALLBACK_TOKEN" | sed 's/[\\"]/\\&/g')
+    shift
+    # --globoff: a {} or [] in the URL must not expand into several requests.
+    curl -K /dev/fd/3 --globoff "$@" 3<<EOF
+url = "$cfg_url"
+header = "Authorization: Bearer $cfg_token"
+EOF
+}
+
 # Dies unless $2 is a non-negative integer; $1 names the flag in the error.
 require_uint() {
     case "$2" in
@@ -220,10 +237,10 @@ dispatch_question() {
     [ -n "${6:-}" ] && ttl_field=",\"ttlSec\":$6"
     payload="{\"text\":\"$(json_escape "$1")\",\"options\":[$2],\"agent\":\"$(json_escape "$3")\",\"answerParam\":\"$(json_escape "$4")\",\"params\":{$5}$ttl_field}"
     response=$(
-        curl -sS -f --max-time "$CURL_MAX_TIME" -X POST "$DISPATCH_URL" \
-            -H "Authorization: Bearer $HMR_CALLBACK_TOKEN" \
-            -H "Content-Type: application/json" \
-            --data "$payload"
+        printf '%s' "$payload" |
+            homer_curl "$DISPATCH_URL" -sS -f --max-time "$CURL_MAX_TIME" -X POST \
+                -H "Content-Type: application/json" \
+                --data-binary @-
     ) || die "registering the dispatch failed (terminal process, unknown agent, pending cap, or Homer unreachable)"
     did=$(json_num_field "$response" "dispatchId") || die "no dispatchId in response: $response"
     qid=$(json_str_field "$response" "questionId") || die "no questionId in response: $response"
@@ -238,10 +255,10 @@ dispatch_group() {
     [ -n "${5:-}" ] && ttl_field=",\"ttlSec\":$5"
     payload="{\"questions\":[$1],\"agent\":\"$(json_escape "$2")\",\"answerParam\":\"$(json_escape "$3")\",\"params\":{$4}$ttl_field}"
     response=$(
-        curl -sS -f --max-time "$CURL_MAX_TIME" -X POST "$DISPATCH_GROUP_URL" \
-            -H "Authorization: Bearer $HMR_CALLBACK_TOKEN" \
-            -H "Content-Type: application/json" \
-            --data "$payload"
+        printf '%s' "$payload" |
+            homer_curl "$DISPATCH_GROUP_URL" -sS -f --max-time "$CURL_MAX_TIME" -X POST \
+                -H "Content-Type: application/json" \
+                --data-binary @-
     ) || die "registering the dispatch group failed (terminal process, unknown agent, too many questions, open-question cap, pending cap, or Homer unreachable)"
     did=$(json_num_field "$response" "dispatchId") || die "no dispatchId in response: $response"
     printf '%s\n' "$did"
@@ -252,10 +269,10 @@ dispatch_group() {
 ask_question() {
     payload="{\"text\":\"$(json_escape "$1")\",\"options\":[$2]}"
     response=$(
-        curl -sS -f --max-time "$CURL_MAX_TIME" -X POST "$BASE_URL" \
-            -H "Authorization: Bearer $HMR_CALLBACK_TOKEN" \
-            -H "Content-Type: application/json" \
-            --data "$payload"
+        printf '%s' "$payload" |
+            homer_curl "$BASE_URL" -sS -f --max-time "$CURL_MAX_TIME" -X POST \
+                -H "Content-Type: application/json" \
+                --data-binary @-
     ) || die "asking the question failed (terminal process, open-question cap, or Homer unreachable)"
     id=$(json_str_field "$response" "id") || die "no question id in response: $response"
     printf '%s\n' "$id"
@@ -267,9 +284,7 @@ ask_question() {
 # (ask-and-wait poll loop).
 check_once() {
     response=$(
-        curl -sS -f --max-time "$CURL_MAX_TIME" \
-            -H "Authorization: Bearer $HMR_CALLBACK_TOKEN" \
-            "$BASE_URL/$1?waitSec=$2"
+        homer_curl "$BASE_URL/$1?waitSec=$2" -sS -f --max-time "$CURL_MAX_TIME"
     ) || {
         printf 'homer-ask: checking the answer failed (unknown id or Homer unreachable; a server restart drops open questions)\n' >&2
         return 2
@@ -362,6 +377,10 @@ case "$cmd" in
         # Validate before asking: a bad ttl must not orphan an open question.
         [ -z "$ttl" ] || require_uint "--ttl" "$ttl"
         id=$(ask_question "$text" "$OPTIONS_JSON") || exit 2
+        # check_once refuses a control character in the id on every poll; refuse it once, unretried.
+        case "$id" in
+            *[[:cntrl:]]*) die "the question id contains a control character" ;;
+        esac
         start=$(date +%s)
         failures=0
         while :; do

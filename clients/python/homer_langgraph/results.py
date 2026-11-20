@@ -8,6 +8,7 @@ wrapper and returns the (possibly transformed) full result. See ADR-0025.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from typing import Any
 
@@ -15,9 +16,10 @@ from typing import Any
 def homer_fetch_result(ref: dict[str, Any]) -> str:
     """Fetch the full result behind a ``resultRef`` capability token.
 
-    Shells out to ``homer-result --token <token>`` and returns the result body
-    as a string. The GET is idempotent and the token is reusable within its
-    TTL, so this is safe to call again on a re-run of the node.
+    Shells out to ``homer-result`` with the token in ``HMR_RESULT_TOKEN``,
+    never argv, and returns the result body as a string. The GET is
+    idempotent and the token is reusable within its TTL, so this is safe to
+    call again on a re-run of the node.
 
     Args:
         ref: The resume payload's ``resultRef`` dict (``{processId, path, token,
@@ -28,18 +30,15 @@ def homer_fetch_result(ref: dict[str, Any]) -> str:
     """
     try:
         completed = subprocess.run(
-            ["homer-result", "--token", ref["token"]],
+            ["homer-result"],
+            env={**os.environ, "HMR_RESULT_TOKEN": ref["token"]},
             check=True,
             capture_output=True,
             text=True,
         )
     except subprocess.CalledProcessError as exc:
-        # The token rides on argv, so CalledProcessError.__str__ embeds it; an
-        # uncaught traceback is captured into Homer's process logs, leaking a
-        # live capability token. Re-raise without the token, and use `from None`
-        # to drop the chained CalledProcessError whose str() would re-expose it.
         raise RuntimeError(
             f"homer-result failed (exit {exc.returncode}) fetching resultRef "
             f"for process {ref.get('processId')} path {ref.get('path')!r}"
-        ) from None
+        ) from exc
     return completed.stdout

@@ -2116,7 +2116,7 @@ JSON</code></pre>
             carries <code>result: null</code> and no ref. Fetch the full, server-side transformed value with
             <code>homer-result</code>. The token is audience-bound: only the continuation's target agent can redeem
             it, any other gets <code>403</code>.</p>
-          <pre><code>homer-result --token "$TOKEN" --out result.txt</code></pre>
+          <pre><code>HMR_RESULT_TOKEN="$TOKEN" homer-result --out result.txt</code></pre>
         </article>
 
         <article class="f">

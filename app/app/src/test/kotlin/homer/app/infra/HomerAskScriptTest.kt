@@ -35,12 +35,8 @@ class HomerAskScriptTest {
             }.toURI(),
         )
 
-    /**
-     * Writes a stub `curl` into [binDir] that writes the value of the `--data` argument to the
-     * path in `$STUB_CAPTURE` and prints `$STUB_BODY`, exiting `$STUB_EXIT` — so a non-zero exit
-     * exercises the "Homer unreachable" branch. The script's group POST passes no `-w`, so the
-     * body is the whole of stdout.
-     */
+    // Stub `curl`: saves the stdin body (`--data-binary @-`) to `$STUB_CAPTURE`, prints `$STUB_BODY`
+    // (the whole of stdout: the group POST passes no `-w`) and exits `$STUB_EXIT`.
     private fun writeStubCurl(
         binDir: Path,
         body: String,
@@ -52,8 +48,8 @@ class HomerAskScriptTest {
             #!/bin/sh
             prev=""
             for a in "${'$'}@"; do
-                if [ "${'$'}prev" = "--data" ]; then
-                    printf '%s' "${'$'}a" > "${'$'}STUB_CAPTURE"
+                if [ "${'$'}prev" = "--data-binary" ] && [ "${'$'}a" = "@-" ]; then
+                    cat > "${'$'}STUB_CAPTURE"
                 fi
                 prev="${'$'}a"
             done
