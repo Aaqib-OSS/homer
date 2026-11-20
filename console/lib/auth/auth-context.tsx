@@ -24,6 +24,12 @@ export type AuthStatus = 'loading' | 'authed' | 'anon';
  */
 export type LoginOutcome = 'ok' | 'invalid-credentials' | 'rate-limited' | 'error';
 
+/**
+ * Outcome of a `logout`. The console signs out locally either way; `server-unconfirmed` means the
+ * server did not confirm it, so the session cookie may still be valid.
+ */
+export type LogoutOutcome = 'ok' | 'server-unconfirmed';
+
 function classifyLoginFailure(e: unknown): Exclude<LoginOutcome, 'ok'> {
   if (e instanceof HomerApiError) {
     if (e.status === 429) return 'rate-limited';
@@ -62,7 +68,7 @@ interface AuthContextType {
    * anything else (network/timeout/server error).
    */
   login: (username: string, password: string) => Promise<LoginOutcome>;
-  logout: () => Promise<void>;
+  logout: () => Promise<LogoutOutcome>;
   /**
    * Switch the active Homer instance: point the active id at `instanceId`,
    * drop the previous instance's cached data, and re-probe auth against the
@@ -203,18 +209,25 @@ async function loginBearer(setters: AuthSetters, password: string): Promise<Logi
   }
 }
 
-async function logoutActive({ queryClient, setOverride }: AuthSetters): Promise<void> {
-  if (activeMode() === 'cookie') {
-    try {
-      await homerApi.logout();
-    } catch {
-      // Server may already consider us logged out; treat as success.
-    }
-  } else {
+/** Ends the active instance's session where it lives: the server's cookie session, or the stored token. */
+async function endSession(): Promise<LogoutOutcome> {
+  if (activeMode() !== 'cookie') {
     removeActiveToken();
+    return 'ok';
   }
+  try {
+    await homerApi.logout();
+    return 'ok';
+  } catch {
+    return 'server-unconfirmed';
+  }
+}
+
+async function logoutActive({ queryClient, setOverride }: AuthSetters): Promise<LogoutOutcome> {
+  const outcome = await endSession();
   queryClient.clear();
   setOverride({ kind: 'anon' });
+  return outcome;
 }
 
 /** login / logout / switchInstance, and the auth-expired listener, over the given override setter. */
@@ -255,11 +268,11 @@ function useAuthActions(
     return onAuthExpired(() => setOverride({ kind: 'anon' }));
   }, [setOverride]);
 
-  const logout = useCallback(async () => {
+  const logout = useCallback(async (): Promise<LogoutOutcome> => {
     if (authProbeDisabled) {
-      return;
+      return 'ok';
     }
-    await logoutActive({ queryClient, setOverride });
+    return logoutActive({ queryClient, setOverride });
   }, [queryClient, setOverride]);
 
   return { login, logout, switchInstance };

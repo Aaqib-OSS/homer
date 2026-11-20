@@ -61,6 +61,8 @@ vi.mock('@/lib/config/app-config', () => ({
 // AuthProvider is bound at load time.
 let loginResult: string | undefined;
 
+let logoutResult: string | undefined;
+
 async function renderWithCurrentConfig() {
   vi.resetModules();
   const [{ AuthProvider, useAuth }, { resetInstancesStoreForTests }] = await Promise.all([
@@ -84,7 +86,15 @@ async function renderWithCurrentConfig() {
         >
           do-login
         </button>
-        <button onClick={() => void doLogout()}>do-logout</button>
+        <button
+          onClick={() =>
+            void doLogout().then((r) => {
+              logoutResult = r;
+            })
+          }
+        >
+          do-logout
+        </button>
       </div>
     );
   }
@@ -106,6 +116,7 @@ beforeEach(() => {
   getHeartbeat.mockReset();
   localStorage.clear();
   loginResult = undefined;
+  logoutResult = undefined;
 });
 
 describe.each([
@@ -140,6 +151,7 @@ describe.each([
 
     expect(screen.getByTestId('status')).toHaveTextContent('authed');
     expect(logout).not.toHaveBeenCalled();
+    expect(logoutResult).toBe('ok');
   });
 
   it('resolves login to ok, stays authed, and probes nothing', async () => {

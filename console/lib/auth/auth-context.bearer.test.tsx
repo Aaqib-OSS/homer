@@ -269,5 +269,6 @@ describe('AuthProvider (bearer mode)', () => {
     expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
     // Bearer logout is purely local; the cookie-mode endpoint is not hit.
     expect(logout).not.toHaveBeenCalled();
+    expect(screen.getByTestId('logout-outcome')).toHaveTextContent('ok');
   });
 });

@@ -260,6 +260,28 @@ describe('AuthProvider (cookie mode)', () => {
       expect(screen.getByTestId('status')).toHaveTextContent('anon'),
     );
     expect(client.getQueryData(['scratch'])).toBeUndefined();
+    expect(screen.getByTestId('logout-outcome')).toHaveTextContent('ok');
+  });
+
+  it('logout reports server-unconfirmed when the request fails, and still signs out locally', async () => {
+    getAuthMe.mockResolvedValue({ username: 'alice', role: 'admin', grants: [] });
+    logout.mockRejectedValue(new HomerApiError('Service Unavailable', 503));
+
+    const { client } = renderWithProvider();
+    await waitFor(() =>
+      expect(screen.getByTestId('status')).toHaveTextContent('authed'),
+    );
+    client.setQueryData(['scratch'], { keep: true });
+
+    await act(async () => {
+      screen.getByText('do-logout').click();
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('logout-outcome')).toHaveTextContent('server-unconfirmed'),
+    );
+    expect(screen.getByTestId('status')).toHaveTextContent('anon');
+    expect(client.getQueryData(['scratch'])).toBeUndefined();
   });
 
   it('login returns rate-limited when the login endpoint responds 429', async () => {
