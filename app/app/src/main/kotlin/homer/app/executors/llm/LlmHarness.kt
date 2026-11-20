@@ -34,7 +34,7 @@ interface LlmHarness<C> where C : Command, C : Command.LlmCommand {
 
     fun stdOutFilter(command: C): LlmStdOutFilter? = null
 
-    /** True only for a harness that opted into any terminal stop; only then does the executor inspect a non-zero exit's stdout, and only [Inspection.Terminal] is honoured. See ADR-0070. */
+    /** True only for a harness that opted into a terminal stop; only then does the executor inspect a non-zero exit's stdout, and only [Inspection.Terminal] is honoured. See ADR-0070. */
     fun terminalStopConfigured(command: C): Boolean = false
 
     /** [command] as one escalation tier runs it: its model, and its raw CLI options when the tier sets them. See ADR-0079. */

@@ -58,8 +58,9 @@ class ClaudeHarness(
     override fun stdOutFilter(command: Command.Claude): LlmStdOutFilter? =
         dropSystemSubtypes.takeIf { it.isNotEmpty() }?.let { ClaudeSystemEventFilter(it) }
 
-    override fun terminalStopConfigured(command: Command.Claude): Boolean =
-        command.options.maxTurnsExitCode != null || command.options.isErrorExitCode != null
+    // Non-zero-exit inspection only: an is_error result arrives at exit 0 and is mapped by the
+    // exit-0 inspect path, so isErrorExitCode must not widen this (ADR-0070).
+    override fun terminalStopConfigured(command: Command.Claude): Boolean = command.options.maxTurnsExitCode != null
 
     override fun translator(): (JsonObject) -> Translation = ::translate
 

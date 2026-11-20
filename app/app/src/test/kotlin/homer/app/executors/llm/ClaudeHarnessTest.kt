@@ -680,12 +680,13 @@ class ClaudeHarnessTest {
     }
 
     @Test
-    fun `a terminal stop is configured when either exit-code option is set and not otherwise`() {
+    fun `a terminal stop is configured only when maxTurnsExitCode is set`() {
         assertFalse(harness.terminalStopConfigured(command))
         val capped = Command.Claude(prompt = LlmPrompt.Prompt("hi"), options = ClaudeCmdOptions(maxTurnsExitCode = 7))
         assertTrue(harness.terminalStopConfigured(capped))
+        // An is_error result arrives at exit 0, so its option never widens non-zero-exit inspection (ADR-0070).
         val isError = Command.Claude(prompt = LlmPrompt.Prompt("hi"), options = ClaudeCmdOptions(isErrorExitCode = 7))
-        assertTrue(harness.terminalStopConfigured(isError))
+        assertFalse(harness.terminalStopConfigured(isError))
     }
 
     @Test

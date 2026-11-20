@@ -96,11 +96,11 @@ class LlmAttemptOutputTest {
     }
 
     @Test
-    fun `an is_error result is the is_error stop on both exit paths`(
+    fun `an exit-0 is_error result is the is_error stop, with its own span attribute`(
         @TempDir dir: Path,
     ) {
-        // The is_error opt-in rides the same terminal-stop shape as maxTurnsExitCode, on exit 0 and on a
-        // non-zero exit alike, and sets its own span attribute (ADR-0070).
+        // The is_error opt-in rides the same terminal-stop shape as maxTurnsExitCode — an is_error
+        // result arrives at exit 0 — and sets its own span attribute (ADR-0070).
         val out =
             dir.resolve("out").also {
                 it.writeText("""{"type":"result","subtype":"success","is_error":true,"stop_reason":"refusal","session_id":"s"}""" + "\n")
@@ -121,74 +121,33 @@ class LlmAttemptOutputTest {
         assertEquals(76, atZero.result.exitCode)
         assertEquals(accounting, atZero.result.llmAccounting)
 
-        val atNonZero =
-            assertIs<RetryOutcome.CappedStop>(
-                claudeOutput.nonZeroOutcome(
-                    isErrorCommand,
-                    TestFixtures.mockCommandResult(exitCode = 1, stdOut = out),
-                    accounting,
-                    out,
-                    span,
-                ),
-            )
-        assertEquals(76, atNonZero.result.exitCode)
-
         verify { span.setAttribute("claude.is_error_stop", true) }
         verify(exactly = 0) { span.setAttribute("claude.max_turns_stop", any<Boolean>()) }
     }
 
     @Test
-    fun `an unreadable or over-cap stdout on the is_error path stays the failure its exit code is`(
+    fun `an is_error option leaves a non-zero exit its own verdict, unread`(
         @TempDir dir: Path,
     ) {
-        // Denial path (§12 rule 8): the bounded lenient read cannot turn a broken stream into the
-        // configured exit code — the exit's own failure stands.
-        val streams =
-            listOf(
-                dir.resolve("missing") to "a deleted stdout file",
-                dir.resolve("garbled").also { it.writeText("not json\n") } to "unparseable stdout",
-                dir.resolve("over-cap").also {
-                    it.writeText(("""{"type":"system","subtype":"init","session_id":"s"}""" + "\n").repeat(50_001))
-                } to "stdout past the event cap",
-            )
+        // terminalStopConfigured still gates non-zero-exit inspection on maxTurnsExitCode alone, so the
+        // is_error option never flips that behaviour (ADR-0070).
+        val out = dir.resolve("out").also { it.writeText("""{"type":"result","subtype":"success","is_error":true}""" + "\n") }
 
-        for ((out, what) in streams) {
+        for (cmd in listOf(command, isErrorCommand)) {
             val failure =
                 assertIs<RetryOutcome.OtherFailure>(
                     claudeOutput.nonZeroOutcome(
-                        isErrorCommand,
+                        cmd,
                         TestFixtures.mockCommandResult(exitCode = 1, stdOut = out),
                         accounting,
                         out,
                         TestFixtures.mockSpan(),
                     ),
-                    what,
                 )
 
-            assertEquals(1, failure.result.exitCode, what)
-            assertEquals(accounting, failure.result.llmAccounting, what)
+            assertEquals(1, failure.result.exitCode)
+            assertNull(failure.stream)
         }
-    }
-
-    @Test
-    fun `without an exit-code option a non-zero is_error exit never reads the stream`(
-        @TempDir dir: Path,
-    ) {
-        val out = dir.resolve("out").also { it.writeText("""{"type":"result","subtype":"success","is_error":true}""" + "\n") }
-
-        val failure =
-            assertIs<RetryOutcome.OtherFailure>(
-                claudeOutput.nonZeroOutcome(
-                    command,
-                    TestFixtures.mockCommandResult(exitCode = 1, stdOut = out),
-                    accounting,
-                    out,
-                    TestFixtures.mockSpan(),
-                ),
-            )
-
-        assertEquals(1, failure.result.exitCode)
-        assertNull(failure.stream)
     }
 
     @Test
