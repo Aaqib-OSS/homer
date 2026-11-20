@@ -180,3 +180,12 @@ settings on `ssh` and `kubernetes` runners, and on `local` only past 100 waiting
 child, a dispatched child or a `runnerCmd` step that targets its parent's runner can wait for a permit
 that never frees once the parents hold them all. Operators with such chains raise `concurrency` to cover
 the deepest chain.
+
+## Amendment (2026-11-20): a `cmd` result must carry its output chunk counts
+
+A `cmd` result must carry both `stdoutChunks` and `stderrChunks`, and one without them fails the step.
+`homer-runner` older than 1.37.1, which omits them, is unsupported: this is the floor on decision (10),
+"upgraded independently". An instance that omits the counts can no longer have its output checked for
+completeness, so it is refused rather than trusted. The wire fields stay optional, because the other
+ops share `OpResult` and report no counts, which is consistent with (10); the check refuses at the
+point of use, not at decode.

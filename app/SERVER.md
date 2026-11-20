@@ -3958,8 +3958,9 @@ expires is dropped with one warning naming the session, op, stream and count, an
 no count — that result then matches what Homer holds while output is missing, and the
 instance's log is the only trace. A `cmd` result that omits either count, as a runner
 older than 1.37.1 does, fails the step: that runner must be upgraded. When a count is
-ahead of the chunks Homer has received, Homer waits once, briefly, for the rest and then fails the step with
-`output incomplete on <stream>` instead of running on truncated output.
+ahead of the chunks Homer has received, Homer waits once, briefly, for the rest and
+then fails the step with `output incomplete on <stream>` instead of running on
+truncated output.
 
 Both ends of this protocol are upgraded independently, so every body it carries is
 decoded with unknown keys ignored: an instance newer than the server it reports to is

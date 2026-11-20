@@ -85,7 +85,7 @@ class RunnerProtocolTest {
 
     @Test
     fun `a cmd result reads with or without counts on the wire`() {
-        // Every other op omits the counts: both fields default, so this Homer reads the result.
+        // A body without counts still decodes; a `cmd` result lacking them is refused at the point of use.
         val bare = apiJson.decodeFromString(OpResult.serializer(), """{"opId":"op-3","exitCode":0}""")
         assertEquals(OpResult(opId = "op-3", exitCode = 0), bare)
         assertNull(bare.stdoutChunks)

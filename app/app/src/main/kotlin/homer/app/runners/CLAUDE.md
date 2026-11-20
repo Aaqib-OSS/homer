@@ -137,8 +137,8 @@ chunk abandoned after its retries is counted, so a lost one reads as a short cou
 never as a complete one), and the instance finishes posting before it reports its
 exit — or gives up on a stalled drain once the bounded wait expires, logging one
 warning naming the session, op, stream and count, and such a chunk reaches no count
-at all. A result missing a count (runner older than 1.37.1) fails the step. A count ahead of
-`OutputSink`'s is waited on once, then fails the step as *output incomplete*, never
+at all. A result missing a count (runner older than 1.37.1) fails the step. A count ahead of what
+`OutputSink` holds is waited on once, then fails the step as *output incomplete*, never
 a clean exit over truncated output; a count the drain gave up on matches, so the
 instance's warning is the only trace of the missing tail. A graceful stop rides two more ops
 (ADR-0108): `cmd` carries an optional `interruptGraceSeconds`, and `interrupt`

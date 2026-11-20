@@ -182,8 +182,8 @@ class ExternalShellExecutor(
 
     /**
      * The command's result from the instance's [result]; throws, setting [kill]'s matching
-     * flag, when it is no clean exit, and when the instance reports output Homer never
-     * received. Suspends for at most one [INCOMPLETE_OUTPUT_WAIT] while that last chunk
+     * flag, when it is no clean exit, when the instance reports no output chunk counts, and
+     * when it reports output Homer never received. Suspends for at most one [INCOMPLETE_OUTPUT_WAIT] while that last chunk
      * arrives.
      */
     private suspend fun doneResult(
@@ -227,8 +227,8 @@ class ExternalShellExecutor(
     }
 
     /**
-     * Fails the step when the instance reports more chunks for a stream than Homer holds: the
-     * step's output is truncated, and a clean `CommandResult` over it would let a `!<claude>` step
+     * Fails the step when the instance reports no chunk counts, or more chunks for a stream than
+     * Homer holds: the step's output is truncated, and a clean `CommandResult` over it would let a `!<claude>` step
      * die on a missing `result` event instead of on the real cause. One bounded wait first, never a
      * loop — the instance reports its exit after its last post, but the two ride different
      * connections, so the last chunk can still be in flight (§12 rules 4–5). A cap that trips
@@ -264,8 +264,8 @@ class ExternalShellExecutor(
         val stderr = result.stderrChunks
         if (stdout == null || stderr == null) {
             throw ExternalRunnerException(
-                "runner instance '${session.instance.name}' does not report output chunk counts: " +
-                    "its runner is older than 1.37.1 and must be upgraded",
+                "runner instance '${session.instance.name}' does not report output chunk counts " +
+                    "(homer-runner before 1.37.1 omits them); upgrade it",
             )
         }
         return mapOf(RunnerProtocol.STREAM_STDOUT to stdout, RunnerProtocol.STREAM_STDERR to stderr)

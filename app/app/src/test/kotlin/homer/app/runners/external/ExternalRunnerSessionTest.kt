@@ -502,23 +502,25 @@ class ExternalRunnerSessionTest {
         }
 
     @Test
-    fun `a cmd result without chunk counts fails the step naming the runner version`() =
-        runTest {
-            val s = openSession()
-            val result =
-                async {
-                    runCatching {
-                        s.shell.cmd(listOf("sh", "-c", "x"), tmp.resolve("o"), tmp.resolve("e"), timeout = 30.seconds)
+    fun `a cmd result missing either chunk count fails the step naming the runner version`() =
+        listOf<Pair<Long?, Long?>>(null to null, 1L to null, null to 1L).forEach { (stdout, stderr) ->
+            runTest {
+                val s = openSession()
+                val result =
+                    async {
+                        runCatching {
+                            s.shell.cmd(listOf("sh", "-c", "x"), tmp.resolve("o"), tmp.resolve("e"), timeout = 30.seconds)
+                        }
                     }
-                }
-            runCurrent()
-            val op = s.mailbox.next(1.seconds)!!
-            s.mailbox.complete(OpResult(op.opId, exitCode = 0))
-            runCurrent()
+                runCurrent()
+                val op = s.mailbox.next(1.seconds)!!
+                s.mailbox.complete(OpResult(op.opId, exitCode = 0, stdoutChunks = stdout, stderrChunks = stderr))
+                runCurrent()
 
-            assertTrue(result.isCompleted, "a missing count is refused without waiting")
-            val message = assertNotNull(result.await().exceptionOrNull()).message!!
-            assertTrue("older than 1.37.1" in message && "output chunk counts" in message, message)
+                assertTrue(result.isCompleted, "a missing count is refused without waiting ($stdout, $stderr)")
+                val message = assertNotNull(result.await().exceptionOrNull()).message!!
+                assertTrue("homer-runner before 1.37.1" in message && "output chunk counts" in message, message)
+            }
         }
 
     @Test
@@ -614,9 +616,8 @@ class ExternalRunnerSessionTest {
         }
 
     @Test
-    fun `a result that carries no counts keeps today's behavior`() =
+    fun `zero counts for a command with no output return the clean result`() =
         runTest {
-            // An older runner binary reports nothing to compare, so the check stays inert.
             val s = openSession()
             val result =
                 async {
