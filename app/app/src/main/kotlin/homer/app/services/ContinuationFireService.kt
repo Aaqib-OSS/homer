@@ -59,7 +59,7 @@ internal class ContinuationFireService(
         startTarget(continuation, agent, now, "Continuation") {
             val extracted =
                 extractResult(continuation.watchedProcessId, continuation.resultTransformer, continuation.targetAgentName)
-            buildResumePayload(status, continuation.watchedProcessId, extracted.result, extracted.ref)
+            buildResumePayload(status, continuation.watchedProcessId, extracted)
         }
     }
 
@@ -181,7 +181,7 @@ internal class ContinuationFireService(
                         // value so the parent's homer_fanout decodes its own per-branch payload unchanged.
                         put(
                             watch.interruptId,
-                            JsonPrimitive(buildResumePayload(status, watch.watchedProcessId, extracted.result, extracted.ref)),
+                            JsonPrimitive(buildResumePayload(status, watch.watchedProcessId, extracted)),
                         )
                     }
                 }
@@ -189,10 +189,14 @@ internal class ContinuationFireService(
         }
     }
 
-    /** The inline result and/or read-by-reference [ResultRef] for a continuation's resume payload. */
+    /**
+     * The inline result and/or read-by-reference [ResultRef] for a continuation's resume payload;
+     * [tooLarge] when the result was dropped for being over [RESULT_TRANSFORM_MAX_BYTES].
+     */
     private data class ExtractedResult(
         val result: String?,
         val ref: ResultRef?,
+        val tooLarge: Boolean = false,
     )
 
     /**
@@ -236,8 +240,8 @@ internal class ContinuationFireService(
     }
 
     /**
-     * A result over [MAX_RESULT_BYTES] resumes by reference: a minted [ResultRef], or nothing
-     * at all past [RESULT_TRANSFORM_MAX_BYTES], where the reference could never be redeemed.
+     * A result over [MAX_RESULT_BYTES] resumes by reference with a minted [ResultRef]; past
+     * [RESULT_TRANSFORM_MAX_BYTES], where a ref could never be redeemed, with none and `tooLarge` set.
      */
     private suspend fun oversizedResult(
         watchedProcessId: Int,
@@ -247,16 +251,15 @@ internal class ContinuationFireService(
         consumerAgent: String,
     ): ExtractedResult {
         if (size > RESULT_TRANSFORM_MAX_BYTES) {
-            // The fetch endpoint refuses to transform an artifact this large (413), so a ref
-            // here could never be redeemed — typically a failed Claude step's NDJSON stdout.
-            // Resume with result = null and no ref; the parent's own status check decides.
+            // The fetch endpoint answers 413 for a transform this large, so mint no ref and
+            // mark the payload `resultTooLarge` instead. ADR-0025.
             logger.warn(
-                "Watched process {} result of {} bytes exceeds the transform cap {}; resuming with result = null",
+                "Watched process {} result of {} bytes exceeds the transform cap {}; resuming with resultTooLarge",
                 watchedProcessId,
                 size,
                 RESULT_TRANSFORM_MAX_BYTES,
             )
-            return ExtractedResult(null, null)
+            return ExtractedResult(null, null, tooLarge = true)
         }
         val token =
             resultTokenService.mint(
@@ -281,8 +284,7 @@ internal class ContinuationFireService(
     private fun buildResumePayload(
         status: ProcessStatus,
         processId: Int,
-        result: String?,
-        ref: ResultRef?,
+        extracted: ExtractedResult,
     ): String =
         Json.encodeToString(
             JsonObject.serializer(),
@@ -290,8 +292,9 @@ internal class ContinuationFireService(
                 buildMap {
                     put("status", JsonPrimitive(status.name))
                     put("processId", JsonPrimitive(processId))
-                    put("result", result?.let { JsonPrimitive(it) } ?: JsonNull)
-                    if (ref != null) put("resultRef", Json.encodeToJsonElement(ref))
+                    put("result", extracted.result?.let { JsonPrimitive(it) } ?: JsonNull)
+                    if (extracted.ref != null) put("resultRef", Json.encodeToJsonElement(extracted.ref))
+                    if (extracted.tooLarge) put("resultTooLarge", JsonPrimitive(true))
                 },
             ),
         )
