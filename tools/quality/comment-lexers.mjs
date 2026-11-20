@@ -348,7 +348,7 @@ const LEXERS = {
 
 // Formats whose comments fill a whole line: `.properties`, `.editorconfig`, env files, pip inputs, git and Docker ignore files, CODEOWNERS.
 const LINE_START = /(?:\.properties|\.env(?:\.example)?|(?:^|\/)requirements[^/]*\.in|(?:^|\/)(?:\.editorconfig|\.gitignore|\.dockerignore|\.gitattributes|CODEOWNERS))$/;
-const DOCKERFILE = /(?:^|\/)(?:Dockerfile(?:\.[^/]+)?|[^/]+\.Dockerfile)$/;
+export const DOCKERFILE = /(?:^|\/)(?:Dockerfile(?:\.[^/]+)?|[^/]+\.Dockerfile)$/;
 
 /** The lexer name for `path`, or null when the check does not read the file's language. */
 export function languageOf(path) {

@@ -27,8 +27,8 @@ dependencies {
     implementation(libs.bundles.koin)
     implementation(libs.logbackClassic)
     implementation(libs.langfuseClient) {
-        // langfuse-java 0.2.0 leaks JUnit into its compile scope; keep test
-        // frameworks off the runtime classpath (and out of the shadow JAR).
+        // Its POM puts JUnit in compile scope; keep test frameworks off the runtime classpath
+        // and out of the shadow JAR (W-005).
         exclude(group = "org.junit")
         exclude(group = "org.junit.jupiter")
         exclude(group = "org.junit.platform")
@@ -50,28 +50,24 @@ dependencies {
     testImplementation(libs.kotestProperty)
     testImplementation(libs.mockwebserver3)
 
-    // Transitive dependencies flagged by dependency scanners whose direct
-    // consumers (langfuse-java, json-schema-validator, kubernetes client-java)
-    // have no release on a patched version yet. Drop a constraint once the
-    // consumer's own release resolves to at least this version.
-    // Ktor (and other consumers) pin Netty 4.2.13, which carries high-severity advisories fixed by
-    // 4.2.17; the BOM lifts every Netty module together.
+    // Lifts every Netty module above the advisory-flagged releases Ktor and the AWS SDK resolve (W-006, W-011).
     implementation(platform(libs.nettyBom))
     constraints {
+        // Above what langfuse-java, client-java and json-schema-validator resolve (W-007, W-008, W-012).
         implementation(libs.jackson2Databind)
         implementation(libs.jackson3Databind)
+        // Above the bcpkix client-java resolves (W-009).
         implementation(libs.bcprov)
         implementation(libs.bcpkix)
         implementation(libs.bcutil)
-        // The AWS SDK's apache5-client resolves httpclient5 5.6.1 and httpcore5-h2 5.4.
+        // Above what the AWS SDK's apache5-client resolves (W-010).
         implementation(libs.httpclient5)
         implementation(libs.httpcore5)
         implementation(libs.httpcore5H2)
-        // Kept at the project's Kotlin version; a consumer resolves 2.3.21, which predates the fix
-        // for CVE-2026-53914.
+        // Kept at the project's Kotlin version: without it Ktor and Exposed resolve a 2.3.x kotlin-reflect
+        // that predates an advisory fix (W-013, W-014).
         implementation(libs.kotlinReflect)
-        // Pinned for provenance, not patch level: the newer POMs point at a
-        // non-Square project URL (see the catalog comment).
+        // Pinned for provenance, not patch level (W-003, W-004).
         implementation(libs.okhttp)
         implementation(libs.okio)
     }

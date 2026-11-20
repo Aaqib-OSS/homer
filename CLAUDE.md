@@ -315,8 +315,8 @@ ids. Review rubric:
 
 - Narrates the next lines → name a function or variable.
 - Deviates from an ADR → fix the code or amend the ADR, same PR.
-- Upstream workaround → `W-NNN`; accepted risk → `AR-NN` (both
-  once #344 part B lands); compatibility path → `removeIn x.y.z`.
+- Upstream workaround → `W-NNN` row in `docs/workarounds.md`;
+  accepted risk → `AR-NN`; compatibility path → `removeIn x.y.z`.
 - Never delete a comment and keep the shortcut it described.
 - A test asserts one outcome; its name is what it proves.
 

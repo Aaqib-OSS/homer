@@ -12,8 +12,7 @@ files in a package; root §9 maps each subsystem guide to the surface it is cano
 ## Stack
 
 - **Kotlin 2.4.21** on **JDK 25** (pin `JAVA_HOME` — see root §5).
-- **Ktor 3.5.0** (Netty) server + client — pinned below 3.5.1: the KTOR-9621 fix there runs rate
-  limiting before authentication, which breaks the principal-keyed `perCaller` limiter (ADR-0014).
+- **Ktor 3.5.0** (Netty) server + client, pinned ([W-001](../docs/workarounds.md)).
 - kotlinx.serialization JSON, kaml YAML, Koin DI, kotlinx.coroutines, OpenTelemetry with the Langfuse
   exporter, JsonPath, JUnit + MockK + Ktor test-host. Versions for everything but the two pins:
   [`gradle/libs.versions.toml`](gradle/libs.versions.toml).

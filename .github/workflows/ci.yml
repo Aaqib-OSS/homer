@@ -361,6 +361,7 @@ jobs:
       - run: node tools/quality/query-repeats.mjs
       - run: node tools/quality/mock-calls.mjs
       - run: node tools/quality/comment-policy.mjs
+      - run: node tools/quality/decision-records.mjs
       # The base is the merge commit's first parent; without one (push to main) the check reports itself skipped.
       - name: Diff coverage
         env:

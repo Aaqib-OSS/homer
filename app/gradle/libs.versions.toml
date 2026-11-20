@@ -6,8 +6,8 @@
 kotlin = "2.4.21"
 kotlinxSerializationJSON = "1.11.0"
 kotlinxCoroutines = "1.11.0"
-# Pinned to 3.5.0: 3.5.1's KTOR-9621 fix moves rate limiting before authentication,
-# which breaks the principal-keyed perCaller requestKey (ADR-0014).
+# Pinned to 3.5.0: 3.5.1 runs rate limiting before authentication, which breaks the
+# principal-keyed perCaller requestKey (ADR-0014, W-001).
 ktor = "3.5.0"
 opentelemetry = "1.66.0"
 opentelemetrySemconv = "1.44.0"
@@ -30,22 +30,20 @@ clikt = "5.1.0"
 commonsCompress = "1.28.0"
 jsonSchemaValidator = "3.0.8"
 ktlintGradle = "14.2.0"
-# ADR-0082 `detekt` check: 2.0 is the first line on the K2 Analysis API, which Kotlin 2.4 needs; move to 2.0 stable once it ships.
+# ADR-0082 `detekt` check: 2.0 is the first line on the K2 Analysis API, which Kotlin 2.4 needs (W-015).
 detekt = "2.0.0-alpha.6"
 kover = "0.9.11"
 dependencyCheck = "13.0.0"
 licenseReport = "3.1.4"
 kubernetesClient = "27.0.0"
 bcrypt = "0.10.2"
-# Pinned to 0.14.0: 0.15.0 depends on ktor 3.5.1, which conflict resolution
-# would raise the whole Ktor stack to, defeating the pin above (ADR-0014).
+# Pinned to 0.14.0: 0.15.0 depends on Ktor 3.5.1, which conflict resolution would raise
+# the whole Ktor stack to, defeating the pin above (W-002).
 mcpKotlinSdk = "0.14.0"
 exposed = "1.5.0"
 sqliteJdbc = "3.53.4.0"
 sshd = "2.20.0"
-# Transitive-only; pinned via `constraints` in app/build.gradle.kts until the
-# libraries that pull them (langfuse-java, json-schema-validator, client-java)
-# ship releases on patched versions.
+# Transitive-only floors, applied in app/app/build.gradle.kts, where each cites its W row.
 jackson2 = "2.22.3"
 jackson3 = "3.2.3"
 netty = "4.2.18.Final"
@@ -53,12 +51,10 @@ httpclient5 = "5.6.4"
 httpcore5 = "5.4.4"
 bouncycastle = "1.86"
 bouncycastleProv = "1.86"
-# Pinned to 5.4.0 / 3.17.0: the 5.5.0 / 3.18.1 POM metadata points at a project
-# domain and org that are not Square (lysine.dev, github.com/lysine-dev), so the
-# artifacts cannot be confirmed as Square releases. Raise the pin once the
-# upstream metadata is explained.
-okhttp = "5.4.0"
-okio = "3.17.0"
+# `strictly` holds them below the 5.5.0 / 3.18.1 that consumers request, whose POMs name a
+# project outside Square, so they are not confirmed Square releases (W-003, W-004).
+okhttp = { strictly = "5.4.0" }
+okio = { strictly = "3.17.0" }
 
 [libraries]
 kotlinGradlePlugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
@@ -117,10 +113,8 @@ kotlinReflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version.ref = 
 httpclient5 = { module = "org.apache.httpcomponents.client5:httpclient5", version.ref = "httpclient5" }
 httpcore5 = { module = "org.apache.httpcomponents.core5:httpcore5", version.ref = "httpcore5" }
 httpcore5H2 = { module = "org.apache.httpcomponents.core5:httpcore5-h2", version.ref = "httpcore5" }
-# `strictly` because a plain constraint cannot downgrade: the consumers request
-# 5.5.0 / 3.18.1, and conflict resolution keeps the highest request.
-okhttp = { module = "com.squareup.okhttp3:okhttp", version = { strictly = "5.4.0" } }
-okio = { module = "com.squareup.okio:okio", version = { strictly = "3.17.0" } }
+okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
+okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
 
 
 # Testing

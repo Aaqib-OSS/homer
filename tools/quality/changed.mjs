@@ -22,6 +22,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { main as commentPolicy, reads as commentPolicyReads } from './comment-policy.mjs';
+import { main as decisionRecords, reads as decisionRecordsReads } from './decision-records.mjs';
 import { compare as compareDtos } from './dto-contract.mjs';
 import { coverageLookup, isConsoleSource, isKotlinSource, measure, toFindings as coverageFindings } from './diff-coverage.mjs';
 import { main as duplication } from './duplication.mjs';
@@ -78,6 +79,7 @@ export function selectChecks(files, checks, only) {
     ...(files.some((f) => APP_MAIN.test(f)) ? ['mutation-backend'] : []),
     ...(files.some(infraReads) ? ['infra-lint'] : []),
     ...(files.some(commentPolicyReads) ? ['comment-policy'] : []),
+    ...(files.some(decisionRecordsReads) ? ['decision-records'] : []),
   ]);
   return new Set(
     checks
@@ -432,23 +434,16 @@ function dtoContract(ctx) {
  */
 export const changedLinesOf = (base, root) => worktreeChanges(base, ['.'], root);
 
-/** Runs infra-lint into `out` and reports its findings; a tool it cannot run is an error of the check, never a pass. */
-export function infraLintStep(report, run = infraLint, out = path.join(OUT, 'infra-lint')) {
+/**
+ * Runs a whole-tree check into `out` and reports the findings it wrote there; an error it throws (a tool that
+ * cannot run, a broken budget file) is an error of the check, never a pass.
+ */
+export function reportStep(check, report, run, out = path.join(OUT, check)) {
   try {
     run([out]);
-    report('infra-lint', readCodeQuality(path.join(out, 'gl-code-quality-infra-lint.json')));
+    report(check, readCodeQuality(path.join(out, `gl-code-quality-${check}.json`)));
   } catch (error) {
-    report('infra-lint', [], error.message);
-  }
-}
-
-/** Runs comment-policy into `out` and reports its findings; an error it throws (a broken budget file, say) is an error of the check. */
-export function commentPolicyStep(report, run = commentPolicy, out = path.join(OUT, 'comment-policy')) {
-  try {
-    run([out]);
-    report('comment-policy', readCodeQuality(path.join(out, 'gl-code-quality-comment-policy.json')));
-  } catch (error) {
-    report('comment-policy', [], error.message);
+    report(check, [], error.message);
   }
 }
 
@@ -508,8 +503,9 @@ export function main(argv) {
       report('duplication', readCodeQuality(path.join(OUT, 'duplication', 'gl-code-quality-duplication.json')));
     });
   }
-  if (selected.has('infra-lint')) infraLintStep(report);
-  if (selected.has('comment-policy')) commentPolicyStep(report);
+  if (selected.has('infra-lint')) reportStep('infra-lint', report, infraLint);
+  if (selected.has('comment-policy')) reportStep('comment-policy', report, commentPolicy);
+  if (selected.has('decision-records')) reportStep('decision-records', report, decisionRecords);
   const rows = results(checks, found, errors, changed);
   const notes = [
     unmeasured.length ? `Not measured (no related test; CI's full run decides crap and diff-coverage):\n${unmeasured.map((f) => `  ${f}`).join('\n')}` : '',
