@@ -5,10 +5,8 @@ import homer.app.exceptions.PodFailedDuringExecutionException
 import homer.app.infra.KillCause
 import homer.app.infra.LineFilteringOutputStream
 import homer.app.infra.OutputLineFilter
-import homer.app.infra.SecretRedactor
 import homer.app.infra.ShellExecutor
 import homer.app.models.CommandResult
-import homer.app.models.MIN_SCREENED_SECRET_LENGTH
 import homer.app.models.PodTermination
 import homer.app.runners.exceedsOutputCap
 import io.kubernetes.client.openapi.apis.CoreV1Api
@@ -27,8 +25,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.slf4j.LoggerFactory
 import java.io.InputStream
 import java.io.OutputStream
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.outputStream
@@ -276,16 +272,7 @@ class KubernetesShellExecutor(
         val text =
             "exec channel to pod $podName was lost while the pod was running: $closed. " +
                 (snap.events.lastOrNull() ?: snap.message)
-        val redactor =
-            SecretRedactor.from(env, env.keys, minNeedleLength = MIN_SCREENED_SECRET_LENGTH) +
-                // The cause quotes the exec URL, where the argv (env KEY=VAL) is query-encoded: a secret
-                // holding a reserved character appears percent-encoded there, so the raw value alone misses it.
-                SecretRedactor.from(
-                    env.mapValues { (_, v) -> URLEncoder.encode(v, StandardCharsets.UTF_8) },
-                    env.keys,
-                    minNeedleLength = MIN_SCREENED_SECRET_LENGTH,
-                )
-        return redactor.redact(text).toOneLine()
+        return execUrlRedactor(env).redact(text).toOneLine()
     }
 
     private suspend fun failIfPodStopped(patient: Boolean) {

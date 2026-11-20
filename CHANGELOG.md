@@ -4,7 +4,7 @@
 
 ### Homer
 
-- **Security: remote runner commands no longer reach Homer's own logs** — The ssh exec channel's log lines and a lost Kubernetes exec channel's error no longer carry the command's environment.
+- **Security: remote runner commands no longer reach Homer's own logs** — The ssh exec channel's log lines and the Kubernetes exec channel's errors no longer carry the command's environment.
 - **Fixed: workspace helpers keep tokens off the command line** — `homer-ask`, `homer-dispatch`, `homer-inbox`, `homer-join`, `homer-result` and `homer-tag` pass the callback token, the result token and request bodies to curl outside argv, where other users on the host could read them.
 - **Deprecated: `homer-result --token`** — Pass the result token in `HMR_RESULT_TOKEN` instead; the flag is removed in 1.45.0.
 - **Fixed: LangGraph run status reads a bounded identity file** — An oversized, linked or non-regular `langgraph.json` in a run's artifacts is ignored instead of read whole on every status poll.
