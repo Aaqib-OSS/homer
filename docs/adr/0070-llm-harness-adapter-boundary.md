@@ -329,8 +329,8 @@ frame is attacker-influenced input (ADR-0047 rule 2).
   the malformed-event note included, runs the same eviction caps.
 - **Render safety (CWE-20).** A missing or null `event`, or one whose fields the renderer reads without
   a guard (`turn_end` status and usage, `assistant_message` text), degrades to the `transient_error`
-  note: an unguarded throw there white-screens the conversation subtree, which has no error boundary,
-  and the SSE retry would replay the same frame forever.
+  note: an unguarded throw there reaches the `(dashboard)` route error boundary, which replaces the whole
+  conversation page with its error card, and "Try again" would replay the same frame forever.
 - **Flushing.** Frames accumulate in a plain array and publish to React state at most once per
   animation frame, so a flood costs one state copy per frame, not one per event.
 

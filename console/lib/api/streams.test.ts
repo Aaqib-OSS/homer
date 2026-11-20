@@ -559,7 +559,7 @@ describe('useLlmEventStream', () => {
 
   it('denial_of_service CWE-20 degrades a turn_end whose status or usage is not the declared shape', async () => {
     // A turn_end with a null status or missing usage would throw in render and
-    // white-screen the subtree; it must degrade to the transient-error note.
+    // replace the page with the route error card; it must degrade to the transient-error note.
     const { result } = renderHook(() => useLlmEventStream(7, 0, true));
     const { onEvent } = capturedHandlers();
 
