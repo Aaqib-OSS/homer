@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { COLUMNS, check, citationsIn, gradleVersions, main, parseRegistry, parseRisks, reads, resolveSource, rowFindings } from './decision-records.mjs';
+import { COLUMNS, check, tableAt, citationsIn, gradleVersions, main, parseRegistry, parseRisks, reads, resolveSource, rowFindings } from './decision-records.mjs';
 
 const HEADER = `| ${COLUMNS.join(' | ')} |\n|---|---|---|---|---|---|\n`;
 const registry = (...rows) => `# Workaround registry\n\n${HEADER}${rows.map((r) => `| ${r.join(' | ')} |\n`).join('')}`;
@@ -12,7 +12,7 @@ const risks = (...ids) =>
 const REPO = {
   'app/gradle/libs.versions.toml': '[versions]\nktor = "3.5.0"\n# a comment\nokhttp = "5.4.0"\n\n[libraries]\nfake = "9.9.9"\n',
   'console/package.json': JSON.stringify({ dependencies: { next: '^16.1.0' }, devDependencies: { vitest: '~4.0.2', eslint: '9.1.0', range: '>=1', wild: '1.x', local: 'workspace:*' } }),
-  'clients/python/requirements.lock': 'aiosqlite==0.22.1 \\\n    --hash=sha256:00\nlanggraph-checkpoint==3.0.1 \\\n',
+  'clients/python/requirements.lock': 'aiosqlite==0.22.1 \\\n    --hash=sha256:00\nlanggraph-checkpoint==3.0.1 \\\ntomli==2.2.1;python_version < "3.11"\nuvloop==0.21.0 ; sys_platform != "win32"\n',
   'app/Dockerfile': 'FROM eclipse-temurin:25-jdk-alpine-3.23@sha256:aa AS builder\nFROM slim AS runner\n',
   'console/Dockerfile': 'FROM node:24-alpine@sha256:bb AS deps\nFROM node:24-alpine@sha256:bb AS runner\n',
   'app/e2e/Dockerfile': 'FROM eclipse-temurin:25-jre-alpine-3.23@sha256:cc\n',
@@ -33,6 +33,8 @@ test('each source form resolves to the version it names', () => {
   assert.deepEqual(resolveSource('npm:eslint', context), { version: '9.1.0' });
   assert.deepEqual(resolveSource('pip:aiosqlite', context), { version: '0.22.1' });
   assert.deepEqual(resolveSource('pip:Langgraph_Checkpoint', context), { version: '3.0.1' });
+  assert.deepEqual(resolveSource('pip:tomli', context), { version: '2.2.1' }, 'a marker with no space before the ;');
+  assert.deepEqual(resolveSource('pip:uvloop', context), { version: '0.21.0' });
   assert.deepEqual(resolveSource('image:node', context), { version: '24-alpine' });
   assert.deepEqual(resolveSource('ci:SHELLCHECK_VERSION', context), { version: '0.11.0' });
   assert.deepEqual(resolveSource('ci:QUOTED_VERSION', context), { version: '1.2.3' });
@@ -116,6 +118,53 @@ test('a Where cell of several backticked paths, or of quoted and unquoted paths 
   assert.deepEqual(where('`app/A.kt`,app/B.kt, `console/c.ts`'), ['app/A.kt', 'app/B.kt', 'console/c.ts']);
 });
 
+const ROW = '| W-001 | x | gradle:ktor | 3.5.0 | ships | app/A.kt |';
+const registryLines = (...lines) => `# Workaround registry\n\n| ${COLUMNS.join(' | ')} |\n${lines.join('\n')}\n`;
+const shapeOf = (text) => {
+  const { rows, findings } = parseRegistry(text);
+  return { rows: rows.map((r) => `${r.line} ${r.id}`), findings: findings.map((f) => `${f.line} ${f.message}`) };
+};
+
+test('a registry table without its separator row is a finding, and its first row is still read', () => {
+  assert.deepEqual(shapeOf(registryLines(ROW, ROW.replace('W-001', 'W-002'))), {
+    rows: ['4 W-001', '5 W-002'],
+    findings: ['3 the table has no `|---|` separator row of its width under its header'],
+  });
+  assert.deepEqual(shapeOf(registryLines('|---|---|', ROW)).findings, [
+    '3 the table has no `|---|` separator row of its width under its header',
+    '4 a row of 2 cells in a table of 6 columns',
+    '4 "---" is no W-NNN id (three digits)',
+    '4 ---: empty Source, Version, Exit condition, Where; every column is required',
+  ]);
+});
+
+test('a blank or stray line inside a table is a finding, and the rows after it are still read', () => {
+  const sep = '|---|---|---|---|---|---|';
+  assert.deepEqual(shapeOf(registryLines(sep, ROW, '', '', ROW.replace('W-001', 'W-2'))), {
+    rows: ['5 W-001', '8 W-2'],
+    findings: ['6 a blank line interrupts the table, which Markdown ends here', '8 "W-2" is no W-NNN id (three digits)'],
+  });
+  assert.deepEqual(shapeOf(registryLines(sep, ROW, 'Some prose.', ROW.replace('W-001', 'W-002'))).findings, ['6 a line that is no row interrupts the table, which Markdown ends here']);
+  assert.deepEqual(shapeOf(`${registryLines(sep, ROW)}\n## Later\n\n| a | b |\n`).findings, [], 'a table under the next heading is another table');
+});
+
+test('a row shorter or longer than the header is a finding, never a row read short or cut', () => {
+  const sep = '|---|---|---|---|---|---|';
+  assert.deepEqual(shapeOf(registryLines(sep, '| W-001 | x | gradle:ktor | 3.5.0 | ships |')).findings, [
+    '5 a row of 5 cells in a table of 6 columns',
+    '5 W-001: empty Where; every column is required',
+  ]);
+  assert.deepEqual(shapeOf(registryLines(sep, `${ROW} extra |`)).findings, ['5 a row of 7 cells in a table of 6 columns']);
+});
+
+test('tableAt reads to the last row before its end and flags only the first line of an interruption', () => {
+  const lines = ['| a | b |', '|---|---|', '| 1 | 2 |', '', '', '| 3 | 4 |', '', 'after'];
+  const table = tableAt(lines, 0, 'f.md');
+  assert.deepEqual(table.rows.map((r) => r.line), [3, 6]);
+  assert.deepEqual(table.findings.map((f) => `${f.path}:${f.line}`), ['f.md:4']);
+  assert.deepEqual(tableAt(lines, 0, 'f.md', 4).findings, []);
+});
+
 test('a malformed id is reported and never reaches a regular expression', () => {
   const files = { 'docs/workarounds.md': registry(['W-(1', 'x', 'gradle:ktor', '3.5.0', 'ships', 'app/A.kt']), 'SECURITY.md': risks(), 'app/A.kt': 'val a = 1\n' };
   const { findings } = check(repo(files));
@@ -136,6 +185,19 @@ test('parseRisks wants an ID column and a unique AR-NN id on every row', () => {
   const noId = '## Accepted risks\n\n| Finding | Where |\n|---|---|\n| f | w |\n';
   assert.match(parseRisks(noId).findings[0].message, /must start with an ID column/);
   assert.match(parseRisks('# Security\n').findings[0].message, /no accepted-risks table/);
+});
+
+test('an interrupted accepted-risks table is a finding, and its later rows are still checked', () => {
+  const text = risks('AR-01').replace('| AR-01 | f | w | d | y |\n', '| AR-01 | f | w | d | y |\n\n| AR-1 | f | w | d | y |\n');
+  const { rows, findings } = parseRisks(text);
+  assert.deepEqual(rows.map((r) => r.id), ['AR-01', 'AR-1']);
+  assert.deepEqual(findings.map((f) => `${f.line} ${f.message}`), [
+    '10 a blank line interrupts the table, which Markdown ends here',
+    '11 accepted risk without an AR-NN id (two digits): "AR-1"',
+  ]);
+  const unseparated = '## Accepted risks\n\n| ID | Finding |\n| AR-01 | f |\n';
+  assert.deepEqual(parseRisks(unseparated).findings.map((f) => f.line), [3]);
+  assert.deepEqual(parseRisks(unseparated).rows, [{ line: 4, id: 'AR-01' }]);
 });
 
 test('citationsIn reads ids in comments only, never in strings or code', () => {
@@ -161,6 +223,18 @@ test('check: a resolved citation passes, an unresolved W or AR citation fails at
     ['console/b.ts:2 cites W-002, which has no row in docs/workarounds.md', 'console/b.ts:3 cites AR-09, which is no accepted-risk id in SECURITY.md'],
   );
   assert.deepEqual(extra, { workarounds: 1, 'accepted-risks': 1, citations: 4 });
+});
+
+test('image: reads Dockerfile, Dockerfile.<x> and <x>.Dockerfile, never a file whose name only starts with Dockerfile', () => {
+  const context = (extra) => repo({ 'console/Dockerfile': '', 'app/e2e/Dockerfile': '', ...extra });
+  const from = 'FROM python:3.12-slim@sha256:dd\n';
+  for (const file of ['tools/Dockerfile', 'app/Dockerfile.runner', 'clients/python/langgraph.Dockerfile']) {
+    assert.deepEqual(resolveSource('image:python', context({ [file]: from })), { version: '3.12-slim' }, file);
+  }
+  const fixtures = { 'app/app/src/test/kotlin/homer/app/fixtures/DockerfileStages.kt': '// a fixture\nFROM python:9@sha256:ee\n', 'docs/Dockerfiles.txt': 'FROM python:8@sha256:ff\n' };
+  assert.deepEqual(resolveSource('image:python', context({ 'app/Dockerfile.runner': from, ...fixtures })), { version: '3.12-slim' });
+  assert.ok(!reads('docs/Dockerfiles.txt'));
+  assert.ok(reads('clients/python/langgraph.Dockerfile'));
 });
 
 test('reads covers the records, every watched version file and every source the comment policy reads', () => {

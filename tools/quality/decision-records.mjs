@@ -5,7 +5,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { commentsOf, languageOf } from './comment-lexers.mjs';
+import { DOCKERFILE, commentsOf, languageOf } from './comment-lexers.mjs';
 import { lineIndex, scanned } from './comment-policy.mjs';
 import { listFiles } from './infra-lint.mjs';
 import { escapeRegExp, runMain, writeCheck } from './lib.mjs';
@@ -17,7 +17,6 @@ export const COLUMNS = ['ID', 'Upstream', 'Source', 'Version', 'Exit condition',
 const GRADLE = 'app/gradle/libs.versions.toml';
 const NPM = 'console/package.json';
 const PIP = 'clients/python/requirements.lock';
-const DOCKERFILE = /(?:^|\/)Dockerfile[^/]*$/;
 const WORKFLOW = /^\.github\/workflows\/[^/]+\.ya?ml$/;
 const CITATION = /\b(?:W|AR)-\d+\b/g;
 const W_ID = /^W-\d{3}$/;
@@ -36,11 +35,32 @@ const cellsOf = (line) =>
     .split(/(?<!\\)\|/)
     .map((c) => c.trim());
 
-/** The table whose header line is at `at`: `{ header, rows: [{ line, cells }] }`, lines 1-based, the separator skipped. */
-export function tableAt(lines, at) {
+const SEPARATOR = /^\|?(?:\s*:?-{3,}:?\s*\|)*\s*:?-{3,}:?\s*\|?$/;
+const isRow = (line) => line.trim().startsWith('|');
+
+/**
+ * The table whose header is line index `at`, read up to its last `|` line before index `end`: `{ header, rows, findings }`.
+ * A missing separator, a row of another width or a line that interrupts the table is a finding, never a dropped row.
+ */
+export function tableAt(lines, at, file, end = lines.length) {
+  const header = cellsOf(lines[at]);
+  const findings = [];
+  const issue = (i, message) => findings.push(finding(file, i + 1, message));
+  const separated = SEPARATOR.test(lines[at + 1]?.trim() ?? '') && cellsOf(lines[at + 1]).length === header.length;
+  if (!separated) issue(at, 'the table has no `|---|` separator row of its width under its header');
+  const first = separated ? at + 2 : at + 1;
+  const last = lines.slice(0, end).findLastIndex((line, i) => i >= first && isRow(line));
   const rows = [];
-  for (let i = at + 2; i < lines.length && lines[i].trim().startsWith('|'); i++) rows.push({ line: i + 1, cells: cellsOf(lines[i]) });
-  return { header: cellsOf(lines[at]), rows };
+  for (let i = first; i <= last; i++) {
+    if (!isRow(lines[i])) {
+      if (isRow(lines[i - 1])) issue(i, `${lines[i].trim() === '' ? 'a blank line' : 'a line that is no row'} interrupts the table, which Markdown ends here`);
+      continue;
+    }
+    const cells = cellsOf(lines[i]);
+    if (cells.length !== header.length) issue(i, `a row of ${cells.length} cells in a table of ${header.length} columns`);
+    rows.push({ line: i + 1, cells });
+  }
+  return { header, rows, findings };
 }
 
 /** The registry's rows as `{ line, id, upstream, source, version, exit, where }`, and the findings of its shape. */
@@ -49,12 +69,14 @@ export function parseRegistry(text) {
   const lines = text.split('\n');
   const at = lines.findIndex((l) => cellsOf(l).join('|') === COLUMNS.join('|'));
   if (at < 0) return { rows: [], findings: [finding(REGISTRY, 1, `no table with the columns ${COLUMNS.join(' | ')}`)] };
-  const rows = tableAt(lines, at).rows.map(({ line, cells }) => {
+  const heading = lines.findIndex((l, i) => i > at && /^#{1,6} /.test(l));
+  const table = tableAt(lines, at, REGISTRY, heading < 0 ? lines.length : heading);
+  const rows = table.rows.map(({ line, cells }) => {
     const [id = '', upstream = '', source = '', version = '', exit = ''] = cells.slice(0, 5).map(unquote);
     const where = (cells[5] ?? '').split(',').map((part) => unquote(part.trim())).filter(Boolean);
     return { line, id, upstream, source, version, exit, where };
   });
-  const findings = [];
+  const findings = [...table.findings];
   for (const row of rows) {
     const empty = COLUMNS.filter((_, k) => [row.id, row.upstream, row.source, row.version, row.exit, row.where.join()][k] === '');
     if (!W_ID.test(row.id)) findings.push(finding(REGISTRY, row.line, `"${row.id}" is no W-NNN id (three digits)`));
@@ -75,11 +97,11 @@ export function parseRisks(text) {
   const end = lines.findIndex((l, i) => i > start && /^## /.test(l));
   const at = start < 0 ? -1 : lines.findIndex((l, i) => i > start && (end < 0 || i < end) && l.trim().startsWith('|'));
   if (at < 0) return { rows: [], findings: [finding(RISKS, 1, 'no accepted-risks table under "## Accepted risks"')] };
-  const { header, rows: table } = tableAt(lines, at);
-  if (header[0] !== 'ID') return { rows: [], findings: [finding(RISKS, at + 1, 'the accepted-risks table must start with an ID column')] };
-  const rows = table.map(({ line, cells }) => ({ line, id: unquote(cells[0]) }));
+  const table = tableAt(lines, at, RISKS, end < 0 ? lines.length : end);
+  if (table.header[0] !== 'ID') return { rows: [], findings: [finding(RISKS, at + 1, 'the accepted-risks table must start with an ID column')] };
+  const rows = table.rows.map(({ line, cells }) => ({ line, id: unquote(cells[0]) }));
   const malformed = rows.filter((r) => !/^AR-\d{2}$/.test(r.id)).map((r) => finding(RISKS, r.line, `accepted risk without an AR-NN id (two digits): "${r.id}"`));
-  return { rows, findings: [...malformed, ...duplicates(RISKS, rows)] };
+  return { rows, findings: [...table.findings, ...malformed, ...duplicates(RISKS, rows)] };
 }
 
 /**
@@ -122,7 +144,7 @@ const RESOLVERS = {
   },
   pip: (name, { read }) =>
     single(
-      [...(read(PIP) ?? '').matchAll(/^([A-Za-z0-9_.-]+)==(\S+)/gm)].filter((m) => pipName(m[1]) === pipName(name)).map((m) => m[2]),
+      [...(read(PIP) ?? '').matchAll(/^([A-Za-z0-9_.-]+)==([^\s;\\]+)/gm)].filter((m) => pipName(m[1]) === pipName(name)).map((m) => m[2]),
       PIP,
     ),
   image(name, { read, files }) {
