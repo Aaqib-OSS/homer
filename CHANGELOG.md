@@ -15,6 +15,7 @@
 - **Fixed: opencode run cost** — A run that resumes an opencode session is charged only its own steps, and steps past the 4 096th in one session are no longer dropped.
 - **Fixed: Claude raw options next to variadic flags** — A raw `options` list that starts with a bare value is no longer taken as a `--file`, `--add-dir` or `--mcp-config` value.
 - **Fixed: a Kubernetes exec channel closed without a status fails as lost** — Such a step now fails with `ExecChannelLost` and kills its leftover command, instead of reporting exit code -1. See [ADR-0103](docs/adr/0103-a-lost-exec-channel-kills-and-fails-without-reattach.md).
+- **Fixed: a question answer is bounded by `server.questions.maxTextLength`** — `POST /api/v1/questions/{id}/answer` now answers `400` for an answer longer than the cap that already bounded the question.
 - **Changed: a continuation marks a transformed result too large to deliver** — A resume payload whose result is over the 4 MiB transform cap now carries `resultTooLarge: true`, and `homer_fanout` reports it on stderr. See [ADR-0025](docs/adr/0025-capability-token-result-read.md).
 
 ## [1.43.2] - 2026-11-18

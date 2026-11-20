@@ -16,6 +16,7 @@ import homer.app.models.ProcessInfoResponse
 import homer.app.models.ProcessListResponse
 import homer.app.models.ProcessStatus
 import homer.app.models.QuestionResponse
+import homer.app.models.QuestionsConfig
 import homer.app.models.QuestionsListResponse
 import homer.app.models.RunStartRequest
 import homer.app.models.TokenConfig
@@ -332,6 +333,23 @@ class QuestionsRoutesTest {
             assertEquals("ANSWERED", body.status)
             assertNull(body.dispatch)
             coVerify(exactly = 1) { dispatches.fire(question.id, "yes, go") }
+        }
+
+    @Test
+    fun `POST answer over maxTextLength responds 400 and leaves the question open`() =
+        testApplication {
+            val service = PersistenceTestSupport.questionsService(config = QuestionsConfig(maxTextLength = 10))
+            val question =
+                runBlocking {
+                    service.registerProcess(1, "agent-a")
+                    service.ask(1, "Proceed?")
+                }
+            mountApiV1Routes { every { questionsService } returns service }
+
+            val response = client.answerWith(question.id, "y".repeat(11))
+
+            assertEquals(HttpStatusCode.BadRequest, response.status)
+            assertEquals("OPEN", runBlocking { service.get(question.id) }?.status?.name)
         }
 
     @Test

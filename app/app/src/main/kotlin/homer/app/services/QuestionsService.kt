@@ -182,12 +182,16 @@ class QuestionsService(
         return question
     }
 
+    /** Answers an OPEN question; a blank answer or one over `maxTextLength` characters is refused before any write. */
     suspend fun answer(
         id: String,
         answer: String,
     ): Question {
         if (answer.isBlank()) {
             throw ValidationException("Answer must not be blank", "answer")
+        }
+        if (answer.length > config.maxTextLength) {
+            throw ValidationException("Answer exceeds ${config.maxTextLength} characters", "answer")
         }
         when (val result = repository.markAnswered(id, answer, Clock.System.now().epochSeconds)) {
             is QuestionsRepository.AnswerResult.NotFound -> {

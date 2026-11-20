@@ -137,12 +137,8 @@ internal class DispatchGroupService(
         }
 
     /**
-     * The group's aggregated answer — a JSON array of the member answers in question order — or null
-     * while any member is still OPEN. Never reports a group with no members as answered: an empty set
-     * is not "every member answered", it is a group that can never fire. Throws
-     * [DispatchGroupAnswersTooLargeException] when the aggregate is over [MAX_ANSWER_BYTES]:
-     * `QuestionsService.answer` bounds no answer's length, so N unbounded answers are the one way a
-     * group's payload can outgrow a start; the caller settles it FAILED, not PENDING on undeliverable answers. See ADR-0109.
+     * The member answers as a JSON array in question order, or null while any member is OPEN or none exist.
+     * Throws [DispatchGroupAnswersTooLargeException] over [MAX_ANSWER_BYTES]; the caller settles it FAILED. See ADR-0109.
      */
     suspend fun aggregateAnswers(dispatchId: Int): String? {
         val members = repository.groupMembers(dispatchId)
@@ -163,9 +159,8 @@ internal class DispatchGroupService(
         const val GROUP_QUESTION_ID_PREFIX = "group:"
 
         /**
-         * Cap on the aggregated answers handed to the target. Well above
-         * `dispatch.maxGroupSize` × `questions.maxTextLength` (8 × 10 000) at its default, so it
-         * only ever refuses an aggregate built from answers far longer than a question.
+         * Cap on the aggregated answers in UTF-8 bytes. Each answer is at most `questions.maxTextLength` characters,
+         * but multi-byte text, JSON escapes or a raised `dispatch.maxGroupSize` can still reach it. See ADR-0109.
          */
         const val MAX_ANSWER_BYTES = 256 * 1024
 
