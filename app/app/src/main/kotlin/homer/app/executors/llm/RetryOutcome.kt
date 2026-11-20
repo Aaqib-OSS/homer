@@ -11,10 +11,8 @@ import kotlin.math.min
 import kotlin.random.Random
 
 /**
- * The result of a single attempt, as consumed by [LlmHarnessExecutor]'s retry loop after it ends.
- * [Success] short-circuits the loop and is returned; [MalformedFailure] and
- * [OtherFailure] are retried, and the most recent one surfaces once attempts are
- * exhausted — a malformed payload is rethrown, a non-zero exit returns its result.
+ * One attempt's result for [LlmHarnessExecutor]'s retry loop. [Success] ends the loop; [MalformedFailure] and
+ * [OtherFailure] are retried, and the last one surfaces: a malformed payload rethrown, a non-zero exit returned.
  */
 internal sealed interface RetryOutcome {
     sealed interface Returned : RetryOutcome {
@@ -88,10 +86,8 @@ internal fun returnedOrThrow(
     }
 
 /**
- * Exponential backoff plus full jitter in [0, baseDelayMs) before retry [attemptIndex]:
- * jitter de-correlates concurrent retriers so they don't reconverge on the same
- * wall-clock instant (thundering herd). maxDelayMs stays the hard ceiling. nextLong
- * requires a positive bound, so guard baseDelayMs == 0.
+ * Exponential backoff plus full jitter in [0, baseDelayMs) before retry [attemptIndex], capped at maxDelayMs. The jitter
+ * keeps concurrent retriers off one instant; `nextLong` needs a positive bound, hence the zero guard.
  */
 internal fun retryDelayMs(
     retry: LlmRetry,

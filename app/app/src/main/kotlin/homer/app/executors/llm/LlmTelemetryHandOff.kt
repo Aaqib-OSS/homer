@@ -59,10 +59,8 @@ internal class LlmTelemetryHandOff<C>(
     }
 
     /**
-     * Hands [outcome]'s stream to telemetry; a failure there is recorded on [span], never thrown,
-     * but a cancellation is. The stream is read here, inline, because attempts may share and
-     * truncate the stdout file; with a [settlement] running the hand-off itself waits for it in
-     * the background so the trace carries the settled figure, not the preview (ADR-0089).
+     * Hands [outcome]'s stream to telemetry, a failure recorded on [span] but a cancellation thrown. The stream is read
+     * inline, as attempts may share and truncate the stdout file; a [settlement] is awaited in the background (ADR-0089).
      */
     suspend fun report(
         outcome: RetryOutcome.Returned,
@@ -74,11 +72,8 @@ internal class LlmTelemetryHandOff<C>(
     ) {
         // A kill during the hand-off must stop the step, not let it finish as a success.
         coRunCatching {
-            // A non-zero exit's stream is read leniently: a killed CLI's trailing partial line
-            // must not take the attempt's tool and message spans with it. Exit 0 stays strict.
-            // OtherFailure already carries the lenient read the terminal-stop inspection made —
-            // reuse it; only a null (nothing was read) falls back to reading the file here, so a
-            // huge stdout is never parsed a second time.
+            // A success carries its strict read. A failure's is lenient, so a killed CLI's partial last line costs only
+            // that line, and reuses the terminal-stop read when there is one, so no stdout is parsed twice.
             val stream = outcome.stream ?: output.readLeniently(outcome.result.stdOut, span)
             val step = LlmStepInfo(label = command.label, configuredModel = command.model)
             handOff(settlement, outcome.result.llmAccounting, stream, compiledPrompt, span, redactor, step)
@@ -98,7 +93,7 @@ internal class LlmTelemetryHandOff<C>(
         redactor: SecretRedactor,
         step: LlmStepInfo,
     ) {
-        if (settlement == null || !settlementHandOffs.tryAcquire()) { // CWE-770/CWE-400: shed, never queue a job (ADR-0047 §12 rules 4-5).
+        if (settlement == null || !settlementHandOffs.tryAcquire()) { // CWE-770/CWE-400: shed, never queue a job (ADR-0047 rules 4-5).
             if (settlement != null) {
                 logger.warn("settlement hand-off shed at the concurrency bound ({})", MAX_CONCURRENT_SETTLEMENT_HANDOFFS)
                 span.setAttribute(SpanAttributes.TELEMETRY_LLM_HANDOFF_SHED, true)

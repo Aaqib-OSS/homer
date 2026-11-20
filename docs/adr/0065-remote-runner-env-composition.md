@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-16
 deciders: Lukáš Vlk
+amended: 2026-11-20
 ---
 # ADR-0065: Remote-runner env-composition contract
 
@@ -36,6 +37,14 @@ globalEnv → runner env → agent env → query params → HMR_* vars
 `parentEnvAllowlist` host-env keys are absent from remote-runner envs unless the operator re-introduces them explicitly via `globalEnv` or the runner's `env`.
 
 The same rule reaches the cross-runner path: a `runnerCmd` step targets a runner other than the agent's own, and inherits the requesting run's composed env — which, on a local agent, carries the host layer the local runner received. The executor therefore strips, for a remote target, exactly the allowlist keys that still carry the host value they were layered with (`WorkspaceConfig.parentEnvLayerNames`); a key the operator re-set via `globalEnv`, runner `env`, or agent `env` holds the operator's own value and survives. A local target keeps them — it runs on Homer's own host, where the values are correct.
+
+### Amendment (2026-11-20): the `runnerCmd` target's own env layers
+
+A `runnerCmd` target's check and execute calls get, over that forwarded env, the target runner's
+own `env` (`Runner.runnerEnv`, such as a `PATH` for a macOS ssh host), then the session's
+backend-derived values (`HMR_API_URL`), then the workspace overrides `createWorkspace` returns.
+Without the runner layer an ssh target would see only the requesting run's env, which holds no
+value for the target host. The copy stays the target's own (ADR-0034).
 
 ### Consequences
 

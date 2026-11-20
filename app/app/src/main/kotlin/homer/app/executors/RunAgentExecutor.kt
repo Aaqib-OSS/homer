@@ -18,12 +18,9 @@ import org.slf4j.LoggerFactory
 import kotlin.io.path.writeText
 
 /**
- * Executes a `Command.RunAgent` (`!<agent>`) by dispatching the target agent **in-process**
- * through [SubRunStarter], over the same call-independent core (`AgentRunStarter`) the HTTP route
- * (`handleAgentExecution`) and `DispatchService` use. There is no HTTP self-call, so dispatch works
- * regardless of how the originating run was authenticated (bearer, HMAC, or console session cookie).
- * Invocation-chain cycle/depth checks and ancestor-lock-key propagation pass through to
- * [SubRunStarter.start]. See ADR-0030.
+ * Runs `!<agent>` by dispatching the target in-process through [SubRunStarter], the core the HTTP route and
+ * `DispatchService` share, so it works whatever authenticated the run. The invocation chain's cycle and depth
+ * checks and the ancestor lock keys pass to [SubRunStarter.start] (ADR-0030).
  */
 internal class RunAgentExecutor(
     private val subRuns: SubRunStarter,
@@ -49,9 +46,8 @@ internal class RunAgentExecutor(
         }
 
         val invocationChain = invocationChainOf(context)
-        // Forward the flow's held lock keys plus this run's own resolved key so a
-        // descendant that opts into acceptParentLock can detect the shared key and
-        // pass through instead of self-colliding. See ADR-0029.
+        // This run's own key joins the flow's, so a descendant with acceptParentLock passes through
+        // instead of colliding with its ancestor (ADR-0029).
         val ancestorLockKeys = context.workspace.config.ancestorLockKeys + context.workspace.config.lockKey
 
         return try {
@@ -64,9 +60,8 @@ internal class RunAgentExecutor(
                         ancestorLockKeys = ancestorLockKeys,
                         owner = context.owner,
                         parentProcessId = context.processId.takeIf { it > 0 },
-                        // [information_disclosure / CWE-200] The child is attributed to this
-                        // run's owner, so the root it inherits is gated on that owner's
-                        // visibility — a foreign flow-root id reaches no row, env or span. §12.
+                        // CWE-200: the child's inherited root is gated on this run's owner seeing it, so a
+                        // foreign flow-root id reaches no row, env or span (ADR-0058, ADR-0047 rule 3).
                         rootProcessId = subRuns.visibleOriginRootProcessId(context.processId, context.owner),
                         resolveInputs = { agentInputResolver.resolveFromParams(params, target) },
                     ),
@@ -77,9 +72,8 @@ internal class RunAgentExecutor(
         } catch (e: CancellationException) {
             throw e
         } catch (e: HomerException) {
-            // A child cycle/depth/cost-cap/validation rejection mirrors today's
-            // HTTP-error → 255 mapping, so continueIfFail / finishExitCode still
-            // apply at the AgentExecutor level.
+            // A refused dispatch (cycle, depth, cost cap, validation) exits 255 like a denied hop,
+            // so continueIfFail and finishExitCode apply (ADR-0030).
             context.stdErr.writeText(e.message ?: "agent dispatch failed")
             CommandResult(exitCode = 255, stdOut = context.stdOut, stdErr = context.stdErr)
         }
@@ -90,9 +84,8 @@ internal class RunAgentExecutor(
         command: Command.RunAgent,
         context: ExecutionContext,
     ): Map<String, String> {
-        // §12 rule 4: the stall a dispatch can be made to pay is one bounded match, not
-        // one per param. After a regex is shed on timeout the remaining regex
-        // transformers are dropped too; the other transformer kinds are untouched.
+        // One bounded regex stall per dispatch, not one per param: once a match is shed, the later
+        // regex params are dropped too, the other kinds still run (ADR-0047 rule 4).
         var regexTimedOut = false
         return command.queryParams
             .mapNotNull { param ->
@@ -130,9 +123,8 @@ internal class RunAgentExecutor(
             }
 
             is ResultTransformer.Regex -> {
-                // Author-written pattern, caller-influenceable subject: matched under the
-                // same bound as `resultEnvParam`, and a shed match drops the param exactly
-                // as a non-match does. §12 rule 4.
+                // Author-written pattern, caller-influenced subject: matched under `resultEnvParam`'s
+                // bound, and a shed match drops the param as a non-match does (ADR-0047 rule 4).
                 BoundedRegex.findOrOmit(transformer.regex, value, envName, logger, onRegexTimeout)?.let { match ->
                     if (transformer.group != null) match.groupValues.getOrNull(transformer.group) else match.value
                 }

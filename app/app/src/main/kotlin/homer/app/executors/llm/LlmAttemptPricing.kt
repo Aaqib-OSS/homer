@@ -54,9 +54,8 @@ internal class LlmAttemptPricing(
             runCatching { stdoutFile.bufferedReader().useLines { scanLlmAccounting(it, harness.translator()) } }
                 .getOrElse { LlmAccountingScan(sessionId = null, cliCostUsd = null, resultSeen = false, modelCalls = 0, usage = null) }
         if (harness.reportsCost && scan.resultSeen && scan.cliCostUsd == null) {
-            // Same observability hook the strict path had for a missing/unparseable field —
-            // gated on resultSeen: a missing result event (kill, crash, timeout) is a normal
-            // accounting case with its own "no result event" reason below, not schema drift.
+            // Gated on resultSeen: a missing result event (kill, crash, timeout) is no schema drift,
+            // and gets its own "no result event" reason below.
             logger.warn("{} turn end has no parseable cost; this may indicate a CLI schema change", harness.id)
             span.setAttribute("llm.cost.parse_failed", true)
         }
@@ -133,7 +132,7 @@ internal class LlmAttemptPricing(
             }
 
     private companion object {
-        // CWE-400: agent-stdout must not drive the poll schedule. See ADR-0047 §12 rule 4, ADR-0061.
+        // CWE-400: agent-stdout must not drive the poll schedule. See ADR-0047 rule 4, ADR-0061.
         const val MAX_EXPECTED_CALLS_FOR_POLLING = 1_000
     }
 }

@@ -10,12 +10,9 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /**
- * Builds the Claude CLI argv from a [ClaudeCmdOptions] block, shared by
- * [homer.app.executors.llm.ClaudeHarness] and the agentdebug dry-run printer so neither
- * drifts from what actually runs. Template resolution (`{{VAR}}`, see AGENT.md) is applied
- * against [env] here: subagent fields are resolved BEFORE JSON-encoding `--agents` (so the
- * encoder escapes substituted values rather than templating the encoded blob), and every
- * other argument is resolved after the list is assembled.
+ * Builds the Claude CLI argv from [ClaudeCmdOptions] for [homer.app.executors.llm.ClaudeHarness] and the agentdebug
+ * printer alike. `{{VAR}}` resolves against [env]: subagent fields before `--agents` is JSON-encoded, every other
+ * argument after. Raw `options` come before the variadic options, which sit directly before the fixed tail.
  */
 class ClaudeArgvBuilder(
     private val textCompiler: TextCompiler = DefaultTextCompiler(),
@@ -91,12 +88,8 @@ class ClaudeArgvBuilder(
         opts: ClaudeCmdOptions,
         env: Map<String, String>,
     ): Int {
-        // Subagents. Resolve placeholders BEFORE encoding so the encoder
-        // escapes substituted values, then EXCLUDE the encoded blob from the
-        // second pass in build: a resolved value that itself contains `{{VAR}}`
-        // would otherwise be re-substituted unescaped inside the JSON string,
-        // letting a caller break out of a subagent field and inject sibling
-        // keys (JSON injection).
+        // Resolved before encoding and skipped by build's second pass: a value holding `{{VAR}}` would
+        // otherwise be substituted unescaped into the JSON and inject sibling keys (CWE-116).
         if (opts.agents == null) return -1
         add("--agents")
         val resolvedAgents = opts.agents.mapValues { (_, sub) -> sub.resolveTemplates(env) }

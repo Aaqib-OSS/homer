@@ -8,11 +8,8 @@ import homer.app.infra.TextCompiler
 import homer.app.models.OpencodeCmdOptions
 
 /**
- * Turns an [OpencodeCmdOptions] block into the opencode CLI's argv, `opencode run --format json`
- * plus whatever the block configures. [OpencodeHarness] and the agentdebug dry-run printer both
- * call it, so a printed dry run shows exactly the argv that would run.
- *
- * `{{VAR}}` placeholders (see AGENT.md) resolve here, against [env].
+ * Builds the opencode argv, `opencode run --format json` plus what [OpencodeCmdOptions] configures, resolving `{{VAR}}`
+ * against [env]. [OpencodeHarness] and the agentdebug printer share it, so a dry run shows the argv that would run.
  */
 class OpencodeArgvBuilder(
     private val textCompiler: TextCompiler = DefaultTextCompiler(),

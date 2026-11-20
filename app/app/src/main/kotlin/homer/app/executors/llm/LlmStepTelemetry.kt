@@ -14,10 +14,9 @@ interface LlmStepTelemetry {
     val tracer: Tracer
 
     /**
-     * Emits the spans of [stream] under [parentSpan]. [redactor] masks the agent's declared `secret`
-     * input values in span attributes (prompt, tool I/O, result) before they egress; [step] names the
-     * generation; [resolvedCostUsd] is the cost the executor actually charged, split across the
-     * attempt's turn ends — null keeps the events' own cost (ADR-0061).
+     * Emits [stream]'s spans under [parentSpan], [redactor] masking declared `secret` input values before they egress.
+     * [step] names the generation; [resolvedCostUsd], the cost actually charged, is split across the attempt's turn
+     * ends, and null keeps the events' own cost (ADR-0061, ADR-0074).
      */
     suspend fun process(
         stream: TranslatedStream,
@@ -30,10 +29,8 @@ interface LlmStepTelemetry {
 }
 
 /**
- * What the step DECLARED, as opposed to what the harness reported. [label] names the run's
- * generation observation, so a reader can tell one `!<claude>`/`!<codex>` step of an agent
- * from another; [configuredModel] is the last rung of the telemetry's model ladder. Both are
- * absent for a caller with no step.
+ * What the step declared, not what the harness reported: [label] names the generation, telling an agent's LLM steps
+ * apart; [configuredModel] is the last rung of the telemetry's model ladder. Both are absent for a caller with no step.
  */
 data class LlmStepInfo(
     val label: String? = null,

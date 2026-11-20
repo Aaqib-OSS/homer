@@ -54,10 +54,8 @@ class DefaultParallelRunsManager : ParallelRunsManager {
         maxQueuedRuns: Int,
     ) {
         if (semaphore.tryAcquire()) return
-        // No free permit: this run would queue. Bound the number of concurrent waiters.
-        // Capture the counter reference (not a re-lookup) so a concurrent reload that
-        // drops the map entry can't misdirect the decrement — mirrors releasing the
-        // exact Semaphore object rather than looking it up.
+        // Decrement the captured counter, never a re-lookup: a reload that drops the map entry
+        // must not misdirect it, as a slot releases its own Semaphore object.
         val waiterCount = waiters.computeIfAbsent(agentName) { AtomicInteger(0) }
         if (waiterCount.incrementAndGet() > maxQueuedRuns) {
             waiterCount.decrementAndGet()
