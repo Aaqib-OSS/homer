@@ -128,6 +128,9 @@ interrupt.
   its last command, so the artifact behind the ref is that command's output (often a multi-MB Claude
   NDJSON stream Homer refuses to transform). The graph's own status check must get to run, so
   `result` stays null and the failure is reported on stderr.
+- **A re-park assigns a fresh interrupt id.** LangGraph numbers each park itself, so the id need not
+  survive a retry. The dispatch carries the id of the park it was made from, and a resume keyed by a
+  recorded id still binds after a re-park.
 - **Budgets reject a `bool`**, an `int` in Python, so `True` does not silently mean one retry.
 
 ## More Information

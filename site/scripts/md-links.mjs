@@ -122,8 +122,8 @@ export function linkTargets(prose) {
   return targets
 }
 
-// A CLAUDE.md backtick span is a repository path when it has a '/', only [\w./@+-] characters
-// and a '.', '..' or known first directory; `app/gradlew` is, `app/**` and `app/...` are not.
+// A CLAUDE.md backtick span is a repository path when it has a '/', a '.', '..' or known first
+// directory and no build/ segment; an extensionless module name counts. `app/**` is not one.
 function pathLike(span, dir, dirs) {
   if (!/^[\w.@+-][\w./@+-]*\/[\w./@+-]*$/.test(span) || span.includes('...') || /(^|\/)build\//.test(span)) return false
   const first = span.split('/')[0]
@@ -131,7 +131,7 @@ function pathLike(span, dir, dirs) {
 }
 
 /** Checks the links, anchors and CLAUDE.md paths of the `walk` files against `targets`.
- * @param {{walk: string[], targets: Iterable<string>, read: (path: string) => string, linkDir?: Record<string, string>}} repo
+ * @param {{walk: string[], targets: Iterable<string>, read: (path: string) => string, linkDir?: Record<string, string> (files whose links resolve from another directory)}} repo
  * @returns {{ problems: string[], counts: { files: number, links: number, anchors: number, paths: number } }}
  */
 export function checkLinks({ walk, targets, read, linkDir = {} }) {

@@ -20,7 +20,7 @@ export const REPO_ASSETS = '_repo'
 
 /** Returns {page, deadLinks, images}: the site page, its dead links, the repository image paths to copy under REPO_ASSETS.
  * @param {string} markdown the file's contents
- * @param {{from: string, to: string, siteOf: (p: string) => string | undefined, kind: (p: string) => 'file' | 'dir' | undefined, repoUrl: string, ref: string}} ctx
+ * @param {{from: string (repo path), to: string (site path), siteOf: (p: string) => string | undefined, kind: (p: string) => 'file' | 'dir' | undefined, repoUrl: string, ref: string}} ctx
  */
 export function transform(markdown, ctx) {
   const deadLinks = []

@@ -574,8 +574,8 @@ def test_fanout_retries_a_failed_sub_and_continues(
     # Segment 1: fresh run parks on the fan-out.
     thread, iid = _park_retry_fanout(RETRY_FANOUT, captured_runs)
 
-    # Segment 2: FAILED re-parks and re-dispatches the same sub. The interrupt id need
-    # not survive a re-park (ADR-0075); a resume keyed by a recorded id still binds.
+    # Segment 2: FAILED re-parks and re-dispatches the same sub under a fresh interrupt
+    # id; a resume keyed by a recorded id still binds (ADR-0105).
     captured_runs.clear()
     _resume(monkeypatch, thread, iid, json.dumps({"status": "FAILED", "processId": 1, "result": None}))
     assert runner.run(module=RETRY_FANOUT) == 0
