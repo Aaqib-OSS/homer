@@ -3,9 +3,8 @@
 import { AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
-// The list form sits beside the FAILED status in a table row, so its text is cut to this
-// many characters; the whole reason stays reachable as the badge's tooltip and for a
-// screen reader.
+// The list form sits beside the FAILED status, so its text is cut to this many characters;
+// the whole reason stays in the badge's tooltip and for screen readers.
 const INLINE_MAX_LENGTH = 80;
 
 function inlineText(reason: string): string {
@@ -22,11 +21,8 @@ export interface FailureReasonProps {
 }
 
 /**
- * Why a run ended FAILED before any of its commands started — a claim timeout, a
- * `SKIP_CURRENT` lock skip, a parallel-run cap or a full queue.
- *
- * The reason is built by the server from typed fields, and is still rendered as plain
- * text: it is data about the run, never markup.
+ * Why a run ended FAILED before any command started — a claim timeout, a `SKIP_CURRENT`
+ * lock skip, a parallel-run cap or a full queue. Rendered as plain text, never markup.
  */
 export function FailureReason({ reason, variant }: FailureReasonProps) {
   if (variant === 'inline') {

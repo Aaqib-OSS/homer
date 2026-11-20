@@ -35,9 +35,8 @@ function CostByTagResult({ data }: { data: CostByTagResponse }) {
 
 export function CostByTagCard({ tagKeys }: { tagKeys: string[] }) {
   const [pickedKey, setPickedKey] = useState<string | undefined>(undefined);
-  // Falls back to the first configured key when nothing is picked yet, or the
-  // picked one no longer exists (e.g. the config was reloaded) — derived
-  // instead of synced via an effect, so there's no extra render.
+  // Derived, not synced by an effect: falls back to the first key when nothing
+  // is picked or the picked key no longer exists.
   const selectedKey = pickedKey && tagKeys.includes(pickedKey) ? pickedKey : tagKeys[0];
 
   const { data, isLoading, error } = useCostsByTag(selectedKey);

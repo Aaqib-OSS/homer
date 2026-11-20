@@ -5,11 +5,8 @@ import { useEffect, useRef, type RefObject } from 'react';
 import { useAgentSchema } from '@/lib/api/queries';
 import { setupMonaco } from '@/lib/monaco/setup';
 
-// Must run synchronously at module load, before @monaco-editor/react's
-// dynamic loader fires on first <Editor> mount. useEffect is too late —
-// by then Monaco has already been fetched from the default CDN, and
-// monaco-yaml (imported from npm) cannot contribute to that separate
-// instance. This is a no-op on the server.
+// Runs synchronously at module load, before @monaco-editor/react's loader fetches
+// Monaco on first mount; an effect is too late for monaco-yaml to reach that instance.
 setupMonaco();
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), {

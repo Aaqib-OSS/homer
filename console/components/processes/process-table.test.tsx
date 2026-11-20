@@ -99,9 +99,8 @@ describe('ProcessTable', () => {
 
     render(<ProcessTable processes={[process]} />);
 
-    // The one 'ship' occurrence is the mobile card's `Last:` line — the desktop
-    // Commands cell is squares only. A skipped command's name reaches neither
-    // surface (asserted below for `hold` and `unexpected-answer`).
+    // The one 'ship' is the mobile card's `Last:` line (the desktop cell is squares only);
+    // a skipped command's name reaches neither surface.
     expect(screen.getAllByText('ship')).toHaveLength(1);
     expect(screen.queryByText('unexpected-answer')).not.toBeInTheDocument();
     expect(screen.queryByText('hold')).not.toBeInTheDocument();
@@ -595,10 +594,8 @@ describe('ProcessTable', () => {
 
       render(<ProcessTable processes={[process]} />);
 
-      // Desktop row + mobile card, each carrying one dot per command that ran.
-      // Each dot names the command, its state and its duration (the default
-      // execution spans one second) for assistive technology; the in-flight one
-      // has no end yet, so it names no duration.
+      // Desktop row and mobile card each carry one dot per command that ran, named for
+      // assistive technology by command, state and duration; the in-flight one has no end.
       expect(screen.getAllByLabelText('first: ok (1s)')).toHaveLength(2);
       expect(screen.getAllByLabelText('boom: failed (1s)')).toHaveLength(2);
       expect(screen.getAllByLabelText('cmd-running: running')).toHaveLength(2);
@@ -661,11 +658,8 @@ describe('ProcessTable', () => {
     it('renders no dots for a run that has executed nothing', () => {
       render(<ProcessTable processes={[makeProcess({ executions: [] })]} />);
 
-      // Any dot at all — whatever command it named — is a `role="img"` whose
-      // accessible name ends in its state, so a stray one (say a `running` dot
-      // appended for a run that is not WORKING, named `null: running`) fails
-      // here. The status icons are the only other `role="img"` in a row, and
-      // their names are `Status: <label>`.
+      // Any dot is a `role="img"` named ending in its state, so a stray one (e.g. `null: running`)
+      // fails here; the status icons are `Status: <label>`.
       expect(screen.queryAllByRole('img', { name: /: (ok|failed|running)$/ })).toHaveLength(0);
     });
   });

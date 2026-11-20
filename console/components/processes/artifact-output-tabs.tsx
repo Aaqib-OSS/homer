@@ -76,7 +76,7 @@ function ConversationMode({
   );
 }
 
-/** Best-effort: one JSON value per line of the harness's own raw output; a malformed/partial line is skipped. */
+/** One JSON value per line of the harness's raw output; a malformed or partial line is skipped. */
 function parseRawJsonLines(content: string): unknown[] {
   const parsed: unknown[] = [];
   for (const line of content.split('\n')) {
@@ -262,12 +262,8 @@ function shownContent(
   logStream: { offset: number; content: string },
 ): string {
   const baseContent = data?.content ?? '';
-  // While the file is still being written, both endpoints serve the same
-  // bytes: REST returns the snapshot, SSE returns from byte 0 and tails.
-  // Concatenating them duplicates the existing content. Once SSE has
-  // delivered any chunk we switch to its buffer (which carries the live
-  // tail too); until then we show the REST snapshot so the dialog isn't
-  // empty during the brief SSE handshake.
+  // REST returns a snapshot and SSE replays from byte 0, so concatenating them duplicates
+  // content: use the SSE buffer once it has a chunk, the REST snapshot until then.
   return isStreaming && logStream.offset > 0 ? logStream.content : baseContent;
 }
 
@@ -293,11 +289,8 @@ function useArtifactOutput({
 }) {
   const [activeTab, setActiveTab] = useState(defaultTab);
   const [viewMode, setViewMode] = useState<ViewMode | null>(null);
-  // The Conversation view only exists for stdout — an LLM harness's stderr is
-  // always plain text, so `isLlm` is scoped to the stdout tab and every mode
-  // gate (toggle row, effectiveMode default, render branch, the llm hook and
-  // liveView below) derives from this one flag rather than re-deriving the
-  // tab check ad hoc.
+  // The Conversation view exists only for stdout (stderr is plain text), so every
+  // mode gate derives from this one flag.
   const isLlm = isLlmKind(kind) && activeTab === 'stdout';
 
   const { currentQuery, currentPath } = useActiveArtifact(
@@ -392,13 +385,8 @@ function OutputContent({
   const placeholder = contentPlaceholder(activeTab, currentPath, currentQuery, content, isStreaming);
   if (placeholder) return placeholder;
 
-  // While the command runs, the conversation view is driven by the
-  // canonical, replayable /llm-events stream (which replaced the old
-  // broadcast-only event feed); tree/raw keep reading the raw
-  // artifact/log-tail content regardless of kind. The live path shares
-  // the post-mortem layout so the Conversation/JSON/Raw toggles stay
-  // available mid-run; only the Live badge and the conversation view's
-  // live ticker differ.
+  // While running, the conversation view reads the replayable /llm-events stream;
+  // tree/raw keep reading the raw artifact/log content.
   const liveView = isStreaming && isLlm;
   const effectiveMode = effectiveViewMode(viewMode, isLlm);
 

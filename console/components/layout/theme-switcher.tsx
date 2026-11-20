@@ -31,13 +31,9 @@ const BUILT_IN_OPTIONS: ThemeOption[] = [
 const SYSTEM_OPTION: ThemeOption = { value: 'system', label: 'System', icon: Monitor };
 
 /**
- * The built-ins plus one entry per valid `CONSOLE_THEMES` name. Invalid entries
- * are dropped by the parser (and logged once by the root layout), so they add no
- * item here; a custom theme's item is never rendered if it is not loadable.
- *
- * When the root layout resolved a `CONSOLE_THEME_MODES` pair, the built-ins are
- * hidden instead and the list is the configured entries plus `System` — which
- * `next-themes` resolves to that pair's light or dark theme per the OS scheme.
+ * The built-ins plus one entry per valid `CONSOLE_THEMES` name; the parser drops invalid ones.
+ * When a `CONSOLE_THEME_MODES` pair resolved, the built-ins are hidden: the list is the
+ * configured entries plus `System`, which `next-themes` maps to that pair per the OS scheme.
  */
 function themeOptions(): ThemeOption[] {
   const custom = resolveThemeEntries(appConfig.themes.entries).entries.map(

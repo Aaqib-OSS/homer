@@ -27,7 +27,7 @@ const EDGE_LEGEND: Array<[string, boolean]> = [
   ['conditional edge', true],
 ];
 
-/** Collision-free key for a (source, target) pair — never a plain-object lookup (§12 rule 2). */
+/** Collision-free key for a (source, target) pair — never a plain-object lookup (ADR-0047 rule 2). */
 function edgeKey(source: string, target: string): string {
   return JSON.stringify([source, target]);
 }
@@ -152,9 +152,8 @@ function GraphNode({
         {node.label}
       </text>
       <NodeDots
-        // Own-property check: node.id is agent-authored and a name like
-        // "constructor" must not resolve to an inherited Object.prototype
-        // member instead of "no dots for this node" (§12 rule 2).
+        // Own-property check: node.id is agent-authored, so an inherited member
+        // like "constructor" must not count as dots (ADR-0047 rule 2).
         states={dotsByNode && Object.hasOwn(dotsByNode, node.id) ? dotsByNode[node.id] : []}
         node={node}
       />
@@ -176,8 +175,8 @@ function NodeRunsPopover({
     <Popover
       open={openNode.openNode === node.id}
       onOpenChange={(open) =>
-        // A deferred outside-click dismiss of the previously open popover runs
-        // after this open — only clear when this node is still the open one.
+        // A deferred dismiss of the prior popover lands after this open: clear
+        // only if this node is still the open one.
         openNode.setOpenNode((prev) => (open ? node.id : prev === node.id ? null : prev))
       }
     >

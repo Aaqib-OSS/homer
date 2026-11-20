@@ -3,10 +3,9 @@ import { commandDotColor } from '@/components/processes/workflow-dots';
 import type { LangGraphSubProgress } from '@/types/homer';
 
 /**
- * One dispatched sub-agent run: agent name (linked, or plain "sub" text when
- * absent), `#processId` (omitted when purged), status, and its command-progress
- * dots. Shared by the collapsible subs list (with its `node:` prefix) and the
- * per-node runs popover (no prefix — the popover header already names the node).
+ * One dispatched sub-agent run: agent name (linked, or "sub" when absent), `#processId`
+ * (omitted when purged), status and command-progress dots. Shared by the subs list (with a
+ * `node:` prefix) and the per-node runs popover (without; its header names the node).
  */
 export function SubRunRow({ sub, node }: { sub: LangGraphSubProgress; node?: string }) {
   return (
@@ -31,9 +30,7 @@ export function SubRunRow({ sub, node }: { sub: LangGraphSubProgress; node?: str
           #{sub.processId}
         </Link>
       )}{' '}
-      {/* A resolved node keeps its sub lines, and an old sub run may have been
-          evicted from the process store by then — say so rather than trailing
-          off after the dash. */}
+      {/* A resolved node keeps its sub lines though the run may be evicted: say "purged". */}
       — {sub.status ?? 'purged'}
       {(sub.commands?.length ?? 0) > 0 && (
         <span className="ml-1 inline-flex items-center gap-0.5" aria-label="command progress">
