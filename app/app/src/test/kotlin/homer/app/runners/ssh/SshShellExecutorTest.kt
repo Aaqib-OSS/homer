@@ -28,6 +28,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
+import java.io.IOException
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.createDirectories
@@ -366,7 +367,7 @@ class SshShellExecutorTest {
     ) = runTest {
         val refusing = EmbeddedSshServer(refuseExec = true).also { it.start() }
         try {
-            val secret = "SECRET-MARK-3f9a1c"
+            val envValue = "SECRET-MARK-3f9a1c"
             val (exception, events) =
                 captureAllEvents {
                     assertThrows<SshExecRefusedException> {
@@ -376,19 +377,19 @@ class SshShellExecutorTest {
                                 local.resolve("o"),
                                 local.resolve("e"),
                                 null,
-                                mapOf("SECRET_MARK" to secret),
+                                mapOf("SECRET_MARK" to envValue),
                                 10.seconds,
                             )
                     }
                 }
             val message = exception.message.orEmpty()
             assertContains(message, "refused the exec request")
-            assertFalse(message.contains(secret), "the step error must quote no env value")
+            assertFalse(message.contains(envValue), "the step error must quote no env value")
             // The fixture's sshd logs in this JVM; the remote one whose log reaches app.log does not.
             val leaking =
                 events
                     .filterNot { it.loggerName.startsWith("org.apache.sshd.server") }
-                    .filter { "${it.formattedMessage} ${it.throwableProxy?.message}".contains(secret) }
+                    .filter { "${it.formattedMessage} ${it.throwableProxy?.message}".contains(envValue) }
             assertTrue(leaking.isEmpty(), "log events quoting the env value: ${leaking.map { it.loggerName }}")
         } finally {
             refusing.close()
@@ -399,10 +400,10 @@ class SshShellExecutorTest {
     fun `a failed channel open fails the step with the refusal message and no server text`(
         @TempDir local: Path,
     ) = runTest {
-        val secret = "SECRET-MARK-3f9a1c"
+        val serverText = "no more channels: SECRET-MARK-3f9a1c"
         val channel = mockk<ChannelExec>(relaxed = true)
         val openFuture = mockk<OpenFuture>()
-        every { openFuture.verify(any<Long>()) } throws SshChannelOpenException(1L, 1, "no more channels: $secret")
+        every { openFuture.verify(any<Long>()) } throws SshChannelOpenException(1L, 1, serverText)
         every { channel.open() } returns openFuture
         val session = mockk<ClientSession>(relaxed = true)
         every { session.createExecChannel(any()) } returns channel
@@ -413,11 +414,36 @@ class SshShellExecutorTest {
                     .cmd(listOf("echo", "hello"), local.resolve("o"), local.resolve("e"), null, emptyMap(), 10.seconds)
             }
         assertContains(exception.message.orEmpty(), "refused the exec request")
-        assertFalse(exception.message.orEmpty().contains(secret), "the server's own text must not be quoted")
+        assertFalse(exception.message.orEmpty().contains(serverText), "the server's own text must not be quoted")
         val chain = generateSequence(exception as Throwable?) { it.cause }.toList()
         assertTrue(
-            chain.none { it is SshChannelOpenException || it.message.orEmpty().contains(secret) },
+            chain.none { it is SshChannelOpenException || it.message.orEmpty().contains(serverText) },
             "the MINA text quotes the command, so it must reach neither the message nor the cause chain",
+        )
+    }
+
+    @Test
+    fun `a timed out or dropped channel open is a lost connection, not a refusal`(
+        @TempDir local: Path,
+    ) = runTest {
+        val serverText = "connection dropped mid-handshake: SECRET-MARK-3f9a1c"
+        val channel = mockk<ChannelExec>(relaxed = true)
+        val openFuture = mockk<OpenFuture>()
+        every { openFuture.verify(any<Long>()) } throws IOException(serverText)
+        every { channel.open() } returns openFuture
+        val session = mockk<ClientSession>(relaxed = true)
+        every { session.createExecChannel(any()) } returns channel
+
+        val exception =
+            assertThrows<SshConnectionLostException> {
+                SshShellExecutor(session, workdir.toString())
+                    .cmd(listOf("echo", "hello"), local.resolve("o"), local.resolve("e"), null, emptyMap(), 10.seconds)
+            }
+        assertFalse(exception.message.orEmpty().contains(serverText), "the transport text must not be quoted")
+        val chain = generateSequence(exception as Throwable?) { it.cause }.toList()
+        assertTrue(
+            chain.none { it is SshExecRefusedException || it.message.orEmpty().contains(serverText) },
+            "a dropped handshake is not a refusal and names no server text",
         )
     }
 

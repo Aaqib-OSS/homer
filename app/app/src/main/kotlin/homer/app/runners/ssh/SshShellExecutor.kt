@@ -19,6 +19,7 @@ import kotlinx.coroutines.withContext
 import org.apache.sshd.client.channel.ChannelExec
 import org.apache.sshd.client.channel.ClientChannelEvent
 import org.apache.sshd.client.session.ClientSession
+import org.apache.sshd.common.channel.exception.SshChannelOpenException
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.io.OutputStream
@@ -120,14 +121,16 @@ class SshShellExecutor(
 
     /**
      * Opens [channel], bounded by [OPEN_TIMEOUT_MS] for the handshake phase alone, distinct from the
-     * command's own `timeout`; a server that refuses the request answers with its own text, which
-     * quotes the command, so only the fixed refusal is reported (W-021).
+     * command's own `timeout`. Only the server's open rejection is a refusal (W-021); a timeout or a
+     * dropped handshake is a lost connection — either answer's own text quotes the command, so neither is reported.
      */
     private fun openChannel(channel: ChannelExec) {
         try {
             channel.open().verify(OPEN_TIMEOUT_MS)
-        } catch (_: IOException) {
+        } catch (_: SshChannelOpenException) {
             throw SshExecRefusedException()
+        } catch (_: IOException) {
+            throw SshConnectionLostException("SSH channel open failed")
         }
     }
 
