@@ -24,10 +24,8 @@ services:
       - FRONTEND_PORT=${FRONTEND_PORT:-3000}
     networks:
       - homer-network
-    # no-new-privileges is safe with the entrypoint's root->homer su-exec drop
-    # (dropping privileges needs no new ones). cap_drop:[ALL] is NOT set here: the
-    # entrypoint starts as root to chown the workspace and su-exec (needs CHOWN,
-    # SETUID, SETGID); dropping all caps would break that startup path.
+    # No cap_drop: the entrypoint chowns the workspace and su-execs to homer as root, which
+    # needs capabilities; the JVM holds none after the drop (ADR-0093).
     security_opt:
       - "no-new-privileges:true"
     healthcheck:
@@ -59,14 +57,8 @@ services:
         condition: service_healthy
     networks:
       - homer-network
-    # The console runs as the non-root `nextjs` user from the start and needs no
-    # Linux capabilities, so drop them all and block privilege escalation. Its root
-    # filesystem is read-only; the only writable paths are the two tmpfs mounts the
-    # Next.js standalone server may write (scratch + its server data/fetch cache in
-    # .next/cache; images are unoptimized, so no image cache lands there).
-    # (The backend is intentionally NOT read_only: it runs arbitrary agents/Claude
-    # that write to $HOME, caches, and /tmp on unpredictable paths — a read-only
-    # root would break the core function; the workspace bind mount is its writable surface.)
+    # Runs as nextjs from the start, so it needs no capability; the two tmpfs mounts are
+    # the only paths the standalone server writes (ADR-0093).
     security_opt:
       - "no-new-privileges:true"
     cap_drop:
