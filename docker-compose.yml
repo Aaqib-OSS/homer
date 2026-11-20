@@ -1,8 +1,7 @@
 services:
   backend:
-    # Published release image, pulled anonymously; nothing is built locally.
-    # HOMER_VERSION selects the release tag and defaults to the pinned current
-    # one. To build from source instead, add docker-compose.build.yml. ADR-0093.
+    # Published release image, pulled anonymously; HOMER_VERSION selects the tag (the pinned current release by
+    # default). To build from source, add docker-compose.build.yml (ADR-0093).
     image: ghcr.io/livesport/homer/homer-app:${HOMER_VERSION:-1.43.2}
     container_name: homer-backend
     # Bound to loopback: the default config runs arbitrary shell/Claude, so it must
@@ -20,7 +19,7 @@ services:
       # No default: startup fails if it is unset, so no working credential ever ships.
       - HOMER_ADMIN_TOKEN=${HOMER_ADMIN_TOKEN:?set HOMER_ADMIN_TOKEN in .env before starting}
       # The console's published port: the example configs allow its origin through
-      # @SYSENV:FRONTEND_PORT, so moving the console needs no config edit (#29).
+      # @SYSENV:FRONTEND_PORT, so moving the console needs no config edit (ADR-0093).
       - FRONTEND_PORT=${FRONTEND_PORT:-3000}
     networks:
       - homer-network

@@ -1,13 +1,10 @@
-# Black-box E2E stack: production backend image + test-runner container.
-# Runbook: app/e2e/README.md. Topology: DOCKER.md § E2E test stack.
-#
-# Distinct project name — never collides with the dev compose stack.
+# Black-box E2E stack: production backend image + test-runner container (runbook: app/e2e/README.md;
+# topology: DOCKER.md, E2E test stack). The distinct project name never collides with the dev stack.
 name: homer-e2e
 
 services:
-  # Copies fixture agents into a writable named volume: agent CRUD tests
-  # write to /app/agents, so a :ro bind would 500 and a :rw bind would
-  # dirty the checkout. UID/GID 1000 = the image's `homer` user.
+  # Copies fixture agents into a writable volume: agent CRUD tests write to /app/agents, so a :ro bind would 500
+  # and a :rw bind would dirty the checkout. UID/GID 1000 is the image's `homer` user.
   fixtures-init:
     image: alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d
     volumes:
@@ -43,9 +40,8 @@ services:
       retries: 40
       start_period: 10s
 
-  # Pull-mode runner instances for ExternalRunnerTest (ADR-0066). They share the
-  # backend's network namespace so http://127.0.0.1:8080 is loopback — homer-runner
-  # refuses plain http to any other host, and the e2e stack has no TLS.
+  # Pull-mode runners for ExternalRunnerTest (ADR-0066), in the backend's network namespace so their URL is
+  # loopback: homer-runner refuses plain http to any other host, and this stack has no TLS.
   homer-runner:
     build:
       context: .
@@ -82,9 +78,8 @@ services:
       - HOMER_RUNNER_CONCURRENCY=1
       - HOMER_RUNNER_NAME=e2e-crash-runner
 
-  # Two named instances of one external domain (ADR-0099): RunnerAffinityTest proves a
-  # flow's later run lands on the instance that served its first. Distinct names are
-  # required — one live instance holds a name. Concurrency 1 keeps the two apart.
+  # Two named instances of one external domain (ADR-0099) for RunnerAffinityTest; names must be distinct, as one
+  # live instance holds a name, and concurrency 1 keeps the two apart.
   homer-runner-affinity-a:
     build:
       context: .
@@ -117,9 +112,8 @@ services:
       - HOMER_RUNNER_CONCURRENCY=1
       - HOMER_RUNNER_NAME=affinity-b
 
-  # Started via `docker compose run --name homer-e2e-runner e2e-runner`
-  # (see DOCKER.md § E2E test stack) — `run` propagates the exit code;
-  # one-off containers ignore container_name, hence --name on the command.
+  # Started via `docker compose run --name homer-e2e-runner e2e-runner` (DOCKER.md, E2E test stack): `run`
+  # propagates the exit code, and one-off containers ignore container_name.
   e2e-runner:
     build:
       context: .

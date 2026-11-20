@@ -1,7 +1,5 @@
-# Per-commit checks on GitHub-hosted runners, on pull requests and main only (a
-# push trigger on every branch would run each PR twice). Fork pull requests run
-# it too, so no job here may need a secret: Gradle resolves from Maven Central
-# and caches through setup-gradle (ADR-0084).
+# Per-commit checks on pull requests and main only (a push trigger on every branch would run each PR
+# twice). Fork pull requests run it, so no job may need a secret (ADR-0084).
 name: CI
 
 on:
@@ -127,9 +125,8 @@ jobs:
           path: reports.tgz
           retention-days: 7
 
-  # The documentation site (ADR-0087): the generator's tests and a full build, which fails on a
-  # link to a file the repository does not hold, on a dead link between pages, and on a link whose
-  # #fragment names no id on its page.
+  # The documentation site (ADR-0087): the generator's tests and a full build, which fails on a dead
+  # link, a link to a missing file, or a #fragment naming no id on its page.
   docs-site:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -241,9 +238,8 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
-      # The dependencies exactly as the image installs them (requirements.lock, ADR-0114), so a
-      # dependency missing from the lock fails the tests; requirements-test.lock adds pytest, ruff and
-      # setuptools, which never ship. One install, so a pin the two locks disagree on fails it.
+      # The image's own install (requirements.lock, ADR-0114) plus requirements-test.lock (pytest, ruff,
+      # setuptools); one install, so a pin the two locks disagree on fails it.
       - run: pip install --require-hashes --no-deps -r requirements.lock -r requirements-test.lock
       - run: pip install --no-deps --no-build-isolation -e .
       - run: ruff check
@@ -277,9 +273,8 @@ jobs:
           persist-credentials: false
       - run: tools/release/notes-test.sh
 
-  # shellcheck, actionlint, zizmor and hadolint over the shell scripts, workflows and Dockerfiles
-  # (check `infra-lint`, ADR-0082). Each tool is the release binary of the version pinned here,
-  # refused unless it matches the pinned SHA-256; docs/quality-checks.md names the same versions.
+  # shellcheck, actionlint, zizmor and hadolint (check `infra-lint`, ADR-0082): release binaries refused
+  # unless they match the pinned SHA-256; docs/quality-checks.md names the same versions.
   homer-infra-lint:
     runs-on: ubuntu-24.04
     timeout-minutes: 10

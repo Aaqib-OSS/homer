@@ -1,6 +1,5 @@
-# CodeQL code scanning in place of GitHub's default setup, which cannot build the Kotlin backend
-# with JDK 25. Actions, JavaScript/TypeScript and Python need no build. The main ruleset requires
-# these results (code_scanning rule, tool CodeQL).
+# CodeQL scanning in place of GitHub's default setup, which cannot build the Kotlin backend with JDK 25;
+# the main ruleset requires its results (code_scanning rule, tool CodeQL).
 name: CodeQL
 
 on:
@@ -56,9 +55,8 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
-      # CodeQL extracts Kotlin by watching the compiler, so every source must compile in this
-      # run: no build cache, no daemon, the Kotlin compiler in the Gradle process. That process
-      # then needs the heap the Kotlin daemon would have had, or the collector thrashes.
+      # CodeQL extracts Kotlin by watching the compiler: no build cache, no daemon, so the Gradle process
+      # needs the heap the Kotlin daemon would have had.
       - if: matrix.build-mode == 'manual'
         working-directory: app
         run: >-

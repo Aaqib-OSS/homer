@@ -1,12 +1,8 @@
-# Build-from-source overlay for the default stack (ADR-0093). docker-compose.yml
-# pulls the published release images; this file adds back the `build:` sections
-# and tags each image locally, so a local build never shadows the pulled GHCR
-# tag. Stack it on the base file, and on docker-compose.dev.yml for dev:
-#
+# Build-from-source overlay (ADR-0093): re-adds `build:` and tags each image locally, so a build never shadows
+# the pulled GHCR tag. No ports: the base file owns the topology. Stack it on the base file, and on dev:
+
 #   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d
 #   docker compose -f docker-compose.yml -f docker-compose.build.yml -f docker-compose.dev.yml up
-#
-# No ports here: the base file owns the topology.
 services:
   backend:
     build:

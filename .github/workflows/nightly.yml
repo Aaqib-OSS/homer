@@ -1,10 +1,5 @@
-# Daily: dependency-check and the image scan. Weekly (Sunday): the full mutation runs, every backend
-# mutant sharded per package, one job per package to stay under the 6-hour job limit
-# (tools/quality/pit-full.mjs), and every console mutant. By hand with workflow_dispatch:
-# dependency-check and the image scan, plus each full mutation run whose input is set. The schedules
-# skip everything in a private copy of the repository, whose Actions minutes go to per-commit CI.
-# Each mutation report writes its score and undetected (survived or uncovered) mutants to the run's
-# job summary (tools/quality/step-summary.mjs).
+# Daily: dependency-check and the image scan. Weekly (Sunday): the full mutation runs, the backend sharded
+# per package (ADR-0082). Schedules skip a private copy, whose Actions minutes go to per-commit CI.
 name: Nightly
 
 on:
@@ -50,10 +45,8 @@ jobs:
       - name: Dependency check
         id: check
         run: cd app && ./gradlew :app:dependencyCheckAnalyze :homer-runner:dependencyCheckAnalyze --no-configuration-cache --continue
-      # Saved whenever both analyses finished, which their reports prove: the plugin writes each after
-      # the update and the scan, before failing on a CVE. actions/cache would save only on success, so
-      # every run after a finding would start cold. A run that failed or timed out during the NVD
-      # update has no report and may hold a partial database, so it is not saved.
+      # Saved when both reports exist (the plugin writes each before failing on a CVE); actions/cache would
+      # save only on success. A run that died in the NVD update may hold a partial database and is not saved.
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: always() && (steps.check.outcome == 'success' || steps.check.outcome == 'failure') && hashFiles('app/app/build/reports/dependency-check/dependency-check-report.html') != '' && hashFiles('app/homer-runner/build/reports/dependency-check/dependency-check-report.html') != ''
         with:

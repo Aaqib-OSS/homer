@@ -1,12 +1,5 @@
-# Fails a pull request that links no accepted issue of this repository (CONTRIBUTING.md
-# § Submitting changes), which tools/pr-policy/check.sh decides, or that adds a dependency with a
-# known high or critical advisory, or whose commits hold a secret. The ruleset on main makes it
-# a required check. Dependabot's and Renovate's pull requests are exempt: they link no issue, and a
-# skipped job counts as passed. The exemption compares the login with `dependabot[bot]` and
-# `renovate[bot]`, the Apps' accounts: GitHub reserves the `[bot]` suffix for Apps, so no user
-# account can hold either login. Labelling an
-# issue fires no pull request event, so the check is not re-run then; re-run it by hand.
-# Decision record: docs/adr/0090-accepted-issue-pull-request-gate.md.
+# Fails a pull request that links no accepted issue (tools/pr-policy/check.sh), adds a high or critical
+# advisory, or commits a secret (ADR-0090). Exempt: `dependabot[bot]` and `renovate[bot]`, logins only an App can hold.
 name: PR policy
 
 on:
@@ -39,9 +32,8 @@ jobs:
         with:
           fail-on-severity: high
 
-  # gitleaks over every commit the pull request adds (tools/pr-policy/secret-scan.sh; tool choice
-  # and trust model: docs/quality-checks.md). The script, the pinned release and the rules all come
-  # from the base, never from the pull request, which must not rewrite the rule it is checked against.
+  # gitleaks over every commit the pull request adds (docs/quality-checks.md); the script, the pinned release
+  # and the rules come from the base, never the pull request (ADR-0090).
   secret-scan:
     runs-on: ubuntu-24.04
     timeout-minutes: 10

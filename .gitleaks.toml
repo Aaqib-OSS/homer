@@ -1,10 +1,5 @@
-# gitleaks configuration for the secret scan of pull requests (job secret-scan, pr-policy.yml;
-# docs/quality-checks.md). The default rules, plus allowlist entries for placeholder values the
-# docs and tests hold on purpose. Each entry names one file, one rule and the exact value: a new
-# placeholder elsewhere is a finding until it gets an entry of its own here.
-#
-# The scan reads this file from the pull request's base, never from the pull request: an entry for
-# a new fixture must merge before the fixture, in a pull request of its own.
+# gitleaks rules of the pull-request secret scan (job secret-scan; docs/quality-checks.md): the defaults plus one entry
+# per file, rule and exact value. Read from the base (ADR-0090), so an entry merges before its fixture.
 
 [extend]
 useDefault = true
