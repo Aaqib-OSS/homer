@@ -2,6 +2,7 @@ package homer.app.services
 
 import homer.app.executors.CommandArtifactPaths
 import homer.app.fixtures.TestFixtures
+import homer.app.models.ExecutionInfo
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
 import io.mockk.coEvery
@@ -62,6 +63,67 @@ class LogTailServiceTest {
 
         assertEquals(tmp.resolve("cmd_0.out"), service.resolve(1, 0, LogTailService.Stream.OUT))
         assertEquals(tmp.resolve("cmd_0.err"), service.resolve(1, 0, LogTailService.Stream.ERR))
+    }
+
+    @Test
+    fun `resolve reads the persisted execution path when nothing is tracked after a restart`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val processManager = processManagerWithoutJob()
+        val out = tmp.resolve("build_0.out")
+        val err = tmp.resolve("build_0.err")
+        coEvery { processManager.getProcessInfo(1) } returns
+            processInfo(id = 1, artifactsDir = tmp, executions = listOf(execution(out, err)))
+        coEvery { processManager.getCommandArtifacts(1, 0) } returns null
+
+        val service = LogTailService(processManager, TestFixtures.mockLogger())
+
+        assertEquals(out, service.resolve(1, 0, LogTailService.Stream.OUT))
+        assertEquals(err, service.resolve(1, 0, LogTailService.Stream.ERR))
+    }
+
+    @Test
+    fun `resolve refuses a persisted execution path outside the artifacts dir`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val artifactsDir = tmp.resolve("artifacts").createDirectories()
+        val processManager = processManagerWithoutJob()
+        coEvery { processManager.getProcessInfo(1) } returns
+            processInfo(
+                id = 1,
+                artifactsDir = artifactsDir,
+                executions =
+                    listOf(
+                        execution(artifactsDir.resolve("../escaped.out"), Path.of("/etc/passwd")),
+                        execution(tmp.resolve("sibling/cmd_1.out"), artifactsDir.resolve("sub/cmd_1.err")),
+                    ),
+            )
+        coEvery { processManager.getCommandArtifacts(1, any()) } returns null
+
+        val service = LogTailService(processManager, TestFixtures.mockLogger())
+
+        assertNull(service.resolve(1, 0, LogTailService.Stream.OUT))
+        assertNull(service.resolve(1, 0, LogTailService.Stream.ERR))
+        assertNull(service.resolve(1, 1, LogTailService.Stream.OUT))
+        assertNull(service.resolve(1, 1, LogTailService.Stream.ERR))
+    }
+
+    @Test
+    fun `resolve refuses a persisted execution path through a symlinked artifact`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val artifactsDir = tmp.resolve("artifacts").createDirectories()
+        val target = tmp.resolve("secret.txt").also { it.writeText("x") }
+        val link = Files.createSymbolicLink(artifactsDir.resolve("cmd_0.out"), target)
+        val processManager = processManagerWithoutJob()
+        coEvery { processManager.getProcessInfo(1) } returns
+            processInfo(id = 1, artifactsDir = artifactsDir, executions = listOf(execution(link, null)))
+        coEvery { processManager.getCommandArtifacts(1, 0) } returns null
+
+        val service = LogTailService(processManager, TestFixtures.mockLogger())
+
+        assertNull(service.resolve(1, 0, LogTailService.Stream.OUT))
+        assertNull(service.resolve(1, 0, LogTailService.Stream.ERR), "a row that names no stderr file has none to tail")
     }
 
     @Test
@@ -510,11 +572,18 @@ class LogTailServiceTest {
     private fun processInfo(
         id: Int,
         artifactsDir: Path?,
+        executions: List<ExecutionInfo> = emptyList(),
     ): ProcessInfo =
         ProcessInfo(
             id = id,
             status = ProcessStatus.WORKING,
             agentName = "test-agent",
             artifactsDir = artifactsDir,
+            executions = executions,
         )
+
+    private fun execution(
+        stdOut: Path?,
+        stdErr: Path?,
+    ) = ExecutionInfo(label = "build", start = 0, end = 1, resultCode = 0, stdOut = stdOut, stdErr = stdErr, errMsg = null)
 }
