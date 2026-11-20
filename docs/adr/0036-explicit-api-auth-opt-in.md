@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-08-11
 deciders: Lukáš Vlk
+amended: 2026-10-09
 ---
 # ADR-0036: `server.apiAuth` is required — unsecured is an explicit opt-in
 
@@ -48,8 +49,7 @@ Nullable field + startup validator:
    omitted field (`null`) from an explicit `apiAuth: !<unsecured>`
    (`AuthConfig.Unsecured`).
 2. **`validateExplicitApiAuth` fails startup on `null`**, ~~first~~ second
-   among the validators in `configureServer` *(amended 2026-10-09: it runs
-   after [ADR-0037](0037-grants-authorization.md)'s `validateNoLegacyEndpoints`)*,
+   among the validators in `configureServer`,
    with a message that shows both remedies
    (configure a scheme, or write the explicit `!<unsecured>` opt-in).
 3. **Explicit `Unsecured` is unchanged**: it runs and keeps the startup WARN
@@ -58,6 +58,8 @@ Nullable field + startup validator:
    `homer-config.schema.json`, so editors flag the omission before deploy.
 5. `flattenAuthSchemes(null)` returns no schemes — reachable only in tests,
    since the validator aborts boot before any scheme is consulted.
+
+> **Amendment (2026-10-09) —** `validateExplicitApiAuth` runs after [ADR-0037](0037-grants-authorization.md)'s `validateNoLegacyEndpoints`.
 
 ## Consequences
 

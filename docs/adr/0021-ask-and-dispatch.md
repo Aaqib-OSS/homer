@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-15
 deciders: Lukáš Vlk
-amended: 2026-09-30, 2026-10-09
+amended: 2026-06-24, 2026-09-30, 2026-10-09
 ---
 # ADR-0021: ask-and-dispatch — deferred dispatch from a question answer
 
@@ -164,8 +164,9 @@ dispatch-bound rows show the target agent and a link to the dispatched run
   the answer first and treating fire as a separate step.
 - Bad: `server.dispatch.authToken` must be configured (or left null,
   making dispatched callbacks unauthenticated) — operators need to be
-  aware of this token analogously to `agent.cronAuthToken`. *(Obsolete
-  since ADR-0030: both tokens were removed.)*
+  aware of this token analogously to `agent.cronAuthToken`.
+
+> **Amendment (2026-06-24) —** Obsolete since ADR-0030: both tokens were removed.
 
 ## More Information
 

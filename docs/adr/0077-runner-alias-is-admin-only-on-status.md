@@ -67,9 +67,9 @@ names no host, tenant or environment.
 
 `GET /api/v1/runners` stays admin-only (it exists for operators and lists
 every configured alias), so `kind` there is the admin-side twin of the
-status response's `type` *(amended 2026-11-13: a `read` grant on `*` reads it
-with every alias, instance name and alias filter withheld — see the amendment
-below and ADR-0111)*.
+status response's `type`.
+
+> **Amendment (2026-11-13) —** A `read` grant on `*` reads it with every alias, instance name and alias filter withheld — see the amendment below and ADR-0111.
 
 ### Consequences
 

@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-11
 deciders: Lukáš Vlk
-amended: 2026-09-28, 2026-10-09
+amended: 2026-08-12, 2026-09-28, 2026-10-09
 ---
 # ADR-0038: Per-process ownership and the union visibility rule
 
@@ -208,13 +208,17 @@ unconditionally pending that follow-up.
   degrade safely — visible only to admin and `read`-grant holders, never
   accidentally "owned" by a null-principal caller.
 - Bad: **MCP management tools remain visibility-ungated** — a real,
-  documented gap until a follow-up closes it. *(Closed by ADR-0039.)*
+  documented gap until a follow-up closes it.
 - Bad: **nested-dispatch authority remains unenforced** — `RunAgent`
   still dispatches any agent unconditionally; only its owner-stamping
-  changed, not its gating. *(Closed by ADR-0039.)*
+  changed, not its gating.
 - Neutral: `dispatches`/`continuations` visibility is a Kotlin post-filter,
   not a SQL `WHERE` clause like `processes` — acceptable given list sizes,
   but not the same performance profile if either table grows large.
+
+> **Amendment (2026-08-12) —** The two gaps above, MCP management tools and nested-dispatch authority, are closed by ADR-0039.
+
+> **Amendment (2026-10-09) —** `dispatches` and `continuations` visibility now filters in SQL, see ADR-0021's 2026-09-30 amendment.
 
 ## More Information
 
@@ -237,8 +241,6 @@ unconditionally pending that follow-up.
   model, `run`/`read` action semantics this ADR enforces); nested-dispatch
   authority and MCP management-tool gating remain follow-up work (Plan 3);
   [ADR-0030](0030-runagent-in-process-dispatch.md) is unaffected.
-
-> **Amendment (2026-10-09) —** Both now filter in SQL, see ADR-0021's 2026-09-30 amendment.
 
 ## Amendment (2026-09-28): the broadcast stream is removed
 

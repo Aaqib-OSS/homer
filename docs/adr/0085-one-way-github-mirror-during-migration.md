@@ -3,12 +3,12 @@ status: deprecated
 date: 2026-10-14
 deciders: Lukáš Vlk
 consulted: ADR-0084
-amended: 2026-10-16
+amended: 2026-10-16, 2026-10-20
 ---
 
 # ADR-0085: A one-way GitHub mirror from a single initial commit during the migration
 
-> **Amendment (2026-10-16) —** The title-denylist, no-force-push and no-history-published claims below hold in `append` mode only, and the append-only guarantee only once the repository is public; see the amendment at the end of this ADR.
+> **Amendment (2026-10-16) —** The decision below describes `append` mode. Its title denylist, no-force push, unpublished history and one-commit-per-merge claims, the failed-pipeline merge reaching GitHub only with the next green one, and a fast-forward over a stray commit replacing its tree hold there only, and the append-only guarantee only once the repository is public; see the amendment at the end of this ADR.
 
 > Deprecated on 2026-11-14: development moved to GitHub, so the mirror ended as this ADR
 > planned. No later ADR replaces the decision, which is why it is not `superseded by`.
@@ -161,7 +161,7 @@ cloned it and no fork exists, so its history can still be replaced.
 - Bad: until then, GitHub `main` has no history to read: one commit per merge
   becomes one commit in all. The full history stays upstream.
 
-*Switched back on 2026-10-20:* the job runs in `append` mode as the repository goes
-public. Its public history starts from the last squashed commit, and every sync
-after it adds one commit without force. Because the commit title is published
-again, gitleaks now scans it too, not only the denylist (CWE-200).
+> **Amendment (2026-10-20) —** Switched back: the job runs in `append` mode as the repository goes
+> public. Its public history starts from the last squashed commit, and every sync
+> after it adds one commit without force. Because the commit title is published
+> again, gitleaks now scans it too, not only the denylist (CWE-200).
