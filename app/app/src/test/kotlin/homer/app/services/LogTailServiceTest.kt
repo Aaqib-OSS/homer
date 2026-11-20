@@ -83,6 +83,49 @@ class LogTailServiceTest {
     }
 
     @Test
+    fun `resolve serves the row that recorded the requested command index, not the row at that position`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        // A run that executes a subset of its commands records the command's own index, so the
+        // row at position 0 belongs to command 2 and must not answer `cmd=0`.
+        val out = tmp.resolve("build_2.out")
+        val err = tmp.resolve("build_2.err")
+        val processManager = processManagerWithoutJob()
+        coEvery { processManager.getProcessInfo(1) } returns
+            processInfo(id = 1, artifactsDir = tmp, executions = listOf(execution(out, err, commandIndex = 2)))
+        coEvery { processManager.getCommandArtifacts(1, any()) } returns null
+
+        val service = LogTailService(processManager, TestFixtures.mockLogger())
+
+        assertEquals(out, service.resolve(1, 2, LogTailService.Stream.OUT))
+        assertEquals(err, service.resolve(1, 2, LogTailService.Stream.ERR))
+        // Command 0 recorded no row: the default name, never command 2's file.
+        assertEquals(tmp.resolve("cmd_0.out"), service.resolve(1, 0, LogTailService.Stream.OUT))
+        assertEquals(tmp.resolve("cmd_0.err"), service.resolve(1, 0, LogTailService.Stream.ERR))
+    }
+
+    @Test
+    fun `resolve falls back to the list position only for a row that recorded no index`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val first = tmp.resolve("first.out")
+        val second = tmp.resolve("second.out")
+        val processManager = processManagerWithoutJob()
+        coEvery { processManager.getProcessInfo(1) } returns
+            processInfo(
+                id = 1,
+                artifactsDir = tmp,
+                executions = listOf(execution(first, null), execution(second, null, commandIndex = 1)),
+            )
+        coEvery { processManager.getCommandArtifacts(1, any()) } returns null
+
+        val service = LogTailService(processManager, TestFixtures.mockLogger())
+
+        assertEquals(first, service.resolve(1, 0, LogTailService.Stream.OUT))
+        assertEquals(second, service.resolve(1, 1, LogTailService.Stream.OUT))
+    }
+
+    @Test
     fun `resolve is null when the execution row recorded no output file`(
         @TempDir tmp: Path,
     ) = runTest {
@@ -619,5 +662,15 @@ class LogTailServiceTest {
     private fun execution(
         stdOut: Path?,
         stdErr: Path?,
-    ) = ExecutionInfo(label = "build", start = 0, end = 1, resultCode = 0, stdOut = stdOut, stdErr = stdErr, errMsg = null)
+        commandIndex: Int? = null,
+    ) = ExecutionInfo(
+        label = "build",
+        start = 0,
+        end = 1,
+        resultCode = 0,
+        stdOut = stdOut,
+        stdErr = stdErr,
+        errMsg = null,
+        commandIndex = commandIndex,
+    )
 }

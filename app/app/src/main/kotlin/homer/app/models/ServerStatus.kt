@@ -214,6 +214,8 @@ data class ExecutionInfoResponse(
     val stoppedBy: String? = null,
     // Whether this entry is one of the agent's `onStop:` steps.
     val onStop: Boolean = false,
+    // The command's index in the agent's `commands`; null for rows written before it existed.
+    val commandIndex: Int? = null,
 )
 
 data class CommandResult(

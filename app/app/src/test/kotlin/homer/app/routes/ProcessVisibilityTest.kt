@@ -2314,6 +2314,43 @@ class ProcessVisibilityTest {
         }
 
     @Test
+    fun `SSE a foreign principal is denied a run restricted to a later command on both streams`() =
+        testApplication {
+            // A debug run of the agent's third command: `cmd=2` names its only row, and the gate
+            // must answer before that index is looked up at all.
+            val tokens = mapOf("mallory" to foreignToken)
+            val logTailService = mockk<LogTailService>(relaxed = true)
+            coEvery { logTailService.resolve(any(), any(), any()) } returns Path("/tmp/cmd_2.out")
+            every { logTailService.tail(any(), any(), any()) } returns emptyFlow()
+            val svc = mockk<LlmEventStreamService>(relaxed = true)
+            coEvery { svc.resolve(42, 2) } returns LlmArtifact(Path("/tmp/o"), "codex", 0, SecretRedactor.NONE)
+            application {
+                installGrantsApp(
+                    tokens,
+                    deps(
+                        authorizerFor(tokens),
+                        deployProcess(owner = "alice"),
+                        logTailService = logTailService,
+                        llmEventStreamService = svc,
+                    ),
+                )
+            }
+
+            for (path in listOf("/logs?cmd=2&stream=out", "/llm-events?cmd=2")) {
+                client
+                    .prepareGet("/api/v1/stream/processes/42$path") {
+                        header(HttpHeaders.Authorization, "Bearer foreign-token")
+                    }.execute { response ->
+                        assertEquals(HttpStatusCode.NotFound, response.status, "path=$path")
+                    }
+            }
+            coVerify(exactly = 0) { logTailService.resolve(any(), any(), any()) }
+            coVerify(exactly = 0) { logTailService.tail(any(), any(), any()) }
+            coVerify(exactly = 0) { svc.resolve(any(), any()) }
+            coVerify(exactly = 0) { svc.streamCommand(any(), any(), any()) }
+        }
+
+    @Test
     fun `SSE llm-events foreign principal gets 404 in process mode too`() =
         testApplication {
             val tokens = mapOf("mallory" to foreignToken)

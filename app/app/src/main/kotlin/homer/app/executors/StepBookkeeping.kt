@@ -165,6 +165,7 @@ internal suspend fun completeCommand(
             kind = command.kind,
             stoppedBy = stoppedBy?.wire,
             onStop = onStop,
+            commandIndex = index,
         )
     // The current command clears unless the next step starts now; success and skip share
     // nextBoundary, so the two paths cannot drift.

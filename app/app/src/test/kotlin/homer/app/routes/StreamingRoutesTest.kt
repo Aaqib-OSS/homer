@@ -1,7 +1,9 @@
 package homer.app.routes
 
 import homer.app.exceptions.BodylessBadRequestException
+import homer.app.fixtures.TestFixtures
 import homer.app.fixtures.mountApiV1Routes
+import homer.app.models.ExecutionInfo
 import homer.app.models.LlmEvent
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
@@ -15,6 +17,7 @@ import io.kotest.property.arbitrary.string
 import io.kotest.property.checkAll
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.testApplication
 import io.mockk.coEvery
@@ -23,10 +26,14 @@ import io.mockk.mockk
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import kotlin.io.path.Path
+import kotlin.io.path.writeText
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class StreamingRoutesTest {
     @Test
@@ -202,6 +209,56 @@ class StreamingRoutesTest {
 
             assertEquals(listOf(0 to LogTailService.Stream.OUT, 3 to LogTailService.Stream.OUT), resolved)
         }
+
+    @Test
+    fun `the logs stream serves the file of the command the cmd index names`(
+        @TempDir dir: java.nio.file.Path,
+    ) = testApplication {
+        // A run that executes a subset of its commands records each row's own index, so the row
+        // at position 0 is command 2's: `cmd=0` must not serve command 2's output.
+        dir.resolve("cmd_2.out").writeText("command two\n")
+        val pm =
+            mockk<ProcessManager>(relaxed = true) {
+                every { hasLiveJob(any()) } returns false
+                coEvery { getCommandArtifacts(any(), any()) } returns null
+                coEvery { getProcessStatus(42) } returns ProcessStatus.FINISHED
+                coEvery { getProcessInfo(42) } returns
+                    ProcessInfo(
+                        id = 42,
+                        status = ProcessStatus.FINISHED,
+                        agentName = "deploy",
+                        owner = "alice",
+                        artifactsDir = dir,
+                        executions =
+                            listOf(
+                                ExecutionInfo(
+                                    label = "two",
+                                    start = 0,
+                                    end = 1,
+                                    resultCode = 0,
+                                    stdOut = Path("cmd_2.out"),
+                                    stdErr = null,
+                                    errMsg = null,
+                                    commandIndex = 2,
+                                ),
+                            ),
+                    )
+            }
+        mountApiV1Routes {
+            every { processManager } returns pm
+            every { logTailService } returns LogTailService(pm, TestFixtures.mockLogger(), pollIntervalMs = 1L)
+        }
+
+        val served = client.get("/api/v1/stream/processes/42/logs?cmd=2").bodyAsText()
+        assertTrue(served.contains("command two"), "cmd=2 names command 2: $served")
+
+        // Command 0 recorded no row, so its default `cmd_0` name is tried and serves nothing: an
+        // absent, zero or non-numeric cmd never reaches the file of the row at position 0.
+        for (query in listOf("", "?cmd=0", "?cmd=x")) {
+            val other = client.get("/api/v1/stream/processes/42/logs$query").bodyAsText()
+            assertFalse(other.contains("command two"), "query=$query must not serve command 2's output: $other")
+        }
+    }
 
     @Test
     fun `process logs stream resumes from a Last-Event-ID past the Int range and drops a malformed one`() =

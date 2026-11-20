@@ -56,6 +56,8 @@ export interface ProcessExecution {
   stoppedBy?: StopReason | null;
   // Whether this entry is one of the agent's `onStop:` steps.
   onStop?: boolean;
+  // The command's index in the agent's `commands` — the index the streams' `cmd` names; null for older rows.
+  commandIndex?: number | null;
 }
 
 // Pod Phase (Kubernetes runner)
@@ -698,10 +700,7 @@ export interface LlmUsage {
   reasoning: number;
 }
 
-export type LlmTurnStatus =
-  | { type: 'success' }
-  | { type: 'failed'; reason: string }
-  | { type: 'stopped'; reason: string };
+export type LlmTurnStatus = { type: 'success' } | { type: 'failed'; reason: string } | { type: 'stopped'; reason: string };
 
 export interface LlmSessionStart { type: 'session_start'; sessionId: string | null; model: string | null; tools: string[] }
 export interface LlmAssistantMessage { type: 'assistant_message'; messageId: string | null; model: string | null; text: string; subagent: boolean }

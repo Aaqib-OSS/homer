@@ -98,6 +98,25 @@ class AgentExecutorStopTest : AgentExecutorTestBase() {
         }
 
     @Test
+    fun `a stop step records the index it is numbered by, after the agent's commands`() =
+        runTest {
+            val agent = stoppableAgent(listOf(saveReport()))
+            coEvery { mockExecutor.execute(any(), any(), any()) } coAnswers {
+                if (secondArg<ExecutionContext>().onStop) {
+                    TestFixtures.mockCommandResult(exitCode = 0)
+                } else {
+                    throw CancellationException("Timeout reached. 60s.")
+                }
+            }
+
+            assertThrows<CancellationException> { executor(agent).execute() }
+
+            // The agent's one command is 0, its stop step 1: the streams' `cmd` names those
+            // indices, not the rows' positions.
+            assertEquals(listOf(0, 1), executionInfos.map { it.commandIndex })
+        }
+
+    @Test
     fun `the stop steps receive the HMR_STOP context and no other step does`() =
         runTest {
             val agent = stoppableAgent(listOf(saveReport()))

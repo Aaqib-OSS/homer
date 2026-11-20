@@ -113,6 +113,7 @@ private fun ExecutionInfo.toResponse(): ExecutionInfoResponse =
         kind = kind,
         stoppedBy = stoppedBy,
         onStop = onStop,
+        commandIndex = commandIndex,
     )
 
 /**

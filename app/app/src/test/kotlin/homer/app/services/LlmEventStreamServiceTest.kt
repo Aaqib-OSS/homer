@@ -950,6 +950,70 @@ class LlmEventStreamServiceTest {
         assertEquals(0L, testScheduler.currentTime)
     }
 
+    @Test
+    fun `a restarted run that recorded command indices serves the row of the requested command`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        // A run that executes a subset of its commands records each row's own index, so the row
+        // at position 0 belongs to command 2 and must not answer `cmd=0`.
+        tmp.resolve("cmd_2.out").writeText(line("""{"type":"thread.started","thread_id":"t"}"""))
+        val row =
+            ExecutionInfo(
+                "l",
+                1,
+                2,
+                0,
+                Path.of("cmd_2.out"),
+                Path.of("cmd_2.err"),
+                null,
+                kind = "codex",
+                commandIndex = 2,
+            )
+        val pm = processManagerWithoutJob()
+        coEvery { pm.getProcessInfo(1) } returns processInfo(1, tmp, ProcessStatus.UNKNOWN, listOf(row))
+        coEvery { pm.getProcessStatus(1) } returns ProcessStatus.UNKNOWN
+        coEvery { pm.getCommandArtifacts(1, any()) } returns null
+        coEvery { pm.latestCommandArtifacts(1) } returns null
+        val service = LlmEventStreamService(pm, harnesses, TestFixtures.mockLogger(), pollIntervalMs = 100)
+
+        val events = service.streamCommand(1, 2, null).toList()
+
+        assertEquals(listOf("session_start"), events.filterIsInstance<LlmStreamEvent.Event>().map { typeOf(it.event) })
+        // Commands 0 and 1 recorded no row: nothing to serve, never command 2's artifact.
+        assertEquals(listOf<LlmStreamEvent>(LlmStreamEvent.End), service.streamCommand(1, 0, null).toList())
+        assertEquals(listOf<LlmStreamEvent>(LlmStreamEvent.End), service.streamCommand(1, 1, null).toList())
+        // The whole-run stream still reaches command 2 rather than ending at the first gap.
+        val whole = service.streamProcess(1, null).toList()
+        assertEquals(listOf("session_start"), whole.filterIsInstance<LlmStreamEvent.Event>().map { typeOf(it.event) })
+        assertEquals(LlmStreamEvent.End, whole.last())
+        assertEquals(0L, testScheduler.currentTime)
+    }
+
+    @Test
+    fun `a live run that recorded command indices serves only the requested command`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val out = tmp.resolve("cmd_2.out").also { it.writeText(line("""{"type":"thread.started","thread_id":"t"}""")) }
+        val status = AtomicReference(ProcessStatus.WORKING)
+        val pm = liveProcess(tmp, mapOf(2 to codexArtifact(out)), status)
+        val service = LlmEventStreamService(pm, harnesses, TestFixtures.mockLogger(), pollIntervalMs = 100)
+
+        // Command 0 is not this run's: no artifact for it, and no row either.
+        assertEquals(listOf<LlmStreamEvent>(LlmStreamEvent.End), service.streamCommand(1, 0, null).toList())
+
+        val collected = async { service.streamCommand(1, 2, null).toList() }
+        testScheduler.advanceTimeBy(100)
+        testScheduler.runCurrent()
+        status.set(ProcessStatus.FINISHED)
+        testScheduler.advanceTimeBy(100)
+        testScheduler.runCurrent()
+
+        assertEquals(
+            listOf("session_start"),
+            collected.await().filterIsInstance<LlmStreamEvent.Event>().map { typeOf(it.event) },
+        )
+    }
+
     // Linked / non-regular stdout artifacts (CWE-22, CWE-59): an agent runs as Homer's UID
     // and can plant any of these at its artifact name; none may be served as LLM events.
 

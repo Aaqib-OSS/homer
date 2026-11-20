@@ -10,6 +10,7 @@ import homer.app.models.LlmEventJson
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
 import homer.app.models.Translation
+import homer.app.models.forCommand
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
@@ -72,6 +73,39 @@ data class LlmArtifact(
     val redactor: SecretRedactor,
 )
 
+/** The restart path's rows for one command: its own row, and whether a later command has one. */
+private data class PersistedRows(
+    val own: Boolean,
+    val later: Boolean,
+)
+
+/**
+ * [cmdIndex]'s persisted execution row and whether a later command has one, both from one read —
+ * the restart path's only evidence, the run's job being gone. Null once the process is gone.
+ */
+private suspend fun persistedRows(
+    processManager: ProcessManager,
+    processId: Int,
+    cmdIndex: Int,
+    readDb: Boolean,
+): PersistedRows? =
+    if (!readDb) {
+        PersistedRows(own = false, later = false)
+    } else {
+        processManager.getProcessInfo(processId)?.let { info ->
+            PersistedRows(
+                own = info.executions.forCommand(cmdIndex) != null,
+                later = info.executions.any { (it.commandIndex ?: -1) > cmdIndex },
+            )
+        }
+    }
+
+/** Whether this tick reads the persisted rows: never for a tracked command, else on the safety cadence. */
+private fun readPersisted(
+    tracked: Boolean,
+    liveness: RunLiveness,
+): Boolean = !tracked && liveness.readDue()
+
 /**
  * Per-subscriber tail of an LLM harness command's stdout, translated through its
  * adapter and redacted. A late subscriber gets the whole stream from byte 0, and
@@ -127,7 +161,7 @@ class LlmEventStreamService(
         dir: Path,
         cmdIndex: Int,
     ): LlmArtifact? {
-        val row = info.executions.getOrNull(cmdIndex) ?: return null
+        val row = info.executions.forCommand(cmdIndex) ?: return null
         if (row.kind !in harnesses) return null
         val path = dir.resolve(row.stdOut ?: return null).normalize()
         if (path.parent != dir || !isContained(dir, path)) return null
@@ -194,28 +228,22 @@ class LlmEventStreamService(
             val tracked = processManager.getCommandArtifacts(processId, cmdIndex) != null
             // A live run registers each command's artifacts before running it, so the persisted
             // executions (the restart path) are read only when no job is live or on the safety read.
-            val readDb = !tracked && liveness.readDue()
-            val persisted = hasPersistedRow(processId, cmdIndex, readDb) ?: return
-            if (tracked || persisted) {
+            val readDb = readPersisted(tracked, liveness)
+            val persisted = persistedRows(processManager, processId, cmdIndex, readDb) ?: return
+            if (tracked || persisted.own) {
                 cmdIndex = followRecorded(processId, cmdIndex, cursor, liveness)
-            } else if (laterCommandStarted(processId, cmdIndex)) {
+            } else if (laterCommandStarted(processId, cmdIndex, persisted.later)) {
                 // A run restricted to some commands records nothing for the ones it skips.
                 cmdIndex++
-            } else {
-                if (liveness.isTerminal(readDb)) return
+            } else if (!liveness.isTerminal(readDb)) {
                 delay(pollIntervalMs)
                 continue
+            } else {
+                return
             }
             cursor = null
         }
     }
-
-    /** Whether [cmdIndex] has a persisted execution row, read only when [readDb]; null once the process is gone. */
-    private suspend fun hasPersistedRow(
-        processId: Int,
-        cmdIndex: Int,
-        readDb: Boolean,
-    ): Boolean? = if (!readDb) false else processManager.getProcessInfo(processId)?.let { it.executions.size > cmdIndex }
 
     /**
      * Follows a recorded command's artifact from [cursor] when it is that attempt's; returns
@@ -244,7 +272,10 @@ class LlmEventStreamService(
     private fun laterCommandStarted(
         processId: Int,
         cmdIndex: Int,
-    ): Boolean = (processManager.latestCommandArtifacts(processId)?.first ?: -1) > cmdIndex
+        // A run whose job is gone (a restart) has no in-memory registration: its persisted rows
+        // are the only evidence that it moved past [cmdIndex].
+        persistedLater: Boolean = false,
+    ): Boolean = persistedLater || (processManager.latestCommandArtifacts(processId)?.first ?: -1) > cmdIndex
 
     /**
      * Emits the translated events of every complete line of [artifact] from [startOffset], skipping events
