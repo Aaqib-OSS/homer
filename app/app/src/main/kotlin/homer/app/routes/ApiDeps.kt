@@ -39,7 +39,6 @@ import homer.app.services.WorkspacePurgeService
 import io.ktor.server.routing.get
 import io.ktor.server.sessions.get
 import io.ktor.server.sessions.set
-import io.ktor.util.AttributeKey
 import kotlinx.coroutines.CoroutineScope
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -93,5 +92,4 @@ internal data class ApiDeps(
     val passwordScheme: AuthConfig.Password?,
     val bearerScheme: AuthConfig.Bearer?,
     val passwordVerifier: PasswordVerifier,
-    val hmacBodyKey: AttributeKey<ByteArray>,
 )

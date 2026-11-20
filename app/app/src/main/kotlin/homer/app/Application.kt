@@ -539,5 +539,4 @@ private fun Application.apiDeps(
         passwordScheme = authSetup.passwordScheme,
         bearerScheme = authSetup.bearerScheme,
         passwordVerifier = passwordVerifier,
-        hmacBodyKey = authSetup.hmacBodyKey,
     )
