@@ -3518,8 +3518,8 @@ expiry the SSH session is closed immediately to unblock the interrupted
 operation and the transfer fails. A release that fails or exceeds the
 deadline is logged and swallowed — the session is discarded at the end
 of the run either way, so cleanup never masks the operation's own
-outcome. Set the field to `null` to disable the bound (e.g. a trusted,
-very slow link with multi-gigabyte transfers).
+outcome. The bound cannot be disabled; for a trusted, very slow link
+with multi-gigabyte transfers, raise it.
 
 **Directory listing cap.** During sync-down each remote directory
 listing is read into memory before its entries are transferred, so it

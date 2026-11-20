@@ -284,6 +284,7 @@ data class LocalRunnerConfig(
 ) {
     init {
         validateRunnerQueueFacets("server.localRunner", tags, concurrency)
+        // Compares against the default: a defaulted field cannot report whether it was set (ADR-0066).
         require(enabled || (tags.isEmpty() && concurrency == DEFAULT_LOCAL_CONCURRENCY)) {
             "server.localRunner.tags and .concurrency have no effect while server.localRunner.enabled is false; remove them"
         }

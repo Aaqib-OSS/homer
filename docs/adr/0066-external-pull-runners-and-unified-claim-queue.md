@@ -181,6 +181,11 @@ child, a dispatched child or a `runnerCmd` step that targets its parent's runner
 that never frees once the parents hold them all. Operators with such chains raise `concurrency` to cover
 the deepest chain.
 
+A disabled `server.localRunner` refuses `tags` and a `concurrency` other than the default. It compares
+against the default value, because a defaulted field cannot report whether it was set. Raising the
+default therefore moves three things together: `DEFAULT_LOCAL_CONCURRENCY`, the schema's default and
+the `const` in its disabled branch (with the plugin copy synced).
+
 ## Amendment (2026-11-20): a `cmd` result must carry its output chunk counts
 
 A `cmd` result must carry both `stdoutChunks` and `stderrChunks`, and one without them fails the step.
