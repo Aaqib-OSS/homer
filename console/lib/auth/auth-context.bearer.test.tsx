@@ -40,7 +40,19 @@ vi.mock('@/lib/config/app-config', () => ({
 }));
 
 import { LoginOutcomeProbe, renderWithProvider } from './auth-test-utils';
+import { useAuth } from './auth-context';
 import { resetInstancesStoreForTests } from '@/lib/instances/store';
+
+/** Shows the internal unreported flag and the keys of the public user. */
+function UnreportedProbe() {
+  const { user, principalUnreported } = useAuth();
+  return (
+    <div>
+      <div data-testid="unreported">{String(principalUnreported)}</div>
+      <div data-testid="user-keys">{user ? Object.keys(user).join(',') : ''}</div>
+    </div>
+  );
+}
 
 // Bearer tokens are namespaced per instance; the seeded default instance's key.
 const TOKEN_KEY = 'homer_auth_token::default';
@@ -97,6 +109,31 @@ describe('AuthProvider (bearer mode)', () => {
       expect(screen.getByTestId('grant-count')).toHaveTextContent('0');
     },
   );
+
+  it('flags the fallback principal as unreported without putting the flag on the public user', async () => {
+    localStorage.setItem(TOKEN_KEY, 'stored-token');
+    getAuthMe.mockRejectedValue(new HomerApiError('Not Found', 404));
+    getHeartbeat.mockResolvedValue(undefined);
+
+    renderWithProvider(<UnreportedProbe />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('unreported')).toHaveTextContent('true'),
+    );
+    expect(screen.getByTestId('user-keys')).toHaveTextContent('username,role,grants');
+  });
+
+  it('does not flag a principal /auth/me reported', async () => {
+    localStorage.setItem(TOKEN_KEY, 'stored-token');
+    getAuthMe.mockResolvedValue({ username: 'ci', role: null, grants: [] });
+
+    renderWithProvider(<UnreportedProbe />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('user-keys')).toHaveTextContent('username,role,grants'),
+    );
+    expect(screen.getByTestId('unreported')).toHaveTextContent('false');
+  });
 
   it('lands anon when /auth/me cannot answer and /heartbeat rejects the token', async () => {
     localStorage.setItem(TOKEN_KEY, 'stale-token');

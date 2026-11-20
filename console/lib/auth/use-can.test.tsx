@@ -1,5 +1,12 @@
-import { describe, it, expect } from 'vitest';
-import { capabilitiesFor } from './use-can';
+import { describe, it, expect, vi } from 'vitest';
+import { renderHook } from '@testing-library/react';
+
+const authMock = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
+vi.mock('./auth-context', () => ({ useAuth: () => authMock.value }));
+vi.mock('@/lib/config/app-config', () => ({ appConfig: { auth: { enabled: true, mode: 'bearer' } } }));
+vi.mock('@/lib/instances/store', () => ({ activeMode: () => 'bearer' }));
+
+import { capabilitiesFor, useCan } from './use-can';
 import type { AuthUser } from './auth-context';
 
 const admin: AuthUser = { username: 'a', role: 'admin', grants: [] };
@@ -29,17 +36,17 @@ describe('capabilitiesFor', () => {
     expect(c.canKillProcess({ agentName: 'deploy-web', owner: 'session:bob' })).toBe(true);
   });
   it('a bearer token owns the runs stamped with its own name, not with a session: prefix', () => {
-    const c = capabilitiesFor(scoped, false, 'bearer');
+    const c = capabilitiesFor(scoped, false, 'token');
     expect(c.canKillProcess({ agentName: 'deploy-web', owner: 'bob' })).toBe(true);
     expect(c.canKillProcess({ agentName: 'deploy-web', owner: 'session:bob' })).toBe(false);
   });
   it('a bearer principal the server did not report owns no run, not even one stamped with its placeholder name', () => {
-    const fallback: AuthUser = { username: 'bearer', role: null, grants: [], unreported: true };
-    const c = capabilitiesFor(fallback, false, 'bearer');
+    const fallback: AuthUser = { username: 'bearer', role: null, grants: [] };
+    const c = capabilitiesFor(fallback, false, 'none');
     expect(c.canKillProcess({ agentName: 'deploy-web', owner: 'bearer' })).toBe(false);
   });
   it('a session user does not own a run stamped with its bare name', () => {
-    const c = capabilitiesFor(scoped, false, 'cookie');
+    const c = capabilitiesFor(scoped, false, 'session');
     expect(c.canKillProcess({ agentName: 'deploy-web', owner: 'bob' })).toBe(false);
   });
   it('retry needs run AND see', () => {
@@ -68,5 +75,21 @@ describe('capabilitiesFor', () => {
     expect(c.isAdmin).toBe(false);
     expect(c.can('edit', 'anything')).toBe(false);
     expect(c.canKillProcess({ agentName: 'x', owner: null })).toBe(false);
+  });
+});
+
+describe('useCan', () => {
+  const ci: AuthUser = { username: 'ci', role: null, grants: [] };
+
+  it('counts a bearer run stamped with the reported token name as the caller\'s own', () => {
+    authMock.value = { user: ci, principalUnreported: false };
+    const { result } = renderHook(() => useCan());
+    expect(result.current.canKillProcess({ agentName: 'x', owner: 'ci' })).toBe(true);
+  });
+
+  it('counts no run as the caller\'s own when the server did not report the principal', () => {
+    authMock.value = { user: { ...ci, username: 'bearer' }, principalUnreported: true };
+    const { result } = renderHook(() => useCan());
+    expect(result.current.canKillProcess({ agentName: 'x', owner: 'bearer' })).toBe(false);
   });
 });

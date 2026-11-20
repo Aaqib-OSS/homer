@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { type QueryClient, type UseQueryResult, useQuery, useQueryClient } from '@tanstack/react-query';
 import { appConfig } from '@/lib/config/app-config';
 import { homerApi, HomerApiError } from '@/lib/api/client';
@@ -36,13 +36,16 @@ export interface AuthUser {
   username: string;
   role: Role;
   grants: Grant[];
-  /** True when an older server named no principal for the bearer token: `username` is a placeholder. */
-  unreported?: boolean;
 }
+
+/** An {@link AuthUser} as the probe found it; `unreported` stays inside the auth layer, never in `user`. */
+type ProbedUser = AuthUser & { unreported?: true };
 
 interface AuthContextType {
   status: AuthStatus;
   user?: AuthUser;
+  /** True when an older server named no principal for the bearer token: `user.username` is a placeholder. */
+  principalUnreported: boolean;
   /** Legacy boolean shim — true while `status === 'authed'`. */
   isAuthenticated: boolean;
   /** Legacy boolean shim — true while `status === 'loading'`. */
@@ -91,7 +94,7 @@ async function probeAuthCookie(): Promise<AuthUser> {
  * (404, or 401 under a combined scheme) is only asked `/heartbeat`, and the token gets no role
  * and no grants: the console never assumes a capability the server did not report (ADR-0059).
  */
-async function bearerPrincipal(): Promise<AuthUser> {
+async function bearerPrincipal(): Promise<ProbedUser> {
   try {
     const me: MeResponse = await homerApi.getAuthMe();
     return { username: me.username, role: me.role, grants: me.grants };
@@ -102,13 +105,13 @@ async function bearerPrincipal(): Promise<AuthUser> {
   return { username: 'bearer', role: null, grants: [], unreported: true };
 }
 
-async function probeAuthBearer(): Promise<AuthUser> {
+async function probeAuthBearer(): Promise<ProbedUser> {
   const token = getActiveToken();
   if (!token) throw new Error('no bearer token');
   return bearerPrincipal();
 }
 
-async function probeAuth(): Promise<AuthUser> {
+async function probeAuth(): Promise<ProbedUser> {
   if (activeMode() === 'cookie') {
     return probeAuthCookie();
   }
@@ -129,12 +132,12 @@ async function probeAuth(): Promise<AuthUser> {
  * data to be re-read either.
  */
 type AuthOverride =
-  | { kind: 'authed'; user: AuthUser }
+  | { kind: 'authed'; user: ProbedUser }
   | { kind: 'anon' }
   | null;
 
-type AuthState = { status: AuthStatus; user: AuthUser | undefined };
-type AuthProbe = Pick<UseQueryResult<AuthUser>, 'isPending' | 'isError' | 'data'>;
+type AuthState = { status: AuthStatus; user: ProbedUser | undefined };
+type AuthProbe = Pick<UseQueryResult<ProbedUser>, 'isPending' | 'isError' | 'data'>;
 
 /** The status the override pins, ahead of anything the probe says. */
 function overrideState(override: NonNullable<AuthOverride>): AuthState {
@@ -162,7 +165,7 @@ interface AuthSetters {
   setOverride: (override: AuthOverride) => void;
 }
 
-function markAuthed({ queryClient, setOverride }: AuthSetters, principal: AuthUser): void {
+function markAuthed({ queryClient, setOverride }: AuthSetters, principal: ProbedUser): void {
   // Seed the cache so a fresh useQuery mount (e.g. AuthProvider
   // remount under route transition) reads success on first render,
   // and set the synchronous override so existing subscribers flip
@@ -262,6 +265,13 @@ function useAuthActions(
   return { login, logout, switchInstance };
 }
 
+/** [probed] without the auth layer's own `unreported` flag, which never reaches plugins (ADR-0059). */
+function publicUser(probed: ProbedUser | undefined): AuthUser | undefined {
+  if (!probed) return undefined;
+  const { username, role, grants } = probed;
+  return { username, role, grants };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const [override, setOverride] = useState<AuthOverride>(null);
@@ -275,7 +285,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refetchOnWindowFocus: false,
   });
 
-  const { status, user } = resolveAuthState(override, query);
+  const { status, user: probed } = resolveAuthState(override, query);
+  const user = useMemo(() => publicUser(probed), [probed]);
   const { login, logout, switchInstance } = useAuthActions(queryClient, setOverride);
 
   return (
@@ -283,6 +294,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         status,
         user,
+        principalUnreported: probed?.unreported === true,
         isAuthenticated: status === 'authed',
         isLoading: status === 'loading',
         login,

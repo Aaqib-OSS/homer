@@ -101,7 +101,7 @@ class MatchesTokenConstantTimeTest {
 
     @Test
     fun `no production source compares a token with plain equality`() {
-        val equality = Regex("""\.token\s*[!=]=|[!=]=\s*[\w.]*\.token\b|\.token\.equals\(""")
+        val equality = Regex("""\.token\s*[!=]=|[!=]=\s*\S*\.token\b|\.token\.equals\(""")
         val offenders =
             Files.walk(Paths.get("src/main/kotlin")).use { paths ->
                 paths

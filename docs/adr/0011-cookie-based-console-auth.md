@@ -225,10 +225,10 @@ setting is documented as a quick-start one. Cookie sign-in with
 
 `GET /api/v1/auth/me` is mounted whenever a `bearer` or `password` scheme is
 configured, and reads its credential itself, still outside `authenticate(...)`.
-A request carrying `Authorization: Bearer` is answered for that token: its name,
-role and grants. A stale or unknown token gets `401` with no fallback to the
-session cookie. Only a request without a bearer header is answered for its
-cookie, exactly as invariant 7 describes. The secured routes keep
+When a `bearer` scheme is configured, a request carrying `Authorization: Bearer`
+is answered for that token: its name, role and grants. A stale or unknown token
+gets `401` with no fallback to the session cookie. Every other request is
+answered for its cookie, exactly as invariant 7 describes. The secured routes keep
 `FirstSuccessful` in `apiAuth` order, so a request carrying both credentials can
 be described by `/me` as the bearer principal while a secured route acts as the
 cookie user. For example, a same-origin bearer console with a stale header and a

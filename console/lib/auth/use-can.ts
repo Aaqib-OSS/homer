@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useAuth, type AuthUser } from './auth-context';
 import { agentNameMatches } from '@/lib/utils/agent-name-matcher';
 import { appConfig } from '@/lib/config/app-config';
-import { activeMode, type InstanceMode } from '@/lib/instances/store';
+import { activeMode } from '@/lib/instances/store';
 import type { Action } from '@/types/homer';
 
 export type ProcessLike = { agentName: string; owner?: string | null };
@@ -16,12 +16,14 @@ export interface Capabilities {
 }
 
 /**
- * The owner the backend stamps on the caller's runs (ADR-0038): `session:{username}` for a
- * session, the token's own name for a bearer token; null when the server named no principal.
+ * How the backend stamps the caller's runs (ADR-0038): `session:{username}`, the bearer token's
+ * bare name, or `none` when the server named no principal, so no run is the caller's own.
  */
-function selfOwnerId(user: AuthUser | null, mode: InstanceMode): string | null {
-  if (!user || user.unreported) return null;
-  return mode === 'bearer' ? user.username : `session:${user.username}`;
+export type OwnerStamp = 'session' | 'token' | 'none';
+
+function selfOwnerId(user: AuthUser | null, stamp: OwnerStamp): string | null {
+  if (!user || stamp === 'none') return null;
+  return stamp === 'token' ? user.username : `session:${user.username}`;
 }
 
 /**
@@ -33,7 +35,7 @@ function selfOwnerId(user: AuthUser | null, mode: InstanceMode): string | null {
 export function capabilitiesFor(
   user: AuthUser | null,
   unsecured = false,
-  mode: InstanceMode = 'cookie',
+  stamp: OwnerStamp = 'session',
 ): Capabilities {
   const isAdmin = unsecured || user?.role === 'admin';
   const can = (action: Action, agentName?: string): boolean => {
@@ -45,7 +47,7 @@ export function capabilitiesFor(
     );
   };
   const isOwner = (p: ProcessLike): boolean =>
-    isAdmin || (p.owner != null && p.owner === selfOwnerId(user, mode));
+    isAdmin || (p.owner != null && p.owner === selfOwnerId(user, stamp));
   const canSeeProcess = (p: ProcessLike): boolean =>
     isAdmin || isOwner(p) || can('read', p.agentName);
   const canKillProcess = (p: ProcessLike): boolean =>
@@ -54,9 +56,15 @@ export function capabilitiesFor(
   return { isAdmin, can, canSeeProcess, canKillProcess, canRetryProcess };
 }
 
+/** The {@link OwnerStamp} of the signed-in caller: `none` for a principal the server did not report. */
+function ownerStamp(principalUnreported: boolean): OwnerStamp {
+  if (principalUnreported) return 'none';
+  return activeMode() === 'bearer' ? 'token' : 'session';
+}
+
 export function useCan(): Capabilities {
-  const { user } = useAuth();
+  const { user, principalUnreported } = useAuth();
   const unsecured = !appConfig.auth.enabled || appConfig.auth.mode === 'disabled';
-  const mode = activeMode();
-  return useMemo(() => capabilitiesFor(user ?? null, unsecured, mode), [user, unsecured, mode]);
+  const stamp = ownerStamp(principalUnreported);
+  return useMemo(() => capabilitiesFor(user ?? null, unsecured, stamp), [user, unsecured, stamp]);
 }

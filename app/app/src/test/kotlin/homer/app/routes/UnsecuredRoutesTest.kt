@@ -194,6 +194,7 @@ class UnsecuredRoutesTest {
                 setBody("""{"username":"bob","password":"pw"}""")
             }
         check(login.status == HttpStatusCode.OK) { "bob's login must succeed, got ${login.status}" }
+        check(cookieClient.get("/api/v1/auth/me").me().username == "bob") { "the cookie alone must answer /me as bob" }
         return cookieClient
     }
 
