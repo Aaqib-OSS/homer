@@ -258,10 +258,8 @@ time through the same `window.__HOMER_CONFIG__` path as `CONSOLE_THEMES`.
   resolves it), not as a font-family class on `<body>`: a class on `<body>` outranks the
   `--font-family-sans` token, so no theme could set its own font.
 - The layout's `x-nonce` reaches `Providers` as a `nonce` prop: `next-themes` renders its pre-paint
-  `<script>` inline, which the production CSP blocks without the request's nonce, so the theme pair
-  would otherwise apply only after React mounts.
+  `<script>` inline, which the production CSP blocks without the request's nonce, so the stored (or default)
+  theme would otherwise apply only after React mounts.
 - The missing-stylesheet probe runs on the window `load` event, not at mount: a healthy sheet may still
   be in flight and absent from `document.styleSheets` at mount, so probing earlier logs a false error
   on every slow network.
-- With a valid light/dark pair `Providers` passes `next-themes` only the configured names and maps
-  `system` onto the pair; without one, the lists are the built-ins plus the configured names.

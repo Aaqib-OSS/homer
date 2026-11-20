@@ -84,7 +84,7 @@ function ProcessMeta({ process }: { process: ProcessInfo }) {
             Parent run #{process.parentProcessId}
           </Link>
         )}
-        {/* The first run of the whole flow; null only on the root (ADR-0058). */}
+        {/* The first run of the whole flow; null on a root, or where the root is unknown (ADR-0058). */}
         {process.rootProcessId != null && (
           <Link
             href={`/processes/${process.rootProcessId}`}

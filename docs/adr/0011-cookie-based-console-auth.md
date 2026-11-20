@@ -237,15 +237,18 @@ holder, and every route still authorizes the principal it authenticated. Why the
 console needs this: [ADR-0059](0059-console-plugins-are-runtime-loaded-modules.md)
 (amendment of 2026-11-20).
 
-## Amendment (2026-11-20): the login form gates the endpoint it signs in against
+## Amendment (2026-11-20): the login form gates its endpoint and bearer mode
 
 An `endpoint=` on the login URL that is not one of the operator's saved instances is attacker-suppliable:
 a link to the console's trusted origin could aim the credential POST at any host. The form therefore
 requires an explicit trust confirmation for such an endpoint until the field is edited to a saved
-instance (a manually typed endpoint is the operator's own decision and is not gated); the sign-in
+instance (on a login page opened without `endpoint=`, a typed endpoint is the operator's own
+decision and is not gated); the sign-in
 button is disabled meanwhile and the submit handler re-checks it. When the operator pins an allowlist,
 an off-allowlist endpoint is refused with a message before the request, because the CSP `connect-src`
-would otherwise block it opaquely. Bearer mode stays off unless `CONSOLE_ALLOW_BEARER` is set: its token
-lives in `localStorage`, so a `mode=bearer` URL value or a saved bearer instance is ignored and the
-toggle is not offered. With it on, the initial mode is the URL's, else the saved instance's, else bearer,
-because that setting marks a bearer-only backend that cannot accept a password.
+would otherwise block it opaquely. The form offers bearer mode only when `CONSOLE_ALLOW_BEARER` is set,
+because a bearer token lives in `localStorage`. Otherwise it opens in cookie mode whatever `mode=` or the
+saved instance's mode says, and shows no toggle. With it set, the initial mode is the URL's, else the
+saved instance's, else bearer, because that setting marks a bearer-only backend that cannot accept a
+password. This is the form only: the API client still follows the active instance's saved mode, and the
+seeded default instance is bearer when `auth.mode` is bearer.

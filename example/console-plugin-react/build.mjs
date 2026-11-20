@@ -1,6 +1,7 @@
 import { build } from 'esbuild';
 
-// Builds into the console's plugin directory; `--outfile=<path>` overrides it (ADR-0059).
+// The console imports plugins from its own origin (ADR-0059), so this builds into its plugin
+// directory; `--outfile=<path>` overrides it.
 const outfileArg = process.argv.find((a) => a.startsWith('--outfile='));
 const outfile = outfileArg?.slice('--outfile='.length) ?? '../../console/public/plugins/fleet.js';
 
