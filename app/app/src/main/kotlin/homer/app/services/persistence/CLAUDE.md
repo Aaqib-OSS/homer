@@ -177,13 +177,12 @@ so a fresh database would carry one an upgraded one lacks (`SchemaEquivalenceTes
 | 31 | `processes.cooldown_key` + two indexes; `processes.stop`; `pending_hooks` table | [0106](../../../../../../../../../docs/adr/0106-cooldown-key-scopes-windows-per-subject.md), [0107](../../../../../../../../../docs/adr/0107-agent-status-hooks.md), [0108](../../../../../../../../../docs/adr/0108-graceful-stop-of-a-run.md) |
 | 32 | `dispatches.kind` + `dispatch_group_questions` table (its own version — a database the cooldown release stamped 31 skips every step guarded below 32) | [0109](../../../../../../../../../docs/adr/0109-grouped-ask-and-dispatch.md) |
 | 33 | `result_tokens` rebuilt without the transitional `DEFAULT ''` | [0025](../../../../../../../../../docs/adr/0025-capability-token-result-read.md) |
+| 34 | `result_tokens_expires_at` index (the token TTL sweep) | [0025](../../../../../../../../../docs/adr/0025-capability-token-result-read.md) |
 
 ### Schema constraints
 
 The constraints an editor can break without noticing, and that the row's ADR does
-not state. Everything else about a version — why it exists, what it measured,
-what it rejected — is in the ADR that version's row names; where the row names
-none (v1, v9, v11, v28), the table's phrase is all there is.
+not state.
 
 - **An index is declared by hand.** `SchemaUtils.create` only indexes a table it
   creates, so a migration adds each index in its own step; `DatabaseMigrationTest`

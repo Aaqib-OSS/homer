@@ -20,6 +20,7 @@ internal fun upgradeSchema(
     migrateToV31(st, current)
     migrateToV32(st, current)
     migrateToV33(st, current)
+    migrateToV34(st, current)
 }
 
 private fun columnNames(
@@ -342,5 +343,15 @@ private fun migrateToV33(
         ResultTokens.ddl.forEach(st::execute)
         st.execute("INSERT INTO result_tokens ($columns) SELECT $columns FROM result_tokens_v32")
         st.execute("DROP TABLE result_tokens_v32")
+    }
+}
+
+/** v33→v34 adds the `result_tokens` expiry index the TTL sweep seeks on. Name and definition match `Tables.kt`. */
+private fun migrateToV34(
+    st: Statement,
+    current: Int,
+) {
+    if (current in 1 until 34) {
+        st.execute("CREATE INDEX IF NOT EXISTS result_tokens_expires_at ON result_tokens (expires_at)")
     }
 }

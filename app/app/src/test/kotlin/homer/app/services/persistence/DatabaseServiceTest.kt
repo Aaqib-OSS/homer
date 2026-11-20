@@ -553,4 +553,32 @@ class DatabaseServiceTest {
             logbackLogger.detachAppender(appender)
         }
     }
+
+    @Test
+    fun `a database stamped by a newer release runs no upgrade step and keeps its stamp`(
+        @TempDir dir: Path,
+    ) = runTest {
+        val path = dir.resolve("homer.db").toString()
+        DatabaseService(path, logger).migrate()
+        val newer = DatabaseService.SCHEMA_VERSION + 1
+        DriverManager.getConnection("jdbc:sqlite:$path").use { c -> c.createStatement().use { it.execute("PRAGMA user_version = $newer") } }
+        val recorded = RecordingWriterConnection()
+
+        DatabaseService(path, logger, wrapWriterConnection = recorded.wrap).also {
+            it.migrate()
+            it.close()
+        }
+
+        assertEquals(emptyList(), recorded.matching("CREATE INDEX") + recorded.matching("ALTER TABLE"), "ran: ${recorded.statements}")
+        val stamp =
+            DriverManager.getConnection("jdbc:sqlite:$path").use { c ->
+                c.createStatement().use { st ->
+                    st.executeQuery("PRAGMA user_version").use {
+                        it.next()
+                        it.getInt(1)
+                    }
+                }
+            }
+        assertEquals(newer, stamp)
+    }
 }

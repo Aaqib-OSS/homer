@@ -289,6 +289,11 @@ internal object ResultTokens : Table("result_tokens") {
     val consumerAgent = varchar("consumer_agent", 255)
 
     override val primaryKey = PrimaryKey(token)
+
+    // v34: the expiry sweep's due-row read and its delete. See ADR-0025.
+    init {
+        index("result_tokens_expires_at", false, expiresAt)
+    }
 }
 
 internal object Continuations : Table("continuations"), FiredRecordTable {

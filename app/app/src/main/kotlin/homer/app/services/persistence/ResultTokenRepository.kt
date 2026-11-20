@@ -62,12 +62,8 @@ class ResultTokenRepository(
         }
 
     /**
-     * Deletes tokens whose TTL has lapsed at or before [now]. Returns the row count removed.
-     * Deliberate exception to the "sweep through an index" rule: there is no `expires_at`
-     * index, so the `db.read` pre-check scans `result_tokens`. The table holds only the
-     * tokens of oversized continuation results whose TTL has not lapsed, not a row per run,
-     * so it stays far below `maxProcesses` and an index would cost every insert more than
-     * this scan costs. The scan runs in `read {}` with no write lock; an idle tick takes none.
+     * Deletes tokens whose TTL has lapsed at or before [now] and returns how many. Both the `read { }` pre-check
+     * and the delete seek `result_tokens_expires_at`; a tick with nothing due takes no write lock.
      */
     suspend fun deleteExpired(now: Long): Int {
         val due =
