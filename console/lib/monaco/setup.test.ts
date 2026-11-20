@@ -75,7 +75,12 @@ describe('setupMonaco', () => {
 
     const worker = environment().getWorker('x', label);
 
-    expect(String(worker.url)).toContain(entry);
+    const url = worker.url as URL;
+    expect(url).toBeInstanceOf(URL);
+    // A package-specifier URL also contains the entry's name; only the local
+    // entry lives under lib/monaco.
+    expect(url.href).toMatch(new RegExp(`/lib/monaco/${entry}`));
+    expect(url.href).not.toMatch(/monaco-editor|monaco-yaml/);
     expect(worker.options).toEqual({ type: 'module' });
   });
 
@@ -96,6 +101,20 @@ describe('setupMonaco', () => {
     const first = environment();
     await setupMonaco();
     expect(environment()).toBe(first);
+  });
+
+  it('clears a rejected load so the next call retries', async () => {
+    vi.doMock('monaco-editor', () => {
+      throw new Error('chunk load failed');
+    });
+    const { setupMonaco } = await import('./setup');
+
+    await expect(setupMonaco()).rejects.toThrow();
+
+    // The rejected promise is not cached: a later call loads again.
+    vi.doMock('monaco-editor', () => monacoModule.value);
+    await expect(setupMonaco()).resolves.toBeUndefined();
+    expect(config).toHaveBeenCalledWith({ monaco: monacoModule.value });
   });
 
   it('does nothing without a window', async () => {

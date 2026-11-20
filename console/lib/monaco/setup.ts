@@ -21,7 +21,12 @@ let loading: Promise<void> | null = null;
  */
 export function setupMonaco(): Promise<void> {
   if (typeof window === 'undefined') return Promise.resolve();
-  loading ??= configureMonaco();
+  // A rejected load clears itself, so a later call retries instead of
+  // replaying a one-off chunk failure for the rest of the session.
+  loading ??= configureMonaco().catch((error: unknown) => {
+    loading = null;
+    throw error;
+  });
   return loading;
 }
 
