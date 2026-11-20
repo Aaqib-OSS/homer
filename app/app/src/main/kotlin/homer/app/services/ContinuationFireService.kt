@@ -204,15 +204,32 @@ internal class ContinuationFireService(
         val none = ExtractedResult(null, null)
         if (transformer == null) return none
         val (execution, artifactsDir) = lastExecution(watchedProcessId) ?: return none
-        // The persisted stdOut is attacker-written: only a link-free regular child of an unlinked artifacts
-        // dir is read, so a FIFO cannot pin the fire (CWE-22/CWE-59, ADR-0070); the swap races are AR-12.
-        if (Files.isSymbolicLink(artifactsDir)) return none
         val stdOutRel = execution.stdOut ?: return none
-        val stdOut = artifactsDir.resolve(stdOutRel).normalize()
-        if (stdOut.parent != artifactsDir || PathSafety.isLinkedOrSpecial(stdOut)) return none
+        val stdOut = readableStdOut(stdOutRel, artifactsDir) ?: return none
         val size = runCatching { fileOperations.fileSize(stdOut) }.getOrNull() ?: return none
         if (size > MAX_RESULT_BYTES) return oversizedResult(watchedProcessId, stdOutRel, transformer, size, consumerAgent)
-        val text = fileOperations.readTextBounded(stdOut, MAX_RESULT_BYTES) ?: return none
+        return mapStdOut(execution, stdOut, transformer)
+    }
+
+    /**
+     * The persisted stdOut is attacker-written: only a link-free regular child of an unlinked artifacts
+     * dir is read, so a FIFO cannot pin the fire (CWE-22/CWE-59, ADR-0070); the swap races are AR-12.
+     */
+    private fun readableStdOut(
+        stdOutRel: Path,
+        artifactsDir: Path,
+    ): Path? {
+        if (Files.isSymbolicLink(artifactsDir)) return null
+        val stdOut = artifactsDir.resolve(stdOutRel).normalize()
+        return stdOut.takeIf { it.parent == artifactsDir && !PathSafety.isLinkedOrSpecial(it) }
+    }
+
+    private fun mapStdOut(
+        execution: ExecutionInfo,
+        stdOut: Path,
+        transformer: ResultEnvParam,
+    ): ExtractedResult {
+        val text = fileOperations.readTextBounded(stdOut, MAX_RESULT_BYTES) ?: return ExtractedResult(null, null)
         val result =
             runCatching {
                 ResultToEnvMapper(execution.resultCode, readStdOut = { text }, readStdErr = { "" })
