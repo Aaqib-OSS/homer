@@ -2,6 +2,8 @@ package homer.app.services
 
 import homer.app.fixtures.AgentFixtures
 import homer.app.fixtures.TestFixtures
+import homer.app.models.AgentReloadResult
+import io.mockk.mockk
 import io.mockk.unmockkAll
 import io.mockk.verify
 import org.junit.jupiter.api.AfterEach
@@ -636,6 +638,74 @@ class AgentsServiceTest {
         assertEquals(emptyList<String>(), result.removed)
         assertEquals(emptyList<String>(), result.errors)
         assertNotNull(agentsService.agents["test_agent"])
+    }
+
+    /**
+     * A service whose scan of the runner-tagged `tagged` agent runs [onScan], once per scan for as many scans
+     * as the returned arm function is given; a reload there publishes while the outer reload still scans.
+     */
+    private fun overtakenService(
+        broadcaster: ProcessEventBroadcaster,
+        onScan: (AgentsService) -> Unit,
+    ): Pair<AgentsService, (Int) -> Unit> {
+        writeTelemetryAgent(
+            "tagged",
+            """
+            name: tagged
+            runnerTags: [linux]
+            commands:
+              - !<cmd>
+                cmd: echo hi
+            """,
+        )
+        var overtakes = 0
+        var nested = false
+        lateinit var service: AgentsService
+        service =
+            AgentsService(testAgentsPath, logger, broadcaster = broadcaster, runnerTagSets = {
+                if (overtakes > 0 && !nested) {
+                    overtakes--
+                    nested = true
+                    onScan(service)
+                    nested = false
+                }
+                listOf(setOf("linux"))
+            })
+        return service to { overtakes = it }
+    }
+
+    @Test
+    fun `a reload that loses every race reports the failure and no agent change`() {
+        val broadcaster = mockk<ProcessEventBroadcaster>(relaxed = true)
+        val (service, arm) = overtakenService(broadcaster) { it.reload() }
+        val lateDir = testAgentsDir.resolve("late")
+        Files.createDirectories(lateDir)
+        Files.write(lateDir.resolve("agent.json"), AgentFixtures.validAgentJson().toByteArray())
+        arm(RELOAD_CAS_ATTEMPTS)
+
+        val result = service.reload()
+
+        assertEquals(Triple(emptyList(), emptyList(), emptyList()), Triple(result.added, result.updated, result.removed))
+        assertTrue(result.errors.single().contains("published nothing"))
+        assertNotNull(service.agents["test_agent"], "the overtaking reloads published the new agent")
+        verify(exactly = RELOAD_CAS_ATTEMPTS) { broadcaster.emit(match { it is ProcessEvent.AgentsReloaded }) }
+    }
+
+    @Test
+    fun `a reload overtaken during its scan rescans and reports against the newer catalog`() {
+        val (service, arm) =
+            overtakenService(ProcessEventBroadcaster()) {
+                val lateDir = testAgentsDir.resolve("late")
+                Files.createDirectories(lateDir)
+                Files.write(lateDir.resolve("agent.json"), AgentFixtures.validAgentJson().toByteArray())
+                assertEquals(listOf("test_agent"), it.reload().added)
+            }
+        arm(1)
+
+        val result = service.reload()
+
+        assertEquals(AgentReloadResult(emptyList(), emptyList(), emptyList(), emptyList()), result)
+        assertNotNull(service.agents["test_agent"])
     }
 
     @Test
@@ -2291,5 +2361,10 @@ class AgentsServiceTest {
         // reports the agent it cannot serve.
         assertNotNull(agentsService.agents["flaky-provider"])
         verify { logger.warn(match<String> { it.contains("requests runner tags") }, any(), any(), any()) }
+    }
+
+    private companion object {
+        /** `AgentsService`'s CAS attempt budget: a reload overtaken this often gives up. */
+        const val RELOAD_CAS_ATTEMPTS = 8
     }
 }
