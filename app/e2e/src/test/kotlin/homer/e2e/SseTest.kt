@@ -4,10 +4,16 @@ import homer.e2e.support.Awaits
 import homer.e2e.support.E2e
 import homer.e2e.support.E2eTestBase
 import homer.e2e.support.HomerApi
+import homer.e2e.support.RunResponse
 import homer.e2e.support.SseCollector
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
 import io.ktor.sse.ServerSentEvent
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.contentOrNull
@@ -156,6 +162,46 @@ class SseTest : E2eTestBase() {
             Awaits.awaitTerminal(id)
             val res = E2e.client.get("/api/v1/stream/processes/$id/llm-events") { parameter("cmd", "0") }
             assertEquals(HttpStatusCode.NotFound, res.status)
+        }
+
+    @Test
+    fun `log stream resolves cmd by the recorded command index of a debug run`() =
+        runBlocking {
+            // A debug run of a multi-command agent limited to its second command: the row
+            // lands at executions position 0 while recording commandIndex 1.
+            val started =
+                E2e.client.post("/api/v1/agents/multi-step/debug") {
+                    contentType(ContentType.Application.Json)
+                    setBody("""{"commandIndex":1,"env":{},"queryParams":{},"headers":{}}""")
+                }
+            assertEquals(HttpStatusCode.OK, started.status, "the debug start must be admitted: ${started.bodyAsText()}")
+            val processId = E2e.json.decodeFromString<RunResponse>(started.bodyAsText()).processId
+            Awaits.awaitTerminal(processId)
+
+            val info = HomerApi.status(processId)
+            assertEquals(
+                1,
+                info.executions.single().commandIndex,
+                "the status response must carry the recorded command index, not the row position",
+            )
+
+            val logsPath = "/api/v1/stream/processes/$processId/logs"
+            SseCollector.open(logsPath, mapOf("cmd" to "1", "stream" to "out")).use { sse ->
+                sse.awaitEvent("log.chunk with the debugged command's output") {
+                    it.event == "log.chunk" && contentOf(it).contains("value=")
+                }
+                sse.awaitEvent("log.end after the run finished") { it.event == "log.end" }
+            }
+
+            // cmd=0 names an index the run did not execute; its row recorded an index, so the
+            // position-0 row must not serve command 1's output — the end frame and nothing else.
+            SseCollector.open(logsPath, mapOf("cmd" to "0", "stream" to "out")).use { sse ->
+                sse.awaitEvent("log.end for an unexecuted index") { it.event == "log.end" }
+                assertTrue(
+                    sse.snapshot().none { it.event == "log.chunk" },
+                    "an index the run did not execute must serve no command's output",
+                )
+            }
         }
 
     private fun processIdOf(event: ServerSentEvent): Int? =

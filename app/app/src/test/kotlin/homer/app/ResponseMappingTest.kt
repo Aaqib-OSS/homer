@@ -1,5 +1,6 @@
 package homer.app
 
+import homer.app.models.ExecutionInfo
 import homer.app.models.LangfuseConfig
 import homer.app.models.PodPhase
 import homer.app.models.PodTermination
@@ -217,5 +218,23 @@ class ResponseMappingTest {
             )
 
         assertNull(response.runner)
+    }
+
+    @Test
+    fun `ProcessInfo toResponse maps each execution's command index`() {
+        val response =
+            ProcessInfo(
+                id = 1,
+                status = ProcessStatus.FINISHED,
+                agentName = "test-agent",
+                executions =
+                    listOf(
+                        ExecutionInfo("l", 0, 1, 0, null, null, null, commandIndex = 2),
+                        ExecutionInfo("l", 0, 1, 0, null, null, null),
+                    ),
+            ).toResponse(agent = null)
+
+        assertEquals(2, response.executions[0].commandIndex)
+        assertNull(response.executions[1].commandIndex, "a row written before the field existed carries no index")
     }
 }

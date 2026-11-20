@@ -2788,7 +2788,7 @@ Emits an event every time the agent set is reloaded: after `POST /api/v1/agents/
 
 ### GET /api/v1/stream/processes/{processId}/llm-events
 
-Streams the canonical LLM events of one run the caller can see (`404` otherwise, the same as not-found), live or finished. Query `cmd` follows one `!<claude>`/`!<codex>`/`!<opencode>` command (`404` for any other command type); without it the stream follows every LLM command of the run in order. Poll latency is set by [`server.claudeStreamPollMs`](#server-fields). Event kinds and resume: [README](README.md#get-apiv1streamprocessesprocessidllm-events).
+Streams the canonical LLM events of one run the caller can see (`404` otherwise, the same as not-found), live or finished. Query `cmd` names a command by its index in the agent's `commands` and follows that one `!<claude>`/`!<codex>`/`!<opencode>` command (`404` for any other command type or an index the run did not execute, except on a run recorded before the index field existed, where the row at that position still resolves); without it the stream follows every LLM command of the run in order. Poll latency is set by [`server.claudeStreamPollMs`](#server-fields). Event kinds and resume: [README](README.md#get-apiv1streamprocessesprocessidllm-events).
 
 | Event | Id | Data |
 |-------|-----|------|
@@ -2803,7 +2803,7 @@ Tails a command's stdout or stderr file. New bytes are emitted as they are writt
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `cmd` | integer | No | `0` | Command index (0-based) |
+| `cmd` | integer | No | `0` | The command's index in the agent's `commands` (0-based); a step is matched by the index it recorded, or, for a run recorded before the field existed, by the row's position among the run's rows |
 | `stream` | string | No | `out` | `out` or `err` |
 
 **Headers**:

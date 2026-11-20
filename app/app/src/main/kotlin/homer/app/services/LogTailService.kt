@@ -3,6 +3,7 @@ package homer.app.services
 import homer.app.infra.PathSafety
 import homer.app.models.ExecutionInfo
 import homer.app.models.ProcessStatus
+import homer.app.models.forCommand
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
@@ -50,7 +51,7 @@ class LogTailService(
         if (Files.isSymbolicLink(artifactsDir)) return null
         val candidate =
             trackedPath(processId, cmdIndex, stream, artifactsDir)
-                ?: persistedOrDefaultPath(info.executions.getOrNull(cmdIndex), cmdIndex, stream, artifactsDir)
+                ?: persistedOrDefaultPath(info.executions.forCommand(cmdIndex), cmdIndex, stream, artifactsDir)
         return candidate?.takeIf { isLinkFreeChild(artifactsDir, it) }
     }
 

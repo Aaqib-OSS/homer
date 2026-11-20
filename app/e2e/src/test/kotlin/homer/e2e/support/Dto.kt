@@ -36,6 +36,8 @@ data class Execution(
     val stoppedBy: String? = null,
     // Whether this entry is one of the agent's `onStop:` steps.
     val onStop: Boolean = false,
+    // The command's index in the agent's `commands`; null for runs recorded before the field existed.
+    val commandIndex: Int? = null,
 )
 
 @Serializable
