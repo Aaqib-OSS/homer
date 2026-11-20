@@ -91,6 +91,7 @@ internal data class ApiDeps(
     val runnerRegistry: RunnerRegistry,
     val costMeter: CostMeter,
     val passwordScheme: AuthConfig.Password?,
+    val bearerScheme: AuthConfig.Bearer?,
     val passwordVerifier: PasswordVerifier,
     val hmacBodyKey: AttributeKey<ByteArray>,
 )

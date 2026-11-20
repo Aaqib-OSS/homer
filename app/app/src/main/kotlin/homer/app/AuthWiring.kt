@@ -32,12 +32,13 @@ private val logger = LoggerFactory.getLogger("homer.app.Application")
 
 /**
  * Outcome of [configureAuth]: the registered provider names (in registration
- * order), plus the [AuthConfig.Password] scheme and HMAC body-capture attribute
+ * order), plus the [AuthConfig.Password] and [AuthConfig.Bearer] schemes and HMAC body-capture attribute
  * key that downstream routing / [ApiDeps] wiring needs to reference.
  */
 internal class AuthSetup(
     val authNames: List<String>,
     val passwordScheme: AuthConfig.Password?,
+    val bearerScheme: AuthConfig.Bearer?,
     val hmacBodyKey: AttributeKey<ByteArray>,
 )
 
@@ -163,6 +164,7 @@ internal fun Application.configureAuth(
     // provider can read call.sessions.get<HomerSession>(). Combined.init
     // guarantees at most one Password scheme. ADR-0011.
     val passwordScheme = schemes.filterIsInstance<AuthConfig.Password>().singleOrNull()
+    val bearerScheme = schemes.filterIsInstance<AuthConfig.Bearer>().singleOrNull()
     installPasswordAuthSessions(passwordScheme, passwordVerifier)
 
     val hmacBodyKey = AttributeKey<ByteArray>("HmacBody")
@@ -174,7 +176,7 @@ internal fun Application.configureAuth(
 
     val authNames = installAuthProviders(schemes, hmacBodyKey)
 
-    return AuthSetup(authNames = authNames, passwordScheme = passwordScheme, hmacBodyKey = hmacBodyKey)
+    return AuthSetup(authNames = authNames, passwordScheme = passwordScheme, bearerScheme = bearerScheme, hmacBodyKey = hmacBodyKey)
 }
 
 /**

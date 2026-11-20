@@ -77,11 +77,13 @@ class UnsecuredRoutesTest {
                 databasePath = "unused",
             )
         val passwordScheme = schemes.filterIsInstance<AuthConfig.Password>().singleOrNull()
+        val bearerScheme = schemes.filterIsInstance<AuthConfig.Bearer>().singleOrNull()
         val deps =
             mockk<ApiDeps>(relaxed = true) {
                 every { this@mockk.config } returns config
                 every { authorizer } returns Authorizer.from(config)
                 every { this@mockk.passwordScheme } returns passwordScheme
+                every { this@mockk.bearerScheme } returns bearerScheme
                 every { passwordVerifier } returns PasswordVerifier()
                 every { isDraining } returns AtomicBoolean(false)
             }

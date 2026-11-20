@@ -11,7 +11,6 @@ import homer.app.models.LoginRequest
 import homer.app.models.LoginResponse
 import homer.app.models.MeResponse
 import homer.app.models.ReadinessResponse
-import homer.app.models.flattenAuthSchemes
 import homer.app.services.Authorizer
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -53,7 +52,7 @@ internal fun Route.apiV1UnsecuredRoutes(deps: ApiDeps) {
     if (passwordScheme != null) {
         sessionAuthRoutes(deps.unsecuredDeps(), passwordScheme)
     }
-    val bearerScheme = flattenAuthSchemes(deps.config.server.apiAuth).filterIsInstance<AuthConfig.Bearer>().singleOrNull()
+    val bearerScheme = deps.bearerScheme
     if (passwordScheme != null || bearerScheme != null) {
         meRoute(deps.authorizer, passwordScheme, bearerScheme)
     }

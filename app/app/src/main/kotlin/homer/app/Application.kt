@@ -537,6 +537,7 @@ private fun Application.apiDeps(
         runnerRegistry = background.runnerRegistry,
         costMeter = get(),
         passwordScheme = authSetup.passwordScheme,
+        bearerScheme = authSetup.bearerScheme,
         passwordVerifier = passwordVerifier,
         hmacBodyKey = authSetup.hmacBodyKey,
     )
