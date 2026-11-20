@@ -224,7 +224,7 @@ class KubernetesShellExecutor(
      * once (a signal exit 137/143 re-reads it for up to [stopReasonBudgetMs], as Kubernetes records the
      * stop reason a moment after the kill): a pod Kubernetes stopped (deadline, eviction, OOM, deletion) is a
      * [PodFailedDuringExecutionException] carrying the reason; a channel lost while the pod still runs stops the
-     * leftover command and fails as [EXEC_CHANNEL_LOST] with the cause.
+     * leftover command and fails as [EXEC_CHANNEL_LOST], naming the cause's class and masked text in its message.
      */
     private suspend fun exitCodeOf(
         remote: Process,
