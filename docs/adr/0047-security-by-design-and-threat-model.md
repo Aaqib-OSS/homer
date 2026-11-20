@@ -302,20 +302,26 @@ claims a guarantee it does not give, and both branches look the mode view up the
 ## Amendment (2026-11-20): the bounded identity read keeps a link-swap residual
 
 `LocalFileOperations.readTextBounded` reads a LangGraph run's agent-written `langgraph.json`
-for the status endpoint. It refuses a symlink, a hard-linked or a non-regular file, then opens
-the file by name with `NOFOLLOW_LINKS` on the bounded, timed open pool and reads at most
-`MAX_IDENTITY_BYTES`. A final-component symlink swapped in after the check fails the open, and a
-FIFO times out on the pool. Two swaps still win the window between the check and the open: a
-hard link renamed into place, because `NOFOLLOW_LINKS` ignores the link count, and an ancestor
-directory replaced by a symlink, because the option binds only the final component. Either makes
-Homer read a different regular file of at most 64 KiB and report its identity fields when it
-parses as one (CWE-59/CWE-367).
+for the status endpoint. `LangGraphRunStatusService.identity` first refuses an artifacts
+directory that is a symlink, because a run can replace the directory it is handed at any time and
+`NOFOLLOW_LINKS` binds only the final component. `readTextBounded` then refuses a symlink, a
+hard-linked or a non-regular file, opens the file by name with `NOFOLLOW_LINKS` on the bounded,
+timed open pool, and reads at most `MAX_IDENTITY_BYTES`. A final-component symlink swapped in
+after the check fails the open.
 
-**Accepted, not fixed**, like the tar walks above. The race needs a concurrent local writer
-holding Homer's own UID, and that writer can already read any file the swap could lead to and
-write its content into `langgraph.json` directly, so the swap crosses no principal and gains
-nothing. Closing it needs an `fstat` on the opened handle and an `openat`-style ancestor walk,
-which `java.nio` does not expose portably. `SECURITY.md` carries the row as AR-12.
+Three cases remain. Two are races: a hard link renamed into place between the link check and the
+open, because `NOFOLLOW_LINKS` ignores the link count, and a symlink swapped in for the artifacts
+directory between its check and the open. The third needs no race: a symlink at the run root or a
+directory above it is followed. Each makes Homer read a different regular file of at most 64 KiB
+and report its identity fields when it parses as one (CWE-59/CWE-367).
+
+**Accepted, not fixed**, like the tar walks above. Each case needs a local writer holding Homer's
+own UID, and that writer can already read any file the swap could lead to and write its content
+into `langgraph.json` directly, so the swap crosses no principal and gains nothing. Closing the
+races needs an `fstat` on the opened handle and an `openat`-style walk, which `java.nio` does not
+expose portably. Checking the run root and above needs the configured workspace root, which an
+operator may reach through a symlink (`/tmp` on macOS), so a stored artifacts path cannot be
+compared with it lexically. `SECURITY.md` carries the row as AR-12.
 
 ## Pros and Cons of the Options
 

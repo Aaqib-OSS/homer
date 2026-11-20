@@ -244,7 +244,7 @@ Output:
 | GET | `/api/v1/status/{processId}/messages` | The run's messages, oldest first, in every state (`QUEUED`, `DELIVERED`, `UNDELIVERED`): `{ "messages": [...] }`. | Visible to `admin`, the process's owner, or a `read` grant on its agent (`404`, existence hidden, otherwise) |
 | DELETE | `/api/v1/kill/{processId}` | Kill a running process (processId is integer) | `admin`, the process's owner, or visible + a `control` grant on its agent (`404`, existence hidden, otherwise) |
 | GET | `/api/v1/artifacts` | Stream artifact file from a process execution. Query: `processId` (int, required), `path` (non-blank, required). See [below](#get-apiv1artifacts). | Visible to `admin`, the process's owner, or a `read` grant on its agent (`404`, existence hidden, otherwise) |
-| GET | `/api/v1/artifacts/list` | List artifacts produced by a process (query: `processId`). The response is `{processId, artifactsDir, files, truncated}`; the listing is capped at 10,000 entries and `truncated` is `true` when files were omitted. | Visible to `admin`, the process's owner, or a `read` grant on its agent (`404`, existence hidden, otherwise) |
+| GET | `/api/v1/artifacts/list` | List artifacts produced by a process (query: `processId`). The response is `{processId, artifactsDir, files, truncated}`; the listing is capped at 10,000 entries and `truncated` is `true` when files were omitted. `404` when the artifacts directory is missing or a symlink. | Visible to `admin`, the process's owner, or a `read` grant on its agent (`404`, existence hidden, otherwise) |
 | GET | `/api/v1/schemas/agent` | Return the homer-agent JSON Schema | Any authenticated caller (open under `unsecured`) |
 | POST | `/api/v1/agents/reload` | Rescan the agents directory and emit `agent.reload` SSE events; returns `{added, updated, removed, errors}`. A reload that 8 concurrent reloads overtake publishes nothing and emits no event: it returns empty `added`, `updated` and `removed` and says so in `errors`. Every still-`CREATED` (queued) run of an updated or removed agent is killed ("Agent '…' was reloaded"), and those agents' parallel-run state is reset. | `admin` role required |
 | POST | `/api/v1/agents` | Create a new agent directory (body: `{ name }`) | `edit` grant on the requested `name` |
@@ -553,7 +553,7 @@ decisions behind the write API.
 Streams an artifact file produced by a process. Requires `processId`
 (integer) and a non-blank `path` (relative to the process's artifacts
 directory; path traversal is rejected with `400`); `404` if the process or
-file does not exist, or the resolved path is not a regular file (a
+file does not exist, the artifacts directory is a symlink, or the resolved path is not a regular file (a
 FIFO/device/directory/symlink is treated as not found) or is a hard link (more than one
 link, also treated as not found). Returns `413` if the artifact exceeds
 `server.maxArtifactBytes`. The response carries `X-Process-Status` (the

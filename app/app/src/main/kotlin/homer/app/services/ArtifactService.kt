@@ -6,6 +6,7 @@ import homer.app.models.ArtifactEntry
 import homer.app.models.ArtifactListingResponse
 import org.slf4j.Logger
 import java.io.OutputStream
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.invariantSeparatorsPathString
 
@@ -73,6 +74,8 @@ class ArtifactService(
         val artifactsDir =
             processInfo.artifactsDir
                 ?: return Result.failure(IllegalArgumentException("Process has no artifacts directory"))
+        // A run can swap its artifacts directory for a symlink, which assertContained follows (CWE-59).
+        if (Files.isSymbolicLink(artifactsDir)) return Result.failure(IllegalArgumentException("Artifact not found"))
 
         val fullPath = artifactsDir.resolve(relativePath)
         val contained =
@@ -102,7 +105,7 @@ class ArtifactService(
      * The listing is capped at [maxListEntries] entries — more files yield exactly that many
      * with `truncated = true`, so an agent writing an enormous number of artifacts cannot
      * exhaust memory here. Returns failure if the process is unknown, has no artifacts dir,
-     * or the directory does not exist on disk.
+     * or the directory does not exist on disk or is a symlink.
      */
     suspend fun listArtifacts(processId: Int): Result<ArtifactListingResponse> {
         val processInfo =
@@ -113,7 +116,7 @@ class ArtifactService(
             processInfo.artifactsDir
                 ?: return Result.failure(IllegalArgumentException("Process has no artifacts directory"))
 
-        if (!fileOperations.dirExists(artifactsDir)) {
+        if (!fileOperations.dirExists(artifactsDir) || Files.isSymbolicLink(artifactsDir)) {
             return Result.failure(IllegalArgumentException("Artifacts directory does not exist"))
         }
 
