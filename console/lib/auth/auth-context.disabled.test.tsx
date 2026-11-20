@@ -66,7 +66,7 @@ async function renderWithCurrentConfig() {
   resetInstancesStoreForTests();
 
   function Probe() {
-    const { status, user, login: doLogin, logout: doLogout } = useAuth();
+    const { status, user, login: doLogin, logout: doLogout, signOutAndSwitch } = useAuth();
     return (
       <div>
         <div data-testid="status">{status}</div>
@@ -89,6 +89,7 @@ async function renderWithCurrentConfig() {
         >
           do-logout
         </button>
+        <button onClick={() => void signOutAndSwitch('other-instance')}>do-sign-out-and-switch</button>
       </div>
     );
   }
@@ -146,6 +147,20 @@ describe.each([
     expect(screen.getByTestId('status')).toHaveTextContent('authed');
     expect(logout).not.toHaveBeenCalled();
     expect(logoutResult).toBe('ok');
+  });
+
+  it('stays authed across signOutAndSwitch and calls no logout endpoint', async () => {
+    // Removing the active instance with auth off has no session to end, so no
+    // logout may reach the backend; the pinned state survives the switch.
+    await renderWithCurrentConfig();
+    expect(screen.getByTestId('status')).toHaveTextContent('authed');
+
+    await act(async () => {
+      screen.getByText('do-sign-out-and-switch').click();
+    });
+
+    expect(screen.getByTestId('status')).toHaveTextContent('authed');
+    expect(logout).not.toHaveBeenCalled();
   });
 
   it('resolves login to ok, stays authed, and probes nothing', async () => {
