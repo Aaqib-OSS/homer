@@ -1,8 +1,7 @@
 package homer.app.runners.ssh
 
-// SSH exec runs through the remote login shell, so every token is POSIX single-quoted to keep argv
-// semantics; `exec` replaces the shell so signals/exit codes come from the command, and the `env`
-// prefix sets the environment because many sshd configs reject SendEnv/AcceptEnv.
+// Every token is POSIX single-quoted for the remote login shell, and `exec` keeps the command's signals and exit code.
+// The `env K=V…` prefix puts the env on the remote command line (AR-09, ADR-0032).
 object RemoteCommandBuilder {
     fun build(
         remoteWorkdir: String,

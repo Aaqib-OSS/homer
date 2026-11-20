@@ -306,6 +306,7 @@ class KubernetesShellExecutor(
         return t
     }
 
+    // The env rides the exec request URI, which API-server audit logs record (AR-10, ADR-0043).
     private fun envPrefix(env: Map<String, String>): List<String> =
         if (env.isEmpty()) {
             emptyList()
