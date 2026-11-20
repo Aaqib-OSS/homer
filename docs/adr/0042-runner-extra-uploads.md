@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-15
 deciders: Lukáš Vlk
-amended: 2026-09-24, 2026-09-30
+amended: 2026-09-24, 2026-09-30, 2026-11-20
 ---
 # ADR-0042: Runner-level `extraUploads` — materialize host folders into remote workspaces
 
@@ -229,3 +229,12 @@ while ssh issues SFTP calls per entry, so sharing the walk needs a
 visitor seam over both. It was deferred: parity is held by mirrored
 tests in `TarStreamsTest` and `WorkspaceSyncTest`, and a rule change
 must edit both walkers.
+
+## Amendment (2026-11-20): an escaping symlink is skipped, not fatal
+
+Both upload walks (`TarStreams.addDirContents` and `WorkspaceSync.uploadDirInto`) skip a symlink
+whose realpath escapes the upload root with a warning; they do not fail the upload. Upload sources
+legitimately hold absolute links to host tooling, such as a venv's interpreter link, and failing the
+whole upload on one would break real runs. The skip transfers none of the target's content, so the
+disclosure the 2026-08-18 hardening closed stays closed. A link that stays inside the root is still
+dereferenced, because in-tree tooling links are common.

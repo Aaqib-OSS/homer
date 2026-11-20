@@ -140,6 +140,10 @@ is tracked as a separate follow-up.
 job, so for a caller already cancelled when the release starts, the watchdog's `delay()` would end
 at once without closing anything, and the client close would run with no deadline.
 
+More Information below is out of date in two places. `sftpTransferTimeoutSeconds` no longer
+accepts `null` (the amendment at the top), so nothing disables the bound. `withSftp` and
+`withTransferTimeout` now live in `SftpTransferDeadline`, which `WorkspaceSync` delegates to.
+
 ## More Information
 
 - Config reference: `sftpTransferTimeoutSeconds` in

@@ -118,6 +118,23 @@ The SSH decision above starts from the client library having no signal API. The 
 group kill does not rest on that, and it stays even with a client that can send an RFC 4254
 `signal` channel request. The RFC leaves delivery to the server. OpenSSH sends the signal with
 `killpg` to the session's own process group, and refuses it for a forced command or a subsystem.
-The reaping form runs the command under `setsid -w`, in a new session and process group, so the
-session's group holds only the `setsid` waiter. The command and its backgrounded children are
+The reaping form runs the command under `setsid -w`. The login shell, which leads the session's
+process group, `exec`s through `env` into `setsid`, so `setsid` is a group leader and forks: the
+command gets a new session and process group, and only the waiter stays in the session's group. The command and its backgrounded children are
 reached only by `kill -<pgid>` of the group the command recorded.
+
+## Amendment (2026-11-20): `setsid -w` reports a signal death as an exit code
+
+The SSH decision says `setsid -w` lets "exit code and signal propagate unchanged". The exit code
+does; the signal does not. util-linux `setsid` (checked in `sys-utils/setsid.c`, unchanged from
+2.33 to master) returns `WEXITSTATUS` for a child that exits, and otherwise calls
+`err(status, "child %d did not exit normally")`. The waiter therefore exits with the raw wait
+status truncated to 8 bits: the signal number (9 for SIGKILL, 2 for SIGINT), plus 128 when a core
+is dumped. It also writes that `setsid:` line to the command's stderr. sshd reports a plain exit
+status, never an exit signal.
+
+A command that Homer stops itself (timeout, output cap, cancellation) is unaffected: the step fails
+on the stop, and the exit status is never read. A command that a signal from elsewhere kills, for
+example the remote host's OOM killer, fails the step with exit code 9. The local runner reports
+the same death as 137 (128 + 9), so the two runners report different codes for it. The step's
+outcome is the same: a signal death never reads as exit 0.

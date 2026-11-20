@@ -121,8 +121,8 @@ class WorkspaceSync(
             }
 
             local.isRegularFile() -> {
-                // CWE-59: the walk's hard-link rule, refused rather than skipped as in TarStreams.pack: a file
-                // named explicitly must not vanish silently.
+                // CWE-59: the walk skips a hard link, but a source file named explicitly is refused, as in
+                // TarStreams.pack, so it cannot vanish silently.
                 if (PathSafety.isHardLinked(local)) throw SecurityException("upload source '$local' is hard-linked")
                 remote.substringBeforeLast('/', "").takeIf { it.isNotEmpty() }?.let { withTransferTimeout { sftp.mkdirsIdempotent(it) } }
                 uploadFile(sftp, local, remote)

@@ -121,7 +121,7 @@ class SshRunner(
                 }
 
                 is SshAuth.Agent -> {
-                    // No identity is registered: MINA discovers a running ssh-agent on its own (ADR-0032).
+                    // No identity is registered: auth relies on MINA's own ssh-agent discovery, unverified (ADR-0032).
                 }
             }
             session.auth().verify(cfg.connectTimeoutSeconds, TimeUnit.SECONDS)
