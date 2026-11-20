@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-11-19
+amended: 2026-11-20
 deciders: Lukáš Vlk
 consulted: ADR-0047, ADR-0082
 ---
@@ -156,6 +157,18 @@ replaces them.
   path, or `comment-policy` fails the release commit; `CONTRIBUTING.md` § Releasing says so.
 - Neutral: the 8-line limit on a run of comments of mixed kinds is gone. The per-block limits are
   stricter.
+
+## Amendment (2026-11-20): pytest skips and the :e2e exception
+
+PR C landed the two checks that "Shortcuts in code" and the enforcement table leave to it:
+
+- **Finite limits** are enforced by `FiniteLimitsContractTest`.
+- **Zero skipped tests** are enforced by `skipped-tests` (`tools/quality/skipped-tests.mjs`),
+  `required`. The check also reads pytest's report, so CI allows zero skipped JUnit, Vitest or
+  pytest tests.
+- `:e2e` is excepted until #348. `homer-app-tests` runs it without a live stack, where it skips by
+  design, and the check does not yet read the results of the `homer-e2e` job. See
+  [`docs/quality-checks.md`](../quality-checks.md).
 
 ## Pros and Cons of the Options
 

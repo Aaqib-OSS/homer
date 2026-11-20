@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -91,25 +92,20 @@ class ProcessRunnerTest {
         runBlocking(Dispatchers.Default) {
             withTimeout(20.seconds) {
                 assumeTrue(System.getProperty("os.name").startsWith("Linux"))
+                // A non-dumpable process has root-owned /proc/<pid> files (ADR-0078), so uid 0 sees no difference.
+                assumeTrue(effectiveUid() != 0, "the /proc ownership signal is unobservable for a privileged reader")
                 Dumpability.harden()
-                // setsid sits between the JVM and the shell, so inspect a child of the
-                // shell via /proc instead of guessing at $PPID.
-                val handle =
-                    ProcessRunner.start(
-                        listOf("sh", "-c", "sleep 30 & p=\$!; cat /proc/\$p/status > $tmp/child-status; kill \$p"),
-                        tmp,
-                        mapOf("PATH" to "/usr/bin:/bin"),
-                        null,
-                    )
-                val exit = handle.await(10.seconds) { _, _, _ -> }
-                assertEquals(0, exit.code)
-                val status = tmp.resolve("child-status").toFile().readText()
-                assertTrue("State:" in status, "expected a live child; got: $status")
-                // The kernel omits the "Dumpable:" field before Linux 6.2 and some
-                // containers mask it; there the assertion below cannot run, so report
-                // the test as skipped rather than pass without verifying anything.
-                assumeTrue("Dumpable:" in status, "the kernel does not expose the Dumpable field here")
-                assertTrue("Dumpable:\t1" in status, "a spawned child must be dumpable; got: $status")
+                val jvmEnviron = Path.of("/proc/${ProcessHandle.current().pid()}/environ")
+                assertEquals(0, Files.getAttribute(jvmEnviron, "unix:uid"), "the hardened JVM's /proc files must be root-owned")
+                val handle = ProcessRunner.start(listOf("sh", "-c", "stat -c uid=%u /proc/\$\$/environ"), tmp, env, null)
+                val out = StringBuilder()
+                val exit = handle.await(10.seconds) { _, _, bytes -> out.append(bytes.decodeToString()) }
+                assertEquals(0, exit.code, "stat failed: $out")
+                assertEquals(
+                    "uid=${effectiveUid()}",
+                    out.toString().trim(),
+                    "a spawned child must be dumpable (its /proc files owned by its user)",
+                )
             }
         }
 
@@ -353,6 +349,6 @@ class ProcessRunnerTest {
     /** The effective uid of this process, from `/proc/self/status`. */
     private fun effectiveUid(): Int {
         val stat = File("/proc/self/status").readText()
-        return Regex("^Uid:\\s+(\\d+)", RegexOption.MULTILINE).find(stat)!!.groupValues[1].toInt()
+        return Regex("^Uid:\\s+\\d+\\s+(\\d+)", RegexOption.MULTILINE).find(stat)!!.groupValues[1].toInt()
     }
 }

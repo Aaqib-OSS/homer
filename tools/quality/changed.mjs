@@ -53,6 +53,8 @@ const BACKEND_CHECKS = ['kotlin-warnings', 'architecture-backend', 'detekt', 'qu
 const CONSOLE_CHECKS = { 'eslint-warnings': 'quality:eslint', 'architecture-console': 'quality:architecture', 'unused-console': 'quality:unused', 'size-console': 'quality:size' };
 // Checks that judge only the changed lines; every other check reports all it finds.
 const LINE_SCOPED = new Set(['crap', 'diff-coverage', 'mutation-console', 'mutation-backend']);
+// Checks of CI's reports only: a local run legitimately skips platform tests (no setsid or /proc on macOS).
+const CI_ONLY = new Set(['skipped-tests']);
 
 export function parseArgs(argv) {
   const options = { base: undefined, only: undefined };
@@ -67,7 +69,10 @@ export function parseArgs(argv) {
 
 /** The checks to run for `files`, as names of `checks`; `only` narrows them and alone selects warn-mode checks. */
 export function selectChecks(files, checks, only) {
-  for (const name of only ?? []) if (!checks.some((c) => c.name === name)) throw new Error(`unknown check ${name}`);
+  for (const name of only ?? []) {
+    if (!checks.some((c) => c.name === name)) throw new Error(`unknown check ${name}`);
+    if (CI_ONLY.has(name)) throw new Error(`${name} reads CI's reports only; see docs/quality-checks.md`);
+  }
   const backend = files.some((f) => BACKEND.test(f));
   const front = files.some((f) => CONSOLE.test(f));
   const wanted = new Set([
