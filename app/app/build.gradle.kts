@@ -164,6 +164,8 @@ tasks.test {
             repoRoot.resolve("app/Dockerfile"),
             repoRoot.resolve("app/e2e/Dockerfile"),
             repoRoot.resolve("app/entrypoint.sh"),
+            repoRoot.resolve("app/homer-runner.sh"),
+            repoRoot.resolve("app/agentdebug.sh"),
             repoRoot.resolve("app/settings.gradle.kts"),
             repoRoot.resolve("app/buildSrc/settings.gradle.kts"),
             repoRoot.resolve("app/gradle/artifactory.settings.gradle.kts"),

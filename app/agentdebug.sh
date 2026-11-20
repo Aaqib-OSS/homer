@@ -7,4 +7,4 @@ if [ ! -f "$JAR" ]; then
   echo "  cd $SCRIPT_DIR && ./gradlew :agentdebug:shadowJar"
   exit 1
 fi
-exec java --enable-native-access=ALL-UNNAMED -jar "$JAR" "$@"
+exec java -XX:-UseBASE64Intrinsics --enable-native-access=ALL-UNNAMED -jar "$JAR" "$@"
