@@ -1,7 +1,6 @@
 ---
 status: accepted
 date: 2026-11-19
-amended: 2026-11-20
 deciders: Lukáš Vlk
 consulted: ADR-0047, ADR-0082
 amended: 2026-11-20
@@ -202,4 +201,4 @@ PR C landed the two checks that "Shortcuts in code" and the enforcement table le
 
 ## Amendment (2026-11-20): ruff enforces Python lint
 
-Ruff, with its defaults plus the `B`, `BLE` and `S` rule sets, runs over `clients/python` as a required step of `homer-python-tests`. The Python lint rule above is enforced by it, not by a later PR.
+Ruff, with its defaults plus the `B`, `BLE` and `S` rule sets, runs over `clients/python` as a required step of `homer-python-tests`. The Python lint rule above is enforced by it, not by a later PR. It is a step in `homer-python-tests`, not a `checks.json` check, because the Python area has no `tools/quality` report pipeline; the gate route was considered and not taken.

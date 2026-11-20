@@ -30,7 +30,7 @@ from contextlib import closing
 from importlib.metadata import version
 from pathlib import Path
 
-from homer_langgraph import introspection, runner
+from homer_langgraph import homer_cli, introspection, runner
 from homer_langgraph.tests import graph_fixtures
 
 FIXTURE = Path(__file__).parent / "fixtures" / "checkpoints-lg1.1.10.sqlite"
@@ -170,7 +170,7 @@ def _generate(out: Path) -> None:
     if installed != OLD_LINE:
         sys.exit(f"refusing to generate: installed {installed}, the fixture needs {OLD_LINE}")
     calls: list[list[str]] = []
-    runner.subprocess.run = lambda argv, **kw: calls.append(argv)
+    homer_cli.subprocess.run = lambda argv, **kw: calls.append(argv)
     state_dir = Path(tempfile.mkdtemp())
     os.environ[runner.ENV_STATE_DIR] = str(state_dir)
     os.environ[runner.ENV_AGENT_NAME] = "planner"

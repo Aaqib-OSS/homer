@@ -34,7 +34,7 @@ update it in the same commit when a contract it describes changes.
 python3 -m venv .venv                                                 # from clients/python
 .venv/bin/pip install --require-hashes --no-deps -r requirements.lock -r requirements-test.lock
 .venv/bin/pip install --no-deps --no-build-isolation -e .
-.venv/bin/python -m pytest                                            # from clients/python
+.venv/bin/ruff check && .venv/bin/python -m pytest                     # from clients/python
 ```
 
 Tests mock `subprocess.run` and use LangGraph's in-memory `MemorySaver`, except
