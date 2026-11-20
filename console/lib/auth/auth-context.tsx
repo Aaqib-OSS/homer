@@ -230,11 +230,9 @@ function useAuthActions(
       if (!authProbeDisabled) {
         await endSession();
       }
-      setActiveInstance(instanceId);
-      queryClient.clear();
-      setOverride(null);
+      switchInstance(instanceId);
     },
-    [queryClient, setOverride],
+    [switchInstance],
   );
 
   // A 401 elsewhere fires the auth-expired bus; pin the override to 'anon' so no stale 'authed' shows.
