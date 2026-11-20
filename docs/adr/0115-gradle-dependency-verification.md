@@ -3,6 +3,7 @@ status: accepted
 date: 2026-11-15
 deciders: Lukáš Vlk
 consulted: ADR-0047, ADR-0084, ADR-0086, ADR-0088
+amended: 2026-11-20
 ---
 
 # ADR-0115: Gradle verifies every dependency against committed checksums, and signatures where a key is trusted
@@ -105,3 +106,11 @@ a bump without regeneration looks like.
   intended failure, but it lands on whoever bumps first.
 - Bad: the metadata is large — 620 artifacts and 187 public keys across the two files, ~2 900 lines
   — and its diff is noise in a dependency PR.
+
+## Amendment (2026-11-20): the optional Artifactory proxy is gone
+
+The scope paragraph above names the optional Artifactory proxy and its settings file
+(`gradle/artifactory.settings.gradle.kts`). That build path was retired by
+[ADR-0084's 2026-11-20 amendment](0084-github-actions-ci-on-hosted-runners.md), so artifacts come only
+from Maven Central and the Plugin Portal. Verification is unchanged: it is keyed by
+`group:module:version`, whoever serves the artifact.
