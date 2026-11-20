@@ -2725,7 +2725,7 @@ apk add --no-cache tar gzip curl</code></pre>
               <tr><td class="verb">POST</td><td class="path">/api/v1/runner/sessions/{sid}/ops/{opId}/output</td><td>Runner protocol: append one output chunk (<code>?stream=stdout|stderr&amp;seq=N</code>; <code>202</code>; <code>400</code> bad <code>stream</code> or <code>seq</code>; <code>404</code> unknown or finished op; <code>408</code> past <code>transferTimeoutSec</code>; <code>409</code> out of order; <code>413</code> over 1 MiB; <code>429</code> another chunk of the op and stream in flight).</td></tr>
               <tr><td class="verb">POST</td><td class="path">/api/v1/auth/login</td><td>Exchange username + password for a session cookie.</td></tr>
               <tr><td class="verb">POST</td><td class="path">/api/v1/auth/logout</td><td>Clear the session cookie (idempotent).</td></tr>
-              <tr><td class="verb">GET</td><td class="path">/api/v1/auth/me</td><td>Your username, role and grants — the console's capability source. The <code>auth/*</code> routes exist only with a <code>!&lt;password&gt;</code> scheme.</td></tr>
+              <tr><td class="verb">GET</td><td class="path">/api/v1/auth/me</td><td>Your username, role and grants, for a session cookie or a bearer token — the console's capability source. Mounted with a <code>!&lt;password&gt;</code> or <code>!&lt;bearer&gt;</code> scheme; login and logout only with <code>!&lt;password&gt;</code>.</td></tr>
               <tr><td class="verb">POST</td><td class="path">/mcp</td><td>MCP endpoint exposing opted-in agents as tools (both MCP routes only with <code>server.mcp.enabled</code>).</td></tr>
               <tr><td class="verb">POST</td><td class="path">/mcp/questions</td><td>MCP question tools for a running command.</td></tr>
             </tbody>
@@ -3872,8 +3872,8 @@ docker compose up -d          # console :3000, API :8080</code></pre>
           <p>That is the authorization model, not a bug. A run is visible to admins, its owner, and holders of a
             <code>read</code> grant on its agent; everyone else gets the same <code>404</code> a missing process would
             return, so existence is never disclosed — and a missing control or run action on a run you can see is the same
-            <code>404</code>. Password-session users can check <code>/api/v1/auth/me</code>; for a bearer token, check that
-            principal's <code>grants</code> in the server config.</p>
+            <code>404</code>. Check your own role and grants at <code>/api/v1/auth/me</code>, with your session cookie or
+            your bearer token.</p>
         </article>
 
         <article class="f qa">

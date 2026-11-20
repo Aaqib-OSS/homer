@@ -23,6 +23,9 @@ class Authorizer(
         val grants: List<Grant>,
     )
 
+    /** The admin flag and grants [principal] holds; null for a name no auth scheme configures. */
+    fun principalGrants(principal: String): PrincipalGrants? = principals[principal]
+
     fun isAdmin(principal: String?): Boolean = !enabled || principals[principal]?.admin == true
 
     fun hasAction(

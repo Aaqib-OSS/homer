@@ -4,6 +4,7 @@
 
 ### Homer
 
+- **Added: `GET /api/v1/auth/me` answers a bearer token** — A request carrying a bearer token gets that token's name, role and grants, and the route is mounted whenever a `bearer` or `password` scheme is configured.
 - **Security: exec no longer logs the raw remote command** — The ssh exec channel and session no longer log the remote command at any log level, and a failed Kubernetes exec is logged and reported without its exec URL, raw cause or stack trace.
 - **Fixed: workspace helpers keep tokens off the command line** — `homer-ask`, `homer-dispatch`, `homer-inbox`, `homer-join`, `homer-result` and `homer-tag` pass the callback token, the result token and request bodies to curl outside argv, where other users on the host could read them.
 - **Deprecated: `homer-result --token`** — Pass the result token in `HMR_RESULT_TOKEN` instead; the flag is removed in 1.45.0.

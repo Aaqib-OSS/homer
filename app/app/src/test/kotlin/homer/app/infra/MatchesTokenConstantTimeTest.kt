@@ -72,20 +72,25 @@ class MatchesTokenConstantTimeTest {
      */
     @Test
     fun `production auth path uses matchesTokenConstantTime not equality`() {
+        val bearerTokenKt = Paths.get("src/main/kotlin/homer/app/auth/BearerToken.kt")
         val authWiringKt = Paths.get("src/main/kotlin/homer/app/AuthWiring.kt")
-        check(Files.exists(authWiringKt)) {
-            "AuthWiring.kt not found at $authWiringKt - did the file move?"
+        check(Files.exists(bearerTokenKt) && Files.exists(authWiringKt)) {
+            "BearerToken.kt or AuthWiring.kt not found - did the file move?"
         }
-        val source = Files.readString(authWiringKt)
+        val lookup = Files.readString(bearerTokenKt)
 
         assertTrue(
-            source.contains("matchesTokenConstantTime(it.value.token, tokenCredential)"),
-            "AuthWiring.kt must call matchesTokenConstantTime in the bearer auth lookup",
+            lookup.contains("matchesTokenConstantTime(it.value.token, credential)"),
+            "BearerToken.kt must call matchesTokenConstantTime in the bearer token lookup",
         )
         assertFalse(
-            source.contains("it.value.token == tokenCredential"),
-            "AuthWiring.kt must not use plain '==' for bearer token compare " +
+            lookup.contains("it.value.token == credential"),
+            "BearerToken.kt must not use plain '==' for bearer token compare " +
                 "(timing side-channel). Use matchesTokenConstantTime instead.",
+        )
+        assertTrue(
+            Files.readString(authWiringKt).contains("scheme.principalFor(tokenCredential)"),
+            "the auth-bearer provider must resolve its token through principalFor",
         )
     }
 }

@@ -1,6 +1,8 @@
 package homer.app.routes
 
 import homer.app.auth.HomerSession
+import homer.app.auth.bearerCredential
+import homer.app.auth.principalFor
 import homer.app.infra.PasswordVerifier
 import homer.app.models.AuthConfig
 import homer.app.models.ErrorResponse
@@ -9,7 +11,11 @@ import homer.app.models.LoginRequest
 import homer.app.models.LoginResponse
 import homer.app.models.MeResponse
 import homer.app.models.ReadinessResponse
+import homer.app.models.flattenAuthSchemes
+import homer.app.services.Authorizer
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.plugins.ratelimit.RateLimitName
 import io.ktor.server.plugins.ratelimit.rateLimit
 import io.ktor.server.request.receive
@@ -39,14 +45,17 @@ internal fun Route.apiV1UnsecuredRoutes(deps: ApiDeps) {
     // Auth routes — mounted OUTSIDE the authenticate(...) wrapper:
     //  • /login is by definition unauthenticated;
     //  • /logout must be idempotent and reachable even with a stale cookie;
-    //  • /me reads the session cookie directly via call.sessions, so it
-    //    doesn't need (and doesn't want) the Bearer/HMAC FirstSuccessful
-    //    path — that path would mis-authenticate a stale bearer + valid
-    //    cookie request as the bearer principal.
-    // Audit P0 #6 (long-term) / ADR-0011.
+    //  • /me reads its one credential itself — a bearer token when the request
+    //    carries one, else the session cookie — and never FirstSuccessful, which
+    //    would answer one credential's request as the other's principal.
+    // Audit P0 #6 (long-term) / ADR-0011, ADR-0059.
     val passwordScheme = deps.passwordScheme
     if (passwordScheme != null) {
         sessionAuthRoutes(deps.unsecuredDeps(), passwordScheme)
+    }
+    val bearerScheme = flattenAuthSchemes(deps.config.server.apiAuth).filterIsInstance<AuthConfig.Bearer>().singleOrNull()
+    if (passwordScheme != null || bearerScheme != null) {
+        meRoute(deps.authorizer, passwordScheme, bearerScheme)
     }
 }
 
@@ -75,7 +84,7 @@ private fun Route.probeRoutes(deps: UnsecuredDeps) {
     }
 }
 
-/** `POST /api/v1/auth/login`, `POST /api/v1/auth/logout` and `GET /api/v1/auth/me`: the session-cookie handshake. */
+/** `POST /api/v1/auth/login` and `POST /api/v1/auth/logout`: the session-cookie handshake. */
 private fun Route.sessionAuthRoutes(
     deps: UnsecuredDeps,
     passwordScheme: AuthConfig.Password,
@@ -106,26 +115,62 @@ private fun Route.sessionAuthRoutes(
                 call.sessions.clear<HomerSession>()
                 call.respond(HttpStatusCode.NoContent)
             }
-            get("/me") {
-                val session = call.sessions.get<HomerSession>()
-                if (session == null ||
-                    session.exp <=
-                    java.time.Instant
-                        .now()
-                        .epochSecond
-                ) {
-                    call.respond(HttpStatusCode.Unauthorized, ErrorResponse(msg = "Not authenticated"))
-                    return@get
-                }
-                val user = passwordScheme.users[session.username]
-                if (user == null) {
-                    call.respond(HttpStatusCode.Unauthorized, ErrorResponse(msg = "User no longer exists"))
-                    return@get
-                }
-                call.respond(MeResponse(username = session.username, role = user.role, grants = user.grants))
-            }
         }
     }
+}
+
+/**
+ * `GET /api/v1/auth/me`: the username, role and grants of the caller's own principal — the bearer
+ * token's when the request carries one and [bearerScheme] is configured, else the session cookie's.
+ */
+private fun Route.meRoute(
+    authorizer: Authorizer,
+    passwordScheme: AuthConfig.Password?,
+    bearerScheme: AuthConfig.Bearer?,
+) {
+    get("/api/v1/auth/me") {
+        val credential = bearerCredential(call.request.headers[HttpHeaders.Authorization])
+        when {
+            bearerScheme != null && credential != null -> call.respondBearerMe(authorizer, bearerScheme, credential)
+            passwordScheme != null -> call.respondSessionMe(passwordScheme)
+            else -> call.respond(HttpStatusCode.Unauthorized)
+        }
+    }
+}
+
+/** The `/me` answer for [credential]: `401` with no body, as every secured route refuses it, unless it is a token of [scheme]. */
+private suspend fun ApplicationCall.respondBearerMe(
+    authorizer: Authorizer,
+    scheme: AuthConfig.Bearer,
+    credential: String,
+) {
+    val principal = scheme.principalFor(credential)
+    val held = principal?.let(authorizer::principalGrants)
+    if (principal == null || held == null) {
+        respond(HttpStatusCode.Unauthorized)
+        return
+    }
+    respond(MeResponse(username = principal, role = if (held.admin) "admin" else null, grants = held.grants))
+}
+
+/** The `/me` answer for the session cookie: its user's role and grants, or `401` when it is absent, expired or revoked. */
+private suspend fun ApplicationCall.respondSessionMe(passwordScheme: AuthConfig.Password) {
+    val session = sessions.get<HomerSession>()
+    if (session == null ||
+        session.exp <=
+        java.time.Instant
+            .now()
+            .epochSecond
+    ) {
+        respond(HttpStatusCode.Unauthorized, ErrorResponse(msg = "Not authenticated"))
+        return
+    }
+    val user = passwordScheme.users[session.username]
+    if (user == null) {
+        respond(HttpStatusCode.Unauthorized, ErrorResponse(msg = "User no longer exists"))
+        return
+    }
+    respond(MeResponse(username = session.username, role = user.role, grants = user.grants))
 }
 
 /**

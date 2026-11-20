@@ -1,11 +1,12 @@
 package homer.app
 
+import homer.app.auth.bearerCredential
 import homer.app.auth.installPasswordSessions
 import homer.app.auth.passwordSessionProvider
+import homer.app.auth.principalFor
 import homer.app.infra.HmacReplayCache
 import homer.app.infra.HmacVerifier
 import homer.app.infra.PasswordVerifier
-import homer.app.infra.matchesTokenConstantTime
 import homer.app.models.AuthConfig
 import homer.app.models.AuthConfig.Bearer
 import homer.app.routes.ApiDeps
@@ -50,10 +51,7 @@ internal fun io.ktor.server.auth.AuthenticationConfig.buildBearerProvider(scheme
     provider("auth-bearer") {
         authenticate { context ->
             val call = context.call
-            val authHeader = call.request.headers[HttpHeaders.Authorization]
-            val tokenCredential =
-                authHeader
-                    ?.let { if (it.startsWith("Bearer ", ignoreCase = true)) it.substring(7).trim() else null }
+            val tokenCredential = bearerCredential(call.request.headers[HttpHeaders.Authorization])
 
             if (tokenCredential == null) {
                 context.challenge("BearerAuth", AuthenticationFailedCause.NoCredentials) { challenge, c ->
@@ -63,11 +61,9 @@ internal fun io.ktor.server.auth.AuthenticationConfig.buildBearerProvider(scheme
                 return@authenticate
             }
 
-            val matchingEntry =
-                scheme.tokens.entries
-                    .firstOrNull { matchesTokenConstantTime(it.value.token, tokenCredential) }
+            val principal = scheme.principalFor(tokenCredential)
 
-            if (matchingEntry == null) {
+            if (principal == null) {
                 context.challenge("BearerAuth", AuthenticationFailedCause.InvalidCredentials) { challenge, c ->
                     c.respond(HttpStatusCode.Unauthorized)
                     challenge.complete()
@@ -75,7 +71,7 @@ internal fun io.ktor.server.auth.AuthenticationConfig.buildBearerProvider(scheme
                 return@authenticate
             }
 
-            context.principal(UserIdPrincipal(matchingEntry.key))
+            context.principal(UserIdPrincipal(principal))
         }
     }
 }
