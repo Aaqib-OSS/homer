@@ -18,12 +18,15 @@
   "gradle": {
     "managerFilePatterns": [
       "/^app/gradle/libs\\.versions\\.toml$/",
-      "/^app/buildSrc/.+\\.kts$/",
-      "/^app/buildSrc/gradle/.+\\.toml$/"
+      "/^app/(buildSrc/)?(build|settings)\\.gradle\\.kts$/",
+      "/^app/buildSrc/src/main/kotlin/.+\\.gradle\\.kts$/"
     ]
   },
   "pip-compile": {
-    "managerFilePatterns": ["/^clients/python/requirements(-test)?\\.lock$/"]
+    "managerFilePatterns": [
+      "/^clients/python/requirements(-test)?\\.lock$/",
+      "/^tools/pip-audit/requirements\\.txt$/"
+    ]
   },
   "packageRules": [
     {
@@ -50,6 +53,16 @@
       "matchManagers": ["npm"],
       "matchFileNames": ["tools/quality/**"],
       "groupName": "quality tooling npm dependencies"
+    },
+    {
+      "matchManagers": ["npm"],
+      "matchFileNames": ["example/**"],
+      "groupName": "example plugin npm dependencies"
+    },
+    {
+      "description": "Homer's own default image tag moves with a release, not with Renovate.",
+      "matchPackageNames": ["ghcr.io/livesport/homer/**"],
+      "enabled": false
     },
     {
       "matchManagers": ["pip-compile"],

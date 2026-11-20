@@ -92,7 +92,10 @@ release fail "no file list" Bot "$app" livesport/homer "$rel" ''
 workflow=$(cd "$(dirname "$0")/../.." && pwd)/.github/workflows/pr-policy.yml
 gate=$(grep -F "user.login !=" "$workflow" || true)
 exempt=$(printf '%s\n' "$gate" | grep -o "user.login != '[^']*'" | sort | tr '\n' ' ')
-if [ "$(printf '%s\n' "$gate" | grep -c .)" -ne 1 ] || [ "$exempt" != "user.login != 'dependabot[bot]' user.login != 'renovate[bot]' " ]; then
+joined=$(printf '%s' "$gate" | grep -c "!cancelled() && github.event.pull_request.user.login != 'dependabot\[bot\]' && github.event.pull_request.user.login != 'renovate\[bot\]' }}\$" || true)
+gated=$(awk '/^  [a-z-]+:/ {job=$1} /user.login !=/ {print job}' "$workflow")
+if [ "$(printf '%s\n' "$gate" | grep -c .)" -ne 1 ] || [ "$exempt" != "user.login != 'dependabot[bot]' user.login != 'renovate[bot]' " ] \
+    || [ "$joined" -ne 1 ] || [ "$gated" != "accepted-issue:" ]; then
   echo "FAIL: the workflow must exempt exactly dependabot[bot] and renovate[bot] from the accepted-issue gate"
   failures=$((failures + 1))
 fi

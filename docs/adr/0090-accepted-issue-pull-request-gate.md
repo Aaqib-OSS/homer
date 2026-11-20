@@ -3,7 +3,7 @@ status: accepted
 date: 2026-10-20
 deciders: Lukáš Vlk
 consulted: ADR-0084, ADR-0086
-amended: 2026-10-24
+amended: 2026-10-24, 2026-11-20
 ---
 
 # ADR-0090: A pull request merges only for an issue a maintainer accepted
@@ -112,3 +112,12 @@ This retires the original decision's "the rule has no exception to abuse": the
 release pull request is the one exception. Opening it takes the factory App's
 own installation token, and what it can carry is a changelog edit and a version
 bump that a maintainer still merges.
+
+## Amendment (2026-11-20): Renovate
+
+Renovate is the second dependency bot ([`renovate.json`](../../renovate.json)). Its pull requests link no
+issue either, so the `accepted-issue` job skips them the same way: the exemption compares the author's
+login with `renovate[bot]`, the Renovate App's account, beside `dependabot[bot]`. The `[bot]`
+suffix argument holds for both, and no other bot or name pattern is exempt. `tools/pr-policy/check-test.sh`
+asserts that the workflow names exactly those two logins. A Renovate pull request still passes every other
+required check, the review and a maintainer's merge.
