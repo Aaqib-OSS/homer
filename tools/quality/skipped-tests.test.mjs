@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, test } from 'node:test';
 import fc from 'fast-check';
-import { REPORTS, attributes, check, parseReport, readReports, stackFindings, unescapeXml } from './skipped-tests.mjs';
+import { REPORTS, attributes, check, parseReport, readReports, stackFindings, stripUnread, unescapeXml } from './skipped-tests.mjs';
 
 // The shapes Gradle, Vitest and pytest write, trimmed to what the check reads.
 const GRADLE = `<?xml version="1.0" encoding="UTF-8"?>
@@ -60,6 +60,15 @@ test('a skipped JUnit testcase is one finding; a skip marker inside CDATA or an 
   const { tests, skipped } = parseReport(GRADLE);
   assert.equal(tests, 3);
   assert.deepEqual(skipped, [{ classname: 'homer.runner.ProcessRunnerTest', name: 'a spawned child is itself dumpable()', message: '' }]);
+});
+
+test('a comment or CDATA section that re-forms once another is removed is not read either', () => {
+  const inside = (marker) => `<testsuite name="S" tests="1"><testcase name="t" classname="S">${marker}</testcase></testsuite>`;
+  for (const crafted of ['<!<!-- x -->-- <skipped/> -->', '<!<![CDATA[x]]>[CDATA[ <skipped/> ]]>', '<!-<!---->- <skipped/> -->']) {
+    assert.doesNotMatch(stripUnread(crafted), /<skipped/, crafted);
+    assert.deepEqual(parseReport(inside(crafted)), { tests: 1, skipped: [] }, crafted);
+  }
+  assert.equal(stripUnread('a<!-- b -->c<![CDATA[d]]>e'), 'ace');
 });
 
 test('the Vitest shape: each skipped or todo testcase counts once, and the suite attribute adds nothing', () => {

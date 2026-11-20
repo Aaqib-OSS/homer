@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-11-19
+amended: 2026-11-20
 deciders: Lukáš Vlk
 consulted: ADR-0047, ADR-0082
 ---
@@ -106,9 +107,9 @@ amendment of 2026-11-19).
 
 - **Finite limits.** A config value named `max*`, `*Limit*`, `*Timeout*`, `*Ttl*` or `concurrency`
   is non-nullable, with a finite default. A missing bound is a shortcut too (ADR-0047 rule 4). A
-  test walks the config and agent models. Its exemption list only shrinks (`FiniteLimitsContractTest`).
-- **No skipped tests.** CI allows zero skipped JUnit, Vitest or pytest tests. A skipped test is a
-  shortcut nobody reads (`skipped-tests`; `:e2e` excepted, see `docs/quality-checks.md`).
+  test walks the config and agent models. Its exemption list only shrinks. PR C adds it.
+- **No skipped tests.** CI allows zero skipped JUnit or Vitest tests. A skipped test is a shortcut
+  nobody reads. PR C adds this.
 - **Python lint.** Ruff runs over `clients/python` as a `required` check. PR D adds it.
 
 ### Enforcement and rollout
@@ -117,8 +118,7 @@ amendment of 2026-11-19).
 | --- | --- |
 | Comment length, citations, shortcut words, `TODO`, past narration, suppression reasons and budget, `removeIn` | `comment-policy` (`tools/quality/comment-policy.mjs`), `required` |
 | `W-NNN` entries and watched versions; `AR-NN` ids; every `W-NNN` and `AR-NN` a comment cites resolves | `decision-records` (`tools/quality/decision-records.mjs`), `required` |
-| Finite limits | `FiniteLimitsContractTest` |
-| Zero skipped tests | `skipped-tests` (`tools/quality/skipped-tests.mjs`), `required` |
+| Finite limits; zero skipped tests | tests in PR C |
 | Python lint | `ruff`, `required` (PR D) |
 | Narration of the next lines, deviations, a test asserting one outcome under a name that says what it proves | the review rubric in the root `CLAUDE.md` §9 |
 
@@ -157,6 +157,18 @@ replaces them.
   path, or `comment-policy` fails the release commit; `CONTRIBUTING.md` § Releasing says so.
 - Neutral: the 8-line limit on a run of comments of mixed kinds is gone. The per-block limits are
   stricter.
+
+## Amendment (2026-11-20): pytest skips and the :e2e exception
+
+PR C landed the two checks that "Shortcuts in code" and the enforcement table leave to it:
+
+- **Finite limits** are enforced by `FiniteLimitsContractTest`.
+- **Zero skipped tests** are enforced by `skipped-tests` (`tools/quality/skipped-tests.mjs`),
+  `required`. The check also reads pytest's report, so CI allows zero skipped JUnit, Vitest or
+  pytest tests.
+- `:e2e` is excepted until #348. `homer-app-tests` runs it without a live stack, where it skips by
+  design, and the check does not yet read the results of the `homer-e2e` job. See
+  [`docs/quality-checks.md`](../quality-checks.md).
 
 ## Pros and Cons of the Options
 

@@ -44,12 +44,25 @@ export function attributes(text) {
   return Object.fromEntries([...text.matchAll(/([^\s=/>]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)].map((m) => [m[1], unescapeXml(m[2] ?? m[3])]));
 }
 
+const UNREAD = /<!\[CDATA\[[\s\S]*?\]\]>|<!--[\s\S]*?-->/g;
+
+/** `xml` without CDATA sections and comments, removed until none re-forms from what is left. */
+export function stripUnread(xml) {
+  let text = xml;
+  let before;
+  do {
+    before = text;
+    text = text.replace(UNREAD, '');
+  } while (text !== before);
+  return text;
+}
+
 /**
  * `{ tests, skipped }` of one JUnit XML report. A skipped `<testcase>` counts once; a suite's `skipped`
  * attribute adds only the skips no testcase of the suite names. CDATA and comments are not read.
  */
 export function parseReport(xml) {
-  const text = xml.replace(/<!\[CDATA\[[\s\S]*?\]\]>|<!--[\s\S]*?-->/g, '');
+  const text = stripUnread(xml);
   let tests = 0;
   const skipped = [];
   for (const [, suiteAttrs, body = ''] of text.matchAll(SUITE)) {
