@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-16
 deciders: Lukáš Vlk
-amended: 2026-10-09, 2026-10-20
+amended: 2026-08-20, 2026-10-09
 ---
 # ADR-0024: `!<langgraph>` command type — thin Kotlin launcher for a Python runtime
 
@@ -68,7 +68,7 @@ Two conventions are enforced/established:
 - Bad: re-running the whole agent on resume puts the idempotency burden on the
   author (mitigated by the `HMR_LG_THREAD` guard convention).
 
-> **Amendment (2026-10-20) —** Amended by ADR-0046: one directory per owner under that root.
+> **Amendment (2026-08-20) —** Amended by ADR-0046: one directory per owner under that root.
 
 ## More Information
 

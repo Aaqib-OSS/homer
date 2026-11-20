@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-05-06
 deciders: Lukáš Vlk
-amended: 2026-10-09, 2026-10-20
+amended: 2026-07-28, 2026-10-09
 superseded-by: ADR-0035
 ---
 # ADR-0007: `CostMeter` as an in-memory soft throttle, enforced at the HTTP boundary
@@ -89,7 +89,7 @@ Two rationales beat the alternatives:
    create a new operational surface for a soft throttle whose worst
    failure mode is "alarm fires a few seconds later".
 
-> **Amendment (2026-10-20) —** Superseded by ADR-0035: cost state is persisted.
+> **Amendment (2026-07-28) —** Superseded by ADR-0035: cost state is persisted.
 
 The check is `current >= cap` (not `current + estimate >= cap`)
 because the per-run cost is unknown until Claude responds; checking
@@ -123,7 +123,7 @@ KDoc as soft-throttle semantics.
   would each have their own meter. Documented in CHANGELOG and
   `SERVER.md` as "single-node soft throttle by design".
 
-> **Amendment (2026-10-20) —** Superseded by ADR-0035: caps survive restart.
+> **Amendment (2026-07-28) —** Superseded by ADR-0035: caps survive restart.
 
 ## Pros and Cons of the Options
 

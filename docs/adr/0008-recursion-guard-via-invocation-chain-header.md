@@ -3,7 +3,7 @@ status: accepted
 date: 2026-05-06
 last-updated: 2026-05-14
 deciders: Lukáš Vlk
-amended: 2026-10-09, 2026-10-20
+amended: 2026-06-24, 2026-10-09
 superseded-by: ADR-0030
 ---
 # ADR-0008: Bound `RunAgent` recursion via the `X-Homer-Invocation-Chain` header
@@ -84,7 +84,7 @@ On every `POST /api/v1/agent/{name}`, the handler:
    reads the env var and writes it back to the outbound header on
    the next hop.
 
-> **Amendment (2026-10-20) —** Superseded by ADR-0030: the chain is passed in-process; see the note above.
+> **Amendment (2026-06-24) —** Superseded by ADR-0030: the chain is passed in-process; see the note above.
 
 Cycle check is **before** depth check so the error message names the
 actual problem when both apply (`A → B → A` at depth 5+ reports a
@@ -108,7 +108,7 @@ but still surface area worth closing now that the fix is mechanical.
 The loopback token is never serialized in any API or response; the
 only way to obtain it is to read the server process's memory.
 
-> **Amendment (2026-10-20) —** Superseded by ADR-0030: the loopback token no longer exists.
+> **Amendment (2026-06-24) —** Superseded by ADR-0030: the loopback token no longer exists.
 
 ### Consequences
 
@@ -134,7 +134,7 @@ only way to obtain it is to read the server process's memory.
   Homer (e.g., webhooks). Out of scope: those are not Homer-managed
   invocations.
 
-> **Amendment (2026-10-20) —** Superseded by ADR-0030: no header or token; HTTP callers start at an empty chain.
+> **Amendment (2026-06-24) —** Superseded by ADR-0030: no header or token; HTTP callers start at an empty chain.
 
 ## Pros and Cons of the Options
 

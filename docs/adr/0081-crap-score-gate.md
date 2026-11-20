@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-10-12
 deciders: Lukáš Vlk
-amended: 2026-10-20
+amended: 2026-10-12, 2026-10-13
 ---
 
 # ADR-0081: A CRAP score report for the backend and the console, gated as a warning first
@@ -82,7 +82,7 @@ warnings" and in the merge request's Code Quality widget, but do not block.
 When the backlog is at zero, setting `allow_failure: false` makes the gate
 required.
 
-> **Amendment (2026-10-20) —** The threshold lives in one place, `crap.threshold` in
+> **Amendment (2026-10-13) —** The threshold lives in one place, `crap.threshold` in
 `tools/quality/checks.json`, read by both reports; the gate rejects a report
 written for another value. It starts at 30 and is lowered in steps
 (30 → 25 → 20 → 15 → 10 → 9 → 8, the target), each step only once
@@ -90,7 +90,7 @@ nothing scores over the next value; it reached 10 on 2026-10-12, and 9 and then 
 2026-10-13. A local run can still override it (`-Pcrap.threshold=` /
 `CRAP_THRESHOLD=`); CI never does.
 
-> **Amendment (2026-10-20) —** Superseded by [ADR-0082](0082-quality-reports-report-first.md): CRAP is the `crap` check of `quality-gate`, and the flip is its `mode` in `tools/quality/checks.json`.
+> **Amendment (2026-10-12) —** Superseded by [ADR-0082](0082-quality-reports-report-first.md): CRAP is the `crap` check of `quality-gate`, and the flip is its `mode` in `tools/quality/checks.json`.
 
 ### Consequences
 

@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-16
 deciders: Lukáš Vlk
-amended: 2026-09-30, 2026-10-09, 2026-10-20, 2026-11-12
+amended: 2026-06-16, 2026-09-30, 2026-10-09, 2026-11-12
 ---
 # ADR-0023: Completion continuations — resume a parked workflow when a watched process ends
 
@@ -93,7 +93,7 @@ Chosen:
    `LD_*` in the target's env or spoof `HMR_*` identity. Every other param
    reaches the target only through its declared `inputs`.
 
-> **Amendment (2026-10-20) —** Superseded in part by [ADR-0025](0025-capability-token-result-read.md): the over-cap branch now adds a fetchable `resultRef` capability token instead of a bare `processId`.
+> **Amendment (2026-06-16) —** Superseded in part by [ADR-0025](0025-capability-token-result-read.md): the over-cap branch now adds a fetchable `resultRef` capability token instead of a bare `processId`.
 
 ### Consequences
 

@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-05-18
 deciders: Lukáš Vlk
-amended: 2026-10-09, 2026-10-20, 2026-10-25
+amended: 2026-08-11, 2026-10-09, 2026-10-25
 ---
 # ADR-0011: Cookie-based console authentication (username + password)
 
@@ -156,7 +156,7 @@ edits to `Application.kt` / `SessionAuth.kt` must keep them:
   Ktor's built-in transformers chain rather than fall back. If Ktor
   ever ships native multi-key MAC, this class becomes deletable.
 
-> **Amendment (2026-10-20) —** Superseded by ADR-0037: grants replace endpoint allowlists.
+> **Amendment (2026-08-11) —** Superseded by ADR-0037: grants replace endpoint allowlists.
 
 ## Pros and Cons of the Options
 

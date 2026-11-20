@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-19
 deciders: Lukáš Vlk
-amended: 2026-09-30, 2026-10-09, 2026-10-20
+amended: 2026-09-30, 2026-10-02, 2026-10-09
 ---
 # ADR-0027: Read-only LangGraph graph introspection
 
@@ -57,7 +57,7 @@ Key choices:
 - Neutral: rendering is client-side (`mermaid`); the backend never produces an image
   (LangGraph's PNG path needs network or headless Chrome).
 
-> **Amendment (2026-10-20) —** Superseded in part by ADR-0073: still client-side, now dagre SVG instead of `mermaid`.
+> **Amendment (2026-10-02) —** Superseded in part by ADR-0073: still client-side, now dagre SVG instead of `mermaid`.
 
 > **Amendment (2026-10-09) —** Per-run status and traversed-path overlays exist since [ADR-0044](0044-langgraph-resume-and-run-introspection.md) and [ADR-0075](0075-langgraph-traversed-path-from-checkpoint-writes.md).
 

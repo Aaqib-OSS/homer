@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-12
 deciders: Lukáš Vlk
-amended: 2026-10-09, 2026-10-20
+amended: 2026-06-14, 2026-10-09
 ---
 # ADR-0019: Human-in-the-loop questions — per-process callback tokens, in-memory lifecycle, MCP SSE response mode
 
@@ -98,7 +98,7 @@ the JSON-RPC request id; exotic tokens just drop the notification).
 - Bad: chunked holds + progress notifications add MCP-side complexity that a
   reliable client timeout would have made unnecessary.
 
-> **Amendment (2026-10-20) —** Superseded in part by ADR-0020: questions persist.
+> **Amendment (2026-06-14) —** Superseded in part by ADR-0020: questions persist.
 
 ## More Information
 
