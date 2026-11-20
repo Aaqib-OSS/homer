@@ -1,8 +1,4 @@
-// Refuses a release's docs archive unless it is plain ustar holding only regular files and
-// directories with relative paths; extension headers are refused, never parsed (why: ADR-0087).
-// pages.yml runs this before extracting, so a tampered archive cannot write outside its directory
-// (CWE-22).
-//
+// Refuses a docs archive that is not plain ustar of relative regular files (CWE-22; ADR-0087).
 // Usage: node scripts/check-archive.mjs ARCHIVE.tar.gz   (exit 1 and the reasons on a refusal)
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'

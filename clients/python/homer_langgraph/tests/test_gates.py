@@ -142,9 +142,8 @@ def test_homer_fanout_does_not_fetch_when_result_is_inline(monkeypatch):
 
 
 def test_homer_fanout_keeps_result_none_when_fetch_fails_for_a_non_finished_sub(monkeypatch, capsys):
-    # A FAILED sub's last command is the one that broke (e.g. a claude step whose
-    # multi-MB NDJSON stdout is over the transform cap), so its resultRef may be
-    # unredeemable. The graph's own status check must still get to run.
+    # A FAILED sub's resultRef may be unredeemable (oversized stdout); the graph's
+    # own status check must still run.
     resume = json.dumps(
         {
             "status": "FAILED",
@@ -251,9 +250,8 @@ def test_homer_fanout_accepts_the_hard_maximum(monkeypatch):
     ],
 )
 def test_homer_fanout_status_classification(monkeypatch, status, retried):
-    # FINISHED/KILLED end the fan-out; FAILED draws on `retries`; every other
-    # outcome — UNKNOWN, a missing status, an unrecognized one — is
-    # infrastructure, so it can never be read as success.
+    # FINISHED/KILLED end the fan-out; FAILED draws on `retries`; anything else
+    # is infrastructure and never reads as success.
     first = {"processId": 7, "result": None}
     if status is not None:
         first["status"] = status
@@ -333,9 +331,8 @@ def test_homer_fanout_retry_line_carries_no_params_or_token(monkeypatch, capsys)
 
 
 def test_homer_fanout_retry_line_bounds_a_hostile_status(monkeypatch, capsys):
-    # The status rides the resume payload, so the log echoes only a known one;
-    # any other value — a newline-forged line, or a non-string — prints as one
-    # fixed label instead of the raw value.
+    # The status rides the resume payload: only a known one is echoed, any other
+    # value prints as one fixed label (ADR-0047 rule 2).
     forged = json.dumps(
         {
             "status": "FAILED\nhomer_fanout: retrying worker attempt 9/9 after pwn",

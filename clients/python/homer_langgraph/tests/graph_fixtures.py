@@ -99,9 +99,7 @@ def _looping_human(state: State) -> State:
 def _build_loop(rounds: int) -> StateGraph:
     """One node that parks on every pass, looping ``rounds`` times.
 
-    Each pass mints a fresh interrupt id at the *same* node, so the thread's
-    history accumulates several ids for one node — which is what the
-    ``interruptsSeen`` per-node cap bounds.
+    Each pass mints a fresh interrupt id at the same node: what ``interruptsSeen`` caps.
     """
     builder = StateGraph(State)
     builder.add_node("loop", _looping_human)

@@ -156,13 +156,7 @@ def test_interrupts_seen_truncated_is_empty_under_the_cap(
 
 
 def test_state_writes_no_cache_or_temp_files(env, shared_saver, captured_runs, tmp_path):
-    """`state` is read-only.
-
-    A derived cache used to live in the state directory and produced four
-    consecutive symlink / hard-link / TOCTOU findings, because that directory is
-    also writable by agent code. Repeated polling is bounded on the Homer side
-    now, so nothing here may create files again.
-    """
+    """`state` is read-only: no cache or temp file in the agent-writable state directory (ADR-0047 rule 6)."""
     assert runner.run(HUMAN) == 0
     thread = _thread_id(tmp_path)
 
@@ -539,7 +533,7 @@ def test_traversed_is_null_when_no_routing_channel_is_recognized(
 
 
 # Direct `traversed_edges` cases: the checkpoint store is agent-writable, so a
-# forged write may only ever name a real topology edge (root CLAUDE.md §12).
+# forged write may only ever name a real topology edge (ADR-0047 rule 2).
 
 
 def _topology(edges: list[tuple[str, str]]) -> dict:
@@ -636,12 +630,7 @@ def test_traversed_edges_stops_at_write_less_checkpoints():
 
 
 def test_traversed_edges_stops_at_write_cap():
-    """The write cap is its own bound, not a side effect of the checkpoint cap.
-
-    Each checkpoint carries well under the cap in writes, so the loop can only
-    stop early because the write counter tripped: reverting it would leave this
-    red while the checkpoint-cap tests stay green.
-    """
+    """The write cap bounds the scan on its own: each checkpoint stays well under it, so only the write counter can stop the loop."""
     checkpoints_per_batch = 100
     total_checkpoints = 10_000_000
     writes_consumed = 0
@@ -669,12 +658,7 @@ def test_traversed_edges_stops_at_write_cap():
 def test_traversed_edges_limits_the_saver_list_read(
     env, shared_saver, monkeypatch, tmp_path
 ):
-    """The store read is bounded at the SQL side, not only inside the scan.
-
-    A cap enforced only after the saver has materialized a tuple still pays its
-    deserialization cost per poll, so the `saver.list` call must pass the
-    checkpoint cap as its own `limit` (§12 rule 4).
-    """
+    """`saver.list` receives the checkpoint cap as its own `limit`, so the store read is bounded at the source (ADR-0047 rule 4)."""
     thread_id = _run_complete(monkeypatch, tmp_path)
 
     seen_limits = []
@@ -697,12 +681,7 @@ def test_traversed_edges_limits_the_saver_list_read(
 
 
 def test_traversed_edges_join_at_bound_is_kept():
-    """A legitimate self-join writes the longest id on both sides of the bound.
-
-    A join edge whose target is also a source (`add_edge([big, "s"], big)`)
-    produces exactly this channel; a bound sized only for `branch:to:` drops
-    it, and the branch then reads as ended.
-    """
+    """A self-join (`add_edge([big, "s"], big)`) writes the longest id on both sides of the bound and is kept."""
     long_id = "s" * 24
     edges = [("s", long_id), (long_id, long_id)]
     tasks = {"t1": (long_id, True), "t2": ("s", True)}

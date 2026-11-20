@@ -1,7 +1,4 @@
-// Turns the feature atlas (docs/homer-feature-atlas.html, a standalone page) into a page of the
-// documentation site, so it shares the site's navigation, search box, colour scheme and fonts.
-// The atlas scopes its styles under `.atlas` and reads the site's theme variables, falling back
-// to its own palette when opened on its own.
+// Turns the feature atlas (docs/homer-feature-atlas.html) into a page of the documentation site.
 
 /**
  * @param {string} html the atlas file

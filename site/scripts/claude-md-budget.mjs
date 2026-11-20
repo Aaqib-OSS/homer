@@ -1,7 +1,4 @@
-// Size budget of every tracked CLAUDE.md (check `docs-site`, ADR-0082): a guide's text is what it
-// costs every session that loads it. Caps are UTF-8 bytes and ratchet like console/scripts/size.mjs.
-// The root, app and console guides load in every session; the nested ones load when working in
-// their subsystem.
+// Size cap of every tracked CLAUDE.md in UTF-8 bytes, ratcheting down only (docs/quality-checks.md).
 export const CAPS = {
   'CLAUDE.md': 23876,
   'app/CLAUDE.md': 55083,

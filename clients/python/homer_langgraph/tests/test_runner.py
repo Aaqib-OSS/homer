@@ -1,8 +1,7 @@
 """Runner branch tests: fresh vs resume, human/fanout/complete paths.
 
-Uses LangGraph's in-memory ``MemorySaver`` (patched in for ``SqliteSaver``) and
-the tiny graphs in ``graph_fixtures``. ``subprocess.run`` is mocked so wrapper
-argv can be asserted without real Homer wrappers.
+Uses an in-memory ``MemorySaver`` and the graphs in ``graph_fixtures``; ``subprocess.run``
+is mocked so wrapper argv can be asserted.
 """
 
 from __future__ import annotations
@@ -54,9 +53,7 @@ def _params(argv):
 def _thread_and_iid(argv):
     """Extract (thread_id, interrupt_id) from a captured human/fanout argv.
 
-    The interrupt id must reach the resumed agent: for the human gate that is
-    the dispatch target (``--param``); for fan-out it is the continuation
-    (``--continue-param``), so a plain ``--param`` would be lost on the sub.
+    Human gate: ``--param``; fan-out: ``--continue-param`` (a plain ``--param`` is lost on the sub).
     """
     if argv[0] == "homer-ask":
         params = _params(argv)
@@ -69,10 +66,7 @@ def _thread_and_iid(argv):
 class _StubGraph:
     """Compiled-graph stand-in that records its exact invoke input and completes.
 
-    ``get_state`` reports a pending checkpoint, so recover's ``graph_input=None``
-    contract can be asserted directly (a real-graph re-park cannot distinguish
-    None from a stale fresh input landing on the same thread — both re-park and
-    exit 0).
+    ``get_state`` reports a pending checkpoint, so recover's ``graph_input=None`` is assertable.
     """
 
     def __init__(self):
@@ -148,10 +142,8 @@ def test_fresh_run_fanout_gate(env, shared_saver, captured_runs):
 def test_fanout_interrupt_id_rides_continuation_channel_not_param(
     env, shared_saver, captured_runs
 ):
-    # Regression: the interrupt id must reach the RESUMED PARENT (the continuation),
-    # not the sub. A plain --param lands on the sub and is dropped, so on resume the
-    # parent has no HMR_LG_INTERRUPT and LangGraph rejects a scalar resume while
-    # several interrupts are still pending ("multiple pending interrupts").
+    # The id must reach the resumed parent: a --param lands on the sub and is dropped,
+    # and LangGraph then rejects a scalar resume with several interrupts pending.
     runner.run(module=FANOUT)
     argv = captured_runs[0]
     assert argv[0] == "homer-dispatch"
@@ -336,7 +328,7 @@ def test_resume_builds_map_when_interrupt_id_set(env, stub_graph, monkeypatch):
 def test_resume_scalar_form_when_interrupt_id_unset(env, stub_graph, monkeypatch):
     monkeypatch.setenv(runner.ENV_THREAD, "t1")
     monkeypatch.setenv(runner.ENV_RESUME, "the-answer")
-    # No HMR_LG_INTERRUPT -> back-compat scalar resume.
+    # No HMR_LG_INTERRUPT -> scalar resume.
 
     rc = runner.run(module="x")
 
@@ -347,11 +339,8 @@ def test_resume_scalar_form_when_interrupt_id_unset(env, stub_graph, monkeypatch
 
 
 def test_interrupt_selection_picks_smallest_id_independent_of_order():
-    # Selection is a pure function of the interrupt ids — smallest id wins,
-    # regardless of insertion order or which thread parked them. (We can't assert
-    # "same branch across fresh runs": LangGraph assigns non-deterministic ids per
-    # fresh run, so the branch with the smallest id varies. The invariant that
-    # matters is determinism given a fixed id set, which is what we test here.)
+    # Smallest id wins, whatever the insertion order; ids differ per fresh run, so
+    # determinism is only assertable for a fixed id set.
     a = SimpleNamespace(id="aaa", value={"type": "human"})
     b = SimpleNamespace(id="bbb", value={"type": "human"})
     c = SimpleNamespace(id="ccc", value={"type": "human"})
@@ -481,10 +470,8 @@ def test_ungrouped_parallel_fanouts_stay_sequential(env, shared_saver, captured_
 
 
 def test_real_sqlite_saver_writes_checkpoint(env, captured_runs, capsys, tmp_path):
-    # NO shared_saver here: this exercises the real SqliteSaver, which requires
-    # check_same_thread=False because LangGraph writes the checkpoint from a
-    # worker thread. Dropping that flag would crash here while every mocked
-    # test still passed.
+    # No shared_saver: the real SqliteSaver needs check_same_thread=False, since
+    # LangGraph writes from a worker thread; mocked tests would not notice.
     rc = runner.run(module=HUMAN)
 
     assert rc == 0
@@ -587,11 +574,8 @@ def test_fanout_retries_a_failed_sub_and_continues(
     # Segment 1: fresh run parks on the fan-out.
     thread, iid = _park_retry_fanout(RETRY_FANOUT, captured_runs)
 
-    # Segment 2: the sub comes back FAILED -> the node re-parks and the runtime
-    # dispatches the SAME sub again. The interrupt id is LangGraph's per-park
-    # assignment and need not survive a re-park (ADR-0075): the contract is that
-    # the dispatch carries the id of the park it was made from, and a resume
-    # keyed by a recorded id still binds after a re-park.
+    # Segment 2: FAILED re-parks and re-dispatches the same sub. The interrupt id need
+    # not survive a re-park (ADR-0075); a resume keyed by a recorded id still binds.
     captured_runs.clear()
     _resume(monkeypatch, thread, iid, json.dumps({"status": "FAILED", "processId": 1, "result": None}))
     assert runner.run(module=RETRY_FANOUT) == 0
@@ -614,9 +598,8 @@ def test_fanout_retries_a_failed_sub_and_continues(
 def test_fanout_replayed_failure_stops_at_the_cap(
     env, shared_saver, captured_runs, capsys, monkeypatch
 ):
-    # The ticket's shape: the SAME resume value is replayed (what a manual resume
-    # does). Each replay re-parks and re-dispatches, up to `retries`; the third
-    # replay hands the failure to the graph and no fourth dispatch happens.
+    # The same resume value is replayed: each replay re-dispatches up to `retries`,
+    # the third hands the failure to the graph.
     failed = json.dumps({"status": "FAILED", "processId": 1, "result": None})
     thread, iid = _park_retry_fanout(RETRY_FANOUT, captured_runs)
     captured_runs.clear()
@@ -643,10 +626,8 @@ def test_fanout_replayed_failure_stops_at_the_cap(
 def test_fanout_retry_cap_is_not_taken_from_graph_state(
     env, shared_saver, captured_runs, capsys, monkeypatch
 ):
-    # The node resets its own state-held counter on every run — the tampered state
-    # value a retry budget must never be read from. The budget lives in the call's
-    # validated arguments, so the cap still holds: one initial dispatch, one retry,
-    # then the failure reaches the graph.
+    # The node resets its state-held counter each run; the budget lives in the call's
+    # validated arguments (ADR-0047 rule 2): one dispatch, one retry, then the failure.
     thread, iid = _park_retry_fanout(STATEFUL_RETRY_FANOUT, captured_runs)
     failed = json.dumps({"status": "FAILED", "processId": 1, "result": None})
 
@@ -720,10 +701,8 @@ def test_ungrouped_retry_redispatches_only_the_failed_branch(
     first_agent = _agent_of(captured_runs[0])
     dispatched = [first_agent]
 
-    # That branch's sub fails: its node re-parks for the retry (its interrupt id
-    # is a fresh per-park value, so the segment may advance any pending branch),
-    # and the segment still dispatches exactly one unit. The loop below counts
-    # this dispatch when it resumes it.
+    # That sub fails and re-parks under a fresh id, so any pending branch may advance;
+    # the segment still dispatches exactly one unit.
     captured_runs.clear()
     _resume(monkeypatch, thread, iid, json.dumps({"status": "FAILED", "processId": 1, "result": None}))
     assert runner.run(module=THREE_RETRY_FANOUT) == 0

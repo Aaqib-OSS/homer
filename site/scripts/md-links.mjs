@@ -1,8 +1,5 @@
-// Link check over the repository's Markdown as GitHub renders it (GH-226): every relative link
-// must name a file or directory, every #anchor a heading or explicit anchor of its target, and in
-// a CLAUDE.md every backticked repository path must exist. md-links.test.mjs runs it over every
-// tracked *.md outside `site/pages/` (the site build's dead-link check covers those). transform.mjs owns the published pages' rewriting for the site and its dead-link
-// report; its grammar stays its own, since it rewrites lines in place while this one only resolves.
+// Link check over the repository's Markdown as GitHub renders it: relative links, #anchors and,
+// in a CLAUDE.md, backticked repository paths must exist (docs/quality-checks.md).
 import { dirname, join, normalize } from 'node:path'
 
 const FENCE = /^\s*(`{3,}|~{3,})/
@@ -65,10 +62,7 @@ export function scan(raw) {
   return { text, prose, spans }
 }
 
-// GitHub's heading ids are the single intended target: these files are read on GitHub, and the
-// anchors of the pages the site publishes are the site build's concern. Each heading's rendered
-// text goes through github-slugger, including its bookkeeping for repeats; an explicit
-// <a id|name> anchor is taken as written, since GitHub's slugger does not see it.
+// Heading ids via github-slugger, repeats numbered; an explicit <a id|name> is taken as written.
 export function anchors(raw) {
   const { text, prose } = scan(raw)
   const ids = new Set()
@@ -99,10 +93,8 @@ export function anchors(raw) {
   return ids
 }
 
-// The destination of an inline link whose `](` ends at [at]: `<...>` (spaces allowed) or a run
-// without spaces whose parentheses balance, followed by an optional title and `)`. Undefined, so
-// skipped, for an empty destination (`[x]()` names the page itself) and for an unclosed `<`
-// (CommonMark renders that as text, not a link).
+// The destination of the inline link whose `](` ends at [at]; undefined (skipped) for an empty
+// destination or an unclosed `<`, which CommonMark renders as text.
 function destination(prose, at) {
   let i = at + GAP.exec(prose.slice(at))[0].length
   let target = ''
@@ -130,24 +122,16 @@ export function linkTargets(prose) {
   return targets
 }
 
-// A backtick span in a CLAUDE.md is taken as a repository path when it contains a '/', only
-// [\w./@+-] characters (no space, placeholder, glob or URL), no '...' and no build/ segment (build
-// output), and its first segment is '.', '..', a top-level directory, or a directory beside the
-// CLAUDE.md. So `app/gradlew` is a path; `app/**`, `homer.app.Foo`, `app/gradlew -p app check`,
-// `app/...` and `/api/v1/agents` are not. It resolves from the root or the CLAUDE.md's directory,
-// and an extensionless module name (`lib/instances/store` for store.ts) counts.
+// A CLAUDE.md backtick span is a repository path when it has a '/', only [\w./@+-] characters
+// and a '.', '..' or known first directory; `app/gradlew` is, `app/**` and `app/...` are not.
 function pathLike(span, dir, dirs) {
   if (!/^[\w.@+-][\w./@+-]*\/[\w./@+-]*$/.test(span) || span.includes('...') || /(^|\/)build\//.test(span)) return false
   const first = span.split('/')[0]
   return ['.', '..'].includes(first) || dirs.has(first) || dirs.has(join(dir, first))
 }
 
-/**
- * @param {object} repo
- * @param {string[]} repo.walk the Markdown files to check
- * @param {Iterable<string>} repo.targets every path a link may name (files; their directories follow)
- * @param {(path: string) => string} repo.read a file's contents
- * @param {Record<string, string>} [repo.linkDir] files whose links are written from another directory
+/** Checks the links, anchors and CLAUDE.md paths of the `walk` files against `targets`.
+ * @param {{walk: string[], targets: Iterable<string>, read: (path: string) => string, linkDir?: Record<string, string>}} repo
  * @returns {{ problems: string[], counts: { files: number, links: number, anchors: number, paths: number } }}
  */
 export function checkLinks({ walk, targets, read, linkDir = {} }) {
