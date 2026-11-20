@@ -4,8 +4,8 @@ set -e
 # Fix workspace ownership at runtime (volume is mounted after build-time chown)
 mkdir -p /app/workspace
 
-# -XX:-UseBASE64Intrinsics is the Java4Shell mitigation (DOCKER.md); it precedes JAVA_OPTS, so an
-# operator's JAVA_OPTS keeps it and can still override it.
+# -XX:-UseBASE64Intrinsics (W-020) precedes JAVA_OPTS, so an operator's JAVA_OPTS keeps it and can
+# still override it.
 
 if [ "$(id -u)" = "0" ]; then
     # A bind-mounted workspace may be owned by any host UID, so fix it before dropping to homer, but only when

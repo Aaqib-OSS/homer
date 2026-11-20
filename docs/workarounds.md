@@ -14,7 +14,7 @@ The columns:
   `app/gradle/libs.versions.toml` (a rich version by its `strictly`, else its `require`);
   `npm:<package>` a dependency in `console/package.json`; `pip:<package>` a pin in
   `clients/python/requirements.lock`; `image:<name>` the tag of a `FROM <name>:<tag>@sha256:…` line
-  in a Dockerfile; `ci:<ENV_NAME>` an `ENV_NAME: <version>` value in `.github/workflows/`. A row
+  in a Dockerfile (`image:<name>@<stage>` the one whose `AS <stage>` it is, when several tags share the name); `ci:<ENV_NAME>` an `ENV_NAME: <version>` value in `.github/workflows/`. A row
   watches the consumer whose release ends the workaround, not the library it pins: a consumer bump is
   when the exit condition needs a re-check, and a floor bump edits the workaround and its row in the
   same change. A floor that several consumers hold down gets one row per consumer.
@@ -47,3 +47,4 @@ row or removes the workaround. A removed workaround takes its row with it.
 | W-017 | [kubernetes-client/java#4472](https://github.com/kubernetes-client/java/issues/4472) | `gradle:kubernetesClient` | 27.0.0 | A client-java release whose generated `patch*` calls send the `V1Patch` format as the content type, not `application/json`, which the API server answers with 415. Unlikely to ship: upstream directs callers to `PatchUtils` and closed #4472 as not planned | `app/app/src/main/kotlin/homer/app/runners/kubernetes/PodCleanup.kt`, `app/app/src/main/kotlin/homer/app/runners/kubernetes/JobCleanup.kt` |
 | W-018 | [kubernetes-client/java#86](https://github.com/kubernetes-client/java/issues/86) | `gradle:kubernetesClient` | 27.0.0 | A client-java release whose generated delete calls accept the deleted object as well as a `V1Status`: `deleteNamespacedJob` still returns `V1Status` in 27.0.0, and the API server can answer the delete with the Job itself | `app/app/src/main/kotlin/homer/app/runners/kubernetes/JobCleanup.kt` |
 | W-019 | [kubernetes-client/java#4941](https://github.com/kubernetes-client/java/issues/4941) | `gradle:kubernetesClient` | 27.0.0 | A client-java release whose generated models ignore JSON fields they do not declare, so a Job from a newer API server parses as `V1Job` | `app/app/src/main/kotlin/homer/app/runners/kubernetes/JobCleanup.kt` |
+| W-020 | CVE-2026-114938 (Java4Shell) | `image:eclipse-temurin@slim` | 25-jre-alpine-3.23 | The Temurin JRE image the runtime stages start from ships a JRE with the Java4Shell fix, so the JIT Base64 intrinsic no longer needs disabling with `-XX:-UseBASE64Intrinsics`; every JVM launch carries the flag ahead of `JAVA_OPTS` until then | `app/Dockerfile`, `app/entrypoint.sh`, `app/homer-runner.sh`, `app/agentdebug.sh` |

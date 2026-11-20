@@ -292,11 +292,8 @@ licenseReport {
     allowedLicensesFile = rootProject.layout.projectDirectory.file("config/allowed-licenses.json")
 }
 
-// Committed attributions: NOTICE and the backend region of THIRD-PARTY-LICENSES.md, rendered by
-// buildSrc's ThirdPartyNotices.kt; they depend on `checkLicense` for the reason ADR-0056 gives.
-
-// A `doLast` reading a script-level property captures the build script, which the configuration
-// cache cannot serialize: task actions use locals copied in their configuration block.
+// Committed attributions (NOTICE, THIRD-PARTY-LICENSES.md; ADR-0056). Task actions read locals: a `doLast` reading
+// a script-level property captures the build script, which the configuration cache cannot serialize.
 val repoRoot = rootProject.layout.projectDirectory.dir("..")
 val noticeFile = repoRoot.file("NOTICE").asFile
 val inventoryFile = repoRoot.file("THIRD-PARTY-LICENSES.md").asFile

@@ -227,6 +227,15 @@ test('check: a resolved citation passes, an unresolved W or AR citation fails at
   assert.deepEqual(extra, { workarounds: 1, 'accepted-risks': 1, citations: 4 });
 });
 
+test('image:<name>@<stage> reads the FROM line of that stage only', () => {
+  const dockerfile = 'FROM jdk:1@sha256:aa AS builder\nFROM jre:2@sha256:bb AS slim\nFROM jdk:3@sha256:cc AS other\n';
+  const context = repo({ 'console/Dockerfile': dockerfile });
+  assert.deepEqual(resolveSource('image:jre@slim', context), { version: '2' });
+  assert.deepEqual(resolveSource('image:jdk@other', context), { version: '3' });
+  assert.match(resolveSource('image:jdk', context).error, /ambiguous/);
+  assert.match(resolveSource('image:jdk@none', context).error, /not found/);
+});
+
 test('image: reads Dockerfile, Dockerfile.<x> and <x>.Dockerfile, never a file whose name only starts with Dockerfile', () => {
   const context = (extra) => repo({ 'console/Dockerfile': '', 'app/e2e/Dockerfile': '', ...extra });
   const from = 'FROM python:3.12-slim@sha256:dd\n';

@@ -147,8 +147,10 @@ const RESOLVERS = {
       [...(read(PIP) ?? '').matchAll(/^([A-Za-z0-9_.-]+)==([^\s;\\]+)/gm)].filter((m) => pipName(m[1]) === pipName(name)).map((m) => m[2]),
       PIP,
     ),
-  image(name, { read, files }) {
-    const from = new RegExp(`^FROM\\s+(?:--platform=\\S+\\s+)?${escapeRegExp(name)}:([^@\\s]+)@sha256:`, 'gm');
+  image(source, { read, files }) {
+    const [name, stage] = source.split('@');
+    const as = stage === undefined ? '' : `\\S*\\s+AS\\s+${escapeRegExp(stage)}\\s*$`;
+    const from = new RegExp(`^FROM\\s+(?:--platform=\\S+\\s+)?${escapeRegExp(name)}:([^@\\s]+)@sha256:${as}`, 'gm');
     const tags = files.filter((f) => DOCKERFILE.test(f)).flatMap((f) => [...(read(f) ?? '').matchAll(from)].map((m) => m[1]));
     return single(tags, 'the FROM lines of the Dockerfiles');
   },

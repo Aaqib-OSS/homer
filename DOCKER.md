@@ -356,7 +356,7 @@ docker run -p 3000:3000 \
 | `BACKEND_PORT` | 8080 | Host port for the backend (published on `127.0.0.1` only) |
 | `HOMER_ADMIN_TOKEN` | _(required)_ | Admin API bearer token; resolved by `@SYSENV` in the example config. Startup fails if empty or unset. |
 | `FRONTEND_PORT` | 3000 | Compose passes the console's port to the backend too: the example configs allow the console origin `http://localhost:<FRONTEND_PORT>` (and `127.0.0.1`) via `@SYSENV:FRONTEND_PORT`. Startup fails if unset |
-| `JAVA_OPTS` | `-Xmx512m -Xms256m` | JVM options. The image puts `-XX:-UseBASE64Intrinsics` (CVE-2026-114938, Java4Shell stopgap) before them, so setting `JAVA_OPTS` keeps it; it goes once the base JRE carries the fix |
+| `JAVA_OPTS` | `-Xmx512m -Xms256m` | JVM options. The image puts `-XX:-UseBASE64Intrinsics` (CVE-2026-114938, Java4Shell; W-020 in [`docs/workarounds.md`](docs/workarounds.md)) before them, so setting `JAVA_OPTS` keeps it |
 | `CONFIG_PATH` | `config/config.json` | Path to config file in container |
 
 ### Build Arguments

@@ -15,4 +15,5 @@ if [ "${#JARS[@]}" -gt 1 ]; then
   printf '  %s\n' "${JARS[@]}"
   exit 1
 fi
+# -XX:-UseBASE64Intrinsics: W-020.
 exec java -XX:-UseBASE64Intrinsics --enable-native-access=ALL-UNNAMED -jar "${JARS[0]}" "$@"

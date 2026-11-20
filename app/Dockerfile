@@ -152,8 +152,6 @@ WORKDIR /var/homer-runner
 ENV HOMER_RUNNER_ROOT=/var/homer-runner
 ENV JAVA_OPTS="-Xmx256m"
 
-# -XX:-UseBASE64Intrinsics is the Java4Shell mitigation (DOCKER.md), ahead of JAVA_OPTS.
-
-# Options come from HOMER_RUNNER_* env vars or the command line:
+# Options: HOMER_RUNNER_* env vars or the command line; -XX:-UseBASE64Intrinsics (W-020) leads JAVA_OPTS.
 #   docker run -e HOMER_RUNNER_URL=... -e HOMER_RUNNER_TOKEN=... -e HOMER_RUNNER_TAGS=linux homer-runner
 ENTRYPOINT ["/bin/sh", "-c", "exec java -XX:-UseBASE64Intrinsics $JAVA_OPTS --enable-native-access=ALL-UNNAMED -jar /app/homer-runner.jar \"$@\"", "--"]
