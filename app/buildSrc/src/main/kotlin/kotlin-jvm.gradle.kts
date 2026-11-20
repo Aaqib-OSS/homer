@@ -4,6 +4,8 @@ package buildsrc.convention
 
 import CrapReportTask
 import CrapScore
+import kotlinx.kover.gradle.plugin.dsl.AggregationType
+import kotlinx.kover.gradle.plugin.dsl.CoverageUnit
 import org.gradle.api.tasks.testing.logging.TestLogEvent
 import org.jetbrains.kotlin.gradle.plugin.getKotlinPluginVersion
 
@@ -65,9 +67,8 @@ tasks.withType<dev.detekt.gradle.Detekt>().configureEach {
     }
 }
 
-// Only the type-resolved `detektMain` runs, on its own (CI job homer-app-detekt): the plugin's
-// untyped `detekt` task would analyse the same sources again, and inside `check` the Analysis API
-// pushes the build past the CI runner's memory.
+// Only the type-resolved `detektMain` runs, in CI job homer-app-detekt (ADR-0082): the untyped `detekt` task
+// would analyse the sources twice, and inside `check` the Analysis API exhausts the runner's memory.
 tasks.named("detekt") { enabled = false }
 
 // CRAP score report (ADR-0081): complexity from the main sources, coverage from Kover's XML report.
@@ -106,13 +107,13 @@ tasks.register<CrapReportTask>("crapReport") {
     outputDir.set(layout.buildDirectory.dir("reports/crap"))
 }
 
+// A module's line-coverage floor is one point under today's measured value, rounded down, and only goes up (ADR-0082).
+// A module without `koverMinLine` in its gradle.properties (no tests, empty report) has no rule.
 kover {
     reports {
         verify {
-            rule {
-                // Coverage threshold intentionally 0% at adoption. Tune upward as
-                // coverage is measured and improved.
-                minBound(0)
+            findProperty("koverMinLine")?.let { floor ->
+                rule { minBound(floor.toString().toInt(), CoverageUnit.LINE, AggregationType.COVERED_PERCENTAGE) }
             }
         }
     }

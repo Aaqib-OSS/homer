@@ -6,11 +6,8 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { anchors, checkLinks, linkTargets } from './md-links.mjs'
 
-// Every tracked markdown file, not only the pages the site publishes: the CLAUDE.md guides are
-// read on GitHub and loaded into every agent session, so a stale path there misleads silently.
-// Only tracked files are walked; untracked files git does not ignore still count as link targets,
-// so a new doc can be linked before `git add`. site/pages/** is not walked: its links name
-// built-site routes, which the site build's dead-link check covers.
+// Walks every tracked *.md except site/pages/** (site routes, covered by the build); untracked
+// unignored files still count as link targets, so a new doc can be linked before `git add`.
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..')
 const git = (...args) => execFileSync('git', ['-C', root, 'ls-files', '-z', ...args], { encoding: 'utf8' }).split('\0').filter(Boolean)
 const onDisk = (f) => existsSync(join(root, f))

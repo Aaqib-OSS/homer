@@ -1,7 +1,6 @@
 <script setup lang="ts">
-// Lists the published versions from versions.json, which the Pages deployment writes one level
-// above every version's base (e.g. /homer/versions.json for /homer/1.34.0/). A local build has no
-// such file, so the menu stays hidden.
+// Lists the published versions from the versions.json the Pages deployment writes one level above
+// every version's base (/homer/versions.json for /homer/1.34.0/); a local build has none, so it hides.
 import { onMounted, ref } from 'vue'
 import { useData } from 'vitepress'
 import { menuEntries, versionsRoot } from './versions.mjs'

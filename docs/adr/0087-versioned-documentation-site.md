@@ -3,7 +3,7 @@ status: accepted
 date: 2026-10-15
 deciders: Lukáš Vlk
 consulted: ADR-0084, ADR-0086
-amended: 2026-11-15
+amended: 2026-11-15, 2026-11-20
 ---
 
 # ADR-0087: A versioned documentation site generated from the repository's Markdown
@@ -143,3 +143,13 @@ to keep, since it is where contributors read and write the links. Rewriting
 the fragments in the generator instead would have kept two id schemes alive.
 After the build, `site/scripts/check-anchors.mjs` fails it on a link whose
 fragment names no id on the page it points at.
+
+## Amendment (2026-11-20): what `pages.yml` deploys and fetches
+
+Only the default branch deploys, a manual run included, so a dispatch from another branch cannot publish under the
+organization's site (`ReleaseWorkflowGateTest`). The job fetches only the versions the site keeps (`assemble.mjs --kept`).
+A release from before the site has no docs archive and is skipped; any other failure to fetch an archive fails the
+deploy rather than dropping that version. Anyone with write access can replace a release asset, so an archive is
+published only when its attestation proves `release.yml` built it from that release's tag on a GitHub-hosted runner
+and `check-archive.mjs` accepts it: an extension header, a link or a `..` path could write outside its directory or
+pull a runner file into the published site.

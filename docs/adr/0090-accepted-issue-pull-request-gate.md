@@ -3,7 +3,7 @@ status: accepted
 date: 2026-10-20
 deciders: Lukáš Vlk
 consulted: ADR-0084, ADR-0086
-amended: 2026-10-24
+amended: 2026-10-24, 2026-11-20
 ---
 
 # ADR-0090: A pull request merges only for an issue a maintainer accepted
@@ -112,3 +112,16 @@ This retires the original decision's "the rule has no exception to abuse": the
 release pull request is the one exception. Opening it takes the factory App's
 own installation token, and what it can carry is a changelog edit and a version
 bump that a maintainer still merges.
+
+## Amendment (2026-11-20): Renovate
+
+Renovate is the second dependency bot ([`renovate.json`](../../renovate.json)). Its pull requests link no
+issue either, so the `accepted-issue` job skips them the same way: the exemption compares the author's
+login with `renovate[bot]`, the Renovate App's account, beside `dependabot[bot]`. The `[bot]`
+suffix argument holds for both, and no other bot or name pattern is exempt. `tools/pr-policy/check-test.sh`
+asserts that the workflow names exactly those two logins. A Renovate pull request still passes every other
+required check, the review and a maintainer's merge.
+
+## Amendment (2026-11-20): what the PR-policy scripts read
+
+An issue of another repository never satisfies the check: anyone can label issues in a repository they own, so only this repository's `accepted` label is an admission. `secret-scan.sh` follows the same rule as `check.sh`: a pull request must not be able to change how it is judged. Its gitleaks rules are `.gitleaks.toml` of the base commit (the default rules when the base has none), never the scanned commits'; `--ignore-gitleaks-allow` drops `gitleaks:allow` comments, and the source is the git directory rather than the work tree, because gitleaks loads a `.gitleaksignore` from its source whatever the ignore path says. The scan itself uses an empty ignore directory, so a pull request's own `.gitleaksignore` is never read and it cannot allowlist its own secret. `-m` scans a merge commit's patch against each parent, so a secret added while resolving a merge is found; findings are redacted because the CI log is public. A base or head commit that does not resolve fails the job, since gitleaks scans an unresolvable range as 0 commits and passes. The scanner is a pinned release taken from the base too: `install-gitleaks.sh` and its version and SHA-256 (`gitleaks.env`) come from the base checkout, so a pull request cannot swap in its own.

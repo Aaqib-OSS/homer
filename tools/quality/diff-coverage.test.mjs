@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { test } from 'node:test';
-import { isConsoleSource, isKotlinSource, koverKey, koverLines, measure, statementLines, toFindings } from './diff-coverage.mjs';
+import { isConsoleSource, isKotlinSource, koverKey, koverLines, main, measure, statementLines, toFindings } from './diff-coverage.mjs';
 
 test('only instrumented production sources are measured', () => {
   assert.ok(isKotlinSource('app/app/src/main/kotlin/homer/app/A.kt'));
@@ -47,4 +50,18 @@ test('files under the threshold are findings with their uncovered ranges; uninst
   assert.equal(finding.line, 2);
   assert.equal(finding.message, '1/4 changed lines covered (25.0%), uncovered: 2-3, 5');
   assert.equal(finding.severity, 'major');
+});
+
+test('without a base argument the check is skipped, whatever the environment holds', () => {
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'diff-coverage-'));
+  const saved = process.env.CI_MERGE_REQUEST_DIFF_BASE_SHA;
+  process.env.CI_MERGE_REQUEST_DIFF_BASE_SHA = 'HEAD';
+  try {
+    main([undefined, out]);
+    assert.match(fs.readFileSync(path.join(out, 'diff-coverage-summary.txt'), 'utf8'), /no pull-request base/);
+  } finally {
+    if (saved === undefined) delete process.env.CI_MERGE_REQUEST_DIFF_BASE_SHA;
+    else process.env.CI_MERGE_REQUEST_DIFF_BASE_SHA = saved;
+    fs.rmSync(out, { recursive: true, force: true });
+  }
 });

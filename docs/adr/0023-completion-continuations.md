@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-16
 deciders: Lukáš Vlk
-amended: 2026-09-30, 2026-10-09, 2026-11-12, 2026-11-20
+amended: 2026-06-16, 2026-09-30, 2026-10-09, 2026-11-12, 2026-11-20
 ---
 # ADR-0023: Completion continuations — resume a parked workflow when a watched process ends
 
@@ -64,9 +64,7 @@ Chosen:
    final stdout is run through the optional `resultTransformer` and embedded in
    the resume payload (`{status, processId, result}`). Over 64 KiB, `result` is
    `null` — the parent resumes by reference (it can fetch the artifact) rather
-   than inflating the env/payload. *(Superseded in part by
-   [ADR-0025](0025-capability-token-result-read.md): the over-cap branch now
-   adds a fetchable `resultRef` capability token instead of a bare `processId`.)*
+   than inflating the env/payload.
 
 4. **Opt-in via `dispatch.enabled` on the target agent**, the same gate
    ask-and-dispatch uses — no new opt-in surface.
@@ -95,6 +93,8 @@ Chosen:
    `LD_*` in the target's env or spoof `HMR_*` identity. Every other param
    reaches the target only through its declared `inputs`.
 
+> **Amendment (2026-06-16) —** Superseded in part by [ADR-0025](0025-capability-token-result-read.md): the over-cap branch now adds a fetchable `resultRef` capability token instead of a bare `processId`.
+
 ### Consequences
 
 - Good: completions are never dropped; the trigger is as reliable as the
@@ -118,11 +118,8 @@ that had nothing to do with the continuation — the target agent over its cost
 cap, a full process table, a full run queue — and the only trace was a `WARN`
 line. Agents that use continuations as their crash-reporting channel would
 lose the report of the crash.
-*(Amended 2026-10-09: a full run queue never reaches `fire()` — `maxQueuedRuns`
-is enforced inside the already-launched target run, which ends `FAILED` like any
-other run, so only the cost cap, the cooldown and a full process table are
-retried. The `MaxQueuedRunsExceededException` arm of `isTransient` is
-unreachable; removing it is an open follow-up.)*
+
+> **Amendment (2026-10-09) —** A full run queue never reaches `fire()` — `maxQueuedRuns` is enforced inside the already-launched target run, which ends `FAILED` like any other run, so only the cost cap, the cooldown and a full process table are retried. The `MaxQueuedRunsExceededException` arm of `isTransient` is unreachable; removing it is an open follow-up.
 
 Those three rejections are now treated as **transient**: the row goes back to
 `PENDING` with the attempt counted (`fire_attempts`) and the next attempt
@@ -130,13 +127,8 @@ scheduled (`next_attempt_at`, doubling from 60 s up to 1 h), and
 `ContinuationSweepService` re-fires it on the existing sweep tick. Retries are
 bounded twice — by an 8-attempt budget and by the continuation's own TTL, which
 is checked first so a lapsed row expires rather than spending another attempt.
-*(Amended 2026-11-12: the lock-wait bound added by
-[ADR-0104](0104-lock-before-slot-admission-order.md) joins the list —
-`MaxLockWaitersExceededException` is classified transient like the run queue. It shares
-that arm's reachability, though: the lock wait is entered inside the already-launched
-target run, so the refusal ends that run `FAILED` with a stored reason and never reaches
-`fire()`. The arm keeps the classification exhaustive rather than opening a new retry
-path.)*
+
+> **Amendment (2026-11-12) —** The lock-wait bound added by [ADR-0104](0104-lock-before-slot-admission-order.md) joins the list — `MaxLockWaitersExceededException` is classified transient like the run queue. It shares that arm's reachability, though: the lock wait is entered inside the already-launched target run, so the refusal ends that run `FAILED` with a stored reason and never reaches `fire()`. The arm keeps the classification exhaustive rather than opening a new retry path.
 
 Everything else stays permanent and still fails on the first attempt: target
 agent gone, no longer dispatch-enabled, hop unauthorized, input validation

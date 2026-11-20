@@ -11,6 +11,21 @@ amended: 2026-10-09, 2026-11-20
 > module: it carries the same `licenseReport { }` gate, and its report feeds the merged
 > notices alongside `:app` and `:agentdebug`.
 
+> **Amendment (2026-11-20) — the console image's LGPL gate moved to the Release workflow.** The
+> LGPL-3.0 `libvips` gate moved from the GitLab `build-homer-console` job to the Release
+> workflow's `LGPL gate` step, which scans each platform's image before the push.
+> `console/Dockerfile` can prune `sharp` and `@img/*` because `next.config.js` sets
+> `images.unoptimized`, so Next never loads them at run time.
+>
+> The gate scans before the push because pushing an image conveys its binaries to everyone who
+> pulls it: a hit must stop the push, so a failed or incomplete scan refuses it.
+
+> **Amendment (2026-11-20) — the license report's explicit array types.** Each module's
+> `licenseReport { }` block types its `filters` and `renderers` arrays explicitly. The plugin's
+> `checkLicense` appends a JSON renderer to the configured array, which throws a
+> `ClassCastException` when Kotlin's `arrayOf(...)` narrows the runtime array type to the single
+> renderer class instead of `ReportRenderer[]`.
+
 ## Context and Problem Statement
 
 Homer is Apache-2.0 and distributed as shadow JARs and Docker images —

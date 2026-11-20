@@ -1,8 +1,7 @@
 """The bundled example agent's graph imports and runs end to end.
 
-``example/agents/langgraph_demo`` ships its graph next to its ``agent.yaml``
-and puts that directory on ``PYTHONPATH``; this drives it through the runtime
-the same way: one join over the checks, then the approval gate.
+``example/agents/langgraph_demo`` is driven through the runtime from its own directory:
+one join over the checks, then the approval gate.
 """
 
 from __future__ import annotations

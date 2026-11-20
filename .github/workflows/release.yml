@@ -1,10 +1,5 @@
-# Publishes the backend, runner and console images to GHCR once the full CI passes. A bare semver
-# tag publishes that version; workflow_dispatch builds <branch>-<sha> plus the moving <branch> tag.
-# Every image is a multi-arch index of a linux/amd64 and a linux/arm64
-# build, each built on a native runner. Each platform image is signed with cosign and carries
-# SLSA build provenance and a CycloneDX SBOM; the index is signed and carries SLSA provenance of
-# the run that assembled it plus both platform SBOMs, so a consumer can verify an image before
-# deploying it (ADR-0086).
+# Publishes the backend, runner and console images to GHCR once CI passes: a bare semver tag publishes that
+# version, workflow_dispatch <branch>-<sha> plus the moving <branch> tag. Multi-arch, signed, attested (ADR-0086).
 name: Release
 
 on:
@@ -15,10 +10,8 @@ on:
 permissions:
   contents: read
 
-# Only a protected ref publishes (CWE-285): a tag or branch anyone with write access can push
-# must not put an image under the release names. A tag ruleset and the main ruleset make a ref
-# protected.
-# ReleaseWorkflowGateTest keeps the gate on every job.
+# Only a protected ref publishes (CWE-285, ADR-0086): a ref anyone with write access can push must not put an
+# image under the release names. ReleaseWorkflowGateTest keeps the gate on every job.
 jobs:
   ci:
     if: github.ref_protected
@@ -31,7 +24,7 @@ jobs:
   docs:
     needs: ci
     if: github.ref_protected && github.ref_type == 'tag'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: write
@@ -54,7 +47,7 @@ jobs:
       # No dependency cache in a release job: a cache another run wrote must not feed a release.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version: '24.22.3'
           package-manager-cache: false
       - name: Build
         working-directory: site
@@ -92,7 +85,7 @@ jobs:
   image-tags:
     needs: ci
     if: github.ref_protected
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       version: ${{ steps.tags.outputs.version }}
@@ -124,9 +117,8 @@ jobs:
             echo "moving=$slug" >>"$GITHUB_OUTPUT"
           fi
 
-  # Each image is built natively on a runner of each platform, not under QEMU emulation, and pushed
-  # by digest only: no tag names a platform image until job `images` joins all of them into one
-  # index. Every platform manifest is signed and attested on its own as well (ADR-0086).
+  # Each image is built natively per platform, not under QEMU, and pushed by digest only: no tag names a
+  # platform image until job `images` joins them (ADR-0086).
   image-builds:
     needs: image-tags
     if: github.ref_protected
@@ -169,7 +161,7 @@ jobs:
         platform:
           - name: linux/amd64
             arch: amd64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
           - name: linux/arm64
             arch: arm64
             runner: ubuntu-24.04-arm
@@ -195,10 +187,8 @@ jobs:
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: printf '%s' "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-      # License gate. Next pulls sharp's prebuilt libvips binaries (@img/*), which are
-      # LGPL-3.0-or-later, and console/Dockerfile prunes them. Pushing is what would convey
-      # them, so the gate scans a local build of each platform before the push, which then
-      # rebuilds from the builder's cache. It fails closed: an early exit is a failed gate.
+      # LGPL gate (ADR-0056): scans a local build of each platform before the push, then the push rebuilds
+      # from cache. It fails closed: an early exit is a failed gate.
       - name: Build for the LGPL gate
         if: matrix.build.image == 'homer-console'
         run: |
@@ -228,9 +218,8 @@ jobs:
           digest=$(jq -r '."containerimage.digest"' build.json)
           printf '%s\n' "$digest" | grep -qxE 'sha256:[0-9a-f]{64}' || { echo "No registry digest for $IMAGE ($PLATFORM)"; exit 1; }
           echo "digest=$digest" >>"$GITHUB_OUTPUT"
-      # Supply chain (ADR-0086): everything below binds to the pushed digest, never to a tag, so a
-      # tag moved later cannot borrow the signature. A failure leaves the image unsigned, and a
-      # consumer that verifies refuses it.
+      # Everything below binds to the pushed digest, never a tag (ADR-0086); a failure leaves the image
+      # unsigned, and a consumer that verifies refuses it.
       - name: SBOM
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
@@ -275,14 +264,12 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # Joins each image's platform builds into one multi-arch index under the release tags, then
-  # signs and attests the index digest, the digest the release page and the docs tell a consumer
-  # to verify and pin (ADR-0086). Any failed platform build skips every index, so a release tag
-  # never names an image that lacks a platform.
+  # Joins each image's platform builds into one index under the release tags, then signs and attests it
+  # (ADR-0086). A failed platform build skips every index, so no tag names an image lacking a platform.
   images:
     needs: [image-tags, image-builds]
     if: github.ref_protected
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -395,14 +382,12 @@ jobs:
             echo "Verified the signature, provenance and SBOM of $IMAGE@$digest"
           done
 
-  # The release page says what was published and how to check it: the images' digests and the
-  # command that verifies them, below the changelog section. Each digest is read from GHCR and
-  # verified against this run's signing identity before it is listed. A re-run replaces the
-  # section (tools/release/notes.sh merge).
+  # The release page lists each image's digest and the verify command, each digest verified against this run's
+  # signing identity first (ADR-0086); a re-run replaces the section (tools/release/notes.sh merge).
   release-notes:
     needs: [docs, images]
     if: github.ref_protected && github.ref_type == 'tag'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write

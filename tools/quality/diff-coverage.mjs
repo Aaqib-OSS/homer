@@ -1,11 +1,7 @@
 /**
- * diff-coverage: test coverage of the lines a pull request adds or changes (ADR-0082), from the
- * backend's Kover XML reports and the console's V8 `coverage-final.json`. One finding per changed
- * file whose changed, instrumented lines are less than THRESHOLD% covered.
- * Usage (repository root): node tools/quality/diff-coverage.mjs [base sha] [out dir]
- * CI passes the pull request merge commit's first parent as the base (ci.yml). Without an argument it
- * falls back to CI_MERGE_REQUEST_DIFF_BASE_SHA, a GitLab variable GitHub never sets; without a base there
- * is no diff to measure.
+ * diff-coverage (ADR-0082): coverage of the lines a PR adds or changes, from the backend's Kover XML and the console's
+ * V8 `coverage-final.json`; a finding per file under THRESHOLD%. CI's base: the PR merge commit's first parent.
+ * Usage (repository root): node tools/quality/diff-coverage.mjs [base sha] [out dir]; no base, no diff to measure.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -122,7 +118,7 @@ export function coverageLookup(root) {
   };
 }
 
-export function main([base = process.env.CI_MERGE_REQUEST_DIFF_BASE_SHA, outDir = 'reports/quality/diff-coverage']) {
+export function main([base, outDir = 'reports/quality/diff-coverage']) {
   const title = (extra) => `Diff coverage (${extra}, threshold ${THRESHOLD}%)`;
   if (!base) {
     return writeCheck(outDir, 'diff-coverage', title('no pull request'), [], { skipped: 'no pull-request base', threshold: THRESHOLD });

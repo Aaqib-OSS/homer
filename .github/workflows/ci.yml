@@ -1,7 +1,5 @@
-# Per-commit checks on GitHub-hosted runners, on pull requests and main only (a
-# push trigger on every branch would run each PR twice). Fork pull requests run
-# it too, so no job here may need a secret: Gradle resolves from Maven Central
-# and caches through setup-gradle (ADR-0084).
+# Per-commit checks on pull requests and main only (a push trigger on every branch would run each PR
+# twice). Fork pull requests run it, so no job may need a secret (ADR-0084).
 name: CI
 
 on:
@@ -20,7 +18,7 @@ concurrency:
 
 jobs:
   homer-app-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     defaults:
       run:
@@ -64,7 +62,7 @@ jobs:
           retention-days: 7
 
   homer-app-detekt:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -88,7 +86,7 @@ jobs:
           retention-days: 7
 
   homer-console-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     defaults:
       run:
@@ -99,7 +97,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version: '24.22.3'
           cache: npm
           cache-dependency-path: console/package-lock.json
       - run: npm ci
@@ -127,11 +125,10 @@ jobs:
           path: reports.tgz
           retention-days: 7
 
-  # The documentation site (ADR-0087): the generator's tests and a full build, which fails on a
-  # link to a file the repository does not hold, on a dead link between pages, and on a link whose
-  # #fragment names no id on its page.
+  # The documentation site (ADR-0087): the generator's tests and a full build, which fails on a dead
+  # link, a link to a missing file, or a #fragment naming no id on its page.
   docs-site:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
@@ -142,7 +139,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version: '24.22.3'
           cache: npm
           cache-dependency-path: site/package-lock.json
       - run: npm ci
@@ -152,7 +149,7 @@ jobs:
   # Stryker on the console lines a pull request changes (check `mutation-console`, ADR-0082).
   homer-console-mutation:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # quality-gate waits for this job; the bound keeps one large PR from holding it for hours.
     timeout-minutes: 20
     # Report-only and still unproven on CI runners: a Stryker failure warns, it does not block.
@@ -164,7 +161,7 @@ jobs:
           fetch-depth: 2
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version: '24.22.3'
           cache: npm
           cache-dependency-path: console/package-lock.json
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -192,7 +189,7 @@ jobs:
   # PIT on the backend lines a pull request changes (check `mutation-backend`, ADR-0082).
   homer-app-mutation:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # quality-gate waits for this job; the bound keeps one large PR from holding it for hours.
     timeout-minutes: 20
     # Report-only: a PIT failure warns, it does not block.
@@ -209,7 +206,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version: '24.22.3'
       # The checkout is the PR merge commit, so its first parent is the base it is measured against.
       - run: |
           MUTATE_BASE="$(git rev-parse HEAD^1)"
@@ -229,7 +226,7 @@ jobs:
           retention-days: 7
 
   homer-python-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
       run:
@@ -241,9 +238,8 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
-      # The dependencies exactly as the image installs them (requirements.lock, ADR-0114), so a
-      # dependency missing from the lock fails the tests; requirements-test.lock adds pytest, ruff and
-      # setuptools, which never ship. One install, so a pin the two locks disagree on fails it.
+      # The image's own install (requirements.lock, ADR-0114) plus requirements-test.lock (pytest, ruff,
+      # setuptools); one install, so a pin the two locks disagree on fails it.
       - run: pip install --require-hashes --no-deps -r requirements.lock -r requirements-test.lock
       - run: pip install --no-deps --no-build-isolation -e .
       - run: ruff check
@@ -269,7 +265,7 @@ jobs:
   # tools/release/notes.sh writes the GitHub release page (release.yml's docs and release-notes
   # jobs), which run on tags only.
   release-notes-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -277,11 +273,10 @@ jobs:
           persist-credentials: false
       - run: tools/release/notes-test.sh
 
-  # shellcheck, actionlint, zizmor and hadolint over the shell scripts, workflows and Dockerfiles
-  # (check `infra-lint`, ADR-0082). Each tool is the release binary of the version pinned here,
-  # refused unless it matches the pinned SHA-256; docs/quality-checks.md names the same versions.
+  # shellcheck, actionlint, zizmor and hadolint (check `infra-lint`, ADR-0082): release binaries refused
+  # unless they match the pinned SHA-256; docs/quality-checks.md names the same versions.
   homer-infra-lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -289,7 +284,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version: '24.22.3'
       - name: Install the linters
         env:
           SHELLCHECK_VERSION: 0.11.0
@@ -342,7 +337,7 @@ jobs:
       && needs.homer-app-detekt.result == 'success'
       && needs.homer-console-tests.result == 'success'
       && needs.homer-python-tests.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -351,7 +346,7 @@ jobs:
           fetch-depth: 2
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version: '24.22.3'
           cache: npm
           cache-dependency-path: tools/quality/package-lock.json
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -405,7 +400,7 @@ jobs:
   # Black-box E2E suite against the production backend image; doubles as the
   # "does app/Dockerfile still build" gate. Runbook: app/e2e/README.md.
   homer-e2e:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       COMPOSE_FILE: docker-compose.e2e.yml

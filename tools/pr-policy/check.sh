@@ -1,16 +1,6 @@
 #!/bin/sh
-# Decides the PR policy check (CONTRIBUTING.md § Submitting changes): a pull request must link an
-# issue of this repository that carries the `accepted` label. Only maintainers and triagers can
-# set a label, so `accepted` records that the change belongs in Homer. An issue in another
-# repository does not count: anyone can label issues in a repository they own.
-#
-# One exemption, granted only as a whole: the AIF factory's release pull request, which changes
-# the changelog and the pinned release version only (ADR-0090, 2026-10-24 amendment).
-#
-# Usage: tools/pr-policy/check.sh OWNER/REPO <closing-issues.json
-# The JSON is the answer to the GraphQL query in .github/workflows/pr-policy.yml. For the
-# exemption, the workflow also sets PR_AUTHOR_ID, PR_AUTHOR_TYPE, PR_HEAD_REPO, PR_HEAD_REF and
-# PR_FILES (a file of the pull request's changes, one `STATUS PATH` line each).
+# PR policy: the PR links an `accepted` issue of this repository; the factory's release PR is exempt whole (ADR-0090).
+# Usage: check.sh OWNER/REPO <closing-issues.json; the exemption reads PR_* (PR_FILES: `STATUS PATH` lines).
 set -eu
 
 repo=$1

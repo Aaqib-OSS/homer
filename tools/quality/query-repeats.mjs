@@ -1,13 +1,7 @@
 /**
- * query-repeats: statements production code runs three or more times in one transaction during
- * `:app:test`, the shape of a query per row in a loop (ADR-0082, SQLite rule 2 in app/CLAUDE.md).
- * Reads the `repeats` of the JSON `:app:queryPlanReport` writes; `QueryPlanCapture` records them.
+ * query-repeats (ADR-0082, SQLite rule 2 in app/CLAUDE.md): statements production code runs 3+ times in one `:app:test`
+ * transaction; a read is major, a write minor. ACCEPTED lists intended repeats; an entry matching none is a finding.
  * Usage (repository root): node tools/quality/query-repeats.mjs [report json] [out dir]
- *
- * A repeated read is major (it costs a round trip per row on the caller's path); a repeated write
- * is minor (it is one statement per row, but inside the transaction that holds the write lock).
- * A repeat made on purpose is listed in ACCEPTED with its reason; an entry no longer matching any
- * repeat is a finding.
  */
 import fs from 'node:fs';
 import { runMain, writeCheck } from './lib.mjs';

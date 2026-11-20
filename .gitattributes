@@ -1,4 +1,3 @@
-# Parallel MRs each add a bullet under [Unreleased] at the same spot; a textual
-# conflict there carries no information, so let git keep both sides. Only
-# affects local/agent merges — a forge's server-side mergeability check ignores it.
+# Parallel PRs each add a bullet under [Unreleased] at the same spot, so git keeps both sides;
+# local merges only — a forge's server-side mergeability check ignores it.
 CHANGELOG.md merge=union

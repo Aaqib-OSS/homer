@@ -7,9 +7,7 @@ WORKDIR /build
 # Install bash for Gradle wrapper, zip to trim the fat jar
 RUN apk add --no-cache bash zip
 
-# Build context is the repo root (see docker-compose.yml / DOCKER.md): COPY
-# sources are prefixed with app/, but the in-image WORKDIR layout stays the same.
-# Copy Gradle wrapper and configuration files
+# The build context is the repo root, so COPY sources carry the app/ prefix; the in-image layout is unchanged.
 COPY app/gradle ./gradle
 COPY app/gradlew ./
 COPY app/gradle.properties ./
@@ -22,46 +20,23 @@ COPY app/agentdebug ./agentdebug
 COPY app/homer-runner ./homer-runner
 COPY app/schemas ./schemas
 
-# settings.gradle.kts includes :e2e (the black-box suite) and :architecture (the
-# report-only rule tests), never built here; empty dirs satisfy Gradle without
-# copying their sources.
+# settings.gradle.kts includes :e2e and :architecture, never built here; empty dirs satisfy Gradle.
 RUN mkdir -p e2e architecture
 
-# Optional Artifactory credentials as BuildKit secrets -- never ARG/ENV, which
-# leak into image history/metadata; see DOCKER.md and root CLAUDE.md §12 rule 7.
-# Download dependencies (cached layer)
-# The $(…) ends in `|| true`, so the export masks no failure.
-# hadolint ignore=SC2155
-RUN --mount=type=secret,id=artifactory_url \
-    --mount=type=secret,id=artifactory_user \
-    --mount=type=secret,id=artifactory_token \
-    export ARTIFACTORY_URL="$(cat /run/secrets/artifactory_url 2>/dev/null || true)" && \
-    export ARTIFACTORY_USER="$(cat /run/secrets/artifactory_user 2>/dev/null || true)" && \
-    export ARTIFACTORY_TOKEN="$(cat /run/secrets/artifactory_token 2>/dev/null || true)" && \
-    ./gradlew dependencies --no-daemon || true
+# Caches the Gradle distribution, buildSrc and plugins in their own layer.
+RUN ./gradlew dependencies --no-daemon
 
 # Build fat jar. The release tag is stamped into the runner jar (its name and the version it
 # registers with); declared after the dependency layer so a version change does not refetch them.
 ARG HOMER_VERSION=dev
-# The $(…) ends in `|| true`, so the export masks no failure.
-# hadolint ignore=SC2155
-RUN --mount=type=secret,id=artifactory_url \
-    --mount=type=secret,id=artifactory_user \
-    --mount=type=secret,id=artifactory_token \
-    export ARTIFACTORY_URL="$(cat /run/secrets/artifactory_url 2>/dev/null || true)" && \
-    export ARTIFACTORY_USER="$(cat /run/secrets/artifactory_user 2>/dev/null || true)" && \
-    export ARTIFACTORY_TOKEN="$(cat /run/secrets/artifactory_token 2>/dev/null || true)" && \
-    ./gradlew shadowJar --no-daemon -PhomerVersion="$HOMER_VERSION"
+RUN ./gradlew shadowJar --no-daemon -PhomerVersion="$HOMER_VERSION"
 
-# The runtime image is Alpine (musl), where sqlite-jdbc loads only its Linux-Musl
-# native library; drop the other platforms' copies. Only the image's jar is musl-only:
-# a source build (gradlew shadowJar) keeps every platform. See ADR-0015.
+# Alpine (musl) loads only sqlite-jdbc's Linux-Musl native library, so the image's jar drops the
+# other platforms' copies; a source build keeps them (ADR-0015).
 RUN zip -q -d app/build/libs/homer-*-all.jar 'org/sqlite/native/*' -x 'org/sqlite/native/Linux-Musl/*'
 
-# Stage 2: the slim server image (ADR-0094): Homer, a JRE and what the server itself runs:
-# sh/bash for local commands and `when:` predicates, su-exec for the entrypoint, curl for the
-# compose health check, python3 + homer_langgraph for the server-side LangGraph inspect and state
-# calls. No agent toolchain; runs that need one go to a runner that has it.
+# Stage 2: the slim server image (ADR-0094): Homer, a JRE, bash, su-exec, curl and the LangGraph
+# runtime, with no agent toolchain.
 FROM eclipse-temurin:25-jre-alpine-3.23@sha256:e3ec242a23cf736c024475da9cd2a26f1f9d896840dd797da1bb95d30ed3f659 AS slim
 
 ARG HOMER_VERSION=dev
@@ -74,15 +49,8 @@ RUN apk add --no-cache \
     python3 \
     py3-pip
 
-# Install the homer_langgraph Python runtime that backs the !<langgraph>
-# command type: its dependencies exactly as hash-pinned in requirements.lock,
-# then the package itself, built with py3-pip's apk setuptools (the lock's
-# packaging replaces py3-pip's apk copy). Never resolve here: on musl a resolve
-# backtracks to old langgraph releases (ADR-0114).
-# --break-system-packages installs into the system site-packages (PEP 668
-# refuses a system-wide install otherwise on Alpine), which the homer user can
-# import. Every native dependency in the lock ships musllinux wheels, so no
-# Rust/gcc build toolchain is needed.
+# The !<langgraph> runtime: the hash-pinned requirements.lock, never a resolve, which backtracks on
+# musl (ADR-0114). --break-system-packages: PEP 668 refuses a system-wide install on Alpine otherwise.
 COPY clients/python /tmp/homer_langgraph_src
 RUN pip install --no-cache-dir --break-system-packages --require-hashes --no-deps -r /tmp/homer_langgraph_src/requirements.lock && \
     pip install --no-cache-dir --break-system-packages --no-deps --no-build-isolation /tmp/homer_langgraph_src && \
@@ -92,20 +60,14 @@ RUN pip install --no-cache-dir --break-system-packages --require-hashes --no-dep
 RUN addgroup -g 1000 homer && \
     adduser -u 1000 -G homer -h /home/homer -s /bin/bash -D homer
 
-# Create application directories. /app itself (and /app/config) stay root-owned:
-# agents run in-container as homer, and if /app or the root-executed entrypoint
-# were homer-writable a homer process could replace the entrypoint and get root
-# on the next restart (CWE-732/269). Hand homer only the directories it must
-# write at runtime — workspace (runs, SQLite db, logs) and agents (agent CRUD) —
-# plus its home.
+# /app and /app/config stay root-owned: a homer-writable entrypoint would give an agent root on the next
+# restart (CWE-732/269). homer gets only workspace, agents and its home.
 RUN mkdir -p /app/config /app/workspace /app/agents && \
     chown -R homer:homer /app/workspace /app/agents /home/homer
 
 WORKDIR /app
 
-# Copy the built jar as root: homer only needs to read it, and root ownership
-# keeps a homer process from swapping in a different jar that the (root) restart
-# would then execute.
+# Root-owned jar: homer must not be able to swap in one the root restart would execute (CWE-732/269).
 COPY --from=builder /build/app/build/libs/homer-*-all.jar /app/homer.jar
 
 # Debug build: conditionally copy agentdebug JAR
@@ -116,15 +78,12 @@ RUN --mount=type=bind,from=builder,source=/build/agentdebug/build/libs,target=/t
       cp /tmp/agentdebug-libs/agentdebug-*-all.jar /app/agentdebug.jar; \
     fi
 
-# agentdebug wrapper — always present, errors clearly if JAR absent
-# The single quotes keep ${CONFIG_PATH…} and $@ for the wrapper to expand.
+# agentdebug wrapper, always present; the single quotes leave ${CONFIG_PATH…} and $@ to it.
 # hadolint ignore=SC2016
 RUN printf '#!/bin/sh\nset -e\nif [ ! -f /app/agentdebug.jar ]; then\n  echo "Error: agentdebug not available. Rebuild the container with HOMER_DEBUG=1." >&2\n  exit 1\nfi\nexec su-exec homer java -XX:-UseBASE64Intrinsics --enable-native-access=ALL-UNNAMED \\\n  -jar /app/agentdebug.jar \\\n  --config "${CONFIG_PATH:-config/config.json}" "$@"\n' > /usr/local/bin/agentdebug && \
     chmod +x /usr/local/bin/agentdebug
 
-# Copy entrypoint script as root: ENTRYPOINT runs it as root, so it must not be
-# writable by homer — otherwise a homer process could replace it and run
-# arbitrary code as root on the next container start.
+# Root-owned entrypoint: it runs as root, so homer must not be able to replace it (CWE-732/269).
 COPY --chown=root:root --chmod=755 app/entrypoint.sh /app/entrypoint.sh
 
 EXPOSE 8080
@@ -150,12 +109,8 @@ RUN apk add --no-cache \
     jq \
     unzip
 
-# Install Claude Code CLI, Codex CLI and opencode globally (binaries accessible
-# to all users; they back the !<claude>, !<codex> and !<opencode> command types).
-# All three are pinned (CWE-1357): an unpinned global npm install ships every
-# later release of a binary that runs agent prompts with the workspace's secrets
-# in its environment. Bump the pins deliberately; CLAUDE_CODE_VERSION must match
-# server.requireClaudeCodeVersion.
+# The agent CLIs are pinned (CWE-1357): an unpinned install ships every later release of a binary that runs
+# prompts with the workspace's secrets. CLAUDE_CODE_VERSION must match server.requireClaudeCodeVersion.
 ARG CLAUDE_CODE_VERSION=2.1.318
 ARG CODEX_VERSION=0.166.0
 ARG OPENCODE_VERSION=1.19.5
@@ -163,24 +118,19 @@ ARG OPENCODE_VERSION=1.19.5
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @openai/codex@${CODEX_VERSION} opencode-ai@${OPENCODE_VERSION} && \
     npm cache clean --force
 
-# Configure glab for homer user (writes to /home/homer/.config/glab-cli/)
-# Every glab command first checks its release host for a newer release; a build host whose route there
-# stalls held this step until the CI job's 1-hour timeout. GLAB_CHECK_UPDATE=false skips the check,
-# check_update false keeps it off for agents' glab calls too, and timeout bounds the step anyway.
+# glab checks its release host first, and a stalled route there held this step to the CI timeout: the
+# check is off, for agents too, and the step bounded.
 USER homer
 RUN GLAB_CHECK_UPDATE=false timeout 60 glab config set check_update false --global \
  && GLAB_CHECK_UPDATE=false timeout 60 glab config set git_protocol https --global
 RUN git lfs install
 
-# Switch back to root — entrypoint.sh starts as root to fix volume permissions,
-# then drops to homer via su-exec
+# entrypoint.sh starts as root to fix volume permissions, then drops to homer via su-exec.
 # hadolint ignore=DL3002
 USER root
 
-# Stage 4: the external runner instance (ADR-0066). Deliberately small: the
-# agents it runs decide what else they need; derive from this image to add
-# node/claude, python, docker CLIs and so on. util-linux provides setsid so
-# killed commands take their whole process group with them (ADR-0041).
+# Stage 4: the external runner (ADR-0066), deliberately small: derive from it to add toolchains.
+# util-linux provides setsid, so killed commands take their process group with them (ADR-0041).
 FROM eclipse-temurin:25-jre-alpine-3.23@sha256:e3ec242a23cf736c024475da9cd2a26f1f9d896840dd797da1bb95d30ed3f659 AS homer-runner
 
 ARG HOMER_VERSION=dev
@@ -202,7 +152,6 @@ WORKDIR /var/homer-runner
 ENV HOMER_RUNNER_ROOT=/var/homer-runner
 ENV JAVA_OPTS="-Xmx256m"
 
-# -XX:-UseBASE64Intrinsics: CVE-2026-114938 stopgap, as in app/entrypoint.sh.
-# Options come from HOMER_RUNNER_* env vars or the command line:
+# Options: HOMER_RUNNER_* env vars or the command line; -XX:-UseBASE64Intrinsics (W-020) leads JAVA_OPTS.
 #   docker run -e HOMER_RUNNER_URL=... -e HOMER_RUNNER_TOKEN=... -e HOMER_RUNNER_TAGS=linux homer-runner
 ENTRYPOINT ["/bin/sh", "-c", "exec java -XX:-UseBASE64Intrinsics $JAVA_OPTS --enable-native-access=ALL-UNNAMED -jar /app/homer-runner.jar \"$@\"", "--"]

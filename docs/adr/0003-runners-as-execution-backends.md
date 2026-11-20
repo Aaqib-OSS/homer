@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-04-24
 deciders: Lukáš Vlk
+amended: 2026-10-09
 ---
 # ADR-0003: Runners as pluggable execution backends
 
@@ -60,17 +61,16 @@ session-scoped shell travels with the call.
 Workspaces are shared via a single RWX PVC mounted at the **same
 absolute path** inside the pod as on Homer, using `subPath` to scope to
 the per-run workspace. No copy in, no copy out; `HMR_WORK_DIR` and
-`HMR_ARTIFACTS_DIR` pass through unchanged. *(Superseded in part by
-[ADR-0043](0043-k8s-sync-workspaces.md), 2026-10-09 note: kubernetes
-workspaces are now synced by tar-over-exec; the shared RWX PVC is gone.)*
+`HMR_ARTIFACTS_DIR` pass through unchanged.
+
+> **Amendment (2026-10-09) —** Superseded in part by [ADR-0043](0043-k8s-sync-workspaces.md): kubernetes workspaces are now synced by tar-over-exec; the shared RWX PVC is gone.
 
 `HMR_API_URL` is contributed by the runner session and merged into the
 workspace env before commands run, so `RunAgent` resolves Homer's
 in-cluster Service inside the pod and the host fallback
 (`http://localhost:<port>`) applies only to the local runner.
-*(Amended 2026-10-09: `RunAgent` dispatches in-process since
-[ADR-0030](0030-runagent-in-process-dispatch.md) and no longer uses
-`HMR_API_URL`; the runner session still contributes it for in-run callbacks.)*
+
+> **Amendment (2026-10-09) —** `RunAgent` dispatches in-process since [ADR-0030](0030-runagent-in-process-dispatch.md) and no longer uses `HMR_API_URL`; the runner session still contributes it for in-run callbacks.
 
 ### Consequences
 
@@ -78,8 +78,7 @@ in-cluster Service inside the pod and the host fallback
   seam.
 - Good: live tailing keeps working because pod stdout/stderr are
   streamed to files on the shared PVC, which `ArtifactService` already
-  reads. *(Superseded in part by [ADR-0043](0043-k8s-sync-workspaces.md),
-  2026-10-09 note: there is no shared PVC any more.)*
+  reads.
 - Good: the local runner preserves byte-identical behavior for agents
   that don't set `runner:`.
 - Good: pod lifecycle surfaces on `/api/v1/process/{id}` and in the
@@ -92,6 +91,8 @@ in-cluster Service inside the pod and the host fallback
 - Bad: the image must ship whatever binaries a `Claude` / `RunAgent`
   command relies on (`claude` CLI, `curl`), documented in
   `app/SERVER.md`.
+
+> **Amendment (2026-10-09) —** Superseded in part by [ADR-0043](0043-k8s-sync-workspaces.md): there is no shared PVC any more.
 
 ## Pros and Cons of the Options
 

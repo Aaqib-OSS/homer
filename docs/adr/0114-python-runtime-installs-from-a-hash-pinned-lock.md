@@ -1,11 +1,14 @@
 ---
 status: accepted
 date: 2026-11-15
+amended: 2026-11-20
 deciders: Lukáš Vlk
 consulted: ADR-0015, ADR-0094, ADR-0113
 ---
 
 # ADR-0114: The image's Python runtime installs from a hash-pinned lock, and CI tests and audits that lock
+
+> **Amendment (2026-11-20) — the package floor is now Python 3.12.** `pyproject.toml` requires Python 3.12 or newer, so the statements below that it allows 3.10 and that a 3.10 or 3.11 install is a plain, resolving install no longer hold.
 
 ## Context and Problem Statement
 

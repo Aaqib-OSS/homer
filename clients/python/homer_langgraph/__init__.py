@@ -1,8 +1,6 @@
 """Homer durable LangGraph human-in-the-loop runtime.
 
-Public helpers for authoring graphs that park on operator gates and sub-agent
-fan-outs. See ``README.md`` in this package for the durable model and the rule
-that gate helpers must stay pure.
+Gate and fan-out helpers for graphs; the durable model is in ``README.md``.
 """
 
 from __future__ import annotations

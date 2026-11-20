@@ -1,7 +1,5 @@
 plugins {
-    // The Kotlin DSL plugin provides a convenient way to develop convention plugins.
-    // Convention plugins are located in `src/main/kotlin`, with the file extension `.gradle.kts`,
-    // and are applied in the project's `build.gradle.kts` files as required.
+    // The Kotlin DSL plugin; convention plugins are `*.gradle.kts` files in src/main/kotlin.
     `kotlin-dsl`
     // buildSrc cannot apply its own `buildsrc.convention.kotlin-jvm`, so ktlint is applied
     // directly here and configured to match that plugin's block.
@@ -22,11 +20,8 @@ ktlint {
 }
 
 dependencies {
-    // The CRAP report's Kotlin parser (PSI only, no resolution). ADR-0081. Never `implementation`:
-    // the Kotlin Gradle plugin ships its own relocated copy of a few compiler classes
-    // (KotlinCoreEnvironment among them), so the two must not share a classloader. CrapReportTask
-    // runs the analysis in an isolated worker classloader holding the embeddable compiler; here it
-    // is only compiled and tested against, declared first so it wins over the plugin's copy.
+    // The CRAP report's PSI parser (ADR-0081): never `implementation`, since the Kotlin Gradle plugin's
+    // relocated compiler classes must not share its classloader; declared first so it wins over them.
     compileOnly(libs.kotlinCompilerEmbeddable)
     testImplementation(libs.kotlinCompilerEmbeddable)
     // Add a dependency on the Kotlin Gradle plugin, so that convention plugins can apply it.

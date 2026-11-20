@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-06-10
 deciders: Lukáš Vlk
+amended: 2026-10-09
 ---
 # ADR-0018: MCP server endpoint — stateless Streamable HTTP, opt-in agent tools
 
@@ -73,10 +74,7 @@ Key shape (all in force together):
   bearer/HMAC MCP clients pass. The caller's bearer token is captured into
   the tool closures, giving MCP-started runs the same auth context as
   HTTP-started ones. DNS-rebinding protection is not installed — the endpoint
-  is bearer-authenticated and deployments are not localhost-bound. *(Amended
-  2026-10-09: the closures capture the caller's principal name, not a token;
-  the `authToken` plumbing was removed in the
-  [ADR-0030](0030-runagent-in-process-dispatch.md) follow-up.)*
+  is bearer-authenticated and deployments are not localhost-bound.
 - **Serialization**: route-scoped `install(ContentNegotiation) { json(McpJson) }`
   keeps the SDK wire format out of Homer's global Json configuration. This
   forces the global ContentNegotiation install to live at the routing root
@@ -85,6 +83,8 @@ Key shape (all in force together):
   level and a route. StatusPages responds on the application-level call where
   routing-scoped plugins do not apply, so it serializes `ErrorResponse`
   explicitly via `apiJson` instead of relying on ContentNegotiation.
+
+> **Amendment (2026-10-09) —** The closures capture the caller's principal name, not a token; the `authToken` plumbing was removed in the [ADR-0030](0030-runagent-in-process-dispatch.md) follow-up.
 
 ### Consequences
 

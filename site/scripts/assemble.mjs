@@ -1,20 +1,5 @@
-// Assembles the GitHub Pages site from built documentation versions (ADR-0087):
-//   <root>/<version>/   the newest patch of each of the KEEP newest minor versions, from the docs
-//                       archive attached to its GitHub release. A version is about 16 MB and
-//                       releases come almost daily, so keeping all would outgrow the 1 GB Pages
-//                       limit; an older version's docs stay attached to its release.
-//   <root>/next/        the default branch
-//   <root>/schemas/<version>/, <root>/schemas/latest/, <root>/schemas/next/
-//   <root>/versions.json, which the version menu reads
-//   <root>/index.html   a redirect to the newest release, or to next before the first one
-//   <root>/atlas/       a redirect to that version's feature atlas, a stable link for the README once it links this site
-//
-// Usage: node scripts/assemble.mjs RELEASES_DIR NEXT_DIR OUT_DIR SITE_ROOT
-//   RELEASES_DIR holds one built site per release, in a directory named by its version.
-//   SITE_ROOT is the path Pages serves the repository under, e.g. /homer/.
-// Or:    node scripts/assemble.mjs --kept <tags
-//   prints which of the release tags on stdin (one per line) the site keeps, so the deploy
-//   fetches only those archives. Lines that are not a version are ignored.
+// Assembles the GitHub Pages site (ADR-0087): node scripts/assemble.mjs RELEASES_DIR NEXT_DIR OUT_DIR SITE_ROOT
+// Or `--kept <tags` prints the kept tags among those on stdin.
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'

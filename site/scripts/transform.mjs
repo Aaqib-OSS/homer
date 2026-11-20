@@ -1,10 +1,5 @@
-// Turns a repository Markdown file into a site page: links to other published files point at
-// their pages, images in the repository are served by the site itself (so they show while the
-// repository is private and match the built version), links to anything else point at the file on
-// GitHub, and text that Vue would compile ({{ }}, stray tags such as `!<cmd>` outside code) is
-// kept literal. Whether a link resolves on GitHub, anchors included, is md-links.mjs's check over
-// every tracked Markdown file outside `site/pages/` (the site build's dead-link check covers
-// those); this file only rewrites published pages and reports their dead links.
+// Turns a repository Markdown file into a site page: links, images and text Vue would compile
+// are rewritten; this file only rewrites published pages and reports their dead links.
 import { posix } from 'node:path'
 
 const HTML_TAGS =
@@ -12,9 +7,7 @@ const HTML_TAGS =
   'h[1-6]|hr|i|img|ins|kbd|li|mark|ol|p|picture|pre|q|s|samp|small|source|span|strong|sub|' +
   'summary|sup|table|tbody|td|tfoot|th|thead|tr|u|ul|var|video'
 const STRAY_LT = new RegExp(`<(?!/?(?:${HTML_TAGS})(?=[\\s>/])|!--|https?:|mailto:)`, 'gi')
-// Images first, so the image flag is set before the link match; a link's text may hold inline
-// code, so a link is matched from its closing bracket on. A rewritten image target is marked with
-// DONE so the link pass leaves it alone, then the mark is dropped.
+// Images match first; DONE marks a rewritten image target so the link pass skips it.
 const IMAGE = /(!\[[^\]]*\]\()<?([^)\s>]+)>?((?:\s+"[^"]*")?)\)/g
 const INLINE_LINK = /\]\(<?([^)\s>]+)>?((?:\s+"[^"]*")?)\)/g
 const DONE = '\u0001'
@@ -26,17 +19,9 @@ const IMAGE_FILE = /\.(png|jpe?g|gif|svg|webp|avif|bmp|ico)$/i
 export const REPO_ASSETS = '_repo'
 
 /**
- * @param {string} markdown the file's contents
- * @param {object} ctx
- * @param {string} ctx.from repository path of the file
- * @param {string} ctx.to site path of the page
- * @param {(repoPath: string) => string | undefined} ctx.siteOf site path of a published file
- * @param {(repoPath: string) => 'file' | 'dir' | undefined} ctx.kind what the repository holds there
- * @param {string} ctx.repoUrl e.g. https://github.com/livesport/homer
- * @param {string} ctx.ref the tag or branch being built
- * @returns {{ page: string, deadLinks: string[], images: string[] }} images: the repository
- *   paths of the images the page uses, which the caller copies under REPO_ASSETS in the
- *   site's source tree.
+ * `{ page, deadLinks, images }` of a file's `markdown`: the site page, its dead links, the repository image paths to
+ * copy under REPO_ASSETS. `ctx`: `from` (repo path), `to` (site path), `siteOf(p)` (site path or undefined),
+ * `kind(p)` ('file', 'dir' or undefined), `repoUrl`, `ref`.
  */
 export function transform(markdown, ctx) {
   const deadLinks = []

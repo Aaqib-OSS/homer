@@ -1,12 +1,7 @@
 /**
- * query-plans: full scans of tables that grow with use, in the SQL production code ran during
- * `:app:test` (ADR-0082, SQLite rule 1 in app/CLAUDE.md). Reads the JSON `:app:queryPlanReport`
- * writes; the planning itself is `QueryPlanReport` in the backend's test fixtures.
+ * query-plans (ADR-0082, SQLite rule 1 in app/CLAUDE.md): full scans of growing tables by production SQL `:app:test`
+ * ran, from `:app:queryPlanReport`'s JSON; an unpreparable statement is a finding too. One per source line and table.
  * Usage (repository root): node tools/quality/query-plans.mjs [report json] [out dir]
- *
- * A statement the planner cannot prepare is a finding too, so a broken plan never reads as clean.
- * One finding per source line and table: the shapes one call site builds (filters, page sizes)
- * are listed in its message rather than counted separately.
  */
 import fs from 'node:fs';
 import { runMain, writeCheck } from './lib.mjs';

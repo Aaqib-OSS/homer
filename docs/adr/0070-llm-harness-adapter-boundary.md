@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-09-27
 deciders: Lukáš Vlk
-amended: 2026-11-20
+amended: 2026-10-09, 2026-10-31, 2026-11-12, 2026-11-19, 2026-11-20
 ---
 # ADR-0070: LLM harness adapter boundary and canonical event model
 
@@ -61,52 +61,13 @@ interface LlmHarness<C> where C : Command, C : Command.LlmCommand {
 }
 ```
 
-*(Amended 2026-10-09: the interface also declares `val countsModelCalls: Boolean`,
-described below, and `fun escalated(command: C, tier: LlmEscalation): C`, added by
-[ADR-0079](0079-llm-steps-escalate-to-another-model-on-a-bad-outcome.md).)*
+> **Amendment (2026-10-09) —** The interface also declares `val countsModelCalls: Boolean`, described below, and `fun escalated(command: C, tier: LlmEscalation): C`, added by [ADR-0079](0079-llm-steps-escalate-to-another-model-on-a-bad-outcome.md).
 
-*(Amended 2026-10-31: an adapter may carry **bounded per-instance accounting
-state**. ADR-0074 requires a harness whose CLI prices a run per step to emit a
-cumulative `TurnEnd.costUsd`, and the canonical model has no place to keep a
-running total — so `OpencodeHarness` holds a `StepCostTotals` keyed by the CLI's
-session id: a step counts once by the id the CLI puts on it, and the retained
-state is bounded by session and step count, shedding one eldest bucket. "No
-shared mutable state" below reads as no *shared* state: the totals are the
-adapter's own, per instance — the executor factory, the `/llm-events` harness map
-and agentdebug each build their own adapter — and the step-id dedupe makes
-`translate` idempotent per instance rather than order-dependent.)*
+> **Amendment (2026-10-31) —** An adapter may carry **bounded per-instance accounting state**. ADR-0074 requires a harness whose CLI prices a run per step to emit a cumulative `TurnEnd.costUsd`, and the canonical model has no place to keep a running total — so `OpencodeHarness` holds a `StepCostTotals` keyed by the CLI's session id: a step counts once by the id the CLI puts on it, and the retained state is bounded by session and step count, shedding one eldest bucket. "No shared mutable state" below reads as no *shared* state: the totals are the adapter's own, per instance — the executor factory, the `/llm-events` harness map and agentdebug each build their own adapter — and the step-id dedupe makes `translate` idempotent per instance rather than order-dependent.
 
-*(Amended 2026-11-12: the interface also declares
-`fun terminalStopConfigured(command: C): Boolean = false`, and `inspect`'s
-contract widens with it. Claude Code does not always exit `0` at `maxTurns`,
-so a harness whose command opted into a terminal stop is consulted on a
-non-zero exit too: `LlmAttemptOutput.nonZeroOutcome` reads that attempt's
-stdout leniently and bounded, and honours **only** `Inspection.Terminal`,
-rewriting the exit code exactly as the exit-0 path does. Every other verdict —
-and a stream that cannot be read at all — leaves the exit's own failure as it
-was, so no non-zero exit turns into a malformed one. A harness that never
-returns `Terminal` keeps the `false` default and its non-zero behaviour
-unchanged. The member is a deliberate widening of the adapter contract rather
-than an implicit rule: the alternative — no new member, reading every
-non-zero exit's stdout leniently and honouring only a `Terminal` verdict —
-would spend an extra bounded read on the failed attempt of every harness,
-opted in or not.)*
+> **Amendment (2026-11-12) —** The interface also declares `fun terminalStopConfigured(command: C): Boolean = false`, and `inspect`'s contract widens with it. Claude Code does not always exit `0` at `maxTurns`, so a harness whose command opted into a terminal stop is consulted on a non-zero exit too: `LlmAttemptOutput.nonZeroOutcome` reads that attempt's stdout leniently and bounded, and honours **only** `Inspection.Terminal`, rewriting the exit code exactly as the exit-0 path does. Every other verdict — and a stream that cannot be read at all — leaves the exit's own failure as it was, so no non-zero exit turns into a malformed one. A harness that never returns `Terminal` keeps the `false` default and its non-zero behaviour unchanged. The member is a deliberate widening of the adapter contract rather than an implicit rule: the alternative — no new member, reading every non-zero exit's stdout leniently and honouring only a `Terminal` verdict — would spend an extra bounded read on the failed attempt of every harness, opted in or not.
 
-*(Amended 2026-11-19: supersedes the 2026-10-31 amendment. Adapters hold no
-state. `translate` becomes `fun translator(): (JsonObject) -> Translation`, a
-fresh translation for one read of one attempt's stdout, and per-read state lives
-only there: `OpencodeHarness` keeps one running total per read, with no session
-buckets, step-id dedupe or caps. No cost state outlives a read or crosses into
-another run, while `TurnEnd.costUsd` stays cumulative per process
-([ADR-0074](0074-cost-of-an-attempt-that-ends-more-than-one-turn.md)): the
-running total is the whole process's cost, summed over every session that stdout
-carries (a subagent's included), where the per-session buckets charged only the
-largest. One translator serves one sequential traversal. Each reader — the
-accounting scan, the telemetry hand-off, each `/llm-events` tail — asks for its
-own translator. A tail resumed from a cursor of a harness whose translator keeps
-state (`val translatorKeepsState`, true for opencode) first translates the lines
-before the cursor, emitting none of them, so its cumulative figure counts them;
-any other harness's tail seeks straight to the cursor.)*
+> **Amendment (2026-11-19) —** Supersedes the 2026-10-31 amendment. Adapters hold no state. `translate` becomes `fun translator(): (JsonObject) -> Translation`, a fresh translation for one read of one attempt's stdout, and per-read state lives only there: `OpencodeHarness` keeps one running total per read, with no session buckets, step-id dedupe or caps. No cost state outlives a read or crosses into another run, while `TurnEnd.costUsd` stays cumulative per process ([ADR-0074](0074-cost-of-an-attempt-that-ends-more-than-one-turn.md)): the running total is the whole process's cost, summed over every session that stdout carries (a subagent's included), where the per-session buckets charged only the largest. One translator serves one sequential traversal. Each reader — the accounting scan, the telemetry hand-off, each `/llm-events` tail — asks for its own translator. A tail resumed from a cursor of a harness whose translator keeps state (`val translatorKeepsState`, true for opencode) first translates the lines before the cursor, emitting none of them, so its cumulative figure counts them; any other harness's tail seeks straight to the cursor.
 
 `id` equals the command's `kind` (`claude`, `codex`, …), and `reportsCost`
 states — once, per adapter, with no default — whether the CLI itself prices

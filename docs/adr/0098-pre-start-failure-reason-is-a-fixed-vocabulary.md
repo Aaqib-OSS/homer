@@ -44,12 +44,12 @@ Exactly seven causes store a reason: the `SKIP_CURRENT` lock skip, the `REJECT`
 parallel-run cap, the full parallel-run wait queue, the full lock wait queue,
 the claim timeout, the full claim queue and an unresolved `lockStrategy.key`
 placeholder (the amendment below).
-*(Amended 2026-11-12: the full lock wait queue is the sixth — the bound a run
-waiting for a subject lock is refused by, added by
-[ADR-0104](0104-lock-before-slot-admission-order.md).)* Any other exception —
+ Any other exception —
 including one that failed a run mid-flight — stores no reason: its message may
 carry anything, and the reader gains nothing from it that the run's own record
 does not say (ADR-0047 rule 7: secrets travel never in error text).
+
+> **Amendment (2026-11-12) —** The full lock wait queue is the sixth — the bound a run waiting for a subject lock is refused by, added by [ADR-0104](0104-lock-before-slot-admission-order.md).
 
 The mapping's obligations, which every new cause must keep:
 

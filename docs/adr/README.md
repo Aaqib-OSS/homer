@@ -50,7 +50,8 @@ A decision that changes **in part** later — a mechanism it names is replaced, 
 detail reverses — is amended where it stands rather than rewritten: add an
 `## Amendment (YYYY-MM-DD): <what changed>` section at any heading level from `##` down (nest it
 under the part it changes when that reads better), or a short
-`> **Amendment (YYYY-MM-DD) — <what changed>.**` blockquote at the top, and leave the original
+`> **Amendment (YYYY-MM-DD) — <what changed>.**` blockquote at the top or directly after the
+passage it changes, and leave the original
 decision text unchanged, so the record still shows what was decided and when. A *full*
 replacement is not an amendment: write a new ADR and flip `status` instead.
 
@@ -84,7 +85,8 @@ Neither key is a status: `status:` stays one of the four values above.
    hole in the numbering, and on an `Amendment` heading, a `> **Amendment` blockquote or a dated
    bullet under a plural `## Amendments` section whose `amended:` is
    missing, is not an ascending `YYYY-MM-DD` list, or omits a date the ADR's amendments carry,
-   or whose `superseded-by:` names no existing ADR.
+   or whose `superseded-by:` names no existing ADR. It also fails on an italic amendment note
+   (`*(Amended …)*`, `*(Obsolete …)*`, `*Superseded …*`): write the forms above instead.
 
 ## Index
 
