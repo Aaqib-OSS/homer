@@ -1,18 +1,10 @@
-/**
- * The console's Content-Security-Policy: one strict policy for every route, with a per-request
- * nonce. `connect-src` is open unless the operator pins API origins. See `console/CLAUDE.md`.
- */
+/** The console's strict, per-request-nonce CSP; `connect-src` stays open unless the operator pins API origins (`console/CLAUDE.md`). */
 
 import { splitCommaList } from '@/lib/utils/list';
 
 export interface CspOptions {
   nonce: string;
-  /**
-   * Operator-configured backend origins the console may connect to. When
-   * non-empty, `connect-src` is pinned to `'self'` + these; when empty,
-   * `connect-src` stays open (`https:`/`http:`) so an operator can point the
-   * console at an ad-hoc backend at login.
-   */
+  /** Backend origins `connect-src` is pinned to with `'self'`; empty leaves it open for ad-hoc backends at login. */
   allowedApiOrigins: string[];
 }
 
@@ -20,8 +12,7 @@ export function buildCsp({ nonce, allowedApiOrigins }: CspOptions): string {
   const connectSrc =
     allowedApiOrigins.length > 0
       ? `connect-src 'self' ${allowedApiOrigins.join(' ')}`
-      : // No allowlist: the operator may log into any backend they type, so the
-        // set of connect targets is unbounded and cannot be enumerated here.
+      : // No allowlist: login can target any backend, so connect targets cannot be enumerated.
         "connect-src 'self' https: http:";
 
   return [

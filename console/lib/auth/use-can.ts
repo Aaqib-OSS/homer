@@ -26,12 +26,7 @@ function selfOwnerId(user: AuthUser | null, stamp: OwnerStamp): string | null {
   return stamp === 'token' ? user.username : `session:${user.username}`;
 }
 
-/**
- * Pure capability logic, mirroring the backend Authorizer's derived rules
- * (ADR-0037/0038). `unsecured` mirrors the backend's `!enabled` short-circuit
- * that allows everything when auth is off (see auth-context.tsx's
- * `authProbeDisabled`).
- */
+/** Pure capability logic mirroring the backend Authorizer (ADR-0037/0038); `unsecured` allows everything, as auth-off does. */
 export function capabilitiesFor(
   user: AuthUser | null,
   unsecured = false,

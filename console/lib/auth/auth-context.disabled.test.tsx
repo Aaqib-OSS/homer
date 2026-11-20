@@ -35,10 +35,7 @@ vi.mock('@/lib/api/client', () => ({
 // re-reads it on every re-import (see renderWithCurrentConfig).
 const config = vi.hoisted(() => ({ enabled: false, mode: 'disabled' }));
 
-// The mock factory runs once per file and its result is cached — vi.resetModules()
-// re-evaluates the modules that import it, not the factory itself — so the fields
-// below are getters. A snapshot would freeze whichever shape ran first and every
-// later row would silently be testing that one.
+// Getters, not a snapshot: the factory runs once per file, so a snapshot would freeze the first shape.
 vi.mock('@/lib/config/app-config', () => ({
   appConfig: {
     api: { baseUrl: 'http://localhost:8080' },
@@ -55,10 +52,7 @@ vi.mock('@/lib/config/app-config', () => ({
   },
 }));
 
-// `authProbeDisabled` is a module-load constant, so each deployment shape is
-// pinned by re-importing the provider (and the instance store it reads) after
-// the config is set. This suite therefore cannot use auth-test-utils, whose
-// AuthProvider is bound at load time.
+// `authProbeDisabled` is a load-time constant: each shape re-imports the provider, so no auth-test-utils.
 let loginResult: string | undefined;
 
 let logoutResult: string | undefined;
@@ -155,10 +149,7 @@ describe.each([
   });
 
   it('resolves login to ok, stays authed, and probes nothing', async () => {
-    // The short-circuit must hold on the login path too: 'ok' is what the
-    // login form treats as success, so any other value would push a return
-    // path with no session behind it — and the pinned authed state must not
-    // waver or reach the backend to get there.
+    // Login short-circuits to 'ok' without reaching the backend, and the pinned authed state holds.
     await renderWithCurrentConfig();
     expect(screen.getByTestId('status')).toHaveTextContent('authed');
 
@@ -176,9 +167,7 @@ describe.each([
 
 describe('AuthProvider (auth on: control)', () => {
   it('probes the backend instead of pinning authed', async () => {
-    // Control for the lazy config above: with auth on the same re-import path
-    // must resolve from the probe. If the mock ever froze a shape again, this
-    // would keep reading the "auth off" one and fail.
+    // Control: with auth on, the same re-import path resolves from the probe.
     config.enabled = true;
     config.mode = 'cookie';
     getAuthMe.mockRejectedValue(new HomerApiError('Unauthorized', 401));

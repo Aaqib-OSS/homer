@@ -30,9 +30,7 @@ vi.mock('@/lib/api/client', () => ({
   HomerApiError,
 }));
 
-// Bearer mode lives in its own file because `authProbeDisabled` and the
-// mode branch in `probeAuth` are read at module-load time from this mock,
-// so the cookie-mode suite can't switch modes per-test.
+// Own file: `authProbeDisabled` and the mode branch are read at module load from this mock.
 vi.mock('@/lib/config/app-config', () => ({
   appConfig: {
     auth: { enabled: true, mode: 'bearer', tokenKey: 'homer_auth_token' },

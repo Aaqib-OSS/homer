@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-21
 deciders: Lukáš Vlk
-amended: 2026-09-23, 2026-09-30, 2026-10-06, 2026-10-16, 2026-11-05
+amended: 2026-09-23, 2026-09-30, 2026-10-06, 2026-10-16, 2026-11-05, 2026-11-20
 ---
 # ADR-0047: Security is a design input, and these are the boundaries it defends
 
@@ -298,6 +298,17 @@ still refuses a link. Closing it needs an `fchmod` on the descriptor the write u
 `java.nio` does not expose, or creating the file with its final mode, which the umask and an
 overwritten file's kept mode defeat. The ineffective option is removed, so the code no longer
 claims a guarantee it does not give, and both branches look the mode view up the same way.
+
+## Amendment (2026-11-20): the console's post-sign-in return path is path-only
+
+The `next` parameter of `/login` is attacker-craftable and the console navigates
+to it once credentials are accepted, so it is an open redirect unless validated
+as a same-origin relative path, at the login form as well as where the URL is
+read (rule 2). The validator also rejects `?` and `#`. Only a `/login` target
+could abuse an `endpoint=` or `mode=` ride-along, and both producers pass
+`usePathname()`, which never carries a query, so query state does not survive a
+sign-in round trip. Accepting a query would need a second validation shape per
+target; landing on the destination's default view is the accepted cost.
 
 ## Pros and Cons of the Options
 

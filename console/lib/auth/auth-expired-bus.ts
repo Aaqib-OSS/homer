@@ -1,12 +1,4 @@
-/**
- * Module-scoped EventTarget. Non-React code (the API client, SSE)
- * dispatches an 'expired' event when it sees a 401; React code
- * subscribes once via useAuthExpiredHandler to perform logout +
- * redirect. Audit P0 #6.
- *
- * Module scope (not window-global) so SSR import doesn't crash and
- * tests get a fresh instance per module reset.
- */
+/** Module-scoped bus: the API client and SSE notify a 401, `useAuthExpiredHandler` performs logout and redirect. */
 const target = new EventTarget();
 
 const AUTH_EXPIRED_EVENT = 'auth-expired';

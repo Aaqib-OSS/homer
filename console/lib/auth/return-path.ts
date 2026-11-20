@@ -1,16 +1,6 @@
 /**
- * The post-sign-in return path. It arrives in the `/login?next=…` query string,
- * which any third party can craft, and the console navigates to it once
- * credentials are accepted — an open redirect unless the value is constrained
- * to a same-origin relative path (ADR-0047). Validated at the point of use, in
- * the login form, not only when the URL is read.
- *
- * The value is accepted path-only: `?` and `#` are rejected outright, though
- * only a `/login` target could abuse an `endpoint=`/`mode=` ride-along, because
- * both producers hand `usePathname()`, which never carries either — query state
- * does not survive a sign-in round trip. Carrying a query would need a second
- * validation shape per target; the default view of the destination is the
- * accepted cost.
+ * The post-sign-in return path from the attacker-craftable `/login?next=…`: only a same-origin,
+ * path-only value is accepted (ADR-0047 rule 2, amendment 2026-11-20), re-checked at the login form.
  */
 
 /** Where sign-in lands when there is no acceptable return path. */
@@ -19,9 +9,7 @@ export const DEFAULT_RETURN_PATH = '/processes';
 /** Longest accepted return path; a longer value is dropped, not truncated. */
 const MAX_RETURN_PATH_LENGTH = 2048;
 
-// Fixed base for the `new URL` parse: the rule is "same origin as this base and
-// an unchanged path", so the console's own origin is irrelevant and the
-// validator works outside a browser (SSR, tests) too.
+// Fixed base: the rule is same origin as this base, so the check needs no browser origin (SSR, tests).
 const PARSE_BASE = 'http://return-path.invalid';
 
 /**

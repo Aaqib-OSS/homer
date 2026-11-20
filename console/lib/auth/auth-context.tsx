@@ -16,12 +16,7 @@ import type { Grant, MeResponse, Role } from '@/types/homer';
 
 export type AuthStatus = 'loading' | 'authed' | 'anon';
 
-/**
- * Outcome of a `login` attempt. `rate-limited` is distinguished from
- * `invalid-credentials` so the UI can tell the user to wait rather than
- * mislabel a 429 as a bad password — mislabeling drives users to retry
- * harder, which drains the login limiter's bucket and prolongs the lockout.
- */
+/** Outcome of a `login` attempt; `rate-limited` (429) is kept apart from `invalid-credentials` so the UI says wait, not retry. */
 export type LoginOutcome = 'ok' | 'invalid-credentials' | 'rate-limited' | 'error';
 
 /**
@@ -53,24 +48,12 @@ interface AuthContextType {
   /** True when an older server named no principal for the bearer token: `user.username` is a placeholder. */
   principalUnreported: boolean;
   /**
-   * In `cookie` mode: posts username + password to `/api/v1/auth/login` and
-   * waits for the resulting `homer_session` cookie + `/me` refetch before
-   * resolving. In `bearer` mode: ignores `username`, stores `password` as
-   * the bearer token, reads the token's principal from `/auth/me`. In
-   * `disabled` mode: no-op.
-   *
-   * Returns `'ok'` on success, `'invalid-credentials'` on rejection,
-   * `'rate-limited'` when the login limiter returns 429, or `'error'` for
-   * anything else (network/timeout/server error).
+   * `cookie` mode posts the credentials and resolves once `/auth/me` answers; `bearer` mode stores
+   * `password` as the token (`username` ignored); `disabled` is a no-op. Never rejects: see {@link LoginOutcome}.
    */
   login: (username: string, password: string) => Promise<LoginOutcome>;
   logout: () => Promise<LogoutOutcome>;
-  /**
-   * Switch the active Homer instance: point the active id at `instanceId`,
-   * drop the previous instance's cached data, and re-probe auth against the
-   * new instance. Cookie sessions are per-origin in the browser, so switching
-   * between two already-authed cookie instances needs no re-login.
-   */
+  /** Points the active id at `instanceId`, drops the previous instance's cached data and re-probes auth. */
   switchInstance: (instanceId: string) => void;
 }
 
@@ -79,13 +62,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const AUTH_QUERY_KEY = ['auth', 'me'] as const;
 const authProbeDisabled = !appConfig.auth.enabled || appConfig.auth.mode === 'disabled';
 
-/**
- * Probe used to populate the auth-me query cache.
- *  - cookie mode: GET `/api/v1/auth/me` — server returns `{username, role, grants}`
- *    on a valid session cookie, 401 on any other.
- *  - bearer mode: the stored token's principal, from {@link bearerPrincipal}.
- *  - disabled mode: never invoked (query is disabled).
- */
+/** Cookie-mode probe: `/auth/me` answers the session's principal, or 401. */
 async function probeAuthCookie(): Promise<AuthUser> {
   const me: MeResponse = await homerApi.getAuthMe();
   return { username: me.username, role: me.role, grants: me.grants };
@@ -121,17 +98,8 @@ async function probeAuth(): Promise<ProbedUser> {
 }
 
 /**
- * Synchronous override the provider sets on login / logout so the UI
- * status flips immediately, independent of React Query's re-render
- * scheduling. seeding `queryClient.setQueryData` alone wasn't enough:
- * in production builds the dashboard layout could mount on the
- * `router.push('/processes')` tick before the AuthProvider's
- * query-subscription re-render flushed, read `query.isPending === true`,
- * and lock onto its `<div>Loading...</div>` branch. The override
- * decouples the user-facing status from React Query's commit timing.
- *
- * `'authed'` carries the user so we don't have to wait for the query's
- * data to be re-read either.
+ * Synchronous status the provider sets on login / logout, so the UI flips without waiting for
+ * React Query's commit; the dashboard layout otherwise mounts on `isPending` and sticks on Loading.
  */
 type AuthOverride =
   | { kind: 'authed'; user: ProbedUser }
@@ -168,10 +136,6 @@ interface AuthSetters {
 }
 
 function markAuthed({ queryClient, setOverride }: AuthSetters, principal: ProbedUser): void {
-  // Seed the cache so a fresh useQuery mount (e.g. AuthProvider
-  // remount under route transition) reads success on first render,
-  // and set the synchronous override so existing subscribers flip
-  // to 'authed' without waiting for the query observer's re-render.
   queryClient.setQueryData(AUTH_QUERY_KEY, principal);
   setOverride({ kind: 'authed', user: principal });
 }
@@ -193,7 +157,6 @@ async function loginCookie(setters: AuthSetters, username: string, password: str
 }
 
 async function loginBearer(setters: AuthSetters, password: string): Promise<LoginOutcome> {
-  // bearer (legacy): username is ignored; password is the token.
   try {
     setActiveToken(password);
     markAuthed(setters, await bearerPrincipal());
@@ -248,18 +211,13 @@ function useAuthActions(
   const switchInstance = useCallback(
     (instanceId: string) => {
       setActiveInstance(instanceId);
-      // Drop all data cached for the previous instance, then re-probe against
-      // the new active instance (clearing the override lets the auth-me query
-      // refetch from its now-empty cache).
       queryClient.clear();
       setOverride(null);
     },
     [queryClient, setOverride],
   );
 
-  // If a 401 on any other request signals the session expired, the
-  // auth-expired bus fires. Clear the override so the next render
-  // doesn't show a stale `'authed'` status.
+  // A 401 elsewhere fires the auth-expired bus; drop the override so no stale 'authed' shows.
   useEffect(() => {
     return onAuthExpired(() => setOverride({ kind: 'anon' }));
   }, [setOverride]);
