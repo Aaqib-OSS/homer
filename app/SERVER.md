@@ -1388,8 +1388,8 @@ apiAuth: !<password>
 These three `/auth/*` routes are mounted **outside** the per-user
 grant checks by design: `/login` is unauthenticated, `/logout`
 must be idempotent against a stale cookie, and `/me` reads its one
-credential itself — a bearer token when the request carries one, else
-the cookie — so neither is answered as the other's principal under a
+credential itself — a bearer token when the request carries one and a
+`bearer` scheme is configured, else the cookie — so neither is answered as the other's principal under a
 combined deployment. A user with only a narrow `read` grant can still
 call `/auth/me` to discover their own identity and capabilities —
 that's intentional, and it's the console's capability source. See
