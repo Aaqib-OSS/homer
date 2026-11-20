@@ -43,10 +43,8 @@ configurations.named("testRuntimeClasspath") {
 // the single source for the version the runner reports, the shadow jar's name and the generated
 // resource below — no second literal. A value that could not safely be reported to Homer or put
 // in a file name fails the build instead of reaching either.
-// The pattern is the shape the server validates the registration's version against
-// (RunnerTagValidation.PATTERN); duplicated here because a build script cannot read the
-// compiled class, so the two must be kept in step.
-val runnerVersionPattern = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+// The pattern is RunnerTagValidation.PATTERN, which a build script cannot read; RunnerVersionTest pins the copy.
+val runnerVersionPattern = Regex("^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$")
 val runnerVersion: String =
     providers
         .gradleProperty("homerVersion")
@@ -80,6 +78,7 @@ tasks.check {
 // warns on the restricted method without this, as the runtime image does not.
 tasks.test {
     jvmArgs("--enable-native-access=ALL-UNNAMED")
+    inputs.file("build.gradle.kts").withPropertyName("buildScript")
     // Dumpability.harden() is process-wide, so a class that calls it in the shared
     // test JVM would make every later class' same-uid /proc read fail with EPERM
     // (and could let a status read see the wrong process). One class per JVM.

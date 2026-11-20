@@ -2,6 +2,7 @@ package homer.runner
 
 import homer.app.models.RunnerTagValidation
 import org.junit.jupiter.api.Test
+import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -28,5 +29,12 @@ class RunnerVersionTest {
         // Asserted as the shape the server accepts, not as one build invocation's value —
         // a build stamped -PhomerVersion=1.42.0 must pass this same test.
         assertTrue(RunnerTagValidation.PATTERN.matches(RunnerVersion.current))
+    }
+
+    @Test
+    fun `the build script validates the version with the server's own pattern`() {
+        val buildScript = File("build.gradle.kts").readText()
+        val copy = Regex("""val runnerVersionPattern = Regex\("([^"]+)"\)""").find(buildScript)?.groupValues?.get(1)
+        assertEquals(RunnerTagValidation.PATTERN.pattern, copy)
     }
 }
