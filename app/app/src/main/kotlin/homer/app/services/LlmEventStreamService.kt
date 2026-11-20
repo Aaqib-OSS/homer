@@ -103,6 +103,9 @@ class LlmEventStreamService(
     ): LlmArtifact? {
         val info = processManager.getProcessInfo(processId) ?: return null
         val dir = info.artifactsDir ?: return null
+        // A run can swap its artifacts directory for a symlink, which assertContained follows (CWE-59).
+        // Checked once here: a swap before the stream opens the file, at any later poll, is followed (AR-12).
+        if (Files.isSymbolicLink(dir)) return null
         val tracked = processManager.getCommandArtifacts(processId, cmdIndex)
         if (tracked != null) return trackedArtifact(dir, tracked)
         // Not tracked (restart since the run): the persisted execution row.
@@ -114,7 +117,7 @@ class LlmEventStreamService(
         tracked: CommandArtifactPaths,
     ): LlmArtifact? {
         val kind = tracked.kind?.takeIf { it in harnesses } ?: return null
-        // Containment guard at the point of use (§12), as LogTailService.resolve.
+        // Containment guard at the point of use (ADR-0047 rule 2), as LogTailService.resolve.
         if (tracked.stdOut.parent != dir || !isContained(dir, tracked.stdOut)) return null
         return LlmArtifact(tracked.stdOut, kind, tracked.attemptIndex, tracked.redactor)
     }
@@ -244,11 +247,9 @@ class LlmEventStreamService(
     ): Boolean = (processManager.latestCommandArtifacts(processId)?.first ?: -1) > cmdIndex
 
     /**
-     * Emits the translated events of every complete line of [artifact] from
-     * [startOffset], skipping the events with index <= [skipThroughEventIndex] of
-     * the line that starts exactly there. Polls until the process is terminal or [stopWhen]
-     * holds, then drains the file to its end and returns the offset after the last
-     * consumed newline.
+     * Emits the translated events of every complete line of [artifact] from [startOffset], skipping events
+     * <= [skipThroughEventIndex] of the line starting there. Polls until the run ends or [stopWhen] holds,
+     * then drains the file and returns the offset after the last consumed newline.
      */
     internal suspend fun FlowCollector<LlmStreamEvent>.followFile(
         processId: Int,
@@ -313,7 +314,7 @@ class LlmEventStreamService(
     /**
      * Splits bytes into lines without re-reading: [readPos] is how far the file has been
      * read, [lineStart] the position after the last consumed newline. A line longer than
-     * [MAX_LINE_BYTES] is dropped whole (§12 rule 4: the held buffer is per subscriber).
+     * [MAX_LINE_BYTES] is dropped whole (ADR-0047 rule 4: the held buffer is per subscriber).
      */
     private inner class LineTail(
         private val processId: Int,

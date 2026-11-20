@@ -15,9 +15,10 @@ internal data class InheritedOriginInputs(
     }
 }
 
-// The origin run's inputs a fire to [target] inherits, or NONE. Fails closed to NONE on every gate:
-// target must opt in (`continuation.inheritInputs`), [originAgentName] must equal `target.name`, and
-// [origin]'s owner must equal [originOwner]. See ADR-0101.
+/**
+ * The origin run's inputs a fire to [target] inherits, or NONE. Fails closed to NONE unless [target] opts
+ * in (`continuation.inheritInputs`), is [originAgentName], and [origin]'s owner is [originOwner]. See ADR-0101.
+ */
 internal suspend fun inheritedOriginInputs(
     origin: suspend () -> ProcessInfo?,
     originAgentName: String,

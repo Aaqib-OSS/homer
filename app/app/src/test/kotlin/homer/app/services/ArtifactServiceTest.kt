@@ -147,6 +147,22 @@ class ArtifactServiceTest {
     }
 
     @Test
+    fun `resolveArtifactPath - refuses an artifacts directory that is a symlink`(
+        @TempDir runRoot: Path,
+        @TempDir outside: Path,
+    ) = runTest {
+        val processId = 557
+        Files.createFile(outside.resolve("secret.txt"))
+        val artifactsDir = runRoot.resolve("artifacts").also { Files.createSymbolicLink(it, outside) }
+        coEvery { processManager.getProcessInfo(processId) } returns
+            ProcessInfo(id = processId, agentName = "x", status = ProcessStatus.FINISHED, artifactsDir = artifactsDir)
+
+        val result = artifactService.resolveArtifactPath(processId, "secret.txt")
+
+        assertTrue(result.exceptionOrNull()?.message?.contains("not found") == true)
+    }
+
+    @Test
     fun `resolveArtifactPath - rejects a directory inside the artifacts dir`(
         @TempDir artifactsDir: Path,
     ) = runTest {
@@ -298,6 +314,21 @@ class ArtifactServiceTest {
             assertTrue(result.isFailure)
             assertTrue(result.exceptionOrNull()?.message?.contains("does not exist") == true)
         }
+
+    @Test
+    fun `listArtifacts - refuses an artifacts directory that is a symlink`(
+        @TempDir runRoot: Path,
+        @TempDir outside: Path,
+    ) = runTest {
+        val artifactsDir = runRoot.resolve("artifacts").also { Files.createSymbolicLink(it, outside) }
+        coEvery { processManager.getProcessInfo(42) } returns
+            ProcessInfo(id = 42, status = ProcessStatus.FINISHED, agentName = "a", artifactsDir = artifactsDir)
+        every { fileOperations.dirExists(artifactsDir) } returns true
+
+        val result = artifactService.listArtifacts(42)
+
+        assertTrue(result.exceptionOrNull()?.message?.contains("does not exist") == true)
+    }
 
     @Test
     fun `listArtifacts - returns empty list when dir exists but has no files`() =

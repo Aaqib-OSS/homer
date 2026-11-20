@@ -8,10 +8,12 @@ import homer.app.exceptions.MaxQueuedRunsExceededException
 import homer.app.exceptions.ProcessManagerAtCapacityException
 import homer.app.exceptions.ServerDrainingException
 import homer.app.infra.AgentInputResolver
+import homer.app.infra.FileOperations
+import homer.app.infra.LocalFileOperations
+import homer.app.infra.PathSafety
 import homer.app.infra.ResultToEnvMapper
 import homer.app.infra.reservedControlParams
 import homer.app.models.Agent
-import homer.app.models.CommandResult
 import homer.app.models.ExecutionInfo
 import homer.app.models.ProcessStatus
 import homer.app.models.ResultEnvParam
@@ -26,16 +28,14 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.encodeToJsonElement
 import org.slf4j.Logger
+import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.io.path.fileSize
 import kotlin.math.min
 
 /**
- * Fires continuations for [ContinuationService] once what they watch is terminal: claims the row
- * (PENDING→DISPATCHING CAS) so concurrent hooks, race-close and boot replay fire it once,
- * re-checks the target, builds the resume payload from the watched runs' results and starts the
- * target, then settles the row DISPATCHED, deferred for a retry, or FAILED. Never throws into
- * the caller. See ADR-0023 and ADR-0026.
+ * Fires a continuation once what it watches is terminal: claims the row (PENDING→DISPATCHING CAS), starts
+ * the re-checked target with the resume payload, and settles DISPATCHED, deferred or FAILED. Never throws.
+ * See ADR-0023, ADR-0026.
  */
 internal class ContinuationFireService(
     private val repository: ContinuationRepository,
@@ -46,6 +46,7 @@ internal class ContinuationFireService(
     private val processManager: ProcessManager,
     private val resultTokenService: ResultTokenService,
     private val logger: Logger,
+    private val fileOperations: FileOperations = LocalFileOperations(),
     private val nowSec: () -> Long,
 ) {
     /** Fires a single-watch [continuation] whose watched process ended with [status]. */
@@ -59,7 +60,7 @@ internal class ContinuationFireService(
         startTarget(continuation, agent, now, "Continuation") {
             val extracted =
                 extractResult(continuation.watchedProcessId, continuation.resultTransformer, continuation.targetAgentName)
-            buildResumePayload(status, continuation.watchedProcessId, extracted.result, extracted.ref)
+            buildResumePayload(status, continuation.watchedProcessId, extracted)
         }
     }
 
@@ -102,10 +103,8 @@ internal class ContinuationFireService(
         payload: suspend () -> String,
     ) {
         try {
-            // With `continuation.inheritInputs` on the target, the origin run's stored
-            // inputs ride under the continuation's own params and the resume payload, so
-            // a resumed segment keeps its lock key's subject and its fromInputs tags.
-            // See ADR-0101.
+            // With `continuation.inheritInputs`, the origin run's stored inputs ride under the params,
+            // so a resumed segment keeps its lock-key subject and fromInputs tags. See ADR-0101.
             val inherited =
                 inheritedOriginInputs(
                     { processManager.getProcessInfo(continuation.originProcessId) },
@@ -116,9 +115,8 @@ internal class ContinuationFireService(
                     logger,
                 )
             val inputParams = inherited.params + continuation.params + (continuation.resumeParam to payload())
-            // [information_disclosure / CWE-200] The fired run is attributed to the
-            // continuation's owner, so the root it inherits is gated on that owner's
-            // visibility — a foreign flow-root id reaches no row, env or span. §12.
+            // The fired run is the owner's, so its inherited root is gated on the owner's visibility:
+            // a foreign flow root reaches no row, env or span (CWE-200, ADR-0058).
             val rootProcessId = processManager.visibleOriginRootProcessId(continuation.originProcessId, continuation.owner, authorizer)
             val processId =
                 agentRunStarter.start(
@@ -140,9 +138,8 @@ internal class ContinuationFireService(
                         },
                     ),
                     extraSecretInputKeys = continuation.secretInputKeys.orEmpty() + inherited.secretInputKeys,
-                    // The origin link is server-derived, so a continuation whose origin is still
-                    // `WORKING` (a fan-out parent waiting on its subs) is admitted rather than
-                    // parked. A fire for an origin that already ended parks as before. ADR-0092.
+                    // The origin link is server-derived: a fire whose origin is still `WORKING` is
+                    // admitted, not parked. ADR-0092.
                     serverDerivedParent = true,
                 )
             repository.markDispatched(continuation.id, processId, now)
@@ -159,12 +156,8 @@ internal class ContinuationFireService(
     }
 
     /**
-     * Fires a JOIN continuation once, after every watched sub is terminal. Claimed (PENDING→
-     * DISPATCHING CAS) up front so concurrent terminal hooks, race-close, and boot replay all
-     * collapse to exactly one fire. Aggregates each sub's terminal result (per-sub transformer;
-     * over-cap → minted resultRef, absent/purged sub → UNKNOWN + null result as partial) into one
-     * map keyed by interrupt id — byte-for-byte the single-fanout payload per entry — and starts
-     * the target with it under [Continuation.resumeParam]; never throws to the caller. See ADR-0026.
+     * Fires a JOIN [continuation] once, claimed like [fire]: the target resumes with one map keyed by
+     * interrupt id, each value a single fan-out's payload. Never throws. See ADR-0026.
      */
     suspend fun fireJoin(continuation: Continuation) {
         if (!repository.claim(continuation.id)) return
@@ -181,7 +174,7 @@ internal class ContinuationFireService(
                         // value so the parent's homer_fanout decodes its own per-branch payload unchanged.
                         put(
                             watch.interruptId,
-                            JsonPrimitive(buildResumePayload(status, watch.watchedProcessId, extracted.result, extracted.ref)),
+                            JsonPrimitive(buildResumePayload(status, watch.watchedProcessId, extracted)),
                         )
                     }
                 }
@@ -189,19 +182,19 @@ internal class ContinuationFireService(
         }
     }
 
-    /** The inline result and/or read-by-reference [ResultRef] for a continuation's resume payload. */
+    /**
+     * The inline result and/or read-by-reference [ResultRef] for a continuation's resume payload;
+     * [tooLarge] when the result was dropped for being over [RESULT_TRANSFORM_MAX_BYTES].
+     */
     private data class ExtractedResult(
         val result: String?,
         val ref: ResultRef?,
+        val tooLarge: Boolean = false,
     )
 
     /**
-     * The transformed result value extracted from [watchedProcessId]'s final stdout. When the
-     * stdout exceeds [MAX_RESULT_BYTES] the inline result is dropped and a read-by-reference
-     * [ResultRef] (capability token) is minted instead, so the parked parent can fetch the full
-     * result. Both are null when there is no stdout or it can't be read. The last execution's
-     * stdout file is the canonical terminal output. Shared by the single-watch [fire] and the
-     * per-sub aggregation in [fireJoin].
+     * The [transformer]'s value of [watchedProcessId]'s last stdout, or over [MAX_RESULT_BYTES] a minted
+     * [ResultRef] instead. Empty without a transformer or a readable stdout. See ADR-0025.
      */
     private suspend fun extractResult(
         watchedProcessId: Int,
@@ -211,18 +204,35 @@ internal class ContinuationFireService(
         val none = ExtractedResult(null, null)
         if (transformer == null) return none
         val (execution, artifactsDir) = lastExecution(watchedProcessId) ?: return none
-        // ExecutionInfo stdOut/stdErr are stored relative to the process artifacts dir
-        // (see AgentExecutor); resolve them the same way LogTailService.resolve does. The
-        // relative stdOut path is also what the read-by-reference fetch endpoint resolves.
         val stdOutRel = execution.stdOut ?: return none
-        val stdErrRel = execution.stdErr ?: return none
-        val stdOut = artifactsDir.resolve(stdOutRel)
-        val stdErr = artifactsDir.resolve(stdErrRel)
-        val size = runCatching { stdOut.fileSize() }.getOrNull() ?: return none
+        val stdOut = readableStdOut(stdOutRel, artifactsDir) ?: return none
+        val size = runCatching { fileOperations.fileSize(stdOut) }.getOrNull() ?: return none
         if (size > MAX_RESULT_BYTES) return oversizedResult(watchedProcessId, stdOutRel, transformer, size, consumerAgent)
+        return mapStdOut(execution, stdOut, transformer)
+    }
+
+    /**
+     * The persisted stdOut is attacker-written: only a link-free regular child of an unlinked artifacts
+     * dir is read, so a FIFO cannot pin the fire (CWE-22/CWE-59, ADR-0070); the swap races are AR-12.
+     */
+    private fun readableStdOut(
+        stdOutRel: Path,
+        artifactsDir: Path,
+    ): Path? {
+        if (Files.isSymbolicLink(artifactsDir)) return null
+        val stdOut = artifactsDir.resolve(stdOutRel).normalize()
+        return stdOut.takeIf { it.parent == artifactsDir && !PathSafety.isLinkedOrSpecial(it) }
+    }
+
+    private fun mapStdOut(
+        execution: ExecutionInfo,
+        stdOut: Path,
+        transformer: ResultEnvParam,
+    ): ExtractedResult {
+        val text = fileOperations.readTextBounded(stdOut, MAX_RESULT_BYTES) ?: return ExtractedResult(null, null)
         val result =
             runCatching {
-                ResultToEnvMapper(CommandResult(execution.resultCode, stdOut, stdErr))
+                ResultToEnvMapper(execution.resultCode, readStdOut = { text }, readStdErr = { "" })
                     .mapToEnv(listOf(transformer))[transformer.envName]
             }.getOrNull()
         return ExtractedResult(result, null)
@@ -236,8 +246,8 @@ internal class ContinuationFireService(
     }
 
     /**
-     * A result over [MAX_RESULT_BYTES] resumes by reference: a minted [ResultRef], or nothing
-     * at all past [RESULT_TRANSFORM_MAX_BYTES], where the reference could never be redeemed.
+     * A result over [MAX_RESULT_BYTES] resumes by reference with a minted [ResultRef]; past
+     * [RESULT_TRANSFORM_MAX_BYTES], where a ref could never be redeemed, with none and `tooLarge` set.
      */
     private suspend fun oversizedResult(
         watchedProcessId: Int,
@@ -247,16 +257,15 @@ internal class ContinuationFireService(
         consumerAgent: String,
     ): ExtractedResult {
         if (size > RESULT_TRANSFORM_MAX_BYTES) {
-            // The fetch endpoint refuses to transform an artifact this large (413), so a ref
-            // here could never be redeemed — typically a failed Claude step's NDJSON stdout.
-            // Resume with result = null and no ref; the parent's own status check decides.
+            // The fetch endpoint answers 413 for a transform this large, so mint no ref and
+            // mark the payload `resultTooLarge` instead. ADR-0025.
             logger.warn(
-                "Watched process {} result of {} bytes exceeds the transform cap {}; resuming with result = null",
+                "Watched process {} result of {} bytes exceeds the transform cap {}; resuming with resultTooLarge",
                 watchedProcessId,
                 size,
                 RESULT_TRANSFORM_MAX_BYTES,
             )
-            return ExtractedResult(null, null)
+            return ExtractedResult(null, null, tooLarge = true)
         }
         val token =
             resultTokenService.mint(
@@ -281,8 +290,7 @@ internal class ContinuationFireService(
     private fun buildResumePayload(
         status: ProcessStatus,
         processId: Int,
-        result: String?,
-        ref: ResultRef?,
+        extracted: ExtractedResult,
     ): String =
         Json.encodeToString(
             JsonObject.serializer(),
@@ -290,19 +298,16 @@ internal class ContinuationFireService(
                 buildMap {
                     put("status", JsonPrimitive(status.name))
                     put("processId", JsonPrimitive(processId))
-                    put("result", result?.let { JsonPrimitive(it) } ?: JsonNull)
-                    if (ref != null) put("resultRef", Json.encodeToJsonElement(ref))
+                    put("result", extracted.result?.let { JsonPrimitive(it) } ?: JsonNull)
+                    if (extracted.ref != null) put("resultRef", Json.encodeToJsonElement(extracted.ref))
+                    if (extracted.tooLarge) put("resultTooLarge", JsonPrimitive(true))
                 },
             ),
         )
 
     /**
-     * Settles a fire that threw a [HomerException]. ADR-0023 promises the parent always wakes, but a
-     * fire can fail for a reason unrelated to this continuation that may clear on its own (target over
-     * its cost cap, process table full, queue full); ending those FAILED loses the resume permanently.
-     * Transient reasons go back to PENDING with the attempt counted and the next scheduled with
-     * exponential backoff, re-fired by the sweep; everything else (target gone, not dispatchable,
-     * unauthorized, bad input) is permanent and FAILs immediately. Bounded twice: by [MAX_FIRE_ATTEMPTS] and the continuation's own TTL.
+     * Settles a fire that threw [e]: a transient refusal returns to PENDING for a backed-off retry, bounded
+     * by [MAX_FIRE_ATTEMPTS] and the TTL; any other fails at once. See ADR-0023.
      */
     private suspend fun settleFailedFire(
         continuation: Continuation,
@@ -335,21 +340,16 @@ internal class ContinuationFireService(
         // inflating the resume payload / env. See ADR-0023.
         const val MAX_RESULT_BYTES = 64L * 1024
 
-        // A transient fire failure is retried on a doubling delay, bounded by
-        // MAX_FIRE_ATTEMPTS and by the continuation's own TTL. The ceiling is an hour so a
-        // cost cap on an hourly window gets at least one attempt after the window rolls.
-        // HookFireService retries a hook on the same back-off. See ADR-0107.
+        // A transient failure retries on a delay doubling up to an hour, bounded by MAX_FIRE_ATTEMPTS
+        // and the TTL; HookFireService shares it. See ADR-0023, ADR-0107.
         const val MAX_FIRE_ATTEMPTS = 8
         const val RETRY_BASE_DELAY_SEC = 60L
         const val RETRY_MAX_DELAY_SEC = 3600L
         const val BACKOFF_SHIFT_CAP = 30
 
         /**
-         * The one retryability policy a fire failure is judged by — shared by
-         * [ContinuationFireService] and [HookFireService], so a transient exception or a
-         * back-off change cannot land in one and not the other: hooks and continuations
-         * would silently disagree on what is retried. True for start-time rejections that
-         * reflect momentary server/agent state, not this fire.
+         * The one retryability policy of [ContinuationFireService] and [HookFireService]: true for a
+         * start-time refusal that reflects momentary server or agent state. See ADR-0023, ADR-0107.
          */
         internal fun isTransientFireFailure(e: HomerException): Boolean =
             e is CooldownActiveException ||
@@ -357,9 +357,7 @@ internal class ContinuationFireService(
                 e is ProcessManagerAtCapacityException ||
                 e is MaxQueuedRunsExceededException ||
                 e is MaxLockWaitersExceededException ||
-                // A fire refused because the drain started is released for the next boot's
-                // sweep rather than settled FAILED: the trigger already happened and its fire
-                // must not be lost. See ADR-0102.
+                // A drain refusal is released for the next boot's sweep, so the fire is not lost. ADR-0102.
                 e is ServerDrainingException
 
         /** The doubling back-off delay before a transient fire failure's attempt number [attempts] (1-based). */

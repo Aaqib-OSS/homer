@@ -733,7 +733,7 @@ server:
   questions:
     maxWaitSec: 86400      # clamp for one answer-wait hold (default 1 day)
     maxOpenPerProcess: 10  # open-question cap per process (default 10)
-    maxTextLength: 10000   # question/option length cap in characters (default 10000)
+    maxTextLength: 10000   # question/option/answer length cap in characters (default 10000)
     maxOptions: 20         # options per question (default 20)
     maxConcurrentWaitsPerProcess: 32  # held answer-waits per process (default 32)
 ```
@@ -742,7 +742,7 @@ server:
 |-------|------|----------|---------|-------------|
 | `maxWaitSec` | `Int` | No | `86400` (1 day) | Upper bound (seconds) for a single answer-wait. Caller-supplied waits (REST `waitSec`, helper `--wait`/`--ttl`) are clamped to this value. Waits are resumable — a timed-out wait returns the still-open question id and the caller waits again — so this caps one HTTP hold, not the total time a question may stay open. |
 | `maxOpenPerProcess` | `Int` | No | `10` | Maximum simultaneously open questions per process; further asks are rejected with `429`. |
-| `maxTextLength` | `Int` | No | `10000` | Maximum length (characters) of the question text and of each option; longer payloads are rejected with `400`. Questions are stored until purge, so this bounds workspace-controlled input the way the `max*Bytes` caps bound other inputs. |
+| `maxTextLength` | `Int` | No | `10000` | Maximum length (characters) of the question text, of each option and of an operator's answer; longer payloads are rejected with `400`. Questions are stored until purge, so this bounds workspace-controlled input the way the `max*Bytes` caps bound other inputs. |
 | `maxOptions` | `Int` | No | `20` | Maximum number of options per question; more are rejected with `400`. |
 | `maxConcurrentWaitsPerProcess` | `Int` | No | `32` | Maximum simultaneously held answer-waits per process; further waits are rejected with `429`. Each held wait pins a connection and a coroutine for up to `maxWaitSec`, so this bounds what a workspace command can pin open. |
 
@@ -3750,7 +3750,8 @@ Use it on a server whose agents all run on external, Kubernetes or SSH runners.
 `GET /api/v1/runners` then no longer lists `local`. The setting covers runs only:
 the server still runs `homer_langgraph inspect` and `state` itself for the
 console's LangGraph views (ADR-0027, ADR-0044), and those import the agent's
-graph module on the server host.
+graph module on the server host, with a minimal server environment plus the
+agent's `env` rather than `parentEnvAllowlist`.
 
 ```yaml
 server:

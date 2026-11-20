@@ -36,9 +36,8 @@ internal class MaintenanceModeService(
     private val logger: Logger,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob()),
     private val now: () -> Long = { Instant.now().epochSecond },
-    // The shutdown drain flag (`homer.app.isDraining`), injected as a lambda so this Services
-    // type stays off the HTTP-layer flag. While set, a non-admitted start is refused, never
-    // parked — the process is going away, so a parked start could only end `UNKNOWN`. See ADR-0102.
+    // The shutdown drain flag (`homer.app.isDraining`) as a lambda, keeping this Services type off the HTTP
+    // layer. While set, a non-admitted start is refused, never parked. See ADR-0102.
     isDraining: () -> Boolean = { false },
 ) {
     private val draining = isDraining
@@ -106,9 +105,8 @@ internal class MaintenanceModeService(
             parked = false
             return MaintenanceSlot { waiter.done.complete(Unit) }
         } finally {
-            // A caller that timed out, was cancelled or was released by stop() must not pin a
-            // release slot; its queue entry and per-principal count go with it, so a phantom entry
-            // cannot overstate `queued`. Removal of a waiter the drain already popped is a no-op.
+            // A caller that left while parked (timeout, cancellation, stop()) pins no release slot and leaves
+            // no phantom entry overstating `queued`; removing a waiter the drain already popped is a no-op.
             if (parked) {
                 remove(waiter)
                 waiter.done.complete(Unit)
@@ -147,9 +145,8 @@ internal class MaintenanceModeService(
                 perPrincipal[ownerKey(owner)] = held + 1
             }
         } catch (e: MaintenanceQueueFullException) {
-            // Logged outside the lock: the appenders are synchronous, and a shed flood is
-            // exactly when arriving callers must not serialize behind log I/O while holding
-            // the queue lock. Throwing costs nothing; the I/O is what had to leave.
+            // Logged outside the lock: the appenders are synchronous, and a shed flood must not
+            // serialize arriving callers behind log I/O held under the queue lock.
             logger.warn(
                 if (e.perPrincipal) {
                     "Maintenance start queue holds {} starts for this caller; shedding the start"
@@ -182,8 +179,8 @@ internal class MaintenanceModeService(
                 waiter.released.complete(Unit)
                 scope.launch {
                     try {
-                        // The slot is held until the released start's run exists, not merely until
-                        // its caller wakes: that is what bounds the flood at the runners.
+                        // The slot is held until the released start's run exists, not merely until its
+                        // caller wakes: that bounds the flood at the runners. See ADR-0092.
                         waiter.done.await()
                     } finally {
                         releaseSlots.release()

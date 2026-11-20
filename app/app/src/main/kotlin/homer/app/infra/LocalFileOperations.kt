@@ -53,8 +53,8 @@ class LocalFileOperations internal constructor(
         maxBytes: Long,
     ): String? {
         if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) return null
-        // CWE-367/CWE-400: open and read run on the bounded, timed pool over an interruptible
-        // channel, so a FIFO swapped in after the check cannot pin the caller.
+        // CWE-367/CWE-400: open and read run on the bounded, timed pool, so a FIFO swapped in after the
+        // check cannot pin the caller; a hard link renamed in after it still wins (AR-12).
         var failure: IOException? = null
         val text =
             try {

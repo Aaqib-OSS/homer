@@ -158,6 +158,20 @@ class QuestionsServiceTest {
         }
 
     @Test
+    fun `answer over maxTextLength is refused and leaves the question open`() =
+        runTest {
+            val service = service(config = QuestionsConfig(maxTextLength = 10))
+            service.registerProcess(1, "agent-a")
+            val question = service.ask(1, "Proceed?")
+
+            val refused = assertThrows<ValidationException> { service.answer(question.id, "y".repeat(11)) }
+
+            assertEquals("answer", refused.field)
+            assertEquals(QuestionStatus.OPEN, service.get(question.id)?.status)
+            assertEquals("y".repeat(10), service.answer(question.id, "y".repeat(10)).answer)
+        }
+
+    @Test
     fun `answer on unknown id throws not found`() =
         runTest {
             assertThrows<QuestionNotFoundException> { service().answer("nope", "answer") }

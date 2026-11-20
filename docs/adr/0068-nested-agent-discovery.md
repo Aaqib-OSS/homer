@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-09-24
 deciders: Martin Simon
-amended: 2026-09-30
+amended: 2026-09-30, 2026-11-20
 ---
 # ADR-0068: Agent discovery walks the search path recursively; directory identity is the root-relative path
 
@@ -266,3 +266,11 @@ Now:
   [ADR-0043](0043-k8s-sync-workspaces.md),
   [ADR-0066](0066-external-pull-runners-and-unified-claim-queue.md) — the
   `HMR_AGENT_DIR` → `.homer/agent` upload that now excludes nested children.
+
+## Amendment (2026-11-20): a reload publishes by compare-and-set
+
+`AgentsService.reload()` scans outside any lock, so concurrent reloads scan in parallel, and
+publishes by compare-and-set on the snapshot its scan began from. A reload that loses the race
+rescans and recomputes its diff against the winner's snapshot. Re-diffing a stale scan alone would
+report as removed the agents the winner had just added. After 8 lost races the reload publishes
+nothing, emits no event, and reports the failure in `errors`.

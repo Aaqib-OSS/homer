@@ -10,9 +10,8 @@ import homer.app.models.RunStartRequest
  * every entry point gets. See ADR-0030.
  */
 internal class AgentSubRunStarter(
-    // Provider resolved at call time, not construction, to break the DI cycle
-    // RunAgentExecutor → AgentRunStarter → ProcessFactory → CommandExecutorFactory
-    // → RunAgentExecutor. Same precedent as ProcessExecutor.onTerminal (ADR-0023).
+    // Resolved at call time to break the DI cycle RunAgentExecutor → AgentRunStarter → ProcessFactory
+    // → CommandExecutorFactory → RunAgentExecutor. See ADR-0030.
     private val agentRunStarter: () -> AgentRunStarter,
     private val agentsService: AgentsService,
     private val authorizer: Authorizer,

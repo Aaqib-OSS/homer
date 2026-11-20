@@ -4072,12 +4072,20 @@ other caller gets `403` ("Result token not valid for this agent"). The same
 `--result-jsonpath` transform that would have applied to an inline result is
 applied server-side at fetch. Results larger than 4 MiB cannot be transformed
 server-side (a transform request answers `413`), so when a transform is set
-Homer mints no `resultRef` for them and the payload arrives with `result: null`
-and no ref — typically a sub that failed on a Claude step, whose stdout is the
-whole NDJSON event stream. See
+Homer mints no `resultRef` for them and marks the payload instead — typically a
+sub that failed on a Claude step, whose stdout is the whole NDJSON event stream:
+
+```json
+{ "status": "FAILED", "processId": 99, "result": null, "resultTooLarge": true }
+```
+
+`resultTooLarge` is present only in this case, so a command can test for it
+(`jq -e '.resultTooLarge == true'`) to tell a result that was too large from one
+that was empty. See
 [ADR-0025](../docs/adr/0025-capability-token-result-read.md). The Python
 `homer_langgraph` runtime fetches automatically — `homer_fanout` returns a
-payload with `result` already populated.
+payload with `result` already populated — and reports a `resultTooLarge`
+payload on stderr, in the resumed run's log.
 
 #### Parallel fan-out: `homer-join`
 
@@ -4107,8 +4115,9 @@ It prints `{ "processIds": [...], "continuationId": N }`. The resume payload
 delivered under `resumeParam` is a JSON **map** `{ interruptId: per_sub_payload }`,
 where each `per_sub_payload` is byte-for-byte the single-fanout payload
 (`{ status, processId, result }`, or `result: null` + `resultRef` over the
-inline cap). Every agent involved must opt in with `dispatch.enabled`; the
-runtime drives this helper automatically for grouped `homer_fanout` calls.
+inline cap, or `result: null` + `resultTooLarge: true` over the transform cap).
+Every agent involved must opt in with `dispatch.enabled`; the runtime drives
+this helper automatically for grouped `homer_fanout` calls.
 
 ### Limits
 

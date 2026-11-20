@@ -4,11 +4,8 @@ import homer.app.infra.PeriodicSweep
 import org.slf4j.Logger
 
 /**
- * Periodically expires PENDING continuations past their TTL, re-fires those whose
- * transient-failure retry is due, prunes settled ones past `settledRetentionSec`, and reaps
- * expired read-by-reference result tokens. The same tick re-fires agent-level status hooks
- * whose transient-failure retry is due and prunes their settled rows. See ADR-0023, ADR-0025,
- * ADR-0107.
+ * Each tick expires PENDING continuations past their TTL, re-fires the due retries of continuations and
+ * hooks, prunes their settled rows, and reaps expired result tokens. See ADR-0023, ADR-0025, ADR-0107.
  */
 internal class ContinuationSweepService(
     private val continuationService: ContinuationService,

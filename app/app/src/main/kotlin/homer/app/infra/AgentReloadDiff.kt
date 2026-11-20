@@ -55,7 +55,7 @@ internal object AgentReloadDiff {
         return merged
     }
 
-    fun result(
+    private fun result(
         old: Map<String, Agent>,
         scan: AgentScan,
         removed: Set<String>,

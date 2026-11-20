@@ -18,12 +18,9 @@ class ServerMetaRepository(
     private val logger: Logger,
 ) {
     /**
-     * The stable per-instance identifier, created and persisted on first call. Unlike
-     * `HMR_SERVER_ID` (regenerated every boot) it survives restarts, so the Kubernetes startup
-     * sweep can reap *this* instance's own orphan pods after an unclean restart while never
-     * matching another instance's pods. See ADR-0033. Blocking and startup-only: resolved
-     * synchronously while the runner registry is built, before traffic, so it does not go through
-     * the suspend [DatabaseService.query] path; [DatabaseService.migrate] must have created `server_meta`.
+     * The per-instance id, created on first call and, unlike `HMR_SERVER_ID`, kept across restarts: it scopes the
+     * Kubernetes startup sweep to this instance's own orphans. Blocking and startup-only, not through
+     * [DatabaseService.query] (ADR-0020, 2026-09-29 amendment); [DatabaseService.migrate] must have created `server_meta`.
      */
     fun getOrCreateInstanceId(): String =
         transaction(db.database) {
@@ -41,12 +38,8 @@ class ServerMetaRepository(
         }
 
     /**
-     * The persisted maintenance-mode flag. Blocking and startup-only, like
-     * [getOrCreateInstanceId]: read once while the service is built, before traffic.
-     *
-     * The stored value is parsed strictly — anything but `"true"`/`"false"` is
-     * corrupt, so it is logged and read as **off**: a damaged row must never
-     * silently hold every start back. See ADR-0092.
+     * The persisted maintenance-mode flag, read blocking once at startup like [getOrCreateInstanceId]. Anything
+     * but `"true"`/`"false"` is logged and read as off: a damaged row never holds every start back (ADR-0092).
      */
     fun readMaintenanceMode(): Boolean =
         parseMaintenanceMode(

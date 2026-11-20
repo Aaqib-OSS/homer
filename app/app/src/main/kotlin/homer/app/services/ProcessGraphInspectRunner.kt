@@ -18,12 +18,9 @@ internal fun isUnsupportedJsonFlag(
 ): Boolean = exitCode == 2 && "--json" in stderr
 
 /**
- * Host-local implementation: spawns `<python> -m homer_langgraph inspect --module <module>
- * --json` on the server host and captures stdout (topology + Mermaid JSON) / stderr (error).
- * Unlike LocalShellExecutor this intentionally inherits the server process environment so
- * `python` and the `homer_langgraph` package resolve, then overlays the agent's declared `env`
- * (e.g. `PYTHONPATH`) so the agent's own module resolves exactly as in a real run. This is
- * server-host introspection, not sandboxed agent execution. See ADR-0027.
+ * Host-local implementation: spawns `<python> -m homer_langgraph inspect --module <module> --json` on the server
+ * host with only the allowlisted server env plus the agent's `env` (`graphSubprocessEnv`), and captures stdout
+ * (topology + Mermaid JSON) / stderr (error). Server-host introspection, not sandboxed agent execution. See ADR-0027.
  */
 class ProcessGraphInspectRunner : GraphInspectRunner {
     override suspend fun run(

@@ -172,6 +172,20 @@ class LlmEventStreamServiceTest {
     }
 
     @Test
+    fun `resolve refuses an artifacts directory that is a symlink`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val outside = tmp.resolve("outside").createDirectories()
+        outside.resolve("cmd_0.out").writeText("")
+        val artifactsDir = Files.createSymbolicLink(tmp.resolve("artifacts"), outside)
+        val pm = processManagerWithoutJob()
+        val row = ExecutionInfo("l", 1, 2, 0, Path.of("cmd_0.out"), Path.of("cmd_0.err"), null, kind = "codex")
+        coEvery { pm.getProcessInfo(1) } returns processInfo(1, artifactsDir, ProcessStatus.FINISHED, listOf(row))
+        coEvery { pm.getCommandArtifacts(1, 0) } returns null
+        assertNull(LlmEventStreamService(pm, harnesses, TestFixtures.mockLogger()).resolve(1, 0))
+    }
+
+    @Test
     fun `resolve refuses an execution row escaping the artifacts dir`(
         @TempDir tmp: Path,
     ) = runTest {

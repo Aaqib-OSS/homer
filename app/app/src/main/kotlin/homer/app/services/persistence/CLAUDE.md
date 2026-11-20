@@ -131,7 +131,7 @@ there and a row here (SQLite rule 1 in
 [`app/CLAUDE.md`](../../../../../../../../CLAUDE.md) § SQLite rules). The table is
 an index, not the reasoning: why a version exists, what it measured and what it
 left alone are in the ADR the row names, and § Schema constraints keeps only the
-constraints that ADR does not state. Four rows name none — v1, v9, v11 and v28 —
+constraints that ADR does not state. Five rows name none — v1, v9, v11, v28 and v34 —
 and for those no ADR records the reasoning, so the row's phrase is the whole of it.
 `SchemaEquivalenceTest` fails when a database the steps upgraded differs from a fresh one
 (columns, indexes, CHECK constraints; drift not yet fixed is listed there) or when this table's
@@ -177,13 +177,12 @@ so a fresh database would carry one an upgraded one lacks (`SchemaEquivalenceTes
 | 31 | `processes.cooldown_key` + two indexes; `processes.stop`; `pending_hooks` table | [0106](../../../../../../../../../docs/adr/0106-cooldown-key-scopes-windows-per-subject.md), [0107](../../../../../../../../../docs/adr/0107-agent-status-hooks.md), [0108](../../../../../../../../../docs/adr/0108-graceful-stop-of-a-run.md) |
 | 32 | `dispatches.kind` + `dispatch_group_questions` table (its own version — a database the cooldown release stamped 31 skips every step guarded below 32) | [0109](../../../../../../../../../docs/adr/0109-grouped-ask-and-dispatch.md) |
 | 33 | `result_tokens` rebuilt without the transitional `DEFAULT ''` | [0025](../../../../../../../../../docs/adr/0025-capability-token-result-read.md) |
+| 34 | `result_tokens_expires_at` index (the token TTL sweep) | — |
 
 ### Schema constraints
 
 The constraints an editor can break without noticing, and that the row's ADR does
-not state. Everything else about a version — why it exists, what it measured,
-what it rejected — is in the ADR that version's row names; where the row names
-none (v1, v9, v11, v28), the table's phrase is all there is.
+not state.
 
 - **An index is declared by hand.** `SchemaUtils.create` only indexes a table it
   creates, so a migration adds each index in its own step; `DatabaseMigrationTest`
@@ -201,7 +200,7 @@ none (v1, v9, v11, v28), the table's phrase is all there is.
 - **`processes.failure_reason` is written only while `status = FAILED` with no
   recorded execution and no current command**, and a non-null value keeps the row
   out of `cooldown.afterFailure`'s latest-failure lookup: only a run that failed
-  while executing arms the window (ADR-0098).
+  while executing arms the window (ADR-0051, ADR-0098).
 - **`processes.stop` is NULL on every run that was not stopped gracefully**, read
   only where `ProcessInfo` is served, through the same `getOrNull` guard the other
   blob columns use (ADR-0108).

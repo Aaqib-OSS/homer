@@ -30,11 +30,9 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.ExperimentalTime
 
 /**
- * Operator questions asked by running commands and answered over the API. Durable state
- * lives in SQLite via [QuestionsRepository] (SQLite is authoritative, ADR-0020);
- * [registrations] (callback tokens — the only credential agent workspaces ever see),
- * [completions] and [activeWaits] are runtime-only, rebuilt empty on boot. A restart
- * expires open questions and drops the token registry. See ADR-0019.
+ * Operator questions asked by running commands and answered over the API, durable via [QuestionsRepository] (ADR-0020).
+ * The callback tokens in [registrations], [completions] and [activeWaits] are never persisted, so a restart drops the
+ * tokens and expires open questions. See ADR-0019.
  */
 @OptIn(ExperimentalTime::class)
 class QuestionsService(
@@ -44,16 +42,13 @@ class QuestionsService(
     private val config: QuestionsConfig = QuestionsConfig(),
 ) : QuestionExpiry,
     QuestionRegistration {
-    // Serializes registration changes against ask's registration checks (and the
-    // activeWaits read-modify-write) so a question never stays OPEN in a process
-    // whose registration was closed or removed (the ADR-0019 invariant). Never held
-    // across a database write. NOT taken by the hot `resolveToken` auth path.
+    // Serializes registration changes against ask's checks, so no question stays OPEN in a closed registration, and guards
+    // the activeWaits counts. Never held across a database write, nor taken by `resolveToken`. See ADR-0019.
     private val mutex = Mutex()
     private val registrations = ConcurrentHashMap<Int, ProcessRegistration>()
 
-    // SHA-256 of each registered token → its process id, so a callback (and every proxied
-    // request through `whoami`) resolves in one lookup, not a scan of every registration up to
-    // capacity eviction. Changed only under [mutex], next to [registrations]. See ADR-0110.
+    // SHA-256 of each registered token → its process id, so a callback or proxied request resolves in
+    // one lookup, not a scan. Changed only under [mutex], next to [registrations]. See ADR-0110.
     private val processByTokenDigest = ConcurrentHashMap<String, Int>()
     private val activeWaits = mutableMapOf<Int, Int>()
     private val completions = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
@@ -63,10 +58,8 @@ class QuestionsService(
     private val secureRandom = SecureRandom()
 
     /**
-     * Mints and stores a callback token for [processId]. Calling again for the
-     * same process replaces the previous token. [secretRedactor] receives the minted
-     * token and returns the run's secret screen (its own token included); the
-     * registration is never observable without it.
+     * Mints and stores a callback token for [processId], replacing any previous one. [secretRedactor] receives the token
+     * and returns the run's secret screen, its own token included; the registration is never observable without it.
      */
     override suspend fun registerProcess(
         processId: Int,
@@ -85,10 +78,8 @@ class QuestionsService(
     }
 
     /**
-     * Resolves a presented callback token to its process id, or null when no
-     * registration matches. The lookup is by the token's SHA-256, so its timing can
-     * reveal at most a digest prefix, never the token; the final comparison is
-     * constant-time.
+     * Resolves a callback token to its process id, or null. The lookup is by the token's SHA-256, so its timing can
+     * reveal at most a digest prefix; the final comparison is constant-time. See ADR-0110.
      */
     fun resolveToken(token: String): Int? =
         processByTokenDigest[tokenDigest(token)]?.takeIf { processId ->
@@ -144,11 +135,8 @@ class QuestionsService(
                 )
             completions[question.id] = CompletableDeferred()
         }
-        // The insert runs outside the mutex, so a close or purge may land meanwhile.
-        // expireForProcess/removeForProcess change the registration under the mutex
-        // before their DB write: an insert they missed is caught by the re-check below.
-        // NonCancellable: a committed insert must reach the re-check even if the caller
-        // is cancelled on the way back.
+        // Outside the mutex a close or purge can land; the re-check below catches it, and NonCancellable
+        // makes a committed insert reach it. See ADR-0019.
         var outcome: AskOutcome? = null
         try {
             outcome =
@@ -182,12 +170,16 @@ class QuestionsService(
         return question
     }
 
+    /** Answers an OPEN question; a blank answer or one over `maxTextLength` characters is refused before any write. */
     suspend fun answer(
         id: String,
         answer: String,
     ): Question {
         if (answer.isBlank()) {
             throw ValidationException("Answer must not be blank", "answer")
+        }
+        if (answer.length > config.maxTextLength) {
+            throw ValidationException("Answer exceeds ${config.maxTextLength} characters", "answer")
         }
         when (val result = repository.markAnswered(id, answer, Clock.System.now().epochSeconds)) {
             is QuestionsRepository.AnswerResult.NotFound -> {
@@ -210,10 +202,8 @@ class QuestionsService(
     suspend fun get(id: String): Question? = repository.get(id)
 
     /**
-     * Waits up to [waitSec] seconds (clamped to `0..maxWaitSec`) for the
-     * question to leave OPEN, then returns its latest snapshot — still OPEN on
-     * timeout, so callers can simply wait again on the same id. Returns null
-     * for an unknown id.
+     * Waits up to [waitSec] seconds (clamped to `0..maxWaitSec`) for the question to leave OPEN and returns its latest
+     * snapshot, still OPEN on timeout so a caller can wait again. Null for an unknown id.
      */
     suspend fun awaitAnswer(
         id: String,
@@ -224,9 +214,7 @@ class QuestionsService(
         val clampedSec = waitSec.coerceIn(0, config.maxWaitSec)
         if (clampedSec <= 0) return repository.get(id)
 
-        // Each held wait pins a connection for up to maxWaitSec, so the
-        // per-process count is capped — otherwise a workspace command could
-        // exhaust the server by piling up long-polls.
+        // Each held wait pins a connection for up to maxWaitSec, so the count per process is capped (ADR-0047 rule 4).
         mutex.withLock {
             val held = activeWaits.getOrDefault(snapshot.processId, 0)
             if (held >= config.maxConcurrentWaitsPerProcess) {
@@ -236,10 +224,8 @@ class QuestionsService(
         }
         try {
             val completion = completions.getOrPut(id) { CompletableDeferred() }
-            // Re-read after registering the completion: an answer/expiry that
-            // fired between the snapshot read and now would have completed a
-            // different (or no) deferred, so without this re-check we could
-            // block until timeout on an already-resolved question.
+            // Re-read after registering the completion: an answer or expiry since the snapshot completed
+            // another deferred or none, so the wait would otherwise sit out its timeout.
             val recheck = repository.get(id)
             if (recheck != null && recheck.status == QuestionStatus.OPEN) {
                 withTimeoutOrNull(clampedSec.seconds) { completion.await() }
@@ -273,11 +259,8 @@ class QuestionsService(
     suspend fun openCountByProcess(): Map<Int, Int> = repository.openCountByProcess()
 
     /**
-     * Marks the process as no longer accepting questions and expires its OPEN
-     * questions, resuming every waiter. Called on every terminal transition
-     * (FINISHED/FAILED/KILLED) and on startup reconciliation. The token
-     * registration stays until [removeForProcess] so late helper calls get a
-     * clean 409, not a 401.
+     * Closes the process's registration and expires its OPEN questions, resuming every waiter; called on every terminal
+     * transition and at startup reconciliation. The registration stays until [removeForProcess], so a late call gets 409.
      */
     override suspend fun expireForProcess(processId: Int) {
         val expired: List<Question>

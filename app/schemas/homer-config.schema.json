@@ -396,7 +396,7 @@
           "type": "integer",
           "minimum": 1,
           "default": 10000,
-          "description": "Maximum length (characters) of the question text and of each option; longer payloads are rejected with 400."
+          "description": "Maximum length (characters) of the question text, of each option and of an operator's answer; longer payloads are rejected with 400."
         },
         "maxOptions": {
           "type": "integer",

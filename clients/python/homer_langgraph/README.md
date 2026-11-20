@@ -109,9 +109,10 @@ fetch fails for a sub
 that did not `FINISHED`, `homer_fanout` keeps `result: null`, reports on
 stderr and returns the payload — the graph's own status check (retry, park)
 must get to run; a fetch failure for a `FINISHED` sub still raises. Above
-4 MiB (the server-side transform cap) no `resultRef` is minted and `result`
-stays `null`; a sub dispatched without `result_jsonpath` resumes with neither
-a `result` nor a `resultRef`. See
+4 MiB (the server-side transform cap) no `resultRef` is minted: `result` stays
+`null`, the payload carries `resultTooLarge: true`, and `homer_fanout` reports
+it on stderr, in the parent run's log. A sub dispatched without
+`result_jsonpath` resumes with neither a `result` nor a `resultRef`. See
 [ADR-0025](../../../docs/adr/0025-capability-token-result-read.md).
 
 ## Multi-interrupt resolution: sequential and join modes
