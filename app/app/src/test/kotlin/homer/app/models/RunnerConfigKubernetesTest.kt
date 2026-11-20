@@ -96,19 +96,11 @@ gracefulStopSeconds: 300""",
 
         // Absent = no soft deadline, which is what keeps a run that never opted in unchanged.
         assertNull(k8s().gracefulStopSeconds)
-        assertNull(k8s().maxRunSeconds)
+        assertEquals(86_400L, k8s().maxRunSeconds)
     }
 
     @Test
     fun `validateWorkload refuses a gracefulStopSeconds it cannot honour`() {
-        // The soft deadline is measured back from maxRunSeconds, so without one there is
-        // nothing to be soft about.
-        val noMax =
-            assertFailsWith<IllegalArgumentException> {
-                k8s().copy(gracefulStopSeconds = 60).validateWorkload("build-box")
-            }
-        assertTrue(noMax.message!!.contains("gracefulStopSeconds requires maxRunSeconds"), noMax.message!!)
-
         // Zero would stop every run the moment it started.
         assertTrue(
             assertFailsWith<IllegalArgumentException> {
@@ -143,11 +135,11 @@ gracefulStopSeconds: 300""",
                         mapOf(
                             "build-box" to
                                 k8s(extras = listOf(ExtraUploadSpec("/a", "workdir")))
-                                    .copy(gracefulStopSeconds = 60),
+                                    .copy(gracefulStopSeconds = 0),
                         ),
                 )
             }
-        assertTrue(ex.message!!.contains("gracefulStopSeconds requires maxRunSeconds"), ex.message!!)
+        assertTrue(ex.message!!.contains("gracefulStopSeconds must be >= 1"), ex.message!!)
     }
 
     @Test
@@ -158,10 +150,10 @@ gracefulStopSeconds: 300""",
                     agentsSearchPath = "a",
                     workspaceRootPath = "w",
                     databasePath = "d",
-                    runners = mapOf("build-box" to k8s().copy(gracefulStopSeconds = 60)),
+                    runners = mapOf("build-box" to k8s().copy(gracefulStopSeconds = 0)),
                 )
             }
         assertTrue(ex.message!!.contains("runner 'build-box'"))
-        assertTrue(ex.message!!.contains("gracefulStopSeconds requires maxRunSeconds"), ex.message!!)
+        assertTrue(ex.message!!.contains("gracefulStopSeconds must be >= 1"), ex.message!!)
     }
 }

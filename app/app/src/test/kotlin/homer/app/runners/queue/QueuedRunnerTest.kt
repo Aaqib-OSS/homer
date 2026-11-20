@@ -65,7 +65,7 @@ class QueuedRunnerTest {
         runTest {
             val queue = RunnerClaimQueue(10)
             val local = stub("local")
-            StaticRunnerConsumer(local, emptySet(), null, queue).start(backgroundScope)
+            StaticRunnerConsumer(local, emptySet(), 10, queue).start(backgroundScope)
             val runner = QueuedRunner(RunnerFilter.Alias("local"), queue, listOf(local), 300.seconds)
 
             val session =
@@ -78,7 +78,7 @@ class QueuedRunnerTest {
     private class Consumer(
         override val alias: String,
         override val tags: Set<String> = emptySet(),
-        override val concurrency: Int? = null,
+        override val concurrency: Int = 10,
         override val inUse: Int = 0,
         override val affinityInstance: String? = null,
     ) : ClaimConsumerInfo

@@ -21,7 +21,7 @@ class ExternalRunnerInstance(
     /** The name the request declared, null when it sent none ([name] then falls back to an id prefix). */
     val declaredName: String? = null,
 ) : ClaimConsumerInfo {
-    override val concurrency: Int? get() = declaredConcurrency
+    override val concurrency: Int get() = declaredConcurrency
 
     /**
      * The instance's affinity identity: its declared name qualified with the domain alias, so a

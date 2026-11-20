@@ -207,7 +207,7 @@ class RunnerRegistryTest {
             assertEquals(setOf("local", "k8s"), byAlias.keys)
             assertEquals(4, byAlias["k8s"]!!.concurrency)
             assertEquals(setOf("linux"), byAlias["k8s"]!!.tags)
-            assertEquals(null, byAlias["local"]!!.concurrency)
+            assertEquals(10, byAlias["local"]!!.concurrency)
         }
 
     @Test

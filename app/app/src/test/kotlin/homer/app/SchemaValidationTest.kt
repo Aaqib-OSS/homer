@@ -126,9 +126,10 @@ class SchemaValidationTest {
             withK8s(""", "workload": "Job", "maxRunSeconds": 10800, "jobTtlSecondsAfterFinished": 600"""),
             "kubernetes runner with the workload keys",
         )
-        validate(schema, withK8s(""", "maxRunSeconds": null"""), "kubernetes runner with null maxRunSeconds")
+        validate(schema, withK8s(""), "kubernetes runner without maxRunSeconds")
         for (bad in listOf(
             """, "maxRunSeconds": 0""",
+            """, "maxRunSeconds": null""",
             """, "workload": "Job", "jobTtlSecondsAfterFinished": -1""",
             """, "jobTtlSecondsAfterFinished": 60""",
             """, "workload": "Pod", "jobTtlSecondsAfterFinished": 60""",

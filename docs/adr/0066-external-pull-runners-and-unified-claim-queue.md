@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-09-18
+amended: 2026-11-20
 deciders: Lukáš Vlk
 ---
 # ADR-0066: External pull-mode runners and the unified claim queue
@@ -163,3 +164,12 @@ Chosen option: **A**.
   status/queue endpoints and the console `/runners` page shipped in the third.
 - Related: ADR-0003 (runners as backends), ADR-0033 (session primitives),
   ADR-0047 (threat model), ADR-0055 (mirror sync-down), ADR-0065 (remote env).
+
+## Amendment (2026-11-20): runner limits are finite by default
+
+A runner's `concurrency` (`server.localRunner`, `ssh`, `kubernetes`) defaults to 10, the same as an
+agent's default `maxParallelRuns`, and no longer accepts `null`. The "no `concurrency` = unbounded"
+rule above no longer holds: a runner serves at most ten runs at once unless configured otherwise, and
+a surplus run waits in the claim queue and fails at the claim TTL as before. A Kubernetes run pod's
+`maxRunSeconds` likewise defaults to 86400 s (24 h), so every pod carries an `activeDeadlineSeconds`.
+Pull-mode instances were already bounded by their announced `concurrency`.

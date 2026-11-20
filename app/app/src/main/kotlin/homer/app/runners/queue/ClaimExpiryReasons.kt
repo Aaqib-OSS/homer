@@ -39,7 +39,7 @@ private fun matchingStates(
 ): String =
     consumers
         .filter { it.matches(filter) }
-        .joinToString(", ") { "runner '${it.alias}' at concurrency ${it.inUse}/${it.concurrency ?: "unbounded"}" }
+        .joinToString(", ") { "runner '${it.alias}' at concurrency ${it.inUse}/${it.concurrency}" }
 
 private fun expiryReason(
     consumers: List<ClaimConsumerInfo>,

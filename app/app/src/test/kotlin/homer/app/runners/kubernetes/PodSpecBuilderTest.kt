@@ -355,9 +355,9 @@ class PodSpecBuilderTest {
     }
 
     @Test
-    fun `no maxRunSeconds leaves activeDeadlineSeconds unset`() {
+    fun `an omitted maxRunSeconds gives the pod a 24 hour activeDeadlineSeconds`() {
         val pod = PodSpecBuilder("k8s-dev", config).build(params(), "homer-1-abcdef")
-        assertNull(pod.spec!!.activeDeadlineSeconds)
+        assertEquals(86_400L, pod.spec!!.activeDeadlineSeconds)
     }
 
     @Test

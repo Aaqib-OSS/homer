@@ -746,7 +746,7 @@
         "enabled": {
           "type": "boolean",
           "default": true,
-          "description": "false registers no local runner: a run routed to 'local' fails at once and no run executes in the server's container. tags and concurrency must then be absent."
+          "description": "false registers no local runner: a run routed to 'local' fails at once and no run executes in the server's container. tags must then be empty and concurrency left at its default."
         },
         "tags": {
           "type": "array",
@@ -754,10 +754,10 @@
           "maxItems": 32,
           "uniqueItems": true
         },
-        "concurrency": { "type": ["integer", "null"], "minimum": 1, "default": null }
+        "concurrency": { "type": "integer", "minimum": 1, "default": 10, "description": "Runs the local runner serves at once. See ADR-0066." }
       },
       "if": { "properties": { "enabled": { "const": false } }, "required": ["enabled"] },
-      "then": { "properties": { "tags": { "maxItems": 0 }, "concurrency": { "type": "null" } } }
+      "then": { "properties": { "tags": { "maxItems": 0 }, "concurrency": { "const": 10 } } }
     },
     "KubernetesRunner": {
       "type": "object",
@@ -795,14 +795,15 @@
           "description": "Kubernetes object each run executes in: a bare Pod (default) or a Job."
         },
         "maxRunSeconds": {
-          "type": ["integer", "null"],
+          "type": "integer",
           "minimum": 1,
-          "description": "Upper bound on a whole run's wall-clock time in the cluster. null = no limit."
+          "default": 86400,
+          "description": "Upper bound on a whole run's wall-clock time in the cluster; the pod's activeDeadlineSeconds."
         },
         "gracefulStopSeconds": {
           "type": ["integer", "null"],
           "minimum": 1,
-          "description": "Opt-in graceful stop: the run is stopped this many seconds before maxRunSeconds, so its onStop: steps finish before the cluster's hard deadline kills the pod. Requires maxRunSeconds, and must be smaller than it. null = no soft deadline."
+          "description": "Opt-in graceful stop: the run is stopped this many seconds before maxRunSeconds, so its onStop: steps finish before the cluster's hard deadline kills the pod. Must be smaller than maxRunSeconds. null = no soft deadline."
         },
         "jobTtlSecondsAfterFinished": {
           "type": ["integer", "null"],
@@ -826,10 +827,10 @@
           "description": "Tags this runner serves for agents that select a runner with runnerTags (every requested tag must be present here). Empty = reachable by alias only. See ADR-0066."
         },
         "concurrency": {
-          "type": ["integer", "null"],
+          "type": "integer",
           "minimum": 1,
-          "default": null,
-          "description": "Runs this runner serves at once. A run addressed to a saturated runner waits in the claim queue and fails at the claim TTL. null = unbounded. See ADR-0066."
+          "default": 10,
+          "description": "Runs this runner serves at once. A run addressed to a saturated runner waits in the claim queue and fails at the claim TTL. See ADR-0066."
         },
         "imagePullSecrets": {
           "type": "array",
@@ -881,10 +882,10 @@
           "description": "Tags this runner serves for agents that select a runner with runnerTags (every requested tag must be present here). Empty = reachable by alias only. See ADR-0066."
         },
         "concurrency": {
-          "type": ["integer", "null"],
+          "type": "integer",
           "minimum": 1,
-          "default": null,
-          "description": "Runs this runner serves at once. A run addressed to a saturated runner waits in the claim queue and fails at the claim TTL. null = unbounded. See ADR-0066."
+          "default": 10,
+          "description": "Runs this runner serves at once. A run addressed to a saturated runner waits in the claim queue and fails at the claim TTL. See ADR-0066."
         },
         "shell": { "type": "string", "default": "/bin/sh" },
         "connectTimeoutSeconds": { "type": "integer", "minimum": 1, "default": 30 },
@@ -901,10 +902,10 @@
           "description": "SSH keepalive interval in seconds; null disables keepalives. Heartbeats keep NAT/proxy idle timers on the path alive and let the client detect a dead link while the idle timeout is off."
         },
         "sftpTransferTimeoutSeconds": {
-          "type": ["integer", "null"],
+          "type": "integer",
           "minimum": 1,
           "default": 300,
-          "description": "Per-operation SFTP transfer deadline in seconds; null disables the bound. Each blocking SFTP round trip (file copy, directory listing, stat, mkdir, the SFTP subsystem handshake, and the client close) must complete within this time or the SSH session is closed and the transfer fails, so a peer answering keepalives while stalling SFTP data cannot hold a run slot and workspace lock indefinitely. A close that fails or exceeds the deadline is logged and swallowed — it does not fail the transfer."
+          "description": "Per-operation SFTP transfer deadline in seconds. Each blocking SFTP round trip (file copy, directory listing, stat, mkdir, the SFTP subsystem handshake, and the client close) must complete within this time or the SSH session is closed and the transfer fails, so a peer answering keepalives while stalling SFTP data cannot hold a run slot and workspace lock indefinitely. A close that fails or exceeds the deadline is logged and swallowed — it does not fail the transfer."
         },
         "syncExcludes": {
           "type": "array",

@@ -82,8 +82,8 @@ private fun V1PodStatus.mainTerminated(): V1ContainerStateTerminated? =
         ?.terminated
 
 /** One line for a run's failure message: the limit that was hit, or Kubernetes' own message. */
-internal fun PodTermination.summary(maxRunSeconds: Long?): String =
-    if (reason == DEADLINE_EXCEEDED && maxRunSeconds != null) {
+internal fun PodTermination.summary(maxRunSeconds: Long): String =
+    if (reason == DEADLINE_EXCEEDED) {
         "maxRunSeconds ($maxRunSeconds s) exceeded ($reason)"
     } else {
         "$message ($reason)"

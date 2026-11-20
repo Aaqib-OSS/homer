@@ -47,7 +47,7 @@ class RunnerClaimQueueTest {
     private class Consumer(
         override val alias: String,
         override val tags: Set<String> = emptySet(),
-        override val concurrency: Int? = null,
+        override val concurrency: Int = 10,
         override var inUse: Int = 0,
         override val affinityInstance: String? = null,
         override var draining: Boolean = false,
@@ -58,7 +58,7 @@ class RunnerClaimQueueTest {
         override val alias: String,
         override val tags: Set<String>,
     ) : ClaimConsumerInfo {
-        override val concurrency: Int? = null
+        override val concurrency: Int = 10
         override val inUse: Int = 0
     }
 
@@ -579,7 +579,7 @@ class RunnerClaimQueueTest {
                 object : ClaimConsumerInfo {
                     override val alias = "local"
                     override val tags = emptySet<String>()
-                    override val concurrency: Int? = null
+                    override val concurrency: Int = 10
                     override val inUse = 0
 
                     override fun matches(filter: RunnerFilter) = !draining && super.matches(filter)

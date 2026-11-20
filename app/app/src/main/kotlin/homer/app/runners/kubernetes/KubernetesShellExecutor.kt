@@ -8,6 +8,7 @@ import homer.app.infra.OutputLineFilter
 import homer.app.infra.SecretRedactor
 import homer.app.infra.ShellExecutor
 import homer.app.models.CommandResult
+import homer.app.models.DEFAULT_MAX_RUN_SECONDS
 import homer.app.models.MIN_SCREENED_SECRET_LENGTH
 import homer.app.models.PodTermination
 import homer.app.runners.exceedsOutputCap
@@ -49,7 +50,7 @@ class KubernetesShellExecutor(
     private val podName: String,
     private val maxOutputBytes: Long = Long.MAX_VALUE,
     private val pumpJoinMs: Long = PUMP_JOIN_MS,
-    private val maxRunSeconds: Long? = null,
+    private val maxRunSeconds: Long = DEFAULT_MAX_RUN_SECONDS,
     private val stopReasonPollMs: Long = STOP_REASON_POLL_MS,
     private val stopReasonBudgetMs: Long = STOP_REASON_BUDGET_MS,
     /** Slack added to the grace for the signalling exec's own bound. */

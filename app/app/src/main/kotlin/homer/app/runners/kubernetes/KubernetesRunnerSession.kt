@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 data class PodLifecycle(
     val keepPodOnFailure: Boolean,
     val keepPodTtlSeconds: Long,
-    val maxRunSeconds: Long? = null,
+    val maxRunSeconds: Long,
     val gracefulStopSeconds: Long? = null,
     /** When Homer created the pod (`RunnerState.createdAt`); clamps a skewed `status.startTime`. */
     val podCreatedAtEpochSec: Long? = null,
@@ -158,13 +158,12 @@ class KubernetesRunnerSession(
 
     /**
      * The run's deadlines: `maxRunSeconds` after the pod started is the hard one, `gracefulStopSeconds`
-     * before it the soft one. Null unless both bounds are configured and the pod's start is known.
+     * before it the soft one. Null unless `gracefulStopSeconds` is set and the pod's start is known.
      */
     private fun runDeadlineFromPod(): RunDeadline? {
         val grace = lifecycle.gracefulStopSeconds ?: return null
-        val maxRun = lifecycle.maxRunSeconds ?: return null
         val start = podStartEpochSec() ?: return null
-        val hard = start + maxRun
+        val hard = start + lifecycle.maxRunSeconds
         return RunDeadline(softEpochSec = hard - grace, hardEpochSec = hard)
     }
 

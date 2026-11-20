@@ -47,7 +47,7 @@ class KubernetesRunnerSessionTest {
         excludes: List<String> = emptyList(),
         api: CoreV1Api = mockk(relaxed = true),
         keepPodOnFailure: Boolean = false,
-        maxRunSeconds: Long? = null,
+        maxRunSeconds: Long = 86_400,
         gracefulStopSeconds: Long? = null,
         podCreatedAtEpochSec: Long? = null,
         tracer: Tracer? = null,

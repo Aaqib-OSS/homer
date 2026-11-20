@@ -76,7 +76,7 @@ with `server.localRunner.enabled: false` no local consumer exists and
 queued, rather than letting the claim wait out its TTL (ADR-0095). One
 `StaticRunnerConsumer` per configured runner (started once from
 `Application` on the application scope) takes the oldest matching request
-when it holds a free permit (`concurrency`; null = unbounded), opens the
+when it holds a free permit (`concurrency`, default 10), opens the
 real session in a child coroutine, and hands it back wrapped in
 `PermitReleasingSession` so the permit returns on `close()`.
 

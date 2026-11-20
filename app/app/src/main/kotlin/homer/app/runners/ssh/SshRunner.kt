@@ -74,7 +74,7 @@ class SshRunner(
                             reapProcessGroup = reapCapable,
                             reapDir = reapDir,
                         ),
-                    sync = WorkspaceSync(session, config.sftpTransferTimeoutSeconds?.seconds),
+                    sync = WorkspaceSync(session, config.sftpTransferTimeoutSeconds.seconds),
                     remoteWorkspaceRoot = config.remoteWorkspaceRoot,
                     remoteProjectRoot = remoteProjectRoot,
                     remoteWorkdir = remoteWorkdir,

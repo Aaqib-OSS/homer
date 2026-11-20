@@ -8,6 +8,7 @@
 - **Deprecated: `homer-result --token`** — Pass the result token in `HMR_RESULT_TOKEN` instead; the flag is removed in 1.45.0.
 - **Fixed: LangGraph run status reads a bounded identity file** — An oversized, linked or non-regular `langgraph.json` in a run's artifacts is ignored instead of read whole on every status poll.
 - **BREAKING: `maxQueuedRuns` defaults to 10 × `maxParallelRuns`** — Runs waiting for a parallel-run slot or, under `WAIT`, a lock share a cap that is bounded by default; a surplus run fails fast, and `null` (unbounded) is no longer accepted.
+- **BREAKING: runner limits are finite by default** — `concurrency` on `server.localRunner`, `ssh` and `kubernetes` runners defaults to 10 and no longer accepts `null`, `kubernetes.maxRunSeconds` defaults to 86400 and no longer accepts `null`, and `ssh.sftpTransferTimeoutSeconds` no longer accepts `null`. See [ADR-0066](docs/adr/0066-external-pull-runners-and-unified-claim-queue.md).
 - **Fixed: opencode run cost** — A run that resumes an opencode session is charged only its own steps, and steps past the 4 096th in one session are no longer dropped.
 
 ## [1.43.2] - 2026-11-18
