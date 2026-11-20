@@ -265,7 +265,7 @@ export interface AgentParameterTransformer {
 // Agent Input source — where the parameter is read from on the HTTP request
 export type ParamSource = 'query' | 'body' | 'header';
 
-// Agent Input — canonical name for a declared parameter (was: AgentQueryParam)
+// A declared agent input: an entry of the agent's `inputs:` or `queryParams:` list (Kotlin `Param`).
 export interface AgentInput {
   paramName: string;
   envName: string;
@@ -286,7 +286,7 @@ export interface AgentInput {
   default?: string | null;
 }
 
-/** @deprecated Use `AgentInput`. */
+/** Console-only second name of {@link AgentInput}; no wire type is called this. */
 export type AgentQueryParam = AgentInput;
 
 // Agent Cron Info
@@ -306,7 +306,7 @@ export interface AgentInfo {
   // distinct group, and ungrouped agents appear under "All" only.
   group?: string | null;
   inputs: AgentInput[] | null;
-  /** @deprecated Use `inputs`. */
+  /** The inputs of an agent that declares them under `queryParams:`, else null; read both via `getAgentInputs`. */
   queryParams: AgentInput[] | null;
   scriptCount: number;
   cron?: AgentCronInfo | null;
