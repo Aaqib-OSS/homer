@@ -53,9 +53,8 @@ internal class LlmSpanEmitter(
             resultSpan.setAttribute("usage_details.reasoning_tokens", usage.reasoning)
         }
 
-        // Langfuse's OTLP mapper reads usage and cost ONLY from these attributes (JSON
-        // strings); the flat `usage_details.*` above are invisible to it. The flat ones
-        // stay for debugging and existing UI metadata filters.
+        // Langfuse's OTLP mapper reads usage and cost only from these JSON-string attributes; the flat
+        // `usage_details.*` above, invisible to it, stay for debugging and UI metadata filters.
         resultSpan.setAttribute("langfuse.observation.type", "generation")
         resultSpan.setAttribute("langfuse.observation.model.name", resolved.name)
         // Which rung of the ladder answered. A drift that costs the harness-reported
@@ -106,9 +105,8 @@ internal class LlmSpanEmitter(
 
             generationSpan.setAttribute("name", spanData.name)
             generationSpan.setAttribute("model", spanData.model)
-            // A GENERATION gets priced by Langfuse from its own model table, so the per-message and
-            // per-tool children must stay SPANs — otherwise the run is charged twice, here and on
-            // `Result`. Invariant: exactly one priced observation per run.
+            // Children stay SPANs: Langfuse prices every GENERATION from its model table, and exactly one
+            // priced observation per run, the result generation, keeps it from being charged twice. See ADR-0057.
             generationSpan.setAttribute("langfuse.observation.type", "span")
             spanData.input?.let { generationSpan.setAttribute("input", redactor.redact(it.toString())) }
             spanData.output?.let { generationSpan.setAttribute("output", redactor.redact(it.toString())) }

@@ -19,10 +19,8 @@ import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.update
 import kotlin.io.path.Path
 
-// How a process row and its workspace leave: the purge times a finished run is stamped with, the
-// two purge sweeps' due-row reads and markers, the shared-workspace guard every delete checks
-// first, the record purge, and the capacity eviction inside obtainProcessId's INSERT transaction.
-// See ADR-0048 and ADR-0053.
+// How a process row and its workspace leave: purge times, both sweeps' due-row reads and markers, the
+// shared-workspace guard, the record purge and the capacity eviction. See ADR-0048 and ADR-0053.
 
 suspend fun ProcessRepository.setPurgeAt(
     processId: Int,
@@ -43,11 +41,8 @@ suspend fun ProcessRepository.setPurgeAt(
 }
 
 /**
- * Terminal rows whose *directory* is due for deletion and still have one recorded.
- * `artifacts_dir IS NOT NULL` is the "not yet swept" marker: the sweep nulls it after
- * deleting, so a row kept for its record does not come back round every minute.
- * `workspace_purged_at IS NULL` excludes rows the sweep already handled but which kept
- * `artifacts_dir` set because files were retained — see [markWorkspacePurged]. ADR-0053.
+ * Terminal rows whose *directory* is due and not yet swept: the sweep nulls `artifacts_dir`, or sets
+ * `workspace_purged_at` when it kept retained files ([markWorkspacePurged]). See ADR-0048, ADR-0053.
  */
 suspend fun ProcessRepository.getWorkspacePurgeableProcesses(
     statuses: Set<ProcessStatus>,
@@ -60,12 +55,9 @@ suspend fun ProcessRepository.getWorkspacePurgeableProcesses(
     }
 
 /**
- * Terminal rows whose *record* is due for deletion. A null `record_purge_at` (rows written
- * before v12) falls back to `purge_at`. The marker for "the workspace sweep already dealt
- * with this row" is `artifacts_dir IS NULL` **or** `workspace_purged_at IS NOT NULL` —
- * load-bearing, not an optimisation: deleting the record first would orphan a directory whose
- * delete is still failing, or whose retained files are meant to keep resolving through the
- * artifact routes, with nothing left pointing at either. See ADR-0053.
+ * Terminal rows whose *record* is due (`record_purge_at`, else `purge_at`) and whose workspace sweep is
+ * done. That guard is load-bearing: deleting the record first would orphan a directory still failing to
+ * delete, or retained files the artifact routes serve. See ADR-0048, ADR-0053.
  */
 suspend fun ProcessRepository.getRecordPurgeableProcesses(
     statuses: Set<ProcessStatus>,
@@ -95,11 +87,8 @@ private suspend fun ProcessRepository.purgeable(
     }
 
 /**
- * Clears the recorded artifacts dir after its workspace has been swept.
- * [retainedTruncated] records a prune that overflowed `maxRetainedArtifactBytes`
- * on every matched file (kept nothing, so this path runs instead of
- * [markWorkspacePurged]) — never silent per ADR-0053. `null` (the default)
- * leaves the column untouched, e.g. the no-retention and nothing-matched paths.
+ * Clears the recorded artifacts dir after its workspace was swept. A non-null [retainedTruncated] records
+ * whether a prune overflowed its cap and kept nothing, never silently (ADR-0053); null leaves the column.
  */
 suspend fun ProcessRepository.clearArtifactsDir(
     processId: Int,
@@ -133,11 +122,9 @@ suspend fun ProcessRepository.markWorkspacePurged(
 }
 
 /**
- * True when any row other than [excludeProcessId] references the same artifacts
- * directory — i.e. the workspace is shared via a fixed `workspace.path`. With
- * [activeOnly], only still-live (CREATED/WORKING) siblings count: terminal rows
- * are ignored so a finished run cannot block the end-of-run cleanup guard
- * (see ADR-0048, 2026-10-06 amendment). One SQL shape for both sweeps.
+ * True when a row other than [excludeProcessId] references [artifactsDir], a workspace shared via a fixed
+ * `workspace.path`. With [activeOnly] only CREATED/WORKING siblings count, so a finished run cannot block
+ * the end-of-run cleanup. See ADR-0048 (2026-10-06 amendment).
  */
 suspend fun ProcessRepository.isArtifactsDirShared(
     artifactsDir: String,
@@ -165,10 +152,9 @@ suspend fun ProcessRepository.remove(processId: Int) {
 }
 
 /**
- * At capacity, deletes the oldest terminal row to make room and returns it; below capacity
- * returns null. Runs inside [ProcessRepository.obtainProcessId]'s INSERT transaction, so the
- * count, the eviction and the INSERT are one atomic step. Throws
- * [ProcessManagerAtCapacityException] when the table is full of live rows.
+ * At capacity, deletes the oldest terminal row and returns it, else null, inside
+ * [ProcessRepository.obtainProcessId]'s INSERT transaction. Throws [ProcessManagerAtCapacityException]
+ * when every row is live.
  */
 internal fun evictForCapacityTx(maxProcesses: Int): ProcessRepository.EvictedProcess? {
     val count = Processes.selectAll().count()
@@ -195,10 +181,8 @@ internal fun evictForCapacityTx(maxProcesses: Int): ProcessRepository.EvictedPro
     return evicted
 }
 
-// Co-transactional with the row delete, on both record purge and capacity eviction: an
-// orphaned tag row discloses what a run ran over after its record is gone, and an orphaned
-// input row keeps a blob with no retention path. See ADR-0048. Run messages (ADR-0097) are
-// operator free text and follow the same rule.
+// Co-transactional with the row delete, on record purge and capacity eviction alike, so no tag, input or
+// run-message row outlives its run. See ADR-0020 (2026-09-29 amendment), ADR-0060, ADR-0097.
 private fun deleteProcessRowsTx(processId: Int) {
     ProcessInputs.deleteWhere { ProcessInputs.processId eq processId }
     ProcessTags.deleteWhere { ProcessTags.processId eq processId }

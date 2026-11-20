@@ -7,9 +7,10 @@ import kotlin.io.path.exists
 import kotlin.io.path.invariantSeparatorsPathString
 import kotlin.io.path.name
 
-// Path containment for [AgentFilesService]: resolves a caller-supplied path against an agent's
-// directory and refuses `..`, absolute paths, symlink escapes and a nested agent's subtree.
-// See ADR-0047, ADR-0068.
+/**
+ * Path containment for [AgentFilesService]: refuses `..`, absolute paths, symlink escapes and a
+ * nested agent's subtree. See ADR-0047, ADR-0068.
+ */
 internal class AgentFilePathResolver(
     private val agentsService: AgentsService,
 ) {
@@ -43,9 +44,8 @@ internal class AgentFilePathResolver(
         candidate: Path,
         resolved: Path,
     ): ResolveResult {
-        // Nested agent = different grant, so containment is not authorization: nothing at or inside
-        // its subtree is reachable, denied as not-found like a missing path (§12 rule 3). The gate
-        // runs on the resolved realpath, not the lexical candidate (CWE-59). See ADR-0047, ADR-0068.
+        // A nested agent is a different grant: its subtree is denied as not-found, gated on the
+        // resolved realpath (ADR-0068, ADR-0047 rule 3, CWE-59).
         val realDir = dir.toRealPath()
         val gateRel = if (resolved.startsWith(realDir)) realDir.relativize(resolved) else dir.relativize(candidate)
         if (AgentDirs.isBelowNestedAgentDir(dir, gateRel)) {
@@ -71,7 +71,7 @@ internal class AgentFilePathResolver(
         landing: Path,
     ): ResolveError? {
         // A deep path is the walk's entry cap pointed at the disk: bound the caller-supplied depth
-        // before any disk touch, since the directories a write creates are real (§12 rule 4, CWE-400).
+        // before any disk touch, since the directories a write creates are real (ADR-0047 rule 4, CWE-400).
         if (AgentDirs.isTooDeep(landing)) {
             return ResolveError(
                 AgentFilesService.FileOpResult.BadRequest("Path is too deep (more than ${AgentDirs.MAX_PATH_SEGMENTS} segments): $relPath"),

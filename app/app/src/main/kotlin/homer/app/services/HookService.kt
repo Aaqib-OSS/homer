@@ -33,10 +33,9 @@ data class PendingHook(
 )
 
 /**
- * Agent-declared status hooks: the row a run's status transition records is fired here, after
- * the transition's transaction has committed. Every hook is a durable row written with the
- * status it rides (so a restart loses none), claimed before its run starts (so nothing fires
- * twice), and settled once. The fire itself is [HookFireService]. See ADR-0107, ADR-0023.
+ * Agent-declared status hooks: durable rows written with the status they ride, fired here after that
+ * transaction commits, claimed before the start and settled once. The fire itself is [HookFireService].
+ * See ADR-0107, ADR-0023.
  */
 @OptIn(ExperimentalTime::class)
 internal class HookService(
@@ -64,12 +63,9 @@ internal class HookService(
         )
 
     /**
-     * Fires the hook rows a just-committed status transition recorded, and reports the entries
-     * the pending cap shed. The rows are the ones the insert wrote — they are not read back by id.
-     * Called after the write, never inside it: a fire starts a run, and that run's own row write
-     * must not nest inside the triggering transition's transaction (app/CLAUDE.md SQLite rule 3).
-     * A fire failure is logged and swallowed — the transition has already committed and a hook must
-     * never fail it; an unclaimed row stays PENDING for the boot replay or the retry sweep. See ADR-0023.
+     * Fires the rows a just-committed transition recorded, as the insert built them, and logs the shed
+     * ones. Called after the commit, never inside it, since a fire writes a run row; a failure is logged,
+     * never thrown, and its row is left for the retry sweep or the boot replay. See ADR-0107.
      */
     suspend fun onRowsRecorded(recorded: RecordedHooks) {
         logShed(recorded.shed)
@@ -77,10 +73,8 @@ internal class HookService(
     }
 
     /**
-     * Fires [hook] with every non-cancellation failure contained: the caller is a status write
-     * that has already committed (or a sweep that still has rows behind this one), so nothing a
-     * fire does may reach it. The row keeps the state the failed fire left it in and the retry
-     * sweep or the next boot's replay picks it up. See ADR-0023, ADR-0107.
+     * Fires [hook] with every non-cancellation failure contained, so none reaches the committed status
+     * write or the rows behind it in a sweep. See ADR-0023, ADR-0107.
      */
     private suspend fun fireSafely(hook: PendingHook) {
         coRunCatching {
@@ -137,10 +131,8 @@ internal class HookService(
     }
 
     /**
-     * Fires every PENDING hook this boot found. A row survives its transition's commit, so the
-     * only way one is still PENDING at boot is that the server stopped between the commit and
-     * the fire (or the fire failed transiently and its retry never came). The claim CAS makes
-     * this safe alongside a concurrent live fire. Boot only.
+     * Fires every PENDING hook left by a stop between a commit and its fire, or by a retry that never
+     * came. The claim CAS makes this safe beside a live fire. Boot only. See ADR-0107.
      */
     suspend fun refirePending() {
         val pending = repository.list(HookStatus.PENDING)
@@ -160,10 +152,9 @@ internal class HookService(
 }
 
 /**
- * The per-transition hook lookup a status write records with, reached through
- * [HookService.recording] so every writer shares one definition. [agentsService] is read at call
- * time, so an agent reload between a run's start and its transition is honoured, and it reads no
- * database, so the lookup is safe inside the write transaction. See ADR-0107.
+ * The per-transition hook lookup every status writer shares through [HookService.recording]. It reads
+ * [agentsService] at call time, so a reload is honoured, and no database, so it is safe inside the
+ * write transaction. See ADR-0107.
  */
 internal fun hookRecordingFor(
     agentsService: AgentsService,

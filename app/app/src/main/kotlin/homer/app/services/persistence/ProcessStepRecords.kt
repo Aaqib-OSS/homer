@@ -12,10 +12,8 @@ import org.jetbrains.exposed.v1.core.plus
 import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.update
 
-// The bookkeeping a running process writes onto its own row between its status transitions:
-// step boundaries and the current command, runner state, accumulated cost, the artifacts dir and
-// the trace id. Each is one write transaction; see the step-boundary rules in
-// `services/persistence/CLAUDE.md`.
+// What a running process writes onto its own row between status transitions, each one write transaction;
+// the step-boundary rules are in `services/persistence/CLAUDE.md`.
 
 private const val MIXED_SOURCE = "mixed"
 
@@ -167,10 +165,8 @@ suspend fun ProcessRepository.setStop(
 }
 
 /**
- * Adds [delta] to the run's accumulated cost. Replay-unsafe (`plus` is not
- * idempotent: a replay double-charges the run and, via `CostRepository`,
- * the cost-cap windows); safe only because the writer handle is
- * single-attempt. See ADR-0020.
+ * Adds [delta] to the run's accumulated cost. Replay-unsafe (a replay double-charges the run and the
+ * cost-cap windows); safe only because the writer handle is single-attempt. See ADR-0020.
  */
 suspend fun ProcessRepository.addCost(
     processId: Int,
@@ -220,12 +216,9 @@ suspend fun ProcessRepository.setTraceId(
 }
 
 /**
- * Stores why the run ended FAILED before any of its commands started, and the run that
- * blocked it when the cause names one. The write is guarded: it lands only while the row
- * still reads `FAILED` and shows no started work — no recorded execution and no current
- * command. A run that failed while running, or whose failure raced a kill that won the
- * status CAS, keeps NULL. [reason] is truncated to `MAX_FAILURE_REASON_LENGTH` here, so the
- * column's bound holds whatever the caller passes. See ADR-0020.
+ * Stores why the run ended FAILED before any command started, and the blocking run when the cause names
+ * one; lands only while the row is FAILED with no recorded execution and no current command, else keeps
+ * NULL. [reason] is cut to `MAX_FAILURE_REASON_LENGTH` here, whatever the caller passes. See ADR-0098.
  */
 suspend fun ProcessRepository.setFailureReason(
     processId: Int,
@@ -239,9 +232,8 @@ suspend fun ProcessRepository.setFailureReason(
                 .where { Processes.id eq processId }
                 .singleOrNull() ?: return@query false
         if (row[Processes.status] != ProcessStatus.FAILED.name) return@query false
-        // Compared as stored text rather than decoded: every writer encodes through
-        // encodeExecutions, so an empty list is exactly this JSON, and the comparison keeps a
-        // multi-MiB executions blob off the failure path (SQLite rule 4).
+        // Compared as stored text, never decoded: every writer encodes through encodeExecutions,
+        // and decoding would put a multi-MiB executions blob on the failure path.
         if (row[Processes.executions] != EMPTY_EXECUTIONS_JSON) return@query false
         if (row[Processes.currentCommand] != null) return@query false
         Processes.update({ Processes.id eq processId }) {

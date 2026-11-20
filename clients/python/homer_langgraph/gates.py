@@ -71,8 +71,13 @@ def _decode_resume(raw: Any) -> dict[str, Any]:
     return payload
 
 
-def _resolve_result(payload: dict[str, Any]) -> dict[str, Any]:
-    """Splice a by-reference result into the payload, when the value was over the inline cap."""
+def _resolve_result(payload: dict[str, Any], agent: str) -> dict[str, Any]:
+    """Splice a by-reference result into the payload, fetched by its token (idempotent GET).
+    A ``resultTooLarge`` payload has no token and is reported on stderr.
+    """
+    if payload.get("resultTooLarge") is True:
+        print(f"homer_fanout: {agent} result is over Homer's 4 MiB transform cap; "
+              f"resuming with result=null", file=sys.stderr)
     if payload.get("result") is None and payload.get("resultRef"):
         try:
             payload["result"] = homer_fetch_result(payload["resultRef"])
@@ -156,4 +161,4 @@ def homer_fanout(
                 result.get("status") or "no status",
             )
             continue
-        return _resolve_result(result)
+        return _resolve_result(result, agent)

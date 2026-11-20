@@ -6,7 +6,7 @@ import homer.app.models.Cooldown
 import homer.app.services.persistence.ProcessRepository
 
 /** Enforces an agent's `cooldown`: the minimum spacing between its runs. State comes from the process table, so a
- * cooldown survives a restart (but not `workspace.purgeAfter` deleting the rows). See ADR-0051. */
+ * cooldown survives a restart but not the record sweep (`workspace.retain.recordFor`, default `purgeAfter`). See ADR-0051. */
 internal class CooldownGate(
     private val repository: ProcessRepository,
     private val nowSec: () -> Long = { System.currentTimeMillis() / 1000 },

@@ -53,7 +53,7 @@ class QuestionsTest : E2eTestBase() {
         }
 
     @Test
-    fun `answering an unknown question id is 404 and a blank answer 400`() =
+    fun `answering an unknown question id is 404 and a blank or oversized answer 400`() =
         runBlocking {
             assertEquals(HttpStatusCode.NotFound, HomerApi.answer("no-such-question-id", "A").status)
 
@@ -63,6 +63,7 @@ class QuestionsTest : E2eTestBase() {
                     HomerApi.questions(status = "OPEN", processId = processId).questions.firstOrNull()
                 }
             assertEquals(HttpStatusCode.BadRequest, HomerApi.answer(question.id, "").status)
+            assertEquals(HttpStatusCode.BadRequest, HomerApi.answer(question.id, "A".repeat(DEFAULT_MAX_TEXT_LENGTH + 1)).status)
             HomerApi.answer(question.id, "A")
             Awaits.awaitTerminal(processId)
             Unit
@@ -89,4 +90,9 @@ class QuestionsTest : E2eTestBase() {
                 }
             assertEquals("EXPIRED", expired.status)
         }
+
+    private companion object {
+        /** `server.questions.maxTextLength` at its default; the E2E stack configures no override. */
+        const val DEFAULT_MAX_TEXT_LENGTH = 10_000
+    }
 }

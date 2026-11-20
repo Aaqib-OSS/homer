@@ -23,16 +23,13 @@ import org.jetbrains.exposed.v1.jdbc.union
 import org.jetbrains.exposed.v1.jdbc.update
 
 /**
- * Durable access to operator questions. SQLite is authoritative; the
- * answer-wait `CompletableDeferred`s and the per-process callback-token
- * registrations stay in [homer.app.services.QuestionsService]'s memory (they
- * are this instance's live coroutine state, not durable data). See ADR-0020 /
- * ADR-0019.
+ * Durable access to operator questions; SQLite is authoritative (ADR-0020). The answer waiters and the
+ * callback-token registrations stay in [homer.app.services.QuestionsService]'s memory (ADR-0019).
  */
 class QuestionsRepository(
     private val db: DatabaseService,
 ) {
-    /** Result of an atomic answer attempt (mirrors the old in-`Mutex` guard). */
+    /** Outcome of [markAnswered]: the OPEN check and the update share one transaction, so one answer wins. */
     sealed interface AnswerResult {
         data object NotFound : AnswerResult
 
@@ -114,12 +111,9 @@ class QuestionsRepository(
         }
 
     /**
-     * One page of questions, oldest first (rowid, the insertion order), and the count of all rows
-     * matching the filters. Visibility runs in SQL before the limit, so neither the page nor the
-     * total carries a question the caller cannot see (ADR-0039). [visibleAgents] null means an
-     * admin; otherwise a question matches when its asking process is owned by [visibleOwner] or it
-     * was asked by one of [visibleAgents]; a dispatch-bound question outlives its process. Each
-     * shape is `rowid IN (<one SELECT rowid per arm, UNIONed>)`, each arm seeking its own index; DatabaseMigrationTest pins it.
+     * One page of questions, oldest first, and the count of every match, visibility applied in SQL before the
+     * limit: null [visibleAgents] is an admin, else a question matches when [visibleOwner] owns its asking
+     * process or its agent is in [visibleAgents]. Each arm is its own indexed `SELECT rowid`, UNIONed. See ADR-0038.
      */
     suspend fun page(
         status: QuestionStatus?,

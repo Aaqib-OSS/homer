@@ -15,9 +15,8 @@ import org.jetbrains.exposed.v1.core.statements.InsertStatement
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.select
 
-// Row-level helpers of [DispatchRepository] (ADR-0021, ADR-0109): the SINGLE/GROUP question
-// teardown, the ordered member reads, and the row <-> [Dispatch] mapping. All of them run inside
-// the caller's transaction.
+// Row-level helpers of [DispatchRepository] (ADR-0021, ADR-0109): question teardown, ordered member
+// reads and the row mapping. Each runs inside its caller's transaction.
 
 internal fun deleteBoundQuestions(questionIds: List<String>) {
     if (questionIds.isEmpty()) return
@@ -27,11 +26,9 @@ internal fun deleteBoundQuestions(questionIds: List<String>) {
 }
 
 /**
- * Deletes the member questions of the GROUP dispatches in [dispatchIds] and returns their
- * ordered member ids — [deleteBoundQuestions]'s group arm, read once and reused so a caller
- * settling a group can report the ids it deleted. The member rows in
- * `dispatch_group_questions` stay: they are what a settled group still reports its question
- * ids from, and the settled-row prune deletes them with the dispatch.
+ * Deletes the member questions of the GROUP dispatches in [dispatchIds] and returns their ordered
+ * ids by dispatch. The `dispatch_group_questions` rows stay: a settled group reports its question
+ * ids from them until the settled-row prune deletes them with the dispatch (ADR-0109).
  */
 internal fun deleteGroupQuestions(dispatchIds: Collection<Int>): Map<Int, List<String>> {
     if (dispatchIds.isEmpty()) return emptyMap()

@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-15
 deciders: Lukáš Vlk
-amended: 2026-06-24, 2026-09-30, 2026-10-09
+amended: 2026-06-24, 2026-09-30, 2026-10-09, 2026-11-20
 ---
 # ADR-0021: ask-and-dispatch — deferred dispatch from a question answer
 
@@ -225,3 +225,22 @@ question, a join continuation's `continuation_watches`.
 - **Consequence:** a pruned continuation no longer contributes its sub run to a
   LangGraph node's fan-out history (ADR-0044), and a pruned dispatch's id reads as
   not found.
+
+## Amendment (2026-11-20): fire re-checks the target's opt-in
+
+**Target opt-in** above says `fire` keeps only its existence check. It does not: once it wins the
+claim, `fire` re-checks `agent.dispatch.enabled` on the target as currently loaded, for a single
+and a grouped dispatch alike, beside the hop re-check ADR-0039 makes authoritative at fire time.
+A reload can set `dispatch.enabled: false`, or replace the agent with one that does not opt in,
+between registration and the answer, and a dispatch registered while the target opted in must
+not start it then. The fire settles the dispatch `FAILED` ("no longer an allowed dispatch
+target") and starts nothing. Registration still refuses a target that does not opt in, so an
+obviously wrong dispatch fails fast instead of waiting for an answer.
+
+## Amendment (2026-11-20): the claim refuses a lapsed row
+
+**Crash safety** above describes the claim as PENDING→`DISPATCHING`. The claim also refuses a row
+whose `expires_at` has passed, whether or not the TTL sweep has moved it yet. The sweep runs only
+every `sweepIntervalSec`, so a claim on status alone would let an answer fire a dispatch whose TTL
+lapsed since the last tick. The continuations of ADR-0023 share the same claim, so a lapsed
+continuation does not fire when its watched run ends either.

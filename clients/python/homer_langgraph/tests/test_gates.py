@@ -167,6 +167,31 @@ def test_homer_fanout_keeps_result_none_when_fetch_fails_for_a_non_finished_sub(
     assert "4089" in capsys.readouterr().err
 
 
+def test_homer_fanout_reports_a_result_too_large_to_transform(monkeypatch, capsys):
+    resume = json.dumps({"status": "FAILED", "processId": 4089, "result": None, "resultTooLarge": True})
+    monkeypatch.setattr(gates, "interrupt", lambda p: resume)
+
+    def fail_fetch(ref):
+        raise AssertionError("must not fetch: a resultTooLarge payload carries no resultRef")
+
+    monkeypatch.setattr(gates, "homer_fetch_result", fail_fetch)
+
+    result = gates.homer_fanout("worker")
+
+    assert result["result"] is None
+    assert result["resultTooLarge"] is True
+    assert "worker result is over Homer's 4 MiB transform cap" in capsys.readouterr().err
+
+
+def test_homer_fanout_reports_nothing_without_the_marker(monkeypatch, capsys):
+    resume = json.dumps({"status": "FINISHED", "processId": 42, "result": "inline"})
+    monkeypatch.setattr(gates, "interrupt", lambda p: resume)
+
+    gates.homer_fanout("worker")
+
+    assert capsys.readouterr().err == ""
+
+
 def test_homer_fanout_reraises_fetch_failure_for_a_finished_sub(monkeypatch):
     resume = json.dumps(
         {

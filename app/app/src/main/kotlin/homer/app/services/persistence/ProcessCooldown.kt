@@ -8,14 +8,10 @@ import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.isNull
 import org.jetbrains.exposed.v1.jdbc.select
 
-// The cooldown bound's two lookups in the transaction-local form `obtainProcessId` evaluates inside
-// the INSERT's transaction (ADR-0051), plus the subject filter they share, so a keyed and a keyless
-// start cannot scope differently (ADR-0106). The `read { }` forms `CooldownGate` calls stay on
-// ProcessRepository, where the pre-flight gate can stub them.
+// The cooldown lookups `obtainProcessId` runs inside the INSERT's transaction (ADR-0051), over the
+// one subject filter a keyed and a keyless start share (ADR-0106).
 
-// Transaction-local forms of the two reads `CooldownGate` calls, so the authoritative cooldown
-// check in obtainProcessId can run inside the INSERT's transaction. `query { }` opens its own, and
-// nesting one inside another would deadlock the writer.
+/** The newest matching run's `created_at`, read in the caller's transaction, never a nested `query { }`. */
 internal fun ProcessRepository.latestRunStartedAtTx(
     agentName: String,
     cooldownKey: String?,
@@ -29,11 +25,9 @@ internal fun ProcessRepository.latestRunStartedAtTx(
         ?.get(Processes.createdAt)
 
 /**
- * The subject filter both cooldown lookups share: the agent, plus the rendered key when
- * the start carries one. A null key adds nothing, so a keyless cooldown keeps counting
- * every row of the agent — including rows written by a keyed definition, and rows from
- * before v31 — exactly as it did before the key existed. A key is compared with `eq`
- * (a bound parameter), so a `%`, `_` or `'` in it matches nothing but itself. ADR-0106.
+ * The subject filter both cooldown lookups share: the agent, plus the rendered key when the start carries
+ * one. A null key adds nothing, so a keyless cooldown counts every row of the agent, keyed ones included.
+ * The key is compared with `eq`, never `LIKE`, so a `%` or `_` in it matches only itself. ADR-0106.
  */
 private fun ProcessRepository.cooldownPredicate(
     agentName: String,
@@ -44,13 +38,11 @@ private fun ProcessRepository.cooldownPredicate(
         cooldownKey?.let { Processes.cooldownKey eq it },
     ).reduce { a, b -> a and b }
 
-// MAX over ended_at, not the newest row's history: `id` is INSERT order, and same-agent
-// runs overlap by default, so an older run can fail AFTER a newer one — ordering by id
-// would pick the newer row's earlier failure and let a start through. Rows from before
-// v14 have a null ended_at and are skipped by MAX. See ADR-0051.
-//
-// Only a run that failed while executing a command arms the window: a run refused before
-// it started carries a `failure_reason` and never arms it (ADR-0098).
+/**
+ * The newest `ended_at` of a matching run that failed while executing, ordered by `ended_at`, never `id`: overlapping
+ * runs fail out of INSERT order. A run refused before it started carries a `failure_reason` and never arms the
+ * window. ADR-0051.
+ */
 internal fun ProcessRepository.latestFailureEndedAtTx(
     agentName: String,
     cooldownKey: String?,

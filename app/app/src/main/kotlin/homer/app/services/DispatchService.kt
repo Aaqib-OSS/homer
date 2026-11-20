@@ -28,17 +28,15 @@ import kotlin.time.ExperimentalTime
 enum class DispatchStatus { PENDING, DISPATCHING, DISPATCHED, FAILED, CANCELLED }
 
 /**
- * What a dispatch is made of. A [SINGLE] dispatch is one question and one dispatch row —
- * today's ask-and-dispatch. A [GROUP] dispatch is N questions answered independently, the
- * target fired once after the last of them, with all N answers aggregated in question order.
- * See ADR-0109.
+ * A [SINGLE] dispatch is one question and one dispatch row. A [GROUP] dispatch is N questions answered
+ * independently; the target fires once after the last, with all N answers in question order. See ADR-0109.
  */
 enum class DispatchKind { SINGLE, GROUP }
 
 /**
  * A registered ask-and-dispatch: an operator question plus the agent to start
  * (with [params] and the answer under [answerParam]) once it is answered. The
- * dispatch and its question outlive the asking process. See the ask-and-dispatch ADR.
+ * dispatch and its question outlive the asking process. See ADR-0021.
  */
 data class Dispatch(
     val id: Int,
@@ -57,20 +55,14 @@ data class Dispatch(
     // The origin process's owner, copied in at registration (live, since the origin
     // may have finished by fire time) so the fired run inherits it. See ADR-0038.
     val owner: String? = null,
-    // Target agent's `secret: true` envNames at registration. Read at fire so a
-    // definition edited in between cannot expose a stored value; null for rows
-    // predating the column, which fall back to the flags in force at fire time.
-    // See ADR-0052.
+    // Target agent's `secret: true` envNames at registration, so a definition edited before the
+    // fire cannot expose a stored value; a pre-v16 row's null falls back to the fire-time flags. See ADR-0052.
     val secretInputKeys: Set<String>? = null,
-    // Target agent's `secret: true` paramNames at registration — the paramName
-    // counterpart of [secretInputKeys]. [params] above is stored keyed by paramName,
-    // so redactStoredParams matches this directly instead of translating envNames
-    // through the (possibly since-edited) current agent definition. Null for rows
-    // predating the column, which fall back to the envName-only check. See ADR-0052.
+    // Target agent's `secret: true` paramNames at registration, matched against [params]'s keys
+    // without the current definition; a pre-v17 row's null falls back to the envName check. See ADR-0052.
     val secretParamNames: Set<String>? = null,
-    // SINGLE or GROUP. A GROUP row's [questionId] is a synthetic sentinel naming no question —
-    // [questionIds] is its real, ordered set, read from the member table. Empty on a SINGLE row,
-    // whose one question is [questionId]. See ADR-0109.
+    // A GROUP row's [questionId] is a sentinel and [questionIds] its ordered member set; a SINGLE
+    // row's [questionIds] is empty. See ADR-0109.
     val kind: DispatchKind = DispatchKind.SINGLE,
     val questionIds: List<String> = emptyList(),
 )
@@ -107,8 +99,6 @@ internal class DispatchService(
         ttlSec: Int?,
     ): CreateResult {
         val registration = questionsService.liveRegistration(originProcessId)
-        // A reserved name would place the operator's answer nowhere — or, before the
-        // reservedControlParams merge was narrowed, into the target's PATH.
         validatePayloadParam(answerParam, "answerParam", params)
         questionsService.validateQuestionInput(text, options)
         val effectiveTtl = ttlSec ?: config.defaultTtlSec
@@ -136,12 +126,9 @@ internal class DispatchService(
     }
 
     /**
-     * Starts the target run for the (now answered) question. Claims the dispatch (PENDING→DISPATCHING)
-     * before starting the run so a crash between run-start and markDispatched cannot duplicate the fire.
-     * No-op when there is nothing to fire (no dispatch, not PENDING, or the claim lost to a concurrent
-     * cancel) — idempotent, safe for the answer path and the startup re-fire. After the claim, ANY failure
-     * marks it FAILED at once, never dangling in-process ([failOrphanedDispatching] covers only a hard crash
-     * mid-fire) — except a drain-refused start, which releases the claim to PENDING (see [startTarget]). Returns the Dispatch or null.
+     * Fires the dispatch of the answered [questionId]: claims it PENDING→DISPATCHING before the start, so
+     * a crash cannot fire it twice. Null when there is nothing to fire or the claim is lost; after the
+     * claim any failure settles it FAILED, except a drain refusal ([startTarget]). See ADR-0021.
      */
     suspend fun fire(
         questionId: String,
@@ -171,12 +158,9 @@ internal class DispatchService(
     }
 
     /**
-     * Fires a GROUP dispatch once every member question is ANSWERED, null while any is OPEN. The
-     * claim CAS (in [claimAndStart]) is the gate that starts the target exactly once when the
-     * last two answers land concurrently or the boot re-fire races a live answer.
-     * An aggregate over `DispatchGroupService.MAX_ANSWER_BYTES` settles the group FAILED rather
-     * than leaving it PENDING; it is caught here because [fire] also runs on the boot path,
-     * where a throw would abort startup reconciliation.
+     * Fires a GROUP dispatch once every member is answered, null while any is OPEN; the claim CAS is
+     * what starts it exactly once. An oversized aggregate settles it FAILED here, since a throw would
+     * abort boot reconciliation. See ADR-0109.
      */
     private suspend fun fireGroup(dispatch: Dispatch): Dispatch? {
         val payload =
@@ -199,10 +183,8 @@ internal class DispatchService(
     }
 
     /**
-     * Starts the claimed [dispatch]'s target run with the operator's [answer]; any failure settles
-     * it FAILED — except a start the shutdown drain refuses, which releases the claim back to
-     * PENDING with the answer intact, so the next boot's [refirePendingAnswered] fires it
-     * (ADR-0102, mirroring the continuation fire's handling).
+     * Starts the claimed [dispatch]'s target with the operator's [answer]; any failure settles it
+     * FAILED, except a drain refusal, which [deferForDrain] releases for [refirePendingAnswered]. ADR-0102.
      */
     private suspend fun startTarget(
         dispatch: Dispatch,
@@ -231,10 +213,8 @@ internal class DispatchService(
         }
 
     /**
-     * The drain refused the start. Settling FAILED would consume the operator's answer for a
-     * run that never started, so the claim goes back to PENDING with the answer intact for the
-     * next boot's `refirePendingAnswered` — the same reason a drain-refused continuation fire
-     * is released rather than failed. ADR-0102.
+     * Releases a drain-refused claim back to PENDING with the answer intact, for the next boot's
+     * [refirePendingAnswered]; FAILED would consume the answer of a run that never started. ADR-0102.
      */
     private suspend fun deferForDrain(
         dispatch: Dispatch,
@@ -250,10 +230,8 @@ internal class DispatchService(
     }
 
     /**
-     * The start itself: the origin run's stored inputs ride under the dispatch's own params and
-     * the operator's answer (ADR-0101). The read sits inside the caller's try like the
-     * continuation fire's: the claim already happened, so a failure of this suspend read must
-     * settle the dispatch FAILED, not escape `fire`.
+     * Starts the run with the origin run's stored inputs under the dispatch's params and the answer
+     * (ADR-0101). Called inside [startTarget]'s try: after the claim, a failed read must settle FAILED.
      */
     private suspend fun startDispatchRun(
         dispatch: Dispatch,
@@ -277,9 +255,8 @@ internal class DispatchService(
                 source = "dispatch",
                 owner = dispatch.owner,
                 parentProcessId = dispatch.originProcessId,
-                // [information_disclosure / CWE-200] The fired run is attributed to the
-                // dispatch's owner, so the root it inherits is gated on that owner's
-                // visibility — a foreign flow-root id reaches no row, env or span. §12.
+                // The root is gated on the dispatch owner's visibility: a foreign flow-root id reaches no
+                // row, env or span (CWE-200, ADR-0058).
                 rootProcessId =
                     processManager.visibleOriginRootProcessId(
                         dispatch.originProcessId,
@@ -296,20 +273,16 @@ internal class DispatchService(
                 },
             ),
             extraSecretInputKeys = dispatch.secretInputKeys.orEmpty() + inherited.secretInputKeys,
-            // The origin is the run that asked for this dispatch; while it is still
-            // `WORKING` this start is part of admitted work and does not park at the
-            // maintenance gate. An origin that ended parks as before. ADR-0092.
+            // The origin asked for this dispatch: while it is `WORKING` the start is admitted and
+            // skips the maintenance queue; an ended origin parks. ADR-0092.
             serverDerivedParent = true,
         )
     }
 
     /**
-     * Starts [agent] immediately — no operator question, no dispatch row — and returns the new
-     * process id. Fire-and-forget and fully decoupled: a fresh empty invocation chain (no cycle/depth
-     * linkage), exactly like [fire]. The only link back to the caller is the referer ([originProcessId]
-     * + asking agent name) recorded on the run's `agent_request` span. The origin process must still be
-     * live ([QuestionsClosedForProcessException]) so a dead process cannot keep spawning runs, and the
-     * target must opt in via `dispatch.enabled` — the same gate [create] enforces. See ADR-0022.
+     * Starts [agent] now, with no question or dispatch row, on a fresh invocation chain, and returns its
+     * process id. The origin must be live ([QuestionsClosedForProcessException]) and the target opted in
+     * via `dispatch.enabled`; the referer is recorded on the run's span. See ADR-0022.
      */
     suspend fun dispatchNow(
         originProcessId: Int,
@@ -333,15 +306,13 @@ internal class DispatchService(
                     source = "dispatch",
                     owner = owner,
                     parentProcessId = originProcessId,
-                    // Same root-visibility gate as fire: the fired run carries the dispatch
-                    // owner's grant, not the origin process's. §12.
+                    // Same root-visibility gate as fire: the run carries the owner's grant (CWE-200, ADR-0058).
                     rootProcessId = processManager.visibleOriginRootProcessId(originProcessId, owner, authorizer),
                     resolveInputs = { agentInputResolver.resolveFromParams(params, target) },
                 ),
                 extraAttributes = refererAttributes,
-                // [liveRegistration] above proved the origin is live, and it is the run making
-                // this dispatch: while its row still reads `WORKING` the start is admitted and
-                // does not park at the maintenance gate. ADR-0092.
+                // The origin, proved live above, makes this dispatch: while it is `WORKING` the
+                // start is admitted and skips the maintenance queue. ADR-0092.
                 serverDerivedParent = true,
             )
         logger.info(
@@ -355,10 +326,8 @@ internal class DispatchService(
     }
 
     /**
-     * The checks [dispatchNow] makes before it starts anything — live origin, dispatchable and
-     * authorized target, and the [params] resolving against the target's inputs — without
-     * starting it. A caller that starts several runs in one request calls this for each first, so
-     * a bad later entry is refused before an earlier one started. See ADR-0026.
+     * [dispatchNow]'s checks without the start: live origin, dispatchable and authorized target,
+     * resolvable [params]. A multi-run request checks every entry before it starts any. See ADR-0026.
      */
     suspend fun validateDispatchNow(
         originProcessId: Int,
@@ -385,9 +354,8 @@ internal class DispatchService(
     suspend fun findByQuestionIds(ids: Collection<String>): Map<String, Dispatch> = repository.findByQuestionIds(ids)
 
     suspend fun cancel(id: Int) {
-        // Pre-read to map absent→404 vs wrong-status→409 (cancelWithQuestion's single
-        // null return can't distinguish them). cancelWithQuestion re-checks PENDING
-        // atomically, so a concurrent claim racing this read still resolves correctly.
+        // The pre-read only tells 404 from 409; cancelWithQuestion re-checks PENDING atomically,
+        // so a claim racing this read still resolves correctly.
         val existing = repository.get(id) ?: throw DispatchNotFoundException(id)
         if (existing.status != DispatchStatus.PENDING) {
             throw DispatchNotPendingException(id, existing.status.name)

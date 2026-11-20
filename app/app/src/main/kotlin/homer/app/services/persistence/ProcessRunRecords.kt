@@ -7,11 +7,9 @@ import homer.app.services.ProcessManager
 import java.nio.file.Path
 
 /**
- * The run-time annotations of [ProcessManager]'s API: what a running process records on its own
- * row that no subscriber is told about — trace id, runner state, cost, artifacts dir, run-time
- * tags and what a graceful stop did. [ProcessManager] exposes them by delegation to
- * [DefaultProcessRunRecords]; the writes that
- * emit an event (status, current command) stay on [ProcessManager].
+ * The run-time annotations of [ProcessManager]'s API, delegated to [DefaultProcessRunRecords]: what a run
+ * records on its row with no event (trace id, runner state, cost, artifacts dir, run-time tags, a graceful
+ * stop). The writes that emit an event (status, current command) stay on [ProcessManager].
  */
 interface ProcessRunRecords {
     /** Stamps this run's root-span trace id, so the console can deep-link to its Langfuse trace. */
@@ -48,7 +46,7 @@ interface ProcessRunRecords {
     /**
      * Stores why the run ended FAILED before any of its commands started, and the run that
      * blocked it when the cause names one; a guarded write that lands only on a row still
-     * `FAILED` with no step recorded. See ADR-0020.
+     * `FAILED` with no step recorded. See ADR-0098.
      */
     suspend fun setFailureReason(
         processId: Int,
@@ -57,10 +55,8 @@ interface ProcessRunRecords {
     ): Boolean
 
     /**
-     * Writes a run-time tag against [processId] via the callback route, enforcing the
-     * per-run ceiling [maxTags] atomically with the write. [fromInputsKeys] are the
-     * agent's `fromInputs` tag keys, excluded from the ceiling so only runtime-declared
-     * tags count against it. See ADR-0060.
+     * Writes a run-time tag against [processId] via the callback route, enforcing the per-run ceiling
+     * [maxTags] atomically with the write; tags under [fromInputsKeys] do not count. See ADR-0060.
      */
     suspend fun addRuntimeTag(
         processId: Int,

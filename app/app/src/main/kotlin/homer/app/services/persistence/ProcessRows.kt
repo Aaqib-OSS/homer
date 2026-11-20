@@ -16,9 +16,8 @@ import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.jdbc.select
 import kotlin.io.path.Path
 
-// The `processes` row ↔ [ProcessInfo] mapping shared by the ProcessRepository files: the
-// status-name sets their predicates filter on, the JSON-column codecs, and the tag and input
-// side-table reads a mapped row needs. Every `*Tx` function runs inside the caller's transaction.
+// The `processes` row ↔ [ProcessInfo] mapping the ProcessRepository files share: status-name sets, JSON
+// codecs and side-table reads. Every `*Tx` function runs inside the caller's transaction.
 
 internal val TERMINAL_STATUS_NAMES =
     listOf(
@@ -63,21 +62,16 @@ internal fun encodeRunStop(value: RunStop) = columnJson.encodeToString(RunStop.s
 
 internal fun decodeRunStop(text: String) = columnJson.decodeFromString(RunStop.serializer(), text)
 
-// The four columns a status write needs — status for its guard, history to append to, and
-// agent_name/owner for the caller's broadcast and the hook rows it records — or null when the
-// row is gone. Shared by the two transitions so the projection cannot drift; projected, not
-// `selectAll()`, because the write runs under the write lock and decoding the blobs it is
-// about to rewrite is pure cost. See ADR-0020 (2026-09-29 amendment).
+// Both status writes' projection: status, history, agent_name and the hook rows' owner. Never
+// `selectAll()`: it runs under the write lock. See ADR-0020 (2026-09-29 amendment), ADR-0107.
 internal fun transitionRowTx(processId: Int): ResultRow? =
     Processes
         .select(Processes.status, Processes.history, Processes.agentName, Processes.owner)
         .where { Processes.id eq processId }
         .singleOrNull()
 
-// The tail both status writes share: the hook rows the transition records for [status], and the
-// result the caller gets — the run's agent name, which the caller cancels the job and broadcasts
-// on, plus what [homer.app.services.HookService] fires after the commit and what the cap shed.
-// Runs inside the caller's transaction, like the write it trails. See ADR-0107.
+// Both status writes' tail, in the caller's transaction: the agent name the caller broadcasts on, and the
+// hook rows recorded for [status] that [homer.app.services.HookService] fires after the commit (ADR-0107).
 internal fun settledTransitionTx(
     processId: Int,
     row: ResultRow,
@@ -88,9 +82,8 @@ internal fun settledTransitionTx(
     ProcessRepository.TransitionResult(
         updated = true,
         agentName = row[Processes.agentName],
-        // A write that leaves the status where it was is not a second reach of it: a run's own
-        // start re-asserts CREATED right after the INSERT (ProcessExecutor's kill guard), and
-        // recording that again would fire the CREATED hooks twice for one run. See ADR-0107.
+        // A write that leaves the status unchanged records no hooks: the run's own CREATED re-assert
+        // after the INSERT would fire the CREATED hooks twice. See ADR-0107.
         hooks =
             hookRecording
                 .takeIf { row[Processes.status] != status.name }
@@ -98,9 +91,8 @@ internal fun settledTransitionTx(
                 ?: RecordedHooks(),
     )
 
-// Tags of one run, in tag order — guaranteed by this ORDER BY, served by the
-// (process_id, tag) primary key with no sort step. Callers that don't surface
-// tags (purge/sweep/reconciliation) skip this read and pass emptyList.
+// One run's tags in tag order, served by the (process_id, tag) primary key with no sort; paths that do
+// not surface tags skip this read.
 internal fun tagsForTx(processId: Int): List<String> =
     ProcessTags
         .select(ProcessTags.tag)
@@ -108,10 +100,7 @@ internal fun tagsForTx(processId: Int): List<String> =
         .orderBy(ProcessTags.tag)
         .map { it[ProcessTags.tag] }
 
-// Inputs of one run. A missing row reads as no inputs: every row gets one at INSERT,
-// so this is only reachable for a row deleted concurrently, or a pre-v25 row whose
-// migration backfill predates this code. Row-scoped reads use this; a page uses
-// inputsByProcessTx below.
+// One run's inputs; a missing row (deleted concurrently) reads as none. A page uses inputsByProcessTx.
 internal fun inputsForTx(processId: Int): Map<String, String> =
     ProcessInputs
         .select(ProcessInputs.inputParams)
@@ -120,9 +109,7 @@ internal fun inputsForTx(processId: Int): Map<String, String> =
         ?.let { decodeParams(it[ProcessInputs.inputParams]) }
         ?: emptyMap()
 
-// One batched read of inputs for a page of rows, keyed by process id, so the list
-// endpoint does not issue an N+1 query per row. Chunked for the same SQLite
-// bound-parameter reason as tagsByProcessTx.
+// A page's inputs in chunked `IN` reads keyed by process id, never one query per row.
 private fun inputsByProcessTx(ids: List<Int>): Map<Int, Map<String, String>> {
     if (ids.isEmpty()) return emptyMap()
     val inputsById = mutableMapOf<Int, Map<String, String>>()
@@ -135,11 +122,8 @@ private fun inputsByProcessTx(ids: List<Int>): Map<Int, Map<String, String>> {
     return inputsById
 }
 
-// One batched read of tags for a page of rows, grouped by process id, to avoid
-// an N+1 per-row query in the list endpoint. Ids are chunked because each one
-// becomes a bound parameter and SQLite caps those per statement.
-// [CWE-400] A caller-supplied candidate set beyond the
-// parameter limit must degrade to repeated reads, not a 500.
+// A page's tags in chunked `IN` reads grouped by process id, never one query per row. CWE-400: a caller-supplied
+// id set past SQLite's bound-parameter cap must degrade to repeated reads, not a 500.
 private fun tagsByProcessTx(ids: List<Int>): Map<Int, List<String>> =
     if (ids.isEmpty()) {
         emptyMap()
@@ -152,10 +136,8 @@ private fun tagsByProcessTx(ids: List<Int>): Map<Int, List<String>> =
                 .orderBy(ProcessTags.processId to SortOrder.ASC, ProcessTags.tag to SortOrder.ASC)
                 .forEach { row ->
                     val id = row[ProcessTags.processId]
-                    // Rows of one id never straddle chunks (id IN one chunk at most), and
-                    // this ORDER BY (served by the (process_id, tag) primary key, no sort
-                    // step) guarantees each id's rows arrive tag-ordered, so appending
-                    // keeps each id's tags in tag order.
+                    // An id's rows never straddle chunks, and the ORDER BY (primary key, no sort)
+                    // delivers them tag-ordered, so appending keeps tag order.
                     tagsById.getOrPut(id) { mutableListOf() } += row[ProcessTags.tag]
                 }
         }

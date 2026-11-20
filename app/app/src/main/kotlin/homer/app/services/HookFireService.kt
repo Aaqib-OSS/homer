@@ -16,12 +16,9 @@ import org.slf4j.Logger
 internal const val MAX_HOOK_TAGS_CHARS = 1024
 
 /**
- * Fires one pending agent-level hook: claims the row (PENDING→DISPATCHING CAS) so a live
- * transition, the boot replay and the retry sweep fire it once, re-checks that the target agent
- * still exists and that the triggering run's owner may still start it, then starts the target
- * with the triggering run's `HMR_HOOK_*` metadata, and settles the row DISPATCHED, deferred for
- * a retry, or FAILED. The start's own failures are contained here; the row writes around it are
- * not, so [HookService] isolates every call here from the status write. See ADR-0107, ADR-0023.
+ * Fires one pending hook once: claims the row, re-checks the target and the owner's grant, starts the
+ * target with the `HMR_HOOK_*` metadata, and settles the row. The row writes around the start can
+ * throw, so [HookService] isolates every call from the status write. See ADR-0107, ADR-0023.
  */
 internal class HookFireService(
     private val repository: HookRepository,
@@ -38,10 +35,8 @@ internal class HookFireService(
     suspend fun fire(hook: PendingHook) {
         if (!repository.claim(hook.id)) return
         val now = nowSec()
-        // The row is durable and may be replayed after a restart, so both checks run here, on
-        // the delivery, not only when it was recorded: the target agent may have been deleted
-        // and the owner's grant revoked in between. A denial settles the hook and starts
-        // nothing — the same fail-closed rule the dispatch hop follows. See ADR-0039, §12.
+        // A replayed row may outlive its target or the owner's grant: both are checked on delivery, and a
+        // denial settles the hook and starts nothing (ADR-0107, ADR-0039, ADR-0047 rule 3).
         val target = agentsService.agents[hook.targetAgentName]
         if (target == null) {
             settle(hook, "Target agent '${hook.targetAgentName}' is not loaded", now)
@@ -55,10 +50,8 @@ internal class HookFireService(
             )
             return
         }
-        // The triggering run's row carries both the chain bound and the HMR_HOOK_* metadata:
-        // its stored HMR_HOOK_DEPTH is how many hook hops it already is, so the run this row
-        // starts is one deeper. Read from the row, not kept in memory, so a restart between a
-        // hook's start and its own transition cannot reset the bound. See ADR-0107.
+        // The depth is read from the triggering run's row, not kept in memory, so a restart cannot
+        // reset the chain bound. See ADR-0107.
         val run = runOrNull(hook.processId)
         val depth = nextDepthOrDrop(hook, run, now) ?: return
         if (depth > maxChainDepth) {
@@ -108,12 +101,8 @@ internal class HookFireService(
                         source = "hook",
                         owner = hook.owner,
                         parentProcessId = hook.processId,
-                        // [information_disclosure / CWE-200] The fired run is attributed to the
-                        // triggering run's owner, so the flow root it inherits is gated on that
-                        // owner's visibility — a foreign root id reaches no row, env or span. §12.
-                        // The root derives from the row already read (`run`): a run with no root of
-                        // its own is the flow root, an invisible derived root is dropped — never
-                        // replaced by the run's id (ADR-0058). No second read of the triggering row.
+                        // From `run`: a rootless run is the flow root; a root the owner cannot see is
+                        // dropped, never replaced by the run's id (CWE-200, ADR-0058, ADR-0107).
                         rootProcessId =
                             run?.let { info ->
                                 if (info.rootProcessId == null) {
@@ -122,9 +111,8 @@ internal class HookFireService(
                                     processManager.visibleRootProcessId(hook.owner, authorizer, info.rootProcessId)
                                 }
                             },
-                        // The target's own declared defaults, plus the server-minted hook metadata
-                        // merged back over them: AgentInputResolver emits only declared inputs, and
-                        // these names are reserved. See ADR-0107.
+                        // The metadata is merged back over the declared defaults: the resolver emits only
+                        // declared inputs, and these names are reserved. See ADR-0107.
                         resolveInputs = { agentInputResolver.resolveFromParams(emptyMap(), target) + hookControlParams(params) },
                     ),
                     // The origin link is server-derived, so a hook fired while its run is still
@@ -149,10 +137,8 @@ internal class HookFireService(
     }
 
     /**
-     * Settles a fire that threw a [HomerException]. A refusal that reflects momentary server
-     * state (cooldown, cost cap, capacity, a full queue, the drain) is retried on the
-     * continuation back-off, bounded by [ContinuationFireService.MAX_FIRE_ATTEMPTS]; anything
-     * else fails on the first attempt, since retrying it would only burn sweep cycles.
+     * Settles a fire that threw a [HomerException]: a transient refusal is retried on the continuation
+     * back-off up to [ContinuationFireService.MAX_FIRE_ATTEMPTS]; anything else fails at once. See ADR-0107.
      */
     private suspend fun settleFailedFire(
         hook: PendingHook,
@@ -194,12 +180,9 @@ internal class HookFireService(
     }
 
     /**
-     * How deep the run this fire starts will be: one more than the [EnvConstants.HOOK_DEPTH] the
-     * triggering run's row stores. Fails closed — drops [hook], returns null — when the bound cannot
-     * be read off that row: the run is unreadable (purged, evicted, read error), or its stored depth
-     * is present but not a number. That depth carries the chain bound across a restart, so a fire that
-     * cannot read it must not restart the chain at depth 1 — a purged middle run would spawn without
-     * limit. Neither state heals on retry, so the hook is dropped, not deferred; a run with no depth key is depth 0. See ADR-0107, §12.
+     * One more than the triggering run's stored [EnvConstants.HOOK_DEPTH], 1 when it stores none. Fails
+     * closed — drops [hook], returns null — when the run is unreadable or its depth is not a number, since
+     * a fire restarting the chain at 1 would spawn without limit. See ADR-0107, ADR-0047 rule 4.
      */
     private suspend fun nextDepthOrDrop(
         hook: PendingHook,
@@ -233,11 +216,8 @@ internal class HookFireService(
     }
 
     /**
-     * The `HMR_HOOK_*` metadata of the run [hook] was recorded from. Only Homer-recorded
-     * fields ride it — the run id, the declaring agent, the status, the depth of the run being
-     * started, the stored pre-start failure reason (already the fixed-vocabulary, redacted
-     * sentence, ADR-0098) and the run's subject tags. No input value, secret or otherwise, is
-     * ever copied. See ADR-0107.
+     * The `HMR_HOOK_*` metadata of the run [hook] was recorded from: only Homer-recorded fields, the
+     * failure reason already redacted (ADR-0098). No input value is ever copied. See ADR-0107.
      */
     private fun hookParams(
         hook: PendingHook,
@@ -255,11 +235,8 @@ internal class HookFireService(
 }
 
 /**
- * The run's subject tags joined for [EnvConstants.HOOK_TAGS], or null when there is nothing to
- * send. Control characters are dropped and the whole value is capped at [MAX_HOOK_TAGS_CHARS]
- * characters — a tag that does not fit is left out rather than cut in half, so every tag in the
- * value is one the run actually carried. Tags come from `tags.fromInputs` / `tags.runtime`
- * derivations, never from a raw input value. See ADR-0060, ADR-0107.
+ * The run's derived subject tags joined for [EnvConstants.HOOK_TAGS], or null when none: control
+ * characters dropped, and a tag past [MAX_HOOK_TAGS_CHARS] left out, never cut. See ADR-0060, ADR-0107.
  */
 internal fun hookTagsParam(tags: List<String>): String? {
     val kept = mutableListOf<String>()

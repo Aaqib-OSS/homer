@@ -304,6 +304,25 @@ class LangGraphRunStatusServiceTest {
         }
 
     @Test
+    fun `identity is null when the artifacts directory is a symlink, even to a valid identity file`() =
+        withRealArtifacts { dir ->
+            val outside =
+                dir.resolve("outside").also {
+                    java.nio.file.Files
+                        .createDirectory(it)
+                }
+            java.nio.file.Files
+                .writeString(outside.resolve(LangGraphRunStatusService.ARTIFACT_FILENAME), identityJson())
+            val linkedArtifacts =
+                dir.resolve("artifacts").also {
+                    java.nio.file.Files
+                        .createSymbolicLink(it, outside)
+                }
+
+            assertNull(realIdentity(linkedArtifacts))
+        }
+
+    @Test
     fun `identity is null when langgraph json is hard linked`() =
         withRealArtifacts { dir ->
             val original = dir.resolve("other.json")

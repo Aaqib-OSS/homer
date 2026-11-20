@@ -10,6 +10,7 @@ import homer.app.exceptions.ProcessManagerAtCapacityException
 import homer.app.exceptions.QuestionsClosedForProcessException
 import homer.app.exceptions.TooManyPendingContinuationsException
 import homer.app.exceptions.ValidationException
+import homer.app.fixtures.TestFixtures
 import homer.app.infra.AgentInputResolver
 import homer.app.models.Agent
 import homer.app.models.AgentContinuationConfig
@@ -39,12 +40,16 @@ import io.mockk.verify
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import org.slf4j.LoggerFactory
+import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.writeText
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -951,10 +956,8 @@ class ContinuationServiceTest {
         verify {
             inputResolver.resolveFromParams(
                 match<Map<String, String>> {
-                    Json
-                        .parseToJsonElement(it["HMR_LG_RESUME"]!!)
-                        .jsonObject["result"]!!
-                        .jsonPrimitive.content == "yes"
+                    val payload = Json.parseToJsonElement(it["HMR_LG_RESUME"]!!).jsonObject
+                    payload["result"]!!.jsonPrimitive.content == "yes" && payload["resultTooLarge"] == null
                 },
                 any(),
                 true,
@@ -1035,7 +1038,8 @@ class ContinuationServiceTest {
                         ref["token"]!!.jsonPrimitive.content == "tok-xyz" &&
                         ref["path"]!!.jsonPrimitive.content == "cmd_0.out" &&
                         ref["processId"]!!.jsonPrimitive.content == "42" &&
-                        ref["sizeBytes"]!!.jsonPrimitive.content == size.toString()
+                        ref["sizeBytes"]!!.jsonPrimitive.content == size.toString() &&
+                        payload["resultTooLarge"] == null
                 },
                 any(),
                 true,
@@ -1045,13 +1049,9 @@ class ContinuationServiceTest {
     }
 
     @Test
-    fun `onProcessTerminal does not mint a token for a transformed result the fetch endpoint cannot serve`(
+    fun `onProcessTerminal marks a transformed result over the transform cap resultTooLarge and mints no token`(
         @TempDir dir: Path,
     ) = runTest {
-        // A FAILED sub's last execution is the command that broke — e.g. a Claude step whose
-        // NDJSON stdout runs to several MB. GET /callback/results refuses to transform anything
-        // over RESULT_TRANSFORM_MAX_BYTES, so a ref minted here could never be redeemed; resume
-        // with result = null and no ref so the parent's own status check decides.
         val size = RESULT_TRANSFORM_MAX_BYTES.toInt() + 1
         dir.resolve("cmd_1.out").writeText("x".repeat(size))
         dir.resolve("cmd_1.err").writeText("")
@@ -1077,13 +1077,124 @@ class ContinuationServiceTest {
                     val payload = Json.parseToJsonElement(it["HMR_LG_RESUME"]!!).jsonObject
                     payload["status"]!!.jsonPrimitive.content == "FAILED" &&
                         payload["result"]!! is kotlinx.serialization.json.JsonNull &&
-                        payload["resultRef"] == null
+                        payload["resultRef"] == null &&
+                        payload["resultTooLarge"]!!.jsonPrimitive.boolean
                 },
                 any(),
                 true,
                 any(),
             )
         }
+    }
+
+    @Test
+    fun `onProcessTerminal without a transformer leaves an over-cap result unmarked and mints no token`(
+        @TempDir dir: Path,
+    ) = runTest {
+        dir.resolve("cmd_0.out").writeText("x".repeat(RESULT_TRANSFORM_MAX_BYTES.toInt() + 1))
+        dir.resolve("cmd_0.err").writeText("")
+        stubFireable(pending(transformer = null))
+        coEvery { processManager.getProcessExecutions(42) } returns
+            listOf(ExecutionInfo("cmd", 0, 1, 0, Path.of("cmd_0.out"), Path.of("cmd_0.err"), null))
+        coEvery { processManager.getProcessInfo(42) } returns mockk(relaxed = true) { every { artifactsDir } returns dir }
+        val resolve = slot<RunStartRequest>()
+        coEvery { runStarter.start(capture(resolve), any(), any(), any()) } returns 99
+        val captured = slot<Map<String, String>>()
+        every { inputResolver.resolveFromParams(capture(captured), any(), any(), any()) } returns emptyMap()
+
+        service().onProcessTerminal(42, ProcessStatus.FINISHED)
+        resolve.captured.resolveInputs.invoke()
+
+        coVerify(exactly = 0) { resultTokenService.mint(any(), any(), any(), any(), any()) }
+        val payload = Json.parseToJsonElement(captured.captured["HMR_LG_RESUME"]!!).jsonObject
+        assertEquals(setOf("status", "processId", "result"), payload.keys)
+        assertTrue(payload["result"] is kotlinx.serialization.json.JsonNull)
+    }
+
+    @Test
+    fun `onProcessTerminal mints a ref and no marker for a result of exactly the transform cap`(
+        @TempDir dir: Path,
+    ) = runTest {
+        val size = RESULT_TRANSFORM_MAX_BYTES
+        dir.resolve("cmd_0.out").writeText("x".repeat(size.toInt()))
+        val transformer = ResultEnvParam(SrcType.STD_OUT, "RESULT", ResultTransformer.Pass)
+        coEvery { resultTokenService.mint(42, "cmd_0.out", transformer, size, "h") } returns "tok-cap"
+
+        val payload = firedPayload(dir, Path.of("cmd_0.out"), transformer)
+
+        coVerify { resultTokenService.mint(42, "cmd_0.out", transformer, size, "h") }
+        assertEquals("tok-cap", payload["resultRef"]!!.jsonObject["token"]!!.jsonPrimitive.content)
+        assertNull(payload["resultTooLarge"])
+    }
+
+    @Test
+    fun `onProcessTerminal reads no result through a symlinked artifacts dir`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val real = Files.createDirectory(tmp.resolve("real"))
+        real.resolve("cmd_0.out").writeText(ANSWER_YES)
+        val linked = Files.createSymbolicLink(tmp.resolve("linked"), real)
+
+        assertResumedWithoutResult(firedPayload(linked, Path.of("cmd_0.out"), answerTransformer))
+    }
+
+    @Test
+    fun `onProcessTerminal reads no result from a stdout path outside the artifacts dir`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val dir = Files.createDirectory(tmp.resolve("artifacts"))
+        Files.createDirectory(tmp.resolve("other")).resolve("cmd_0.out").writeText(ANSWER_YES)
+
+        assertResumedWithoutResult(firedPayload(dir, Path.of("../other/cmd_0.out"), answerTransformer))
+    }
+
+    @Test
+    fun `onProcessTerminal reads no result through a symlink at the stdout file`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val dir = Files.createDirectory(tmp.resolve("artifacts"))
+        val outside = tmp.resolve("outside.json").also { it.writeText(ANSWER_YES) }
+        Files.createSymbolicLink(dir.resolve("cmd_0.out"), outside)
+
+        assertResumedWithoutResult(firedPayload(dir, Path.of("cmd_0.out"), answerTransformer))
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    fun `onProcessTerminal reads no result from a FIFO at the stdout file and still fires`(
+        @TempDir dir: Path,
+    ) = runTest {
+        TestFixtures.mkfifoOrSkip(dir.resolve("cmd_0.out"))
+
+        assertResumedWithoutResult(firedPayload(dir, Path.of("cmd_0.out"), answerTransformer))
+    }
+
+    private val answerTransformer = ResultEnvParam(SrcType.STD_OUT, "RESULT", ResultTransformer.JsonPath("$.answer"))
+
+    /** The resume payload a fire of watched process 42 delivers, its stdout at [stdOut] under [artifacts]. */
+    private suspend fun firedPayload(
+        artifacts: Path,
+        stdOut: Path,
+        transformer: ResultEnvParam,
+    ): kotlinx.serialization.json.JsonObject {
+        stubFireable(pending(transformer = transformer))
+        coEvery { processManager.getProcessExecutions(42) } returns
+            listOf(ExecutionInfo("cmd", 0, 1, 0, stdOut, Path.of("cmd_0.err"), null))
+        coEvery { processManager.getProcessInfo(42) } returns mockk(relaxed = true) { every { artifactsDir } returns artifacts }
+        val resolve = slot<RunStartRequest>()
+        coEvery { runStarter.start(capture(resolve), any(), any(), any()) } returns 99
+        val captured = slot<Map<String, String>>()
+        every { inputResolver.resolveFromParams(capture(captured), any(), any(), any()) } returns emptyMap()
+
+        service().onProcessTerminal(42, ProcessStatus.FINISHED)
+        resolve.captured.resolveInputs.invoke()
+        return Json.parseToJsonElement(captured.captured["HMR_LG_RESUME"]!!).jsonObject
+    }
+
+    private fun assertResumedWithoutResult(payload: kotlinx.serialization.json.JsonObject) {
+        coVerify(exactly = 0) { resultTokenService.mint(any(), any(), any(), any(), any()) }
+        assertEquals(setOf("status", "processId", "result"), payload.keys)
+        assertTrue(payload["result"] is kotlinx.serialization.json.JsonNull)
     }
 
     @Test
@@ -1802,6 +1913,45 @@ class ContinuationServiceTest {
     }
 
     @Test
+    fun `join sub over the transform cap is marked resultTooLarge in its own entry`(
+        @TempDir dir: Path,
+    ) = runTest {
+        dir.resolve("big.out").writeText("x".repeat(RESULT_TRANSFORM_MAX_BYTES.toInt() + 1))
+        dir.resolve("big.err").writeText("")
+        dir.resolve("small.out").writeText("""{"answer":"b"}""")
+        val tf = ResultEnvParam(SrcType.STD_OUT, "OUT", ResultTransformer.JsonPath("$.answer"))
+        val join =
+            joinPending(
+                watches = listOf(JoinWatch(10, "int-a", resultTransformer = tf), JoinWatch(11, "int-b", resultTransformer = tf)),
+            )
+        stubJoinFireable(join)
+        coEvery { processManager.getProcessStatus(10) } returns ProcessStatus.FAILED
+        coEvery { processManager.getProcessStatus(11) } returns ProcessStatus.FINISHED
+        coEvery { processManager.getProcessExecutions(10) } returns
+            listOf(ExecutionInfo("c", 0, 1, -1, Path.of("big.out"), Path.of("big.err"), null))
+        coEvery { processManager.getProcessExecutions(11) } returns
+            listOf(ExecutionInfo("c", 0, 1, 0, Path.of("small.out"), Path.of("big.err"), null))
+        coEvery { processManager.getProcessInfo(10) } returns mockk(relaxed = true) { every { artifactsDir } returns dir }
+        coEvery { processManager.getProcessInfo(11) } returns mockk(relaxed = true) { every { artifactsDir } returns dir }
+        val resolve = slot<RunStartRequest>()
+        coEvery { runStarter.start(capture(resolve), any(), any(), any()) } returns 99
+        val captured = slot<Map<String, String>>()
+        every { inputResolver.resolveFromParams(capture(captured), any(), any(), any()) } returns emptyMap()
+
+        service().onProcessTerminal(10, ProcessStatus.FAILED)
+        resolve.captured.resolveInputs.invoke()
+
+        coVerify(exactly = 0) { resultTokenService.mint(any(), any(), any(), any(), any()) }
+        val outer = Json.parseToJsonElement(captured.captured["HMR_LG_RESUME"]!!).jsonObject
+        val big = Json.parseToJsonElement(outer["int-a"]!!.jsonPrimitive.content).jsonObject
+        assertTrue(big["resultTooLarge"]!!.jsonPrimitive.boolean)
+        assertEquals(null, big["resultRef"])
+        val other = Json.parseToJsonElement(outer["int-b"]!!.jsonPrimitive.content).jsonObject
+        assertEquals("b", other["result"]!!.jsonPrimitive.content)
+        assertEquals(null, other["resultTooLarge"], "only the over-cap sub carries the marker")
+    }
+
+    @Test
     fun `join fires on partial failure when one sub is FAILED`() =
         runTest {
             val join = joinPending(watches = listOf(JoinWatch(10, "int-a"), JoinWatch(11, "int-b")))
@@ -2227,4 +2377,8 @@ class ContinuationServiceTest {
             coVerify(exactly = 1) { repo.createJoin(any(), any(), any()) }
             coVerify(exactly = 0) { processManager.killProcess(any(), any()) }
         }
+
+    private companion object {
+        const val ANSWER_YES = """{"answer":"yes"}"""
+    }
 }

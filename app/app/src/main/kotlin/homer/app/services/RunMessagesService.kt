@@ -13,10 +13,9 @@ import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
 /**
- * Per-run inbox of operator messages: an operator queues text for a running run and the run takes it
- * (QUEUED to DELIVERED) through its callback token; messages still QUEUED when the run ends become
- * UNDELIVERED. Durable state lives in SQLite via [RunMessagesRepository]. Message text is operator
- * free text and never reaches logs or exception messages. See ADR-0097.
+ * Per-run inbox, durable via [RunMessagesRepository]: an operator queues text and the run takes it (QUEUED to DELIVERED)
+ * through its callback token; what is still QUEUED when the run ends becomes UNDELIVERED. Message text is operator free
+ * text and never reaches logs or exception messages. See ADR-0097.
  */
 @OptIn(ExperimentalTime::class)
 class RunMessagesService(

@@ -1,5 +1,6 @@
 package homer.app.services.persistence
 
+import homer.app.fixtures.SqlStatementRecorder
 import homer.app.models.ResultEnvParam
 import homer.app.models.ResultTransformer
 import homer.app.models.SrcType
@@ -12,6 +13,7 @@ import java.nio.file.Path
 import java.sql.DriverManager
 import kotlin.system.measureTimeMillis
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -95,5 +97,85 @@ class ResultTokenRepositoryTest {
                 assertTrue(elapsedMs < 2_000, "idle sweep waited $elapsedMs ms behind the writer")
                 assertEquals(0, removed)
             }
+        }
+
+    // --- The expiry index (schema v34) ---
+
+    private fun explain(
+        st: java.sql.Statement,
+        sql: String,
+    ): List<String> =
+        st.executeQuery("EXPLAIN QUERY PLAN $sql").use { rs ->
+            generateSequence { if (rs.next()) rs.getString("detail") else null }.toList()
+        }
+
+    /** The expiry index's definition as SQLite stores it, without the quoting and guard that differ by creator. */
+    private fun expiryIndexDefinition(): String? =
+        DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
+            c.createStatement().use { st ->
+                st.executeQuery("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'result_tokens_expires_at'").use {
+                    if (it.next()) it.getString(1).replace(" IF NOT EXISTS", "").replace("\"", "") else null
+                }
+            }
+        }
+
+    /** Sweeps at [now] and plans both statements it sent, the due-row pre-check and the delete, on [st]. */
+    private suspend fun assertSweepSeeksTheExpiryIndex(
+        st: java.sql.Statement,
+        now: Long,
+    ) {
+        SqlStatementRecorder.reset()
+        assertTrue(repo.deleteExpired(now) > 0, "the seed must leave tokens due at $now")
+        val sent = SqlStatementRecorder.statements()
+        assertEquals(2, sent.size, "$sent")
+        for (sql in sent) {
+            val plan = explain(st, sql)
+            assertTrue(plan.none { it.startsWith("SCAN ") }, "scan for '$sql': $plan")
+            assertTrue(plan.any { "INDEX result_tokens_expires_at" in it }, "'$sql' not planned on result_tokens_expires_at: $plan")
+        }
+    }
+
+    @Test
+    fun `the sweep seeks the expiry index at 150k tokens, with and without statistics`() =
+        runTest {
+            DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
+                c.createStatement().use { st ->
+                    // Production-shaped: one token minted a second, a tenth with no TTL, the rest lapsing an
+                    // hour after minting, so a sweep tick finds only the few that lapsed since the last one.
+                    st.execute(
+                        "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 150000) " +
+                            "INSERT INTO result_tokens (token, watched_process_id, path, size_bytes, created_at, expires_at, " +
+                            "consumer_agent) SELECT 'tok-' || i, i, 'cmd_0.out', 1, i, " +
+                            "CASE WHEN i % 10 = 0 THEN NULL ELSE i + 3600 END, 'agent-' || (i % 12) FROM n",
+                    )
+                    assertSweepSeeksTheExpiryIndex(st, now = 3_700)
+                }
+            }
+            db.optimize()
+            DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
+                c.createStatement().use { st ->
+                    st.executeQuery("SELECT COUNT(*) FROM sqlite_stat1 WHERE tbl = 'result_tokens'").use { rs ->
+                        assertTrue(rs.next() && rs.getInt(1) > 0, "no planner statistics for result_tokens")
+                    }
+                    assertSweepSeeksTheExpiryIndex(st, now = 3_800)
+                }
+            }
+        }
+
+    @Test
+    fun `a v33 database gains the expiry index a fresh one has`() =
+        runTest {
+            val fresh = assertNotNull(expiryIndexDefinition())
+            db.close()
+            DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
+                c.createStatement().use { st ->
+                    st.execute("DROP INDEX result_tokens_expires_at")
+                    st.execute("PRAGMA user_version = 33")
+                }
+            }
+
+            DatabaseService(dbPath, LoggerFactory.getLogger("t")).also { it.migrate() }.close()
+
+            assertEquals(fresh, expiryIndexDefinition())
         }
 }

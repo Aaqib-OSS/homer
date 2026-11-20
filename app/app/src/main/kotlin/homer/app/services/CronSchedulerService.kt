@@ -52,9 +52,8 @@ internal class CronSchedulerService(
     fun start() =
         scope.launch {
             while (isActive) {
-                // One clock read decides both the delay and the minute ticked, so a
-                // late resume cannot retarget the tick at whatever minute it lands in.
-                // The interval is always 1..MS_PER_MINUTE, so the loop never spins.
+                // One clock read sets both the delay and the minute ticked, so a late resume cannot
+                // retarget the tick; the delay is 1..MS_PER_MINUTE, so the loop never spins.
                 val startedAt = now().toInstant().toEpochMilli()
                 val untilNextMinute = MS_PER_MINUTE - (startedAt % MS_PER_MINUTE)
                 delay(untilNextMinute)
@@ -127,9 +126,7 @@ internal class CronSchedulerService(
                         invocationChain = emptyList(),
                         source = "cron",
                         owner = "system:cron",
-                        // Cron has no caller-supplied inputs. enforceRequired makes a
-                        // schedule on an inputs-requiring agent fail loudly here
-                        // instead of running with missing env vars.
+                        // Cron supplies no inputs: an agent requiring one fails the fire here, loudly.
                         resolveInputs = { agentInputResolver.resolveFromParams(emptyMap(), agent) },
                     ),
                 )
