@@ -302,9 +302,10 @@ claims a guarantee it does not give, and both branches look the mode view up the
 ## Amendment (2026-11-20): the console's post-sign-in return path is path-only
 
 The `next` parameter of `/login` is attacker-craftable and the console navigates
-to it once credentials are accepted, so it is an open redirect unless validated
-as a same-origin relative path, at the login form as well as where the URL is
-read (rule 2). The validator also rejects `?` and `#`. Only a `/login` target
+to it once credentials are accepted, so it is an open redirect (CWE-601) unless
+validated as a same-origin relative path where `loginHref` builds the URL and
+again at the login form right before navigation, its point of use: rule 2's
+validate-at-use, applied to URL input. The validator also rejects `?` and `#`. Only a `/login` target
 could abuse an `endpoint=` or `mode=` ride-along, and both producers pass
 `usePathname()`, which never carries a query, so query state does not survive a
 sign-in round trip. Accepting a query would need a second validation shape per

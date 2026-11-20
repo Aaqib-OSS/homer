@@ -98,8 +98,8 @@ async function probeAuth(): Promise<ProbedUser> {
 }
 
 /**
- * Synchronous status the provider sets on login / logout, so the UI flips without waiting for
- * React Query's commit; the dashboard layout otherwise mounts on `isPending` and sticks on Loading.
+ * Synchronous status set on login / logout so mounted subscribers flip without React Query's commit
+ * (the dashboard layout otherwise sticks on Loading); `markAuthed` also seeds the cache for a remounted provider.
  */
 type AuthOverride =
   | { kind: 'authed'; user: ProbedUser }
@@ -217,7 +217,7 @@ function useAuthActions(
     [queryClient, setOverride],
   );
 
-  // A 401 elsewhere fires the auth-expired bus; drop the override so no stale 'authed' shows.
+  // A 401 elsewhere fires the auth-expired bus; pin the override to 'anon' so no stale 'authed' shows.
   useEffect(() => {
     return onAuthExpired(() => setOverride({ kind: 'anon' }));
   }, [setOverride]);

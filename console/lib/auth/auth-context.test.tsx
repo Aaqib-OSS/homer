@@ -101,7 +101,7 @@ describe('AuthProvider (cookie mode)', () => {
       return Promise.resolve(undefined);
     });
 
-    renderWithProvider();
+    const { client } = renderWithProvider();
     await waitFor(() =>
       expect(screen.getByTestId('status')).toHaveTextContent('anon'),
     );
@@ -115,6 +115,7 @@ describe('AuthProvider (cookie mode)', () => {
     );
     expect(login).toHaveBeenCalledWith('alice', 'pw');
     expect(getAuthMe).toHaveBeenCalled();
+    expect(client.getQueryData(['auth', 'me'])).toEqual({ username: 'alice', role: 'admin', grants: [] });
   });
 
   it('login never transitions through loading after the initial anon state', async () => {

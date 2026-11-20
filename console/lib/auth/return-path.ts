@@ -1,6 +1,6 @@
 /**
  * The post-sign-in return path from the attacker-craftable `/login?next=…`: only a same-origin,
- * path-only value is accepted (ADR-0047 rule 2, amendment 2026-11-20), re-checked at the login form.
+ * path-only value is accepted (CWE-601; ADR-0047 amendment 2026-11-20), re-checked at the login form.
  */
 
 /** Where sign-in lands when there is no acceptable return path. */

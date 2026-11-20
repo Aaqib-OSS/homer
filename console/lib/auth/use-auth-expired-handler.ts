@@ -14,8 +14,8 @@ function sessionExisted(wasAuthed: boolean): boolean {
 }
 
 /**
- * On an auth-expired event, once per mount: clears the bearer token and all cached data, then
- * redirects to /login with `next`, adding `expired=1` only when a session existed.
+ * On auth-expired, once per mount: clears the bearer token and every cached per-user query (none may
+ * reach the next sign-in), then redirects to /login with `next`, `expired=1` only if a session existed.
  * Returns the latch ref, `true` once recovery fired, so callers issue no competing navigation.
  */
 export function useAuthExpiredHandler(status: AuthStatus): RefObject<boolean> {
