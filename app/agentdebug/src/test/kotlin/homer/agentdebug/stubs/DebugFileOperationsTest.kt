@@ -6,6 +6,7 @@ import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class DebugFileOperationsTest {
     private val ops = DebugFileOperations()
@@ -33,5 +34,15 @@ class DebugFileOperationsTest {
 
         assertEquals(emptyList(), ops.listRegularFiles(dir.resolve("missing"), limit = 10))
         assertEquals(emptyList(), ops.listRegularFiles(file, limit = 10))
+    }
+
+    @Test
+    fun `readTextBounded reads a small file and refuses one over the bound`(
+        @TempDir dir: Path,
+    ) {
+        val file = dir.resolve("f.txt").also { it.writeText("abcd") }
+
+        assertEquals("abcd", ops.readTextBounded(file, maxBytes = 4))
+        assertNull(ops.readTextBounded(file, maxBytes = 3))
     }
 }

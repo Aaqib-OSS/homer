@@ -13,6 +13,7 @@ import homer.app.models.AppConfig
 import homer.app.models.Command
 import homer.app.models.ExecutionInfo
 import homer.app.models.LangGraphEdgeRef
+import homer.app.models.LangGraphRunIdentity
 import homer.app.models.LangGraphRunStatus
 import homer.app.models.LangGraphSubCommand
 import homer.app.models.LangGraphSubProgress
@@ -21,6 +22,14 @@ import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
 import homer.app.models.SubRunProgress
 import homer.app.services.persistence.ContinuationRepository
+import io.kotest.property.Arb
+import io.kotest.property.arbitrary.byte
+import io.kotest.property.arbitrary.byteArray
+import io.kotest.property.arbitrary.choice
+import io.kotest.property.arbitrary.constant
+import io.kotest.property.arbitrary.int
+import io.kotest.property.arbitrary.map
+import io.kotest.property.checkAll
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -59,12 +68,7 @@ class LangGraphRunStatusServiceTest {
             databasePath = "/var/lib/homer/homer.db",
         )
 
-    // Fictional path, deliberately never created on disk: identity()'s NOFOLLOW
-    // pre-check consults the real filesystem (not the mocked FileOperations below),
-    // and treats a nonexistent path as "not a symlink" — so it must stay nonexistent
-    // for these mock-based fileExists/readText stubs to be reached. A change that
-    // points this at a real on-disk path (or a CI sandbox that pre-creates it) would
-    // silently break that assumption.
+    // Fictional path; the mocked FileOperations never touches the disk.
     private val artifactsDir = Path.of("/tmp/proc1/artifacts")
     private val artifactFile = artifactsDir.resolve(LangGraphRunStatusService.ARTIFACT_FILENAME)
 
@@ -112,8 +116,7 @@ class LangGraphRunStatusServiceTest {
     private fun fileOperationsWithUniqueThreads(): FileOperations {
         val next = AtomicInteger()
         return mockk {
-            every { fileExists(artifactFile) } returns true
-            every { readText(artifactFile) } answers {
+            every { readTextBounded(artifactFile, any()) } answers {
                 """{"threadId":"t${next.incrementAndGet()}","module":"pkg.mod:graph","segment":"fresh"}"""
             }
         }
@@ -122,15 +125,13 @@ class LangGraphRunStatusServiceTest {
     /** Artifacts naming a different thread on each read, so every poll is a distinct cache key. */
     private fun fileOperationsForThreads(vararg threadIds: String) =
         mockk<FileOperations> {
-            every { fileExists(artifactFile) } returns true
-            every { readText(artifactFile) } returnsMany
+            every { readTextBounded(artifactFile, any()) } returnsMany
                 threadIds.map { """{"threadId":"$it","module":"pkg.mod:graph","segment":"fresh"}""" }
         }
 
     private fun fileOperationsFor(threadId: String = "t1") =
         mockk<FileOperations> {
-            every { fileExists(artifactFile) } returns true
-            every { readText(artifactFile) } returns """{"threadId":"$threadId","module":"pkg.mod:graph","segment":"fresh"}"""
+            every { readTextBounded(artifactFile, any()) } returns """{"threadId":"$threadId","module":"pkg.mod:graph","segment":"fresh"}"""
         }
 
     @Test
@@ -142,7 +143,7 @@ class LangGraphRunStatusServiceTest {
 
     @Test
     fun `identity is null when artifact file is missing`() {
-        val fileOperations = mockk<FileOperations> { every { fileExists(artifactFile) } returns false }
+        val fileOperations = mockk<FileOperations> { every { readTextBounded(artifactFile, any()) } returns null }
 
         val result = service(fileOperations = fileOperations).identity(processInfo())
 
@@ -153,8 +154,7 @@ class LangGraphRunStatusServiceTest {
     fun `identity is null when artifact file is malformed`() {
         val fileOperations =
             mockk<FileOperations> {
-                every { fileExists(artifactFile) } returns true
-                every { readText(artifactFile) } returns "not json"
+                every { readTextBounded(artifactFile, any()) } returns "not json"
             }
 
         val result = service(fileOperations = fileOperations).identity(processInfo())
@@ -166,8 +166,7 @@ class LangGraphRunStatusServiceTest {
     fun `identity parses a valid artifact file`() {
         val fileOperations =
             mockk<FileOperations> {
-                every { fileExists(artifactFile) } returns true
-                every { readText(artifactFile) } returns """{"threadId":"t1","module":"pkg.mod:graph","segment":"fresh"}"""
+                every { readTextBounded(artifactFile, any()) } returns """{"threadId":"t1","module":"pkg.mod:graph","segment":"fresh"}"""
             }
 
         val result = service(fileOperations = fileOperations).identity(processInfo())
@@ -209,6 +208,139 @@ class LangGraphRunStatusServiceTest {
         }
     }
 
+    private fun withRealArtifacts(block: (Path) -> Unit) {
+        val dir =
+            java.nio.file.Files
+                .createTempDirectory("lgrs-real")
+        try {
+            block(dir)
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    private fun realIdentity(dir: Path) = service(fileOperations = LocalFileOperations()).identity(processInfo(dir = dir))
+
+    private fun identityJson(padTo: Int = 0): String {
+        val base = """{"threadId":"t1","module":"pkg.mod:graph","segment":"fresh"}"""
+        return base + " ".repeat((padTo - base.length).coerceAtLeast(0))
+    }
+
+    @Test
+    fun `identity is null for a file over the byte cap and the read stops at the cap`() =
+        withRealArtifacts { dir ->
+            val file = dir.resolve(LangGraphRunStatusService.ARTIFACT_FILENAME)
+            // Over Int.MAX_VALUE: a whole-file read fails with an Error, only a capped read returns null.
+            java.io.RandomAccessFile(file.toFile(), "rw").use { it.setLength(3L * 1024 * 1024 * 1024) }
+
+            assertNull(realIdentity(dir))
+        }
+
+    @Test
+    fun `identity is null for a file one byte over the cap, and parsed at exactly the cap`() =
+        withRealArtifacts { dir ->
+            val file = dir.resolve(LangGraphRunStatusService.ARTIFACT_FILENAME)
+            val cap = LangGraphRunStatusService.MAX_IDENTITY_BYTES.toInt()
+
+            java.nio.file.Files
+                .writeString(file, identityJson(cap + 1))
+            assertNull(realIdentity(dir))
+
+            java.nio.file.Files
+                .writeString(file, identityJson(cap))
+            assertEquals("t1", realIdentity(dir)?.threadId)
+        }
+
+    @Test
+    fun `status answers as for a run without identity when the identity file is oversized`() =
+        withRealArtifacts { dir ->
+            val file = dir.resolve(LangGraphRunStatusService.ARTIFACT_FILENAME)
+            java.nio.file.Files
+                .writeString(file, identityJson(LangGraphRunStatusService.MAX_IDENTITY_BYTES.toInt() + 1))
+
+            val result =
+                runBlocking {
+                    service(fileOperations = LocalFileOperations()).status(processInfo(dir = dir), agent, includeGraph = false)
+                }
+
+            assertNull(result)
+        }
+
+    @Test
+    fun `identity parses a small file read from disk`() =
+        withRealArtifacts { dir ->
+            java.nio.file.Files
+                .writeString(dir.resolve(LangGraphRunStatusService.ARTIFACT_FILENAME), identityJson())
+
+            assertEquals("pkg.mod:graph", realIdentity(dir)?.module)
+        }
+
+    @Test
+    fun `identity is null when langgraph json is a directory`() =
+        withRealArtifacts { dir ->
+            java.nio.file.Files
+                .createDirectory(dir.resolve(LangGraphRunStatusService.ARTIFACT_FILENAME))
+
+            assertNull(realIdentity(dir))
+        }
+
+    @Test
+    fun `identity is null without blocking when langgraph json is a FIFO`() =
+        withRealArtifacts { dir ->
+            val fifo = dir.resolve(LangGraphRunStatusService.ARTIFACT_FILENAME)
+            val made =
+                runCatching { ProcessBuilder("mkfifo", fifo.toString()).start().waitFor() == 0 }.getOrDefault(false)
+            org.junit.jupiter.api.Assumptions
+                .assumeTrue(made, "needs mkfifo")
+
+            val result =
+                org.junit.jupiter.api.Assertions.assertTimeoutPreemptively<LangGraphRunIdentity?>(
+                    java.time.Duration.ofSeconds(5),
+                ) {
+                    realIdentity(dir)
+                }
+
+            assertNull(result)
+        }
+
+    @Test
+    fun `identity is null when langgraph json is hard linked`() =
+        withRealArtifacts { dir ->
+            val original = dir.resolve("other.json")
+            java.nio.file.Files
+                .writeString(original, identityJson())
+            java.nio.file.Files
+                .createLink(dir.resolve(LangGraphRunStatusService.ARTIFACT_FILENAME), original)
+
+            assertNull(realIdentity(dir))
+        }
+
+    @Test
+    fun `identity never throws on arbitrary bytes up to the cap and yields an identity or null`() =
+        withRealArtifacts { dir ->
+            val file = dir.resolve(LangGraphRunStatusService.ARTIFACT_FILENAME)
+            val service = service(fileOperations = LocalFileOperations())
+            val valid = identityJson().toByteArray()
+            val inputs =
+                Arb.choice(
+                    Arb.byteArray(Arb.int(0..LangGraphRunStatusService.MAX_IDENTITY_BYTES.toInt()), Arb.byte()),
+                    Arb.byteArray(Arb.int(0..64), Arb.byte()).map { valid + it },
+                    Arb.constant(valid),
+                )
+            var parsed = 0
+            var refused = 0
+            runBlocking {
+                checkAll(200, inputs) { bytes ->
+                    java.nio.file.Files
+                        .write(file, bytes)
+                    val result = service.identity(processInfo(dir = dir))
+                    if (result == null) refused++ else parsed++
+                    assertTrue(result == null || String(bytes, Charsets.UTF_8).contains("threadId"))
+                }
+            }
+            assertTrue(parsed > 0 && refused > 0, "both outcomes must run: parsed=$parsed refused=$refused")
+        }
+
     @Test
     fun `status is null when there is no identity`() =
         runBlocking {
@@ -222,8 +354,8 @@ class LangGraphRunStatusServiceTest {
         runBlocking {
             val fileOperations =
                 mockk<FileOperations> {
-                    every { fileExists(artifactFile) } returns true
-                    every { readText(artifactFile) } returns """{"threadId":"t1","module":"pkg.mod:graph","segment":"fresh"}"""
+                    every { readTextBounded(artifactFile, any()) } returns
+                        """{"threadId":"t1","module":"pkg.mod:graph","segment":"fresh"}"""
                 }
             var called = false
             val stateRunner =
@@ -250,8 +382,8 @@ class LangGraphRunStatusServiceTest {
         runBlocking {
             val fileOperations =
                 mockk<FileOperations> {
-                    every { fileExists(artifactFile) } returns true
-                    every { readText(artifactFile) } returns """{"threadId":"t1","module":"pkg.mod:graph","segment":"fresh"}"""
+                    every { readTextBounded(artifactFile, any()) } returns
+                        """{"threadId":"t1","module":"pkg.mod:graph","segment":"fresh"}"""
                 }
             var capturedEnv: Map<String, String>? = null
             val stateRunner =
@@ -286,8 +418,8 @@ class LangGraphRunStatusServiceTest {
         runBlocking {
             val fileOperations =
                 mockk<FileOperations> {
-                    every { fileExists(artifactFile) } returns true
-                    every { readText(artifactFile) } returns """{"threadId":"t1","module":"pkg.mod:graph","segment":"fresh"}"""
+                    every { readTextBounded(artifactFile, any()) } returns
+                        """{"threadId":"t1","module":"pkg.mod:graph","segment":"fresh"}"""
                 }
             var capturedEnv: Map<String, String>? = null
             val stateRunner =
@@ -419,8 +551,8 @@ class LangGraphRunStatusServiceTest {
         runBlocking {
             val fileOperations =
                 mockk<FileOperations> {
-                    every { fileExists(artifactFile) } returns true
-                    every { readText(artifactFile) } returns """{"threadId":"t1","module":"pkg.mod:graph","segment":"fresh"}"""
+                    every { readTextBounded(artifactFile, any()) } returns
+                        """{"threadId":"t1","module":"pkg.mod:graph","segment":"fresh"}"""
                 }
             var capturedEnv: Map<String, String>? = null
             val stateRunner =
@@ -443,10 +575,10 @@ class LangGraphRunStatusServiceTest {
         runBlocking {
             val fileOperations =
                 mockk<FileOperations> {
-                    every { fileExists(artifactFile) } returns true
                     // A forged artifact naming another principal's thread still resolves
                     // against this process's own owner-scoped store.
-                    every { readText(artifactFile) } returns """{"threadId":"victim-thread","module":"pkg.mod:graph","segment":"fresh"}"""
+                    every { readTextBounded(artifactFile, any()) } returns
+                        """{"threadId":"victim-thread","module":"pkg.mod:graph","segment":"fresh"}"""
                 }
             var capturedEnv: Map<String, String>? = null
             val stateRunner =
@@ -470,8 +602,8 @@ class LangGraphRunStatusServiceTest {
         runBlocking {
             val fileOperations =
                 mockk<FileOperations> {
-                    every { fileExists(artifactFile) } returns true
-                    every { readText(artifactFile) } returns """{"threadId":"t1","module":"pkg.mod:graph","segment":"fresh"}"""
+                    every { readTextBounded(artifactFile, any()) } returns
+                        """{"threadId":"t1","module":"pkg.mod:graph","segment":"fresh"}"""
                 }
             val stateRunner = GraphStateRunner { _, _, _, _, _ -> GraphStateResult.Err("boom") }
 
@@ -490,8 +622,8 @@ class LangGraphRunStatusServiceTest {
         runBlocking {
             val fileOperations =
                 mockk<FileOperations> {
-                    every { fileExists(artifactFile) } returns true
-                    every { readText(artifactFile) } returns """{"threadId":"t1","module":"pkg.mod:graph","segment":"fresh"}"""
+                    every { readTextBounded(artifactFile, any()) } returns
+                        """{"threadId":"t1","module":"pkg.mod:graph","segment":"fresh"}"""
                 }
             val stateRunner = GraphStateRunner { _, _, _, _, _ -> GraphStateResult.Ok("not json") }
 
@@ -508,8 +640,8 @@ class LangGraphRunStatusServiceTest {
         runBlocking {
             val fileOperations =
                 mockk<FileOperations> {
-                    every { fileExists(artifactFile) } returns true
-                    every { readText(artifactFile) } returns """{"threadId":"t1","module":"pkg.mod:graph","segment":"fresh"}"""
+                    every { readTextBounded(artifactFile, any()) } returns
+                        """{"threadId":"t1","module":"pkg.mod:graph","segment":"fresh"}"""
                 }
             val agentWithoutLangGraph = Agent(name = "lg_agent", commands = listOf(Command.Cmd(cmd = listOf("echo", "hi"))))
 
