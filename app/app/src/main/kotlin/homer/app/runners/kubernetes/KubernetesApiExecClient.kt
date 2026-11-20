@@ -37,8 +37,6 @@ internal fun unhandledErrorLine(
 ): String {
     val assignments = if (argv.firstOrNull() == "env") argv.drop(1).takeWhile { '=' in it } else emptyList()
     val env = assignments.withIndex().associate { (i, assignment) -> "$i" to assignment.substringAfter('=') }
-    val message = error.message.orEmpty().replace(EXEC_URL, "[exec URL]")
+    val message = withoutExecUrl(error.message.orEmpty())
     return execUrlRedactor(env).redact("${error.javaClass.simpleName}: $message").toOneLine()
 }
-
-private val EXEC_URL = Regex("""\S*[?&]command=\S*""")

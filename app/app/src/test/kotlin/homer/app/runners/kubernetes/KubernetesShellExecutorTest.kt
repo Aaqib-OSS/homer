@@ -791,7 +791,7 @@ class KubernetesShellExecutorTest {
                 every { errorStream } returns ByteArrayInputStream(ByteArray(0))
                 every { outputStream } returns ByteArrayOutputStream()
                 every { waitFor(any<Long>(), any<TimeUnit>()) } returns true
-                every { exitValue() } throws IllegalThreadStateException("wss://api/exec?command=env+TOKEN=$secret")
+                every { exitValue() } throws IllegalThreadStateException("stream reset after TOKEN=$secret")
             }
         val seen = mutableListOf<PodTermination>()
         val executor =
@@ -825,8 +825,8 @@ class KubernetesShellExecutorTest {
     fun `a query-encoded secret in the cause text is redacted`(
         @TempDir tmp: Path,
     ) = runTest {
-        // The cause quotes the exec URL, where the argv is query-encoded, so a secret holding a
-        // reserved character never appears raw there — its encoded form must be masked too.
+        // A cause can quote the argv query-encoded, so a secret holding a reserved character
+        // never appears raw there — its encoded form must be masked too.
         val secret = "a/b+c=d&e"
         val encoded = "a%2Fb%2Bc%3Dd%26e"
         val closed =
@@ -835,7 +835,7 @@ class KubernetesShellExecutorTest {
                 every { errorStream } returns ByteArrayInputStream(ByteArray(0))
                 every { outputStream } returns ByteArrayOutputStream()
                 every { waitFor(any<Long>(), any<TimeUnit>()) } returns true
-                every { exitValue() } throws IllegalThreadStateException("wss://api/exec?command=env+TOKEN=$encoded")
+                every { exitValue() } throws IllegalThreadStateException("stream reset after TOKEN=$encoded")
             }
         val seen = mutableListOf<PodTermination>()
         val executor =
@@ -863,6 +863,47 @@ class KubernetesShellExecutorTest {
         assertTrue(thrown.message.orEmpty().contains("***"), "the secret must be masked: ${thrown.message}")
         assertFalse(seen.single().message.contains(encoded), "the encoded secret must not reach the termination: ${seen.single().message}")
         assertTrue(seen.single().message.contains("***"), "the secret must be masked there too: ${seen.single().message}")
+    }
+
+    @Test
+    fun `a short env value in the exec URL reaches neither the step error nor the termination`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val short = "q7z"
+        val closed =
+            mockk<Process>(relaxed = true) {
+                every { inputStream } returns ByteArrayInputStream(ByteArray(0))
+                every { errorStream } returns ByteArrayInputStream(ByteArray(0))
+                every { outputStream } returns ByteArrayOutputStream()
+                every { waitFor(any<Long>(), any<TimeUnit>()) } returns true
+                every { exitValue() } throws
+                    IllegalThreadStateException("wss://api/exec?command=env&command=PIN%3D$short&command=true closed")
+            }
+        val seen = mutableListOf<PodTermination>()
+        val executor =
+            KubernetesShellExecutor(
+                KubernetesExecClient { _, _, _, _ -> closed },
+                runningPodApi(),
+                "homer",
+                "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
+                onTermination = { seen += it },
+            )
+
+        val thrown =
+            assertFailsWith<PodFailedDuringExecutionException> {
+                executor.cmd(
+                    command = listOf("true"),
+                    stdOut = tmp.resolve("out"),
+                    stdErr = tmp.resolve("err"),
+                    env = mapOf("PIN" to short),
+                    timeout = 10.seconds,
+                )
+            }
+
+        assertFalse(thrown.message.orEmpty().contains(short), "the short value must not reach the step error: ${thrown.message}")
+        assertFalse(seen.single().message.contains(short), "the short value must not reach the termination: ${seen.single().message}")
+        assertTrue(seen.single().message.contains("[exec URL]"), "the URL must be replaced: ${seen.single().message}")
     }
 
     @Test

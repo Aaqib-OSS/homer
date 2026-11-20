@@ -247,8 +247,8 @@ class KubernetesShellExecutor(
         }
 
     /**
-     * The step error for a channel lost on a live pod: the cause and the pod's last event, on one line of at most
-     * [TERMINATION_MESSAGE_MAX_CHARS], with credential-length env values masked by [execUrlRedactor] (ADR-0047 rule 7).
+     * The step error for a channel lost on a live pod: the cause without its exec URL and the pod's last event, on one
+     * line of at most [TERMINATION_MESSAGE_MAX_CHARS], with credential-length env values masked (ADR-0047 rule 7).
      */
     private fun channelLostMessage(
         cause: Throwable?,
@@ -259,7 +259,7 @@ class KubernetesShellExecutor(
         val text =
             "exec channel to pod $podName was lost while the pod was running: $closed. " +
                 (snap.events.lastOrNull() ?: snap.message)
-        return execUrlRedactor(env).redact(text).toOneLine()
+        return execUrlRedactor(env).redact(withoutExecUrl(text)).toOneLine()
     }
 
     private suspend fun failIfPodStopped(patient: Boolean) {

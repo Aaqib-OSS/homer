@@ -32,3 +32,8 @@ internal fun execUrlRedactor(env: Map<String, String>): SecretRedactor =
             env.keys,
             minNeedleLength = MIN_SCREENED_SECRET_LENGTH,
         )
+
+/** [text] with each exec URL replaced by `[exec URL]`: the URL carries the argv, env values of any length included. */
+internal fun withoutExecUrl(text: String): String = text.replace(EXEC_URL, "[exec URL]")
+
+private val EXEC_URL = Regex("""\S*[?&]command=\S*""")
