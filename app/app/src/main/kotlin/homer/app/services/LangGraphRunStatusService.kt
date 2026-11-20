@@ -22,8 +22,6 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import java.nio.file.Files
-import java.nio.file.LinkOption
 import java.util.Collections
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -115,14 +113,8 @@ class LangGraphRunStatusService(
     /** The run's LangGraph identity, or null when this is not a LangGraph run. */
     fun identity(processInfo: ProcessInfo): LangGraphRunIdentity? {
         val dir = processInfo.artifactsDir ?: return null
-        val file = dir.resolve(ARTIFACT_FILENAME)
-        // NOFOLLOW pre-check: langgraph.json is agent-written and fileOperations follows symlinks.
-        // Check-then-read, not atomic — a same-UID swap can still win, an accepted residual (§12).
-        if (Files.exists(file, LinkOption.NOFOLLOW_LINKS) && !Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
-            return null
-        }
-        if (!fileOperations.fileExists(file)) return null
-        return runCatching { json.decodeFromString<LangGraphRunIdentity>(fileOperations.readText(file)) }.getOrNull()
+        val text = fileOperations.readTextBounded(dir.resolve(ARTIFACT_FILENAME), MAX_IDENTITY_BYTES) ?: return null
+        return runCatching { json.decodeFromString<LangGraphRunIdentity>(text) }.getOrNull()
     }
 
     // Identity plus, when [includeGraph], topology and per-node status; null when the process
@@ -308,6 +300,9 @@ class LangGraphRunStatusService(
     companion object {
         /** Written by the Python runtime before every invoke (runner.py ARTIFACT_FILENAME). */
         const val ARTIFACT_FILENAME = "langgraph.json"
+
+        /** Largest identity file read; a run's own code writes it (CWE-400). */
+        const val MAX_IDENTITY_BYTES = 64L * 1024
 
         /** Reported when no run slot came free in time; the caller may simply poll again. */
         const val BUSY_MESSAGE = "graph status is busy (too many concurrent requests) — retry"

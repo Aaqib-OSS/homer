@@ -19,6 +19,15 @@ interface FileOperations {
     fun readText(path: Path): String
 
     /**
+     * The text of a regular, single-link file of at most [maxBytes], or null when the file is
+     * absent, linked, non-regular, larger than [maxBytes] or unreadable. Never reads past the bound.
+     */
+    fun readTextBounded(
+        path: Path,
+        maxBytes: Long,
+    ): String?
+
+    /**
      * Check if a file exists
      */
     fun fileExists(path: Path): Boolean

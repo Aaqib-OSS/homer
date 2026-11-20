@@ -12,8 +12,11 @@ import homer.app.models.Translation
 import homer.app.models.TurnStatus
 import homer.app.models.When
 import io.kotest.property.Arb
+import io.kotest.property.arbitrary.choice
+import io.kotest.property.arbitrary.double
 import io.kotest.property.arbitrary.element
 import io.kotest.property.arbitrary.list
+import io.kotest.property.arbitrary.map
 import io.kotest.property.arbitrary.string
 import io.kotest.property.checkAll
 import kotlinx.coroutines.test.runTest
@@ -34,13 +37,29 @@ class OpencodeHarnessTest {
 
     private fun line(json: String) = LlmOutputJson.parseToJsonElement(json).jsonObject
 
-    private fun fixture(name: String): List<LlmEvent> =
-        requireNotNull(javaClass.getResourceAsStream("/llm/opencode/$name"))
-            .use { it.readBytes().decodeToString() }
+    /** One line read on its own, as the first line of a fresh read. */
+    private fun translate(line: JsonObject): Translation = harness.translator()(line)
+
+    private fun fixture(name: String): List<LlmEvent> {
+        val translate = harness.translator()
+        return fixtureText(name)
             .lineSequence()
             .filter { it.isNotBlank() }
-            .flatMap { (harness.translate(line(it)) as? Translation.Events)?.events ?: emptyList() }
+            .flatMap { (translate(line(it)) as? Translation.Events)?.events ?: emptyList() }
             .toList()
+    }
+
+    private fun stepFinish(
+        stepId: String,
+        cost: String,
+        sessionId: String = "ses_1",
+    ) = """{"type":"step_finish","sessionID":"$sessionId","part":{"id":"$stepId","reason":"stop","cost":$cost}}"""
+
+    /** The cumulative cost one fresh read of [lines] charges. */
+    private fun charged(
+        adapter: OpencodeHarness,
+        lines: List<String>,
+    ): Double? = scanLlmAccounting(lines.asSequence(), adapter.translator()).cliCostUsd
 
     private fun fixtureText(name: String): String =
         requireNotNull(javaClass.getResourceAsStream("/llm/opencode/$name"))
@@ -55,6 +74,7 @@ class OpencodeHarnessTest {
         assertEquals("opencode", harness.id)
         assertTrue(harness.reportsCost)
         assertFalse(harness.countsModelCalls)
+        assertTrue(harness.translatorKeepsState)
     }
 
     @Test
@@ -164,45 +184,68 @@ class OpencodeHarnessTest {
         assertEquals(0.0121, ends[0].costUsd)
         assertEquals(0.0121 + 0.0034, ends[1].costUsd)
         // The scan keeps the highest figure it saw, so the attempt is charged the whole run.
-        assertEquals(0.0121 + 0.0034, scanLlmAccounting(fixtureText("success.jsonl").lineSequence(), harness::translate).cliCostUsd)
+        assertEquals(0.0121 + 0.0034, scanLlmAccounting(fixtureText("success.jsonl").lineSequence(), harness.translator()).cliCostUsd)
     }
 
     @Test
-    fun `translating the same stream twice does not double-charge it`() {
-        // One adapter instance reads the same stdout file more than once (the accounting scan
-        // and the telemetry hand-off), so a step must count once per instance (ADR-0074, ADR-0070).
-        val text = fixtureText("success.jsonl")
-        val first = scanLlmAccounting(text.lineSequence(), harness::translate).cliCostUsd
-        val second = scanLlmAccounting(text.lineSequence(), harness::translate).cliCostUsd
-        assertEquals(0.0121 + 0.0034, first)
-        assertEquals(first, second)
+    fun `two reads of the same stdout report the same total`() {
+        // The accounting scan and the telemetry hand-off each read the attempt's stdout once.
+        val lines = fixtureText("success.jsonl").lines()
+        assertEquals(0.0121 + 0.0034, charged(harness, lines))
+        assertEquals(charged(harness, lines), charged(harness, lines))
     }
 
     @Test
-    fun `hitting the session bound evicts the one eldest bucket, not every live session`() {
-        // `StepCostTotals` keeps at most 64 session buckets; the 65th sheds the eldest, alone.
-        val totals = StepCostTotals()
-        repeat(64) { s ->
-            totals.add("ses_$s", "p1", 1.0)
-            assertEquals(2.0, totals.add("ses_$s", "p2", 1.0))
+    fun `a run resuming an opencode session is charged only its own steps`() {
+        // One adapter serves every run on the server; both attempts write the same session id.
+        val shared = OpencodeHarness()
+        val first = listOf(stepFinish("p1", "0.25"), stepFinish("p2", "0.5"))
+        val resumed = listOf(stepFinish("p3", "0.125"))
+        assertEquals(0.75, charged(shared, first))
+        assertEquals(0.125, charged(shared, resumed))
+        assertEquals(0.75, charged(shared, first))
+    }
+
+    @Test
+    fun `a step whose cost would overflow the running total leaves it finite, and the next step still adds`() {
+        val translate = harness.translator()
+        val totals =
+            listOf("1e308", "1e308", "5e307").mapIndexed { i, cost ->
+                val events = assertIs<Translation.Events>(translate(line(stepFinish("p$i", cost)))).events
+                assertIs<LlmEvent.TurnEnd>(events.single()).costUsd
+            }
+        assertEquals(listOf(1e308, 1e308, 1.5e308), totals)
+    }
+
+    @Test
+    fun `a read counts every step, past any former step cap`() {
+        val lines = (1..5_000).map { stepFinish("p$it", "1") }
+        assertEquals(5_000.0, charged(harness, lines))
+    }
+
+    @Test
+    fun `the running total is the sum of each step's cost, a negative or non-finite one counting as zero`() =
+        runTest {
+            val counted = Arb.double(0.0, 1e6, includeNaNs = false).map { it.toString() to it }
+            val uncounted = Arb.element("-1", "-0.5", "1e999", "-1e999", "\"free\"", "null").map { it to 0.0 }
+            checkAll(Arb.list(Arb.choice(counted, uncounted), 0..40)) { steps ->
+                val translate = harness.translator()
+                val totals =
+                    steps.mapIndexed { i, (cost, _) ->
+                        val events = assertIs<Translation.Events>(translate(line(stepFinish("p$i", cost)))).events
+                        assertIs<LlmEvent.TurnEnd>(events.single()).costUsd
+                    }
+                val expected = steps.runningFold(0.0) { total, (_, value) -> total + value }.drop(1)
+                assertEquals(expected, totals)
+            }
         }
-        assertEquals(1.0, totals.add("ses_new", "p1", 1.0))
-        // ses_0's bucket went; ses_1's did not, so its steps are still counted. A shed
-        // bucket may belong to a live run — once 64 newer sessions arrived while it ran —
-        // whose cumulative then restarts; the accounting scan's full-file re-read rebuilds
-        // it, so the charge stays ADR-0074-correct.
-        assertEquals(2.0, totals.add("ses_1", "p1", 1.0))
-        assertEquals(2.0, totals.add("ses_63", "p1", 1.0))
-        // The evicted bucket forgot its counted steps: p1 counts again on a fresh total.
-        assertEquals(1.0, totals.add("ses_0", "p1", 1.0))
-    }
 
     @Test
     fun `step_start and unrecognised event types are ignored, and a run without one still translates`() {
-        assertIs<Translation.Ignored>(harness.translate(line("""{"type":"reasoning","part":{"text":"hmm"}}""")))
-        assertIs<Translation.Ignored>(harness.translate(line("""{"type":"session.idle"}""")))
-        assertIs<Translation.Ignored>(harness.translate(line("""{"type":""}""")))
-        assertIs<Translation.Ignored>(harness.translate(line("""{}""")))
+        assertIs<Translation.Ignored>(translate(line("""{"type":"reasoning","part":{"text":"hmm"}}""")))
+        assertIs<Translation.Ignored>(translate(line("""{"type":"session.idle"}""")))
+        assertIs<Translation.Ignored>(translate(line("""{"type":""}""")))
+        assertIs<Translation.Ignored>(translate(line("""{}""")))
     }
 
     @Test
@@ -232,10 +275,10 @@ class OpencodeHarnessTest {
     @Test
     fun `a session id with path or shell characters is gated out`() {
         listOf("../../etc/passwd", "ses_1; rm -rf /", "a b", "", "x".repeat(129)).forEach { raw ->
-            val events = (harness.translate(line("""{"type":"step_start","sessionID":"$raw"}""")) as Translation.Events).events
+            val events = (translate(line("""{"type":"step_start","sessionID":"$raw"}""")) as Translation.Events).events
             assertNull((events.single() as LlmEvent.SessionStart).sessionId, "id '$raw' should not survive the gate")
         }
-        val ok = (harness.translate(line("""{"type":"step_start","sessionID":"ses_3f9a-1C2b"}""")) as Translation.Events).events
+        val ok = (translate(line("""{"type":"step_start","sessionID":"ses_3f9a-1C2b"}""")) as Translation.Events).events
         assertEquals("ses_3f9a-1C2b", (ok.single() as LlmEvent.SessionStart).sessionId)
     }
 
@@ -255,7 +298,7 @@ class OpencodeHarnessTest {
         // CWE-682: `1e999` parses to Infinity, which is not a cost either — the running total
         // stays where it was, and so does the figure the accounting scan charges the run.
         assertEquals(0.0027, events[3].costUsd)
-        assertEquals(0.0027, scanLlmAccounting(text.lineSequence(), harness::translate).cliCostUsd)
+        assertEquals(0.0027, scanLlmAccounting(text.lineSequence(), harness.translator()).cliCostUsd)
     }
 
     @Test
@@ -274,7 +317,7 @@ class OpencodeHarnessTest {
             """{"type":"step_finish","part":{"reason":"stop"}}""",
             """{"type":"step_finish","part":"not an object"}""",
         ).forEach { json ->
-            assertIs<Translation.Malformed>(harness.translate(line(json)), json)
+            assertIs<Translation.Malformed>(translate(line(json)), json)
         }
     }
 
@@ -283,14 +326,14 @@ class OpencodeHarnessTest {
         val expected = listOf(LlmEvent.ToolCall("c", "bash", JsonPrimitive("x")))
         listOf("pending", "running", "streaming").forEach { status ->
             val json = """{"type":"tool_use","part":{"id":"c","tool":"bash","state":{"status":"$status","input":"x"}}}"""
-            assertEquals(expected, assertIs<Translation.Events>(harness.translate(line(json))).events)
+            assertEquals(expected, assertIs<Translation.Events>(translate(line(json))).events)
         }
     }
 
     @Test
     fun `a failed tool part reports its error as an error result`() {
         val json = """{"type":"tool_use","part":{"id":"c","tool":"bash","state":{"status":"error","error":"boom"}}}"""
-        val events = assertIs<Translation.Events>(harness.translate(line(json))).events
+        val events = assertIs<Translation.Events>(translate(line(json))).events
         val result = events[1] as LlmEvent.ToolResult
         assertEquals(JsonPrimitive("boom"), result.output)
         assertTrue(result.isError)
@@ -304,8 +347,8 @@ class OpencodeHarnessTest {
             checkAll(Arb.list(Arb.element(keys), 0..8), Arb.list(Arb.element(values), 0..8), Arb.string(0..12)) { ks, vs, text ->
                 val obj = buildJsonObject { ks.zip(vs).forEach { (k, v) -> put(k, JsonPrimitive(v)) } }
                 // `translate` is total by contract: a shape it cannot read is Malformed or Ignored.
-                harness.translate(obj)
-                harness.translate(line("""{"type":"text","part":{"text":${JsonPrimitive(text)}}}"""))
+                translate(obj)
+                translate(line("""{"type":"text","part":{"text":${JsonPrimitive(text)}}}"""))
             }
         }
 

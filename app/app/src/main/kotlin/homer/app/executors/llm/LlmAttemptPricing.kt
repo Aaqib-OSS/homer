@@ -51,7 +51,7 @@ internal class LlmAttemptPricing(
         span: Span,
     ): LlmAccountingScan {
         val scan =
-            runCatching { stdoutFile.bufferedReader().useLines { scanLlmAccounting(it, harness::translate) } }
+            runCatching { stdoutFile.bufferedReader().useLines { scanLlmAccounting(it, harness.translator()) } }
                 .getOrElse { LlmAccountingScan(sessionId = null, cliCostUsd = null, resultSeen = false, modelCalls = 0, usage = null) }
         if (harness.reportsCost && scan.resultSeen && scan.cliCostUsd == null) {
             // Same observability hook the strict path had for a missing/unparseable field —

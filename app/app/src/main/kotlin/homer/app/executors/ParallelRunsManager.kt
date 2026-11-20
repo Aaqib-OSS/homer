@@ -25,22 +25,22 @@ interface ParallelRunsManager {
         agentName: String,
         maxParallelRuns: Int,
         strategy: OnMaxParallelRunsStrategy,
-        maxQueuedRuns: Int? = null,
+        maxQueuedRuns: Int,
     ): Semaphore
 
     suspend fun releaseSlot(slot: Semaphore)
 
     /**
      * Reserves a place for a run that is about to wait on a subject lock, refusing the surplus
-     * instead of parking it. Lock waiters share the slot wait queue — one combined cap of
-     * [maxQueuedRuns] — when that queue exists and is bounded; otherwise the cap is [maxParallelRuns].
+     * instead of parking it. Under WAIT, lock waiters share the slot wait queue — one combined
+     * cap of [maxQueuedRuns]; under REJECT the cap is [maxParallelRuns].
      * See ADR-0104.
      */
     fun enterLockWait(
         agentName: String,
         maxParallelRuns: Int,
         strategy: OnMaxParallelRunsStrategy,
-        maxQueuedRuns: Int?,
+        maxQueuedRuns: Int,
     ): LockWaitTicket
 
     fun onAgentsReloaded(

@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-11-12
 deciders: Lukáš Vlk
+amended: 2026-11-19
 consulted: ADR-0002, ADR-0029, ADR-0047, ADR-0051, ADR-0098
 ---
 
@@ -224,3 +225,14 @@ Each constraint has a test that asserts the denial path (ADR-0047 rule 8):
   reason keeps the refusal out of the `afterFailure` window.
 - [ADR-0058](0058-parent-child-run-linkage.md) — the lock holder travelling as its own field
   rather than inside the reason.
+
+## Amendment (2026-11-19): the queue is always bounded
+
+`maxQueuedRuns` is a non-nullable `Int` defaulting to `10 × maxParallelRuns`, so the slot queue
+is always bounded. Under `WAIT`, lock waiters always share that cap; the `maxParallelRuns`
+fallback applies only under `REJECT`. Rejected alternatives:
+
+- a fixed constant ignores the concurrency the operator chose;
+- a server-level key moves the bound away from the agent it protects;
+- `null` as an explicit opt-in to unbounded contradicts CLAUDE.md §12 rule 4: every bound a
+  caller can multiply is finite (ADR-0047).

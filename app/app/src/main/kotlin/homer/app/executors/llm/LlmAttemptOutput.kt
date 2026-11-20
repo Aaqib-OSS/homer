@@ -110,7 +110,7 @@ internal class LlmAttemptOutput<C>(
         try {
             val raw = attemptOut.bufferedReader().useLines { parseNdjson(it) }
             if (raw.isEmpty()) throw MalformedLlmOutputException("${harness.id} exited 0 but stdout is empty")
-            translateStream(raw, harness::translate)
+            translateStream(raw, harness.translator())
         } catch (e: MalformedLlmOutputException) {
             throw e
         } catch (e: Exception) {
@@ -139,7 +139,7 @@ internal class LlmAttemptOutput<C>(
             )
             span.setAttribute("telemetry.llm.handoff_truncated", true)
         }
-        val translated = translateStream(parsed.events, harness::translate)
+        val translated = translateStream(parsed.events, harness.translator())
         return translated.copy(malformed = translated.malformed + parsed.skippedLines)
     }
 

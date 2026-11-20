@@ -1540,7 +1540,7 @@ HMR_MCP_CONFIG     HMR_INVOCATION_CHAIN HMR_PARENT_PROCESS_ID HMR_ROOT_PROCESS_I
 
       <figure class="diagram">
         <svg viewBox="0 0 1160 372" role="img"
-             aria-label="Two limiters in series, the lock first. Concurrent runs of one agent first need the lock named by their key template: WAIT queues behind the holder while holding no run slot, SKIP_CURRENT fails the new run at once, and KILL_OLD_RUN_CURRENT kills the holder once the new run holds a run slot — a run refused its slot leaves the holder alive. A run whose key is already held by an ancestor in its own invocation chain skips the lock entirely when acceptParentLock is set, but still needs a slot. A run whose key template still holds a placeholder its environment cannot resolve is refused before either gate, so it takes no slot and no lock. Runs waiting for a lock are bounded: by maxQueuedRuns when it is set, otherwise by maxParallelRuns, and the surplus run ends FAILED. A run holding the lock then needs a parallel-run slot bounded by maxParallelRuns: under REJECT the surplus run ends FAILED at once, under WAIT it queues, and a queue bounded by maxQueuedRuns fails the next run the same way once full. Either way the request itself has already answered 200 with a process id. Slots are per agent; lock keys are global across agents.">
+             aria-label="Two limiters in series, the lock first. Concurrent runs of one agent first need the lock named by their key template: WAIT queues behind the holder while holding no run slot, SKIP_CURRENT fails the new run at once, and KILL_OLD_RUN_CURRENT kills the holder once the new run holds a run slot — a run refused its slot leaves the holder alive. A run whose key is already held by an ancestor in its own invocation chain skips the lock entirely when acceptParentLock is set, but still needs a slot. A run whose key template still holds a placeholder its environment cannot resolve is refused before either gate, so it takes no slot and no lock. Runs waiting for a lock are bounded: by maxQueuedRuns under WAIT, by maxParallelRuns under REJECT, and the surplus run ends FAILED. A run holding the lock then needs a parallel-run slot bounded by maxParallelRuns: under REJECT the surplus run ends FAILED at once, under WAIT it queues, and a queue bounded by maxQueuedRuns fails the next run the same way once full. Either way the request itself has already answered 200 with a process id. Slots are per agent; lock keys are global across agents.">
           <defs>
             <marker id="cc-arrow" viewBox="0 0 10 10" refX="9" refY="5"
                     markerWidth="6" markerHeight="6" orient="auto-start-reverse">
@@ -1585,8 +1585,8 @@ HMR_MCP_CONFIG     HMR_INVOCATION_CHAIN HMR_PARENT_PROCESS_ID HMR_ROOT_PROCESS_I
           <text class="d-row d-fail-t" x="414" y="242">SKIP_CURRENT → FAILED</text>
           <rect class="d-box d-warn" x="400" y="264" width="220" height="32" rx="4" />
           <text class="d-row d-warn-t" x="414" y="284">KILL_OLD → holder KILLED</text>
-          <text class="d-cap" x="391" y="326" text-anchor="middle">lock waiters capped by maxQueuedRuns,</text>
-          <text class="d-cap" x="391" y="341" text-anchor="middle">else by maxParallelRuns</text>
+          <text class="d-cap" x="391" y="326" text-anchor="middle">lock waiters share the maxQueuedRuns cap</text>
+          <text class="d-cap" x="391" y="341" text-anchor="middle">(under REJECT: maxParallelRuns)</text>
           <text class="d-cap" x="391" y="356" text-anchor="middle">the kill waits for the new run's slot</text>
 
           <!-- slot outcomes -->
@@ -1666,12 +1666,12 @@ onMaxParallelRuns: WAIT     # or REJECT (the run ends FAILED at once)</code></pr
 
         <article class="f">
           <h3>Bounded queue <span class="where">agent.yaml</span></h3>
-          <p>Under <code>WAIT</code> the queue is unbounded by default; <code>maxQueuedRuns</code> makes the surplus fail
-            fast instead of pinning process rows forever — the call still returns its process id, and the run ends
-            <code>FAILED</code>. It bounds the lock wait too: with it set, lock waiters and slot waiters share the one
-            cap, and without it (or under <code>REJECT</code>) an agent may have at most
-            <code>maxParallelRuns</code> runs waiting for a lock.</p>
-          <pre><code>maxQueuedRuns: 50</code></pre>
+          <p>Under <code>WAIT</code> the queue is always bounded: <code>maxQueuedRuns</code> defaults to
+            <code>10 × maxParallelRuns</code> and makes the surplus fail fast instead of pinning process rows
+            forever — the call still returns its process id, and the run ends <code>FAILED</code>. It bounds the lock
+            wait too: lock waiters and slot waiters share the one cap, and under <code>REJECT</code> an agent may have
+            at most <code>maxParallelRuns</code> runs waiting for a lock.</p>
+          <pre><code>maxQueuedRuns: 20</code></pre>
         </article>
 
         <article class="f">

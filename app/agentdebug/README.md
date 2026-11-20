@@ -348,7 +348,7 @@ The `agentdebug` module depends on `:app` and reuses all production executor cla
 - `ResultToEnvMapper`, `TextCompiler`, `SysEnvResolver` — used directly
 
 Five thin stubs replace production services:
-- `DebugFileOperations` — delegates to `kotlin.io.path` extensions
+- `DebugFileOperations` — delegates to `kotlin.io.path` extensions; `readTextBounded` delegates to `LocalFileOperations` (size cap, no-follow open)
 - `DebugLangfuseClient` — uses `TextCompiler` for templates; warns on Langfuse fetches
 - `SkipRunAgentExecutor` / `SkipLangGraphExecutor` / `SkipRunnerCmdExecutor` —
   placeholders that satisfy `CommandExecutorFactory`; the runner prints `[SKIP]`
