@@ -205,8 +205,8 @@ class DispatchRepository(
         }
 
     /**
-     * Claims a PENDING dispatch for firing (PENDING→DISPATCHING). False if it was no longer
-     * PENDING or its TTL has lapsed, swept or not (ADR-0021).
+     * Claims a PENDING dispatch for firing (PENDING→DISPATCHING). False if it was no longer PENDING or its TTL has
+     * lapsed (ADR-0021), so a lapsed dispatch not yet swept to CANCELLED never fires when its question is answered.
      */
     suspend fun claim(id: Int): Boolean = records.claim(id)
 

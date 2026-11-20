@@ -214,8 +214,8 @@ class ContinuationRepository(
         }
 
     /**
-     * Claims a PENDING continuation for firing (PENDING→DISPATCHING). False if it was no longer
-     * PENDING or its TTL has lapsed, swept or not (ADR-0021).
+     * Claims a PENDING continuation for firing (PENDING→DISPATCHING). False if it was no longer PENDING or its TTL has
+     * lapsed (ADR-0021), so a lapsed continuation not yet swept to EXPIRED never fires when its watched process ends.
      */
     suspend fun claim(id: Int): Boolean = records.claim(id)
 
