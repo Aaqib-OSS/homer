@@ -199,7 +199,6 @@ tasks.test {
             repoRoot.resolve("SECURITY.md"),
             repoRoot.resolve("console/DEPLOYMENT.md"),
             repoRoot.resolve("docs/homer-feature-atlas.html"),
-            repoRoot.resolve("rebuild-docker.sh"),
             repoRoot.resolve(".env.example"),
             // Inside :app, but not compiled into any test input.
             repoRoot.resolve("app/app/src/main/kotlin/homer/app/services/persistence/CLAUDE.md"),

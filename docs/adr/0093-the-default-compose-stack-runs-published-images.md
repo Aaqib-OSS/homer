@@ -150,3 +150,11 @@ recorded here.
 - **The backend's root filesystem stays writable.** Agents and Claude write to `$HOME`, caches and
   `/tmp` on paths nobody can list in advance, so a read-only root would break the core function.
   The workspace bind mount is the intended writable surface.
+
+## Amendment (2026-11-20): `rebuild-docker.sh` is removed
+
+The decision above names `rebuild-docker.sh` as the scripted way to stack the dev overlay on the
+build overlay. No doc told anyone to run it, it called the standalone `docker-compose` binary
+instead of `docker compose`, and it deleted the dev overlay's `node_modules` and `next_cache`
+volumes on every run without saying so. It is removed. `DOCKER.md` documents the build-and-dev
+command, and the one-time reset of a broken `node_modules` volume with `docker compose down -v`.
