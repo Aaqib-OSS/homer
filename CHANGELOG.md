@@ -17,6 +17,7 @@
 - **Fixed: a Kubernetes exec channel closed without a status fails as lost** — Such a step now fails with `ExecChannelLost` and kills its leftover command, instead of reporting exit code -1. See [ADR-0103](docs/adr/0103-a-lost-exec-channel-kills-and-fails-without-reattach.md).
 - **Fixed: a question answer is bounded by `server.questions.maxTextLength`** — `POST /api/v1/questions/{id}/answer` now answers `400` for an answer longer than the cap that already bounded the question.
 - **Fixed: agent reloads racing each other** — A reload that another reload overtakes during its scan rescans instead of publishing its older view, and one overtaken 8 times reports that in `errors` with no agent changes, so it kills no queued runs.
+- **Fixed: the log tail after a restart follows the run's recorded output file** — `GET /api/v1/stream/processes/{processId}/logs` serves the stdout/stderr path the step recorded instead of guessing `cmd_N`, and answers `404` when the step recorded no file or a path that is not a file directly inside the run's artifacts.
 - **Changed: a continuation marks a transformed result too large to deliver** — A resume payload whose result is over the 4 MiB transform cap now carries `resultTooLarge: true`, and `homer_fanout` reports it on stderr. See [ADR-0025](docs/adr/0025-capability-token-result-read.md).
 
 ## [1.43.2] - 2026-11-18

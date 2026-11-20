@@ -64,7 +64,10 @@ always-on "does the production Dockerfile still build" gate.
   (`ConcurrencyAndLimitsTest`, `ProcessIsolationTest`). The full wait queue
   is covered without a saturation race through that fixture, so the surplus
   waiter is the first one and the refusal is deterministic once the holder
-  is `WORKING`.
+  is `WORKING`. An agent reload that concurrent reloads overtake eight times is
+  a timing race, and the log tail after a server restart needs the stack
+  restarted mid-suite, so neither is black-box testable; `AgentsServiceTest`
+  and `LogTailServiceTest` guard them.
 - **External pull-mode runners are covered; ssh and kubernetes are not.**
   `ExternalRunnerTest` runs against two real `homer-runner` containers
   (`homer-runner` serving `e2e-external`, `homer-runner-crash` serving

@@ -131,7 +131,7 @@ there and a row here (SQLite rule 1 in
 [`app/CLAUDE.md`](../../../../../../../../CLAUDE.md) § SQLite rules). The table is
 an index, not the reasoning: why a version exists, what it measured and what it
 left alone are in the ADR the row names, and § Schema constraints keeps only the
-constraints that ADR does not state. Four rows name none — v1, v9, v11 and v28 —
+constraints that ADR does not state. Five rows name none — v1, v9, v11, v28 and v34 —
 and for those no ADR records the reasoning, so the row's phrase is the whole of it.
 `SchemaEquivalenceTest` fails when a database the steps upgraded differs from a fresh one
 (columns, indexes, CHECK constraints; drift not yet fixed is listed there) or when this table's
@@ -177,7 +177,7 @@ so a fresh database would carry one an upgraded one lacks (`SchemaEquivalenceTes
 | 31 | `processes.cooldown_key` + two indexes; `processes.stop`; `pending_hooks` table | [0106](../../../../../../../../../docs/adr/0106-cooldown-key-scopes-windows-per-subject.md), [0107](../../../../../../../../../docs/adr/0107-agent-status-hooks.md), [0108](../../../../../../../../../docs/adr/0108-graceful-stop-of-a-run.md) |
 | 32 | `dispatches.kind` + `dispatch_group_questions` table (its own version — a database the cooldown release stamped 31 skips every step guarded below 32) | [0109](../../../../../../../../../docs/adr/0109-grouped-ask-and-dispatch.md) |
 | 33 | `result_tokens` rebuilt without the transitional `DEFAULT ''` | [0025](../../../../../../../../../docs/adr/0025-capability-token-result-read.md) |
-| 34 | `result_tokens_expires_at` index (the token TTL sweep) | [0025](../../../../../../../../../docs/adr/0025-capability-token-result-read.md) |
+| 34 | `result_tokens_expires_at` index (the token TTL sweep) | — |
 
 ### Schema constraints
 

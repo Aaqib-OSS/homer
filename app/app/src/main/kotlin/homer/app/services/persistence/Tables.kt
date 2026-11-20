@@ -290,7 +290,7 @@ internal object ResultTokens : Table("result_tokens") {
 
     override val primaryKey = PrimaryKey(token)
 
-    // v34: the expiry sweep's due-row read and its delete. See ADR-0025.
+    // v34: the expiry sweep's due-row read and its delete.
     init {
         index("result_tokens_expires_at", false, expiresAt)
     }
