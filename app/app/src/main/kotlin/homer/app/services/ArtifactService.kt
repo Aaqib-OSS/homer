@@ -75,6 +75,7 @@ class ArtifactService(
             processInfo.artifactsDir
                 ?: return Result.failure(IllegalArgumentException("Process has no artifacts directory"))
         // A run can swap its artifacts directory for a symlink, which assertContained follows (CWE-59).
+        // Checked once here, so a swap before the file is opened is followed (AR-12).
         if (Files.isSymbolicLink(artifactsDir)) return Result.failure(IllegalArgumentException("Artifact not found"))
 
         val fullPath = artifactsDir.resolve(relativePath)
@@ -108,7 +109,7 @@ class ArtifactService(
             processInfo.artifactsDir
                 ?: return Result.failure(IllegalArgumentException("Process has no artifacts directory"))
 
-        if (!fileOperations.dirExists(artifactsDir) || Files.isSymbolicLink(artifactsDir)) {
+        if (Files.isSymbolicLink(artifactsDir) || !fileOperations.dirExists(artifactsDir)) {
             return Result.failure(IllegalArgumentException("Artifacts directory does not exist"))
         }
 
