@@ -64,6 +64,10 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
+          if [ ! -f policy/tools/pr-policy/secret-scan.sh ]; then
+            echo "::error title=Secret scan::The base branch predates the secret scan; merge main into the base branch, then re-run."
+            exit 1
+          fi
           gitleaks=$(policy/tools/pr-policy/install-gitleaks.sh "$RUNNER_TEMP/gitleaks")
           cd pr
           ../policy/tools/pr-policy/secret-scan.sh "$gitleaks" "$BASE_SHA" "$HEAD_SHA"

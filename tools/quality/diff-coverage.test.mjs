@@ -54,11 +54,14 @@ test('files under the threshold are findings with their uncovered ranges; uninst
 
 test('without a base argument the check is skipped, whatever the environment holds', () => {
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'diff-coverage-'));
+  const saved = process.env.CI_MERGE_REQUEST_DIFF_BASE_SHA;
   process.env.CI_MERGE_REQUEST_DIFF_BASE_SHA = 'HEAD';
   try {
     main([undefined, out]);
+    assert.match(fs.readFileSync(path.join(out, 'diff-coverage-summary.txt'), 'utf8'), /no pull-request base/);
   } finally {
-    delete process.env.CI_MERGE_REQUEST_DIFF_BASE_SHA;
+    if (saved === undefined) delete process.env.CI_MERGE_REQUEST_DIFF_BASE_SHA;
+    else process.env.CI_MERGE_REQUEST_DIFF_BASE_SHA = saved;
+    fs.rmSync(out, { recursive: true, force: true });
   }
-  assert.match(fs.readFileSync(path.join(out, 'diff-coverage-summary.txt'), 'utf8'), /no pull-request base/);
 });

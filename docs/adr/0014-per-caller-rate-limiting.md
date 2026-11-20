@@ -240,7 +240,7 @@ flood that no per-peer limit catches gets `429` from the aggregate login bucket
 without touching the global one; without a `password` scheme the login path
 keeps the global bucket.
 
-## Amendment 2026-11-20: Ktor held at 3.5.0, and the exit
+## Amendment (2026-11-20): Ktor held at 3.5.0, and the exit
 
 Ktor 3.5.1 runs rate limiting before authentication
 ([KTOR-9621](https://youtrack.jetbrains.com/issue/KTOR-9621)). That breaks the correctness

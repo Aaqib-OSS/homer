@@ -17,12 +17,19 @@ class Base64IntrinsicsMitigationTest {
 
     @Test
     fun `every JVM launch in the images and host scripts carries the flag before JAVA_OPTS`() {
+        val expected =
+            mapOf(
+                // The root and the non-root branch.
+                "app/entrypoint.sh" to 2,
+                // The agentdebug wrapper and the homer-runner entrypoint.
+                "app/Dockerfile" to 2,
+                "app/homer-runner.sh" to 1,
+                "app/agentdebug.sh" to 1,
+            )
         val all =
-            launches("app/entrypoint.sh") + launches("app/Dockerfile") + launches("app/homer-runner.sh") +
-                launches("app/agentdebug.sh")
-
-        // entrypoint.sh: root and non-root branch; Dockerfile: the agentdebug wrapper and homer-runner; one per host script.
-        assertEquals(6, all.size, "expected six JVM launches, found: $all")
+            expected.flatMap { (path, count) ->
+                launches(path).also { assertEquals(count, it.size, "expected $count JVM launches in $path, found: $it") }
+            }
         all.forEach { line ->
             assertTrue("-XX:-UseBASE64Intrinsics" in line, "JVM launch without the flag: $line")
             if ("\$JAVA_OPTS" in line) {

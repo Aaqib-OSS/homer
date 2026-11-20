@@ -11,10 +11,11 @@ amended: 2026-10-09, 2026-11-20
 > module: it carries the same `licenseReport { }` gate, and its report feeds the merged
 > notices alongside `:app` and `:agentdebug`.
 
-> **Amendment (2026-11-20):** the console image's LGPL-3.0 `libvips` gate moved from the
-> GitLab `build-homer-console` job to the Release workflow's `LGPL gate` step, which scans each
-> platform's image before the push. `console/Dockerfile` can prune `sharp` and `@img/*` because
-> `next.config.js` sets `images.unoptimized`, so Next never loads them at run time.
+> **Amendment (2026-11-20) — the console image's LGPL gate moved to the Release workflow.** The
+> LGPL-3.0 `libvips` gate moved from the GitLab `build-homer-console` job to the Release
+> workflow's `LGPL gate` step, which scans each platform's image before the push.
+> `console/Dockerfile` can prune `sharp` and `@img/*` because `next.config.js` sets
+> `images.unoptimized`, so Next never loads them at run time.
 
 ## Context and Problem Statement
 
