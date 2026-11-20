@@ -151,9 +151,8 @@ class PodSpecBuilder(
             V1VolumeMount()
                 .name(WORKSPACE_VOLUME_NAME)
                 .mountPath(KubernetesRunnerSession.REMOTE_PROJECT_ROOT),
-            // Second mount of the same volume: kubelet creates the subPath dir,
-            // so the container's workingDir exists at start (runc rejects a
-            // missing cwd).
+            // kubelet creates this subPath cwd with the volume root's mode, writable by a non-root user; a missing cwd
+            // would be made by runc, root-owned 0755 (ADR-0054, amendment of 2026-11-20).
             V1VolumeMount()
                 .name(WORKSPACE_VOLUME_NAME)
                 .mountPath(KubernetesRunnerSession.REMOTE_WORKDIR)

@@ -4,11 +4,9 @@ import homer.app.runners.ConfiguredRunners
 import org.slf4j.LoggerFactory
 
 /**
- * On Homer boot, scan every configured Kubernetes runner for pods (and, in Job mode, Jobs) labeled
- * `app.kubernetes.io/managed-by=homer` and delete any whose `homer.app/process-id` does not
- * correspond to an active process ([ActiveRunIds], in production `ProcessManager`). Without the
- * sweep, orphans left by an unclean restart — Homer's in-memory map is empty at boot — would
- * linger until the k8s TTL controller reaps them, or forever. Single-replica assumption applies.
+ * At boot, deletes every configured Kubernetes runner's Homer-managed pods (and Jobs in Job mode) whose
+ * `homer.app/process-id` is not an active process of [ActiveRunIds], so an unclean restart's orphans do not linger.
+ * Assumes one Homer replica per instance.
  */
 class KubernetesRunnerStartupSweep(
     private val runners: ConfiguredRunners,

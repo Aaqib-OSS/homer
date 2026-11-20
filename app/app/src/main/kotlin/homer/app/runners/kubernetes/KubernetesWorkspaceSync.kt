@@ -10,12 +10,9 @@ import kotlin.io.path.isDirectory
 import kotlin.io.path.isRegularFile
 
 /**
- * Workspace transfer into a pod over the exec channel: one gzip'd tar stream per direction (the
- * `kubectl cp` mechanism), so many small files cost one round-trip; requires `tar` + `gzip` in the
- * image (SERVER.md). Semantics mirror the ssh WorkspaceSync: dir uploads copy contents, excludes
- * match entry names at any depth (uploads only) unless prefixed with `/`, which anchors the
- * exclude to the upload root; missing remote downloads are silent no-ops. Downloads honor a
- * [DownloadMode] (OVERLAY/OVERWRITE/MIRROR). See ADR-0043 for the transfer mechanism and ADR-0055 for the mirror/prune semantics.
+ * Workspace transfer into a pod as one gzip'd tar stream per direction over exec (ADR-0043); the image needs `tar` and
+ * `gzip`. As in the ssh WorkspaceSync, upload excludes match names at any depth unless `/`-anchored, a missing remote
+ * download is a no-op, and downloads honour a [DownloadMode] (ADR-0055).
  */
 class KubernetesWorkspaceSync(
     private val execClient: KubernetesExecClient,
@@ -25,12 +22,8 @@ class KubernetesWorkspaceSync(
     fun mkdirs(remoteDir: String) = runToExit(listOf("mkdir", "-p", remoteDir))
 
     /**
-     * Uploads [local] (file or directory) to [remote] in the pod. Directory uploads copy contents,
-     * matched against [excludes] as described in the class doc. [omitDirEntries] holds
-     * root-relative directory paths (e.g. `"workdir"`) whose own tar directory entry is skipped
-     * while its contents still upload: the pod pre-creates such directories as kubelet-owned
-     * subPath mounts, and GNU tar's directory-entry restore (chmod/utime) fails there under
-     * `runAsNonRoot`; omitting just the entry lets tar write files in without touching the directory itself. See ADR-0054.
+     * Uploads [local] (file or directory contents) to [remote] in the pod, filtered by [excludes]. Each root-relative path
+     * in [omitDirEntries] uploads its contents but not its own directory entry, for a pre-created dir (ADR-0054).
      */
     fun upload(
         local: Path,
@@ -80,8 +73,8 @@ class KubernetesWorkspaceSync(
         val stderr = drain(proc.errorStream)
         val materialized =
             try {
-                // The pod's tar is attacker-replaceable, and this path has no configurable
-                // ceiling of its own, so it spends the shared default (§12 rule 4).
+                // The pod's tar is attacker-replaceable and this path has no ceiling of its own, so it spends the
+                // shared default (ADR-0047 rule 4, ADR-0066).
                 TarStreams.extract(
                     proc.inputStream,
                     local,
@@ -110,11 +103,8 @@ class KubernetesWorkspaceSync(
     }
 
     /**
-     * Runs a POSIX `test`-style probe and distinguishes the answer from a
-     * failure: exit 0 -> true, exit 1 -> false, anything else (non-zero/
-     * non-one exit, or a channel/timeout failure) throws with stderr. Mirrors
-     * the ssh WorkspaceSync's posture of rethrowing anything that isn't a
-     * recognized "doesn't exist" signal.
+     * Runs a POSIX `test`-style probe: exit 0 is true, exit 1 false, and anything else (another exit, a lost channel, a
+     * timeout) throws with stderr, as the ssh WorkspaceSync rethrows all but a recognised "does not exist".
      */
     private fun probe(argv: List<String>): Boolean {
         val proc = execClient.start(namespace, podName, argv, stdin = false)

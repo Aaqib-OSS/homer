@@ -9,12 +9,8 @@ import io.kubernetes.client.util.PatchUtils
 import org.slf4j.LoggerFactory
 
 /**
- * Shared pod teardown for session close and startup failures: delete
- * outright, or — when keepPodOnFailure applies — label the pod kept and
- * bound its lifetime with a TTL so the startup sweep skips it. Both
- * operations are 404-tolerant and never throw ApiException. If the
- * keep-with-TTL patch itself fails (non-404), keepWithTtl falls back to
- * deleting the pod rather than leaving it unbounded and unlabeled.
+ * Pod teardown for session close and startup failures: delete, or under keepPodOnFailure label the pod kept with a TTL
+ * the startup sweep honours. 404-tolerant, never throws ApiException; a failed keep patch deletes the pod instead.
  */
 object PodCleanup {
     fun delete(

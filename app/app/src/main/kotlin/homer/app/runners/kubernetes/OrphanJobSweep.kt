@@ -6,12 +6,9 @@ import io.kubernetes.client.openapi.apis.CoreV1Api
 import io.kubernetes.client.openapi.models.V1Job
 
 /**
- * List every Homer-managed pod belonging to THIS instance in [namespace] and delete any whose `homer.app/process-id`
- * label is not in [activeProcessIds]. When [instanceId] is set the list selector is scoped to `homer.app/instance=<id>`
- * so a boot never deletes another Homer instance's pods in a shared namespace; when unset (blank) it falls back to the
- * historic namespace-wide selector. With [batchApi] (Job mode only) the same rule deletes orphan Jobs, and the pod half
- * leaves Job-owned pods to it; without it no batch call is made. Never throws; individual failures are reported via
- * `SweepResult.errors`.
+ * Deletes this instance's Homer-managed pods in [namespace] whose `homer.app/process-id` is not in [activeProcessIds]; a
+ * blank [instanceId] selects namespace-wide. With [batchApi] (Job mode) orphan Jobs go too, Job-owned pods with them.
+ * Never throws: failures are reported in `SweepResult.errors`.
  */
 internal fun sweepWorkloadOrphans(
     api: CoreV1Api,

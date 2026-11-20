@@ -7,12 +7,8 @@ import kotlinx.coroutines.CompletableDeferred
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * One run waiting for a session. State moves PENDING → CLAIMED (a consumer took
- * it) or PENDING → CANCELLED/EXPIRED (the run stopped waiting); the CAS is what
- * settles the race between a consumer and a timeout. A consumer that claims a
- * request (via the queue's `take`) must always eventually call [complete] or
- * [fail] — otherwise the waiting run only fails at its second claim-TTL wait,
- * not immediately. See ADR-0066.
+ * One run waiting for a session (ADR-0066): PENDING → CLAIMED by a consumer, or → CANCELLED/EXPIRED when the run stops
+ * waiting; the CAS settles that race. A consumer that claims it must eventually call [complete] or [fail].
  */
 class ClaimRequest internal constructor(
     val params: RunnerSessionParams,
@@ -45,11 +41,8 @@ class ClaimRequest internal constructor(
 }
 
 /**
- * A run's affinity inside the queue: the memory key it records a claim under, the
- * instance it prefers (resolved when the request was submitted), and how long
- * that preference orders consumers. The key's flow root is Homer-stamped run
- * state, never an agent-writable value, and the instance identity is
- * alias-qualified, so a preference can never cross a domain. See ADR-0099.
+ * A run's affinity in the queue (ADR-0099): the key it records a claim under, from Homer-stamped run state only, the
+ * alias-qualified instance it prefers (resolved at submit), and how long that preference orders consumers.
  */
 class ClaimAffinity(
     val rootProcessId: Int,

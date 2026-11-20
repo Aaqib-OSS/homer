@@ -14,11 +14,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Claim-queue consumer for one configured runner (`local`, `ssh`, `kubernetes`).
- * Holds `concurrency` permits; takes the oldest matching
- * request only when it holds a free permit; opens the real session in a child
- * coroutine so a slow backend (pod start) never serialises other claims. The
- * permit is released when the run closes the session. See ADR-0066.
+ * Claim-queue consumer for one configured runner (ADR-0066): takes the oldest matching request only with a free
+ * `concurrency` permit and opens its session in a child coroutine, so a slow backend never serialises other claims.
+ * The permit is freed when the run closes the session.
  */
 class StaticRunnerConsumer(
     private val runner: Runner,
@@ -32,9 +30,7 @@ class StaticRunnerConsumer(
 
     override val alias: String get() = runner.alias
 
-    // A static runner is its own single instance: `local`/`ssh` are one machine, and a
-    // `kubernetes` preference resolves to the only consumer that would have served the run
-    // anyway, so affinity is a no-op there with no per-kind branch. See ADR-0099.
+    // A static runner is its own single instance, so affinity needs no per-kind branch (ADR-0099).
     override val affinityInstance: String get() = runner.alias
 
     private val permits = Semaphore(concurrency)

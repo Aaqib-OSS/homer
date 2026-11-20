@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-08-13
+amended: 2026-11-20
 deciders: Lukáš Vlk
 ---
 # ADR-0041: Reap orphaned processes via the process group
@@ -101,3 +102,12 @@ fallback. Reaping is unconditional where supported — there is no config flag.
 
 `ProcessGroupSupport`, `LocalShellExecutor`, `KubernetesShellExecutor.killInsidePod`,
 `RemoteCommandBuilder.buildReaping`, `SshShellExecutor`, `SshRunner.canReapProcessGroup`.
+
+## Amendment (2026-11-20): Kubernetes kills run the shell's builtin `kill`
+
+Both Kubernetes kills, the pod-wide `kill -KILL -1` and the process-group kill of ADR-0108, run
+through `sh -c`, so the shell's builtin `kill` parses the target, never the procps-ng binary.
+procps-ng `kill` (checked at 4.0.4) takes a negative pid argument from its first digit only
+(procps-ng issue 354), so `kill -INT -432` would signal group 4. A single-digit `-1` parses
+correctly there; an earlier code comment claimed otherwise. The pod-wide kill uses the builtin too,
+so both kills parse their target the same way in every image.

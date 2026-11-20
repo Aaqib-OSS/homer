@@ -4,10 +4,9 @@ import io.kubernetes.client.openapi.apis.BatchV1Api
 import io.kubernetes.client.openapi.apis.CoreV1Api
 
 /**
- * The checks one Job-mode startup runs each time its Job has no pod yet (ADR-0100): a `Failed` condition
- * or a `FailedCreate` event other than a quota refusal ends the startup; a quota refusal, which the Job
- * controller retries, is waited out and remembered for the timeout message. Reads are best-effort: one that
- * fails finds nothing, and `podStartTimeoutSeconds` still bounds the wait.
+ * The checks one Job-mode startup runs while its Job has no pod (ADR-0100): a `Failed` condition or a non-quota
+ * `FailedCreate` event ends the startup; a quota refusal is waited out and kept for the timeout message. A failed read
+ * finds nothing, and `podStartTimeoutSeconds` still bounds the wait.
  */
 internal class JobStartupCheck(
     private val api: CoreV1Api,

@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-11-04
+amended: 2026-11-20
 deciders: Lukáš Vlk
 consulted: ADR-0047, ADR-0058, ADR-0066, ADR-0077, ADR-0096
 ---
@@ -128,3 +129,10 @@ Implemented in `RunnerAffinityMemory`, `ClaimAffinity` (on `ClaimRequest`),
 preference precedes is ADR-0096; the flow root is ADR-0058; the instance-name
 uniqueness refusal follows the domain-refusal model of ADR-0066 and the
 alias-hiding rule of ADR-0077.
+
+## Amendment (2026-11-20): why the memory's bounds are what they are
+
+`RunnerAffinityMemory`'s bounds, 1024 entries and a six-hour TTL, are constants local to the memory,
+not config (ADR-0047 rules 4 and 5). Six hours covers a flow's build, fix and verify rounds while it parks on human gates and CI
+waits, and is short enough that an instance reused for other work ages out. A stale entry costs the
+next run of its key one fallback, and a lost one a cold start.

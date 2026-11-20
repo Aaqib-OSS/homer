@@ -32,12 +32,8 @@ data class PodLifecycle(
     val jobName: String? = null,
     val batchApi: BatchV1Api? = null,
     val tracer: Tracer? = null,
-    // The run's context, captured at openSession. close() happens after the run's
-    // own scope has unwound, so there is no current context to inherit — without
-    // this the close span becomes a NEW ROOT, and a new root is sampled on its own
-    // rather than following the run. That is what `telemetry.export: OFF` relies on
-    // to mute a run: the root is valid but unsampled and ParentBased drops the
-    // subtree. An unparented span escapes it. See ADR-0050.
+    // The run's context, captured at openSession: close() runs after the run's scope, and an unparented close span
+    // would be a new root that escapes `telemetry.export: OFF` (ADR-0050).
     val parentContext: Context = Context.root(),
 )
 
@@ -132,12 +128,8 @@ class KubernetesRunnerSession(
         excludes: List<String>,
     ) = withContext(Dispatchers.IO) {
         val remote = remotePath(remoteRelative)
-        // The pod pre-creates workdir as a root-owned kubelet subPath dir, so a workdir tar
-        // directory entry makes GNU tar fail restoring its mtime under runAsNonRoot. Kept
-        // workspaces need workdir content retained between runs, so it can't be excluded
-        // outright: omit only the top-level directory entry itself (root-relative, so a
-        // workspace-authored nested workdir still gets its own entry) — tar then writes
-        // its contents without ever touching the pre-created directory. See ADR-0054.
+        // Only the top-level workdir's own tar entry is omitted: GNU tar cannot restore the mtime of that kubelet-made
+        // subPath dir under runAsNonRoot, and a kept workspace still needs its content (ADR-0054).
         val omitDirEntries = if (remote == REMOTE_PROJECT_ROOT) setOf("workdir") else emptySet()
         sync.upload(local, remote, syncExcludes + excludes, omitDirEntries)
     }
@@ -168,10 +160,8 @@ class KubernetesRunnerSession(
     }
 
     /**
-     * The pod's `status.startTime` in epoch seconds, clamped to the EARLIER of it and the
-     * `createdAt` Homer recorded when it created the pod: the pod-reported value is outside
-     * Homer's trust boundary, so a skewed one may shorten the deadline but never extend it
-     * (§12 rule 2). One read; a failed read falls back to `createdAt`.
+     * The pod's `status.startTime` in epoch seconds, clamped to the earlier of it and Homer's recorded `createdAt`: a
+     * skewed pod-reported value may shorten the deadline, never extend it (ADR-0047 rule 2). A failed read uses `createdAt`.
      */
     private fun podStartEpochSec(): Long? {
         val reported =

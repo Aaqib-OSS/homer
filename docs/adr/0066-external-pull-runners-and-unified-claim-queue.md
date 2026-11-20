@@ -206,3 +206,11 @@ point of use, not at decode.
   can still be in flight; the wait is that flight, not a retry budget (§12 rule 5). A clean result
   over truncated output is never returned: a `!<claude>` step would then fail on a missing `result`
   event instead of on its real cause.
+
+## Amendment (2026-11-20): a claimed run waits once more for its session
+
+The claim TTL bounds the wait for a claim, not the opening of a session. A run claimed when its TTL
+expires waits once more, for the same time, for its consumer to deliver the session (a pod start, an
+ssh connect). That second wait only backstops a consumer that never calls `complete()` or `fail()`,
+so a run fails after at most twice its TTL instead of hanging. A session delivered after the run
+stopped waiting is closed, by the consumer or by the queue.

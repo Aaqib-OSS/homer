@@ -12,10 +12,8 @@ internal const val EXEC_NO_EXIT_STATUS_SENTINEL = -1975219
 internal fun isNoExitStatus(exitValue: Int): Boolean = exitValue < 0
 
 /**
- * Seam over io.kubernetes.client.Exec so KubernetesShellExecutor can
- * be unit-tested without a real cluster. Returning java.lang.Process
- * matches what the upstream client produces — its stdout/stderr/stdin
- * streams are wired to the remote pod via a websocket.
+ * Seam over io.kubernetes.client.Exec, so KubernetesShellExecutor is testable without a cluster. The returned [Process]'s
+ * streams are wired to the pod over the exec websocket, as the upstream client's are.
  */
 fun interface KubernetesExecClient {
     fun start(

@@ -21,10 +21,8 @@ internal class PodProcessControl(
     private val setsidPrefix: List<String>? by lazy { probeSetsid() }
 
     /**
-     * The pod-side file this command's group leader records its pid (its pgid) in, or null when
-     * [interruptGrace] is null or the pod has no `setsid` — either way today's launch is used
-     * unchanged. The file lives under the workspace dir from the exec env (`HMR_WORK_DIR`) when
-     * present, else a `.homer` path relative to the exec's cwd. See ADR-0108.
+     * The pod-side file this command's group leader records its pid (its pgid) in, under `HMR_WORK_DIR` or else a
+     * relative `.homer`; null without [interruptGrace] or a pod `setsid`, and the launch is then unchanged (ADR-0108).
      */
     fun pgidFileFor(
         env: Map<String, String>,
@@ -36,10 +34,8 @@ internal class PodProcessControl(
     }
 
     /**
-     * [command] wrapped so it leads its own process group: `setsid` makes the inner `sh` the new
-     * session leader, which records its own pid — the group id — to `$0` and `exec`s the argv in
-     * place, so the command keeps its pid, exit code, redirected streams and stdin. Mirrors
-     * RemoteCommandBuilder.buildReaping (ADR-0041).
+     * [command] wrapped to lead its own process group: under `setsid` an inner `sh` records its pid, the group id, to `$0`
+     * and `exec`s the argv, so the command keeps its pid, exit code, streams and stdin (ADR-0041).
      */
     fun setsidLaunch(
         pgidFile: String,
@@ -47,11 +43,8 @@ internal class PodProcessControl(
     ): List<String> = setsidPrefix.orEmpty() + listOf("sh", "-c", PGID_SCRIPT, pgidFile) + command
 
     /**
-     * Stops the pod's leftover command. On the command's own timeout, with a grace and a recorded
-     * pgid, its process group is SIGINTed and — after the grace — SIGKILLed; any failure of that
-     * path (no file, a rejected value, an exec error) falls back to today's pod-wide
-     * `kill -KILL -1`. A cancellation or cap trip keeps the immediate pod-wide kill: only the
-     * command's own timeout means it ran long enough for a graceful stop to make sense. See ADR-0108.
+     * Stops the pod's leftover command. Only on its own timeout, with a grace and a recorded pgid, is its group sent SIGINT
+     * and SIGKILL after the grace; otherwise, or when that fails, the pod-wide `kill -KILL -1` runs at once (ADR-0108).
      */
     fun killPod(
         interruptGrace: Duration?,
@@ -63,10 +56,8 @@ internal class PodProcessControl(
     }
 
     /**
-     * The pod's `setsid` prefix, or null where it has none — then the command is launched unchanged
-     * and no pgid is recorded. `-w` (util-linux) waits for the child, so a setsid that has to fork
-     * cannot close the exec channel before the command ends; BusyBox's setsid takes no `-w` and
-     * waits itself.
+     * The pod's `setsid` prefix, or null where it has none. util-linux's needs `-w` to wait for a forked child, or the exec
+     * channel could close before the command ends; BusyBox's takes no `-w` and waits itself.
      */
     private fun probeSetsid(): List<String>? = SETSID_FORMS.firstOrNull { probeRuns(it) }
 
@@ -112,11 +103,8 @@ internal class PodProcessControl(
     }
 
     /**
-     * The script the signalling exec runs: read the pgid file, refuse it unless it is a plain
-     * integer greater than 1 ([PGID_GUARD] — the file is agent-writable, so its content is
-     * attacker-controlled, §12 rule 2), SIGINT the group, wait out the grace, SIGKILL it. Any
-     * refused value or failed kill exits non-zero, so [killPod] falls back to the pod-wide kill
-     * rather than trusting a signal that may not have reached a group. See ADR-0108.
+     * The signalling exec's script: refuse the pgid file's value unless [PGID_GUARD] passes (ADR-0047 rule 2), SIGINT the
+     * group, wait out the grace, SIGKILL it. A refusal or a failed kill exits non-zero, so [killPod] falls back pod-wide.
      */
     private fun interruptScript(grace: Duration): String =
         "p=\$(cat \"\$1\" 2>/dev/null); ${KubernetesShellExecutor.PGID_GUARD}; " +
@@ -125,8 +113,7 @@ internal class PodProcessControl(
 
     /** Kills every process in the pod's main container PID namespace. */
     fun killInsidePod() {
-        // Via the sh builtin: the procps `kill` binary (debian-ish images)
-        // misparses the negative target `-1`; the dash/ash builtins accept it.
+        // The sh builtin, as for the group kill: procps `kill` truncates a multi-digit negative pid (ADR-0041).
         val killProc =
             execClient.start(
                 namespace,

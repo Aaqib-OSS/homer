@@ -31,12 +31,9 @@ import kotlin.io.path.outputStream
 import kotlin.time.Duration
 
 /**
- * Runs a command inside an already-started pod by opening a new exec
- * channel per call. Preserves today's argv-list semantics: Cmd runs
- * unshelled via `env KEY=VAL ... argv`; only Script requests a shell,
- * and that is already encoded in the argv it passes us. With an
- * `interruptGrace` (ADR-0108) the command is additionally wrapped in
- * `setsid`, so its process group can be interrupted before the kill.
+ * Runs each command in an already-started pod over a new exec channel: a Cmd runs unshelled as `env KEY=VAL ... argv`,
+ * and only a Script's argv asks for a shell. With an `interruptGrace` the command is wrapped in `setsid`, so its process
+ * group can be interrupted before the kill (ADR-0108).
  */
 class KubernetesShellExecutor(
     private val execClient: KubernetesExecClient,
@@ -102,11 +99,8 @@ class KubernetesShellExecutor(
         }
 
     /**
-     * Feeds [stdIn] on a separate job so a container that never drains its
-     * stdin can't block the caller's IO thread forever; the monitor runs
-     * concurrently and, on a trip, kills the exec, unblocking the write. Failures
-     * are swallowed (broken pipe on teardown / early exit is not the command's
-     * fault). Mirrors LocalShellExecutor.
+     * Feeds [stdIn] on its own job, so a container that never drains stdin cannot block the caller; a kill unblocks the
+     * write. Failures are swallowed: a broken pipe on teardown or an early exit is not the command's fault.
      */
     private fun CoroutineScope.feedStdin(
         remote: Process,
@@ -159,10 +153,8 @@ class KubernetesShellExecutor(
     }
 
     /**
-     * A fast-exiting command can overshoot the cap between the last poll and
-     * channel close; the pumps have now flushed all output, so re-check and
-     * fail instead of accepting the oversized artifact. Done inline (not via
-     * the pod-wide kill) since the command already exited.
+     * Fails an exited command whose flushed output passed the cap, which a fast exit can do between the last poll and the
+     * channel close. Inline, not via the pod-wide kill, as the command already exited.
      */
     private suspend fun failIfOverCap(
         stdOut: Path,
@@ -220,11 +212,9 @@ class KubernetesShellExecutor(
     }
 
     /**
-     * The exited command's code. After a non-zero exit or a failed exec channel the pod's status is read
-     * once (a signal exit 137/143 re-reads it for up to [stopReasonBudgetMs], as Kubernetes records the
-     * stop reason a moment after the kill): a pod Kubernetes stopped (deadline, eviction, OOM, deletion) is a
-     * [PodFailedDuringExecutionException] carrying the reason; a channel lost while the pod still runs stops the
-     * leftover command and fails as [EXEC_CHANNEL_LOST], naming the cause's class and masked text in its message.
+     * The exited command's code. After a non-zero exit or a lost channel, a pod Kubernetes stopped fails with its reason
+     * (re-read up to [stopReasonBudgetMs] after a signal exit); a channel lost on a running pod kills the leftover command
+     * and fails as [EXEC_CHANNEL_LOST] (ADR-0103).
      */
     private suspend fun exitCodeOf(
         remote: Process,
@@ -257,10 +247,8 @@ class KubernetesShellExecutor(
         }
 
     /**
-     * The step error's text for a channel lost on a live pod: what closed the channel and the pod's last event.
-     * The exec URL carries the argv, so every env value long enough to be a credential is masked, in its raw
-     * form and in the query-encoded form it takes in that URL (ADR-0047 rule 7), and the text is bounded to one
-     * line of [TERMINATION_MESSAGE_MAX_CHARS].
+     * The step error for a channel lost on a live pod: the cause and the pod's last event, on one line of at most
+     * [TERMINATION_MESSAGE_MAX_CHARS], with credential-length env values masked by [execUrlRedactor] (ADR-0047 rule 7).
      */
     private fun channelLostMessage(
         cause: Throwable?,
@@ -305,10 +293,8 @@ class KubernetesShellExecutor(
         }
 
     /**
-     * Copies one exec stream into [target] on a daemon thread. [join] waits at most its bound; past
-     * it the pump's file and source are closed, and a pump that has not opened its file yet is kept
-     * from opening it, so nothing it reads later reaches the artifact or overwrites a marker written
-     * after the join. Mirrors LocalShellExecutor's StdoutPump.
+     * Copies one exec stream into [target] on a daemon thread. Past [join]'s bound its file and source are closed and an
+     * unopened file is never opened, so a late read cannot reach the artifact or overwrite a marker written after the join.
      */
     private class OutputPump(
         private val source: InputStream,
@@ -367,9 +353,8 @@ class KubernetesShellExecutor(
         internal const val SIGNAL_REJECTED = 3
 
         /**
-         * Refuses `$p` unless it is a plain integer greater than 1. `$p` comes from a file in an
-         * agent-writable directory, so it is attacker-controlled and `kill -INT -1`/`-0` must be
-         * unreachable (§12 rule 2). Shared with the tests, which run it on its own.
+         * Refuses `$p` unless it is a plain integer above 1: it comes from an agent-writable file, so `kill -INT -1`/`-0`
+         * must be unreachable (ADR-0047 rule 2). Shared with the tests, which run it on its own.
          */
         internal const val PGID_GUARD =
             "case \"\$p\" in ''|*[!0-9]*) exit $SIGNAL_REJECTED;; esac; [ \"\$p\" -gt 1 ] || exit $SIGNAL_REJECTED"
