@@ -11,11 +11,7 @@ const securityHeaders = [
 const nextConfig = {
   output: 'standalone',
   reactStrictMode: true,
-  // The console renders a single logo; server-side image optimization is not
-  // worth the ~33 MB sharp (`@img/*`) binaries it drags into the standalone
-  // bundle (and the `.next/cache/images` writes it needs). Serve images as-is.
-  // Turning this on also re-opens an LGPL-3.0 question — see the prune in
-  // Dockerfile and the CI pipeline's image license gate.
+  // Optimization needs `sharp`/`@img/*` (LGPL-3.0), which the image deletes (ADR-0056); keep it off.
   images: { unoptimized: true },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }]

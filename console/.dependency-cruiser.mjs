@@ -1,6 +1,5 @@
-// Console layering from console/CLAUDE.md § Directory layout and § Data flow, reported by
-// `npm run quality:report` (check `architecture-console`, ADR-0082), which turns every violation,
-// "warn" severity included, into a finding of a required check. Tests are not cruised.
+// Console layering from console/CLAUDE.md, reported as `architecture-console` (ADR-0082): every
+// violation, "warn" included, is a finding. Tests are not cruised.
 const LOCAL = '^(app|components|lib|types|config)/';
 
 const config = {

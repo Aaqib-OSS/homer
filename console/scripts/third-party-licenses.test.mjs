@@ -15,16 +15,13 @@ import {
 
 const tempRoots = [];
 
-// The copyright-line rule exists twice, here and in app/buildSrc/src/main/kotlin/ThirdPartyNotices.kt.
-// This file is the shared truth table both suites assert against, so a change to one generator's
-// filter that the other does not follow fails whichever side drifted.
+// The shared copyright-line truth table; the backend suite asserts the same cases (ADR-0056).
 const COPYRIGHT_CASES_FILE = path.join(import.meta.dirname, '..', '..', 'app', 'config', 'third-party-copyright-cases.json');
 
 /**
- * A console-shaped temp dir: `package-lock.json` holding `lockPackages`, plus the subset of
- * `node_modules` that `installed` describes (a package in the lock but not here stands in for a
- * platform-optional dependency this machine skipped). `files` maps a package-relative path to its
- * content.
+ * A temp console dir with `package-lock.json` holding `lockPackages` and the `node_modules` subset
+ * `installed` describes (`files` maps a package-relative path to content); a package in the lock only
+ * stands for a skipped platform-optional one.
  */
 function consoleDir(lockPackages, installed = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'homer-licenses-'));

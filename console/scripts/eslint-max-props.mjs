@@ -1,10 +1,7 @@
 /**
- * ESLint rule `homer/max-props` (GH #311): caps the props a component takes, the console's counterpart of
- * the backend's parameter cap. A component is a function named in PascalCase — a declaration, or a
- * variable holding a function (directly or wrapped, as in `memo(...)`). Its props are the keys its first
- * parameter destructures, or, for an undestructured parameter, the members of its type when that type is
- * written inline or declared in the same file (an interface with the members it inherits from the same-file
- * interfaces and type aliases it extends). A props type it cannot resolve, or one extending a type it cannot resolve, is not counted.
+ * ESLint rule `homer/max-props`: caps the props of a PascalCase component (a function, possibly
+ * wrapped in `memo(...)`). Props are the first parameter's destructured keys, else the members of
+ * its same-file type; a type that cannot be resolved is not counted.
  */
 
 const isComponentName = (name) => /^[A-Z]/.test(name ?? '');

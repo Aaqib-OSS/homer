@@ -19,11 +19,8 @@ export interface LastCommand {
 }
 
 /**
- * Derives the "last command" status and label shown for a process from a dots
- * row the caller already computed (`commandDotStates`): the state of the last
- * dot, remapped to the Last Command icon's vocabulary. Taking the dots keeps a
- * row to one classification of the executions, so the dots row and this icon
- * cannot drift — and the caller can share the same array with both.
+ * The Last Command icon's status and label, from the last dot of a row already computed by
+ * `commandDotStates`, so the dots row and the icon share one classification.
  */
 export function lastCommandFromDots(dots: CommandDot[]): LastCommand {
   const last = dots[dots.length - 1];
@@ -38,11 +35,8 @@ export function lastCommandFromDots(dots: CommandDot[]): LastCommand {
 }
 
 /**
- * When the run started: the timestamp of its first history entry, or `null`
- * when history is missing, empty or that entry is malformed — the entry is
- * agent-written, so the caller renders a placeholder rather than `NaN`.
- * `runDurationSeconds` measures from this same instant, so the two cannot
- * disagree about where a run began.
+ * When the run started: its first history entry's timestamp, or `null` when history is missing,
+ * empty or malformed (agent-written). `runDurationSeconds` measures from the same instant.
  */
 export function runStartTimestamp(process: ProcessInfo): number | null {
   const history = process.history ?? [];
@@ -54,15 +48,9 @@ export function runStartTimestamp(process: ProcessInfo): number | null {
 }
 
 /**
- * The run's elapsed seconds: its first history entry to the last one for a
- * run that ended, to `now` while it is still active. `null` when history is
- * missing, malformed or would make the span negative, so the caller renders a
- * placeholder rather than `NaN`. Before `useNow`'s first tick (`now === 0`) an
- * active run falls back to its last history entry, so the first paint is
- * stable instead of showing a run that started in 1970. The `now === 0`
- * sentinel deliberately reuses `useNow`'s convention rather than typing the
- * clock `number | null`: the hook is the only caller and already holds the
- * sentinel, so a nullable parameter would push the special case onto it.
+ * Elapsed seconds from the first history entry to the last (ended run) or to `now` (active);
+ * `null` when history is missing, malformed or the span is negative.
+ * `now === 0` is `useNow`'s pre-tick value: an active run then ends at its last entry.
  */
 export function runDurationSeconds(process: ProcessInfo, now: number): number | null {
   const start = runStartTimestamp(process);
@@ -99,16 +87,9 @@ export interface CommandDot {
 }
 
 /**
- * One dot per command the run actually executed — `ok` (resultCode 0) or
- * `failed` — with the in-flight command appended as `running` while the run is
- * WORKING. Commands a `when:` condition skipped never ran and get no dot, so the
- * Last Command icon (`lastCommandFromDots`) agrees. Commands not yet run get none
- * either: the list response carries no total command count.
- *
- * Each dot carries its own duration, derived defensively from the execution's
- * `start`/`end` (agent-written, so untrusted): a missing, non-finite or
- * reversed span yields `null` rather than `NaN`. The in-flight dot has no end
- * yet and so has none.
+ * One dot per executed command (`ok` for resultCode 0, else `failed`), plus a `running` dot for
+ * the in-flight command while WORKING. Skipped or not-yet-run commands get none. Each duration
+ * is `null` for a missing, non-finite or reversed (agent-written) span.
  */
 export function commandDotStates(process: ProcessInfo): CommandDot[] {
   const dots: CommandDot[] = (process.executions ?? [])
@@ -177,17 +158,11 @@ export function parseProcessListParams(searchParams: Pick<URLSearchParams, 'get'
   const selectedAgent = searchParams.get('agent') ?? '';
   const order = searchParams.get('order') === 'asc' ? 'asc' : 'desc';
   const offset = intAtLeast(searchParams.get('offset'), 0) ?? 0;
-  // `parent` narrows the list to the direct children of one run (ADR-0058).
   const parentProcessId = intAtLeast(searchParams.get('parent'), 1);
-  // The flat all-runs list is the default; `?view=roots` shows only the first
-  // run of each flow, with a Flow column (ADR-0058). A `parent` filter narrows
-  // to one run's children, which never have a flow to summarize, so it drops
-  // the roots filter on its own — the child list is the whole point there.
+  // A `parent` filter drops the roots view: children have no flow to summarize (ADR-0058).
   const rootsView = searchParams.get('view') === 'roots';
   const showRoots = rootsView && parentProcessId === undefined;
-  // `tag` narrows the list to runs carrying every listed subject tag (ADR-0060).
-  // Repeated in the URL as one comma-joined value; de-duped so a chip clicked
-  // twice does not add a redundant filter.
+  // `tag` is one comma-joined value: runs carrying every listed subject tag (ADR-0060).
   const selectedTags = tagFilters(searchParams.get('tag'));
   const hasFilters = anyFilter(selectedStatuses, selectedAgent, parentProcessId, selectedTags);
   return {

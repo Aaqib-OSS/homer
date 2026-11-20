@@ -1,11 +1,8 @@
 #!/usr/bin/env node
 /**
- * CRAP report for the console: per-function cyclomatic complexity (TypeScript compiler API) combined
- * with per-function statement coverage from `coverage/coverage-final.json` (`npm run test:coverage`).
- * Writes `coverage/crap/{crap-report.txt,gl-code-quality-crap.json,crap-summary.txt}`.
- *
- * Unit, complexity and coverage rules are shared with the backend's report so both stacks score
- * alike; never exits non-zero because of violations — the CI gate reads `crap-summary.txt`.
+ * CRAP report: per-function complexity (TypeScript compiler API) times statement coverage from
+ * `coverage/coverage-final.json`, written to `coverage/crap/`. Scoring rules match the backend's;
+ * violations never fail the run, the CI gate reads `crap-summary.txt` (ADR-0081).
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';

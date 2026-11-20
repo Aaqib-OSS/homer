@@ -1,16 +1,8 @@
 #!/usr/bin/env node
 /**
- * Mutation report (check `mutation-console`, ADR-0082): runs Stryker with `stryker.config.mjs` and
- * turns its JSON report into findings — every survived or uncovered mutant.
- * `--changed` mutates only the lines a pull request adds or changes in scored files — the diff
- * against `MUTATE_BASE` (a commit), or with `MUTATE_WORKTREE=1` the working tree's, uncommitted and
- * untracked files included (the diff mode, tools/quality/changed.mjs) — and skips Stryker when there
- * are none. Whole files would make
- * a pull request's run scale with the size of every file it touches (hours for a dozen components). Both
- * modes ignore static mutants, each of which reruns the whole suite.
- * Accepted exceptions (tools/quality/mutation-exceptions/console.json) leave the score and the findings
- * and are listed in `mutation-console-accepted.txt`; a full run also reports the entries matching no mutant.
- * Writes `reports/quality/mutation-console/`.
+ * Mutation report (check `mutation-console`, `docs/quality-checks.md`): Stryker's survived or uncovered
+ * mutants as findings. `--changed` mutates only lines changed against `MUTATE_BASE` (or the working
+ * tree with `MUTATE_WORKTREE=1`), skipping Stryker when there are none; accepted exceptions are left out.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -101,10 +93,8 @@ function sourceText(source, { start, end }) {
 
 /**
  * The accepted-exception key of a mutant (tools/quality/mutation-exceptions.mjs):
- * `<file relative to console/>#<mutator>#<original text>→<replacement>#<the mutated line's text>`,
- * whitespace runs collapsed to one space, the line trimmed; `<unknown>` without that line. The line text
- * keeps an entry from matching the same-text mutants elsewhere in the file. No line number, so the
- * key is the same when the mutant moves with its line.
+ * `<file relative to console/>#<mutator>#<original>→<replacement>#<mutated line text>`, whitespace
+ * collapsed, `<unknown>` without that line; no line number, so it survives the line moving.
  */
 export function mutantKey(file, mutant, source, consoleDir = CONSOLE_DIR) {
   const relative = (path.isAbsolute(file) ? path.relative(consoleDir, file) : file).split(path.sep).join('/');

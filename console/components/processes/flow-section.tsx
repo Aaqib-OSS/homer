@@ -16,9 +16,9 @@ import { Eye, EyeOff } from 'lucide-react';
 export const FLOW_RUNS_LIMIT = 500;
 
 /**
- * The Flow section of a root run's page: every visible run of the flow in id order, flat,
- * since the flow is reconstructed from stored root ids (ADR-0058). Resume segments of the
- * root's agent are hidden by default, with a toggle to show them.
+ * The Flow section of a root run's page: every visible run of the flow (by stored root id,
+ * ADR-0058) in id order, one flat list since the parent column carries the tree. Resume
+ * segments of the root's agent are hidden by default, with a toggle to show them.
  */
 export function FlowSection({
   processId,

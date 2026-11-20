@@ -132,9 +132,8 @@ export interface ProcessInfo {
   // Deep link to this run's Langfuse trace; null unless langfuse.serverUrl and
   // langfuse.projectId are configured on the server.
   langfuseTraceUrl?: string | null;
-  // Id of the run that caused this one (RunAgent parent, dispatch/continuation
-  // origin, or an external caller's header; a retry or resume keeps the source
-  // run's parent); null at the root.
+  // The run that caused this one (RunAgent parent, dispatch/continuation origin or caller
+  // header; a retry or resume keeps the source's parent); null at the root.
   parentProcessId?: number | null;
   // Id of the first run of this run's flow; null at the root itself. Filter a
   // whole flow below its root with `?rootProcessId=`. See ADR-0058.
@@ -142,10 +141,10 @@ export interface ProcessInfo {
   // Subject tags this run carries: `key:value` strings resolved from inputs at
   // start and/or declared at run time. Filter the list with `?tag=`.
   tags?: string[];
-  // Why the run ended FAILED before any command started (claim timeout, lock
-  // skip, parallel-run cap, full queue); absent for every other failure. The
-  // run that blocked this one is named in the text only when the reader may
-  // see it. See ADR-0058.
+  /**
+   * Why the run FAILED before any command started (claim timeout, lock skip, run cap, full
+   * queue); absent otherwise. It names the blocking run only if the reader may see it (ADR-0058).
+   */
   failureReason?: string | null;
   // Why and where this run was stopped gracefully; null for a run no graceful stop
   // ended. See ADR-0108.
@@ -352,9 +351,8 @@ export interface AgentFileWriteRequest {
   content: string;
 }
 
-// The body of a non-2xx JSON response (ADR-0002), except a schema-invalid agent
-// write's `SchemaErrorResponse` (msg + errors). `err` is the backend's
-// coarse code, `msg` the sentence the console surfaces.
+// A non-2xx JSON body (ADR-0002), but for a schema-invalid agent write's `SchemaErrorResponse`;
+// `err` is the coarse code, `msg` the sentence shown.
 export interface ErrorResponse {
   err: number;
   msg: string;
@@ -368,10 +366,8 @@ export interface DebugAgentRequest {
   headers?: Record<string, string>;
 }
 
-// LangGraph topology (ADR-0073): the console's own minimal rendering
-// contract, not LangGraph's Graph.to_json(). Bounds (node/edge counts,
-// id/label length) are validated server-side; the console applies its own
-// render cap in lib/langgraph/layout.ts.
+// LangGraph topology (ADR-0073): the console's own rendering contract, not Graph.to_json();
+// bounds are validated server-side, the render cap is in lib/langgraph/layout.ts.
 export interface LangGraphTopologyNode {
   id: string;
 }
@@ -664,13 +660,8 @@ export interface MeResponse {
   grants: Grant[];
 }
 
-// ── SSE frame payloads ──────────────────────────────────────────────
-// The `data:` object of each frame the backend streams, mirrored from
-// app/src/main/kotlin/homer/app/models/StreamFrames.kt. A frame's `id:` (a log
-// offset, an LLM stream cursor) is part of the frame, not of the payload.
-// `agent.reload` carries the reload diff (`AgentReloadFrame` below, built on
-// the backend from the grant-filtered lists); `log.end` and `llm.end` carry no
-// payload; the `llm.event` payload is `LlmStreamFrame` below.
+// SSE `data:` payloads (mirror of StreamFrames.kt); a frame's `id:` is not payload.
+// `log.end` and `llm.end` carry none; `llm.event` is `LlmStreamFrame` below.
 
 export interface ProcessStatusFrame { processId: number; status: ProcessStatus; agentName: string }
 /** The command that started (`startedAt`); both null when nothing runs now. */
@@ -686,9 +677,8 @@ export interface LogChunkFrame { content: string }
 /** `agent.reload`: the reload diff of GET /stream/agents, narrowed to the caller's grants. */
 export interface AgentReloadFrame { added: string[]; updated: string[]; removed: string[] }
 
-// ── Canonical LLM events ────────────────────────────────────────────
-// Mirror of app/src/main/kotlin/homer/app/models/LlmEvent.kt, streamed
-// over SSE as `llm.event` from GET /api/v1/stream/processes/{id}/llm-events.
+// Canonical LLM events: mirror of LlmEvent.kt, streamed as `llm.event` from
+// GET /api/v1/stream/processes/{id}/llm-events.
 
 export interface LlmUsage {
   input: number;

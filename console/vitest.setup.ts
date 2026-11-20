@@ -16,11 +16,8 @@ Element.prototype.hasPointerCapture = Element.prototype.hasPointerCapture ?? (()
 Element.prototype.setPointerCapture = Element.prototype.setPointerCapture ?? (() => {});
 Element.prototype.releasePointerCapture = Element.prototype.releasePointerCapture ?? (() => {});
 
-// Node 22+ defines a global `localStorage` getter (require('internal/webstorage'))
-// that returns undefined unless Node is started with --experimental-webstorage.
-// Under jsdom this getter shadows jsdom's own Storage, so `localStorage` is
-// undefined while `sessionStorage` works. The console keeps the bearer token in
-// localStorage, so install an in-memory Storage the tests can rely on.
+// Node 22+'s global `localStorage` getter shadows jsdom's Storage and returns undefined; install
+// an in-memory Storage, since the console keeps the bearer token there.
 class MemoryStorage {
   private store = new Map<string, string>();
   get length() {
