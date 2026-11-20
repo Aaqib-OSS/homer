@@ -104,7 +104,8 @@
         "io.kubernetes:**",
         "org.jetbrains.exposed:**",
         "dev.detekt:**",
-        "dev.detekt"
+        "dev.detekt",
+        "eclipse-temurin"
       ],
       "groupName": null,
       "addLabels": ["workaround-pin"],
