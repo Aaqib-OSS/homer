@@ -123,9 +123,10 @@ edits to `Application.kt` / `SessionAuth.kt` must keep them:
    definition unauthenticated. `/logout` must be idempotent (a stale
    cookie + valid bearer should still clear the cookie, not 401).
    `/me` reads the session directly so it isn't mis-authenticated as
-   the bearer principal by `FirstSuccessful`. *(Amended 2026-11-20:
-   `/me` answers a bearer header first and the session otherwise, still
-   outside `FirstSuccessful`; see the amendment below.)*
+   the bearer principal by `FirstSuccessful`.
+
+   > **Amendment (2026-11-20) — `/me` answers a bearer header first and the session
+   > otherwise, still outside `FirstSuccessful`; see the amendment below.**
 8. **`provider("auth-session")`, not `session<T>()`.** Ktor 3.4's
    built-in `session<T>()` provider does not give access to
    `call.request.path()` for the per-user endpoint check. The
