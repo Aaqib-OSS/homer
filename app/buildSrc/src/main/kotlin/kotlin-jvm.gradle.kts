@@ -108,7 +108,7 @@ tasks.register<CrapReportTask>("crapReport") {
     outputDir.set(layout.buildDirectory.dir("reports/crap"))
 }
 
-// A module's line-coverage floor is today's measured value, rounded down, and only goes up (ADR-0082).
+// A module's line-coverage floor is one point under today's measured value, rounded down, and only goes up (ADR-0082).
 // A module without `koverMinLine` in its gradle.properties (no tests, empty report) has no rule.
 kover {
     reports {
