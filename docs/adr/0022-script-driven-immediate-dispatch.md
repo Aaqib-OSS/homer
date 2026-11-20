@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-06-15
-amended: 2026-11-19
+amended: 2026-10-09, 2026-11-19
 deciders: Lukáš Vlk
 ---
 # ADR-0022: script-driven immediate dispatch — `homer-dispatch`
@@ -64,9 +64,8 @@ sweep, crash re-fire) that immediate dispatch simply does not have. *Why a
 fresh chain rather than threading the caller's:* the loopback token that
 carries the chain is never available to a script, and immediate dispatch is
 intentionally cooperative and decoupled — the same stance ADR-0021 takes.
-*(Amended 2026-10-09: the loopback token was removed by
-[ADR-0030](0030-runagent-in-process-dispatch.md); the fresh chain stands on
-the decoupling argument alone.)*
+
+> **Amendment (2026-10-09) —** The loopback token was removed by [ADR-0030](0030-runagent-in-process-dispatch.md); the fresh chain stands on the decoupling argument alone.
 
 **Referer, not a chain.** The only linkage back to the caller is the
 *referer* — the origin process id and asking agent name — recorded on the
@@ -87,9 +86,9 @@ target, ask-and-dispatch or `homer-dispatch`.
 
 **Independent run.** Like ask-and-dispatch, the dispatched run uses the
 server-configured `server.dispatch.authToken` for its own callbacks and
-never inherits the caller's `HMR_CALLBACK_TOKEN`. *(Amended 2026-10-09:
-`server.dispatch.authToken` was removed (ADR-0030, which also refines this
-ADR); the dispatched run gets its own per-process callback token.)*
+never inherits the caller's `HMR_CALLBACK_TOKEN`.
+
+> **Amendment (2026-10-09) —** `server.dispatch.authToken` was removed (ADR-0030, which also refines this ADR); the dispatched run gets its own per-process callback token.
 
 **Helper.** `homer-dispatch` is a standalone POSIX `sh` helper (not a
 `homer-ask` subcommand), materialized next to `homer-ask` in

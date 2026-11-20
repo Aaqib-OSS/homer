@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-05-18
 deciders: Lukáš Vlk
-amended: 2026-10-25
+amended: 2026-10-09, 2026-10-20, 2026-10-25
 ---
 # ADR-0011: Cookie-based console authentication (username + password)
 
@@ -79,9 +79,9 @@ Chosen option: **A**, because:
 - `Combined` already exists from [ADR-0010](0010-auth-schemes.md);
   `Password` joins as a third variant with the same `EndpointMatcher`
   allowlist, so cookie-auth and bearer/HMAC coexist on the same
-  deployment without code-path special-casing. *(Amended 2026-10-09:
-  per-user `endpoints` and `EndpointMatcher` were removed for every principal
-  by [ADR-0037](0037-grants-authorization.md); grants replace them.)*
+  deployment without code-path special-casing.
+
+> **Amendment (2026-10-09) —** Per-user `endpoints` and `EndpointMatcher` were removed for every principal by [ADR-0037](0037-grants-authorization.md); grants replace them.
 
 ### Critical invariants the implementation must preserve
 
@@ -93,9 +93,7 @@ edits to `Application.kt` / `SessionAuth.kt` must keep them:
 2. **`SameSite=Lax`, not `Strict`.** With CORS pinned to explicit
    origins and JSON-only on mutating endpoints, Lax is materially as
    safe as Strict and avoids the deep-link bounce. The JSON-only
-   requirement is the real boundary. *(Amended 2026-10-09: `SameSite` is
-   configurable since [ADR-0028](0028-cross-origin-cookie-auth-samesite.md)
-   (`cookieSameSite`, default `Lax`).)*
+   requirement is the real boundary.
 3. **HMAC, not encryption.** The cookie's JSON payload is plaintext.
    Anyone who can read the cookie can read `username` / `exp` / `ver`.
    `ver: Int = 1` future-proofs format migrations — bump it and
@@ -129,16 +127,18 @@ edits to `Application.kt` / `SessionAuth.kt` must keep them:
 8. **`provider("auth-session")`, not `session<T>()`.** Ktor 3.4's
    built-in `session<T>()` provider does not give access to
    `call.request.path()` for the per-user endpoint check. The
-   custom provider mirrors the Bearer block's shape. *(Amended
-   2026-10-09: the per-user endpoint check is gone, see ADR-0037.)*
+   custom provider mirrors the Bearer block's shape.
+
+> **Amendment (2026-10-09) —** The per-user endpoint check is gone, see ADR-0037.
+
+> **Amendment (2026-10-09) —** `SameSite` is configurable since [ADR-0028](0028-cross-origin-cookie-auth-samesite.md) (`cookieSameSite`, default `Lax`).
 
 ### Consequences
 
 - Good: P0 #6 (long-term) and P1 #19 close in one change. Browser JS
   no longer holds the credential.
 - Good: Multi-user with per-user endpoint allowlists reuses
-  `EndpointMatcher` — no new permission model. *(Superseded by ADR-0037:
-  grants replace endpoint allowlists.)*
+  `EndpointMatcher` — no new permission model.
 - Good: Coexistence with `bearer` / `hmac` via `Combined` — CLI and
   webhook clients keep working unchanged on the same deployment.
 - Good: Operators paste bcrypt hashes, not plaintext, courtesy of
@@ -155,6 +155,8 @@ edits to `Application.kt` / `SessionAuth.kt` must keep them:
 - Bad: The `MultiKeyMacTransformer` is a one-off — it exists because
   Ktor's built-in transformers chain rather than fall back. If Ktor
   ever ships native multi-key MAC, this class becomes deletable.
+
+> **Amendment (2026-10-20) —** Superseded by ADR-0037: grants replace endpoint allowlists.
 
 ## Pros and Cons of the Options
 

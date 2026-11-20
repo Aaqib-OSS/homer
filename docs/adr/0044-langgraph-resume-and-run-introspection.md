@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-19
 deciders: Lukáš Vlk
-amended: 2026-08-20, 2026-09-30
+amended: 2026-08-20, 2026-09-30, 2026-10-09
 ---
 # ADR-0044: LangGraph resume and run introspection
 
@@ -101,9 +101,6 @@ process reads):
   - `done` — a task for the node with `result` set and no `error` appears in
     any snapshot from `get_state_history()` (not `metadata["writes"]`, which
     `langgraph-checkpoint` 4.x no longer persists).
-    *(Amended 2026-10-09: since commit `209604e5` a task counts as completed
-    whenever it has a `result`, error or not, so a node recovered after a
-    failure reports `done`.)*
   - `failed` — latest snapshot has a `PregelTask` for the node with `error` set.
   - `parked` — latest snapshot has a task for the node with non-empty `interrupts`.
   - `pending` — node is in the latest snapshot's `next`.
@@ -129,10 +126,6 @@ process reads):
   A mermaid draw failure alone (or an older runtime whose `state` output
   predates the field) degrades to `mermaid: null` with the per-node state
   intact; the console then renders the statuses as a plain list.
-  *(Amended 2026-10-09: the console draws from `topology` (+ `traversed`) since
-  [ADR-0073](0073-langgraph-topology-is-structured-data.md) and
-  [ADR-0075](0075-langgraph-traversed-path-from-checkpoint-writes.md); `mermaid`
-  is deprecated and no longer read.)*
 - **Per-sub progress for fan-out nodes:** `state` additionally reports
   `interrupts` (node -> pending interrupt ids) and `interruptsSeen` (node ->
   the interrupt ids in the thread's history, the same `get_state_history()` fold
@@ -159,6 +152,10 @@ process reads):
   vanish the moment its join fired; a sub whose process has since been evicted
   from the store is reported with its interrupt id and null details rather than
   dropped.
+
+> **Amendment (2026-10-09) —** The console draws from `topology` (+ `traversed`) since [ADR-0073](0073-langgraph-topology-is-structured-data.md) and [ADR-0075](0075-langgraph-traversed-path-from-checkpoint-writes.md); `mermaid` is deprecated and no longer read.
+
+> **Amendment (2026-10-09) —** Since commit `209604e5` a task counts as completed whenever it has a `result`, error or not, so a node recovered after a failure reports `done`.
 
 
 ### Notable property: interrupt-resume precedence

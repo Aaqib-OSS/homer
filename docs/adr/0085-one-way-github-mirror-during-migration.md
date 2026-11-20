@@ -8,6 +8,8 @@ amended: 2026-10-16
 
 # ADR-0085: A one-way GitHub mirror from a single initial commit during the migration
 
+> **Amendment (2026-10-16) —** The title-denylist, no-force-push and no-history-published claims below hold in `append` mode only, and the append-only guarantee only once the repository is public; see the amendment at the end of this ADR.
+
 > Deprecated on 2026-11-14: development moved to GitHub, so the mirror ended as this ADR
 > planned. No later ADR replaces the decision, which is why it is not `superseded by`.
 
@@ -27,8 +29,7 @@ what the history held, and without manual steps per merge.
   sync rather than be reported after it.
 - The upstream stays the only source until the switch. Nobody develops on GitHub yet.
 - Every merge to `main` reaches GitHub without a manual step.
-- Nothing is force-pushed. GitHub history is append-only. *Amended 2026-10-16:
-  only once the repository is public; see the amendment below.*
+- Nothing is force-pushed. GitHub history is append-only.
 - The credential that writes to GitHub reaches one repository and protected
   refs only.
 
@@ -53,10 +54,10 @@ Chosen option: **"D. A CI job"**.
 - **Commit:** one commit per merge, titled after the merged merge request (or a
   direct push's subject) with one leading ticket key (`KEY-123:`) dropped: the
   key is an internal id, and factory merge requests always lead with one. The
-  rest of the title is still checked against the denylist. *(Amended 2026-10-16: in `append` mode only; see the amendment below.)* Its
+  rest of the title is still checked against the denylist. Its
   identity is the maintainer's GitHub noreply address. Nothing else of the merge
   commit leaves, because it names the internal project. The script pushes
-  without force. *(Amended 2026-10-16: in `append` mode only; see the amendment below.)*
+  without force.
 - **Initial commit:** the maintainer made it by hand from the same tree.
 
 **Trust boundary.** The job holds a deploy key that can write to that one GitHub
@@ -64,7 +65,7 @@ repository. It lives in a protected, masked upstream CI/CD variable, so only
 protected refs read it. GitHub's SSH host keys are pinned. Before every push, a protected
 denylist of extended regexps is checked against everything the push publishes:
 file contents (binary files included), path names, symlink targets and the
-commit title *(Amended 2026-10-16: in `append` mode only; see the amendment below.)*. gitleaks then scans the tree for secrets, with only the docs' and
+commit title. gitleaks then scans the tree for secrets, with only the docs' and
 tests' exact placeholder values allowed, because GitHub's own secret scanning is
 not available to a private repository on the organization's plan. The script
 has no switch that turns the scan off or swaps its rules. It finds the gitleaks
@@ -85,13 +86,13 @@ sync runs makes the push fail instead of being overwritten.
 
 ### Consequences
 
-- Good: a leak in the tree, or in a title *(Amended 2026-10-16: in `append` mode only; see the amendment below.)*, stops the push. Only what the denylist
+- Good: a leak in the tree, or in a title, stops the push. Only what the denylist
   misses can leave, and the denylist is checked on every sync.
 - Neutral: a leading ticket key is dropped rather than refused, so a factory
   merge does not stop the sync for its title's prefix alone; the key never
   reaches GitHub. Narrowing the denylist's ticket pattern instead was rejected,
   because it would also let a key through anywhere else.
-- Good: no history is published, and GitHub history is never rewritten. *(Amended 2026-10-16: in `append` mode only; see the amendment below.)*
+- Good: no history is published, and GitHub history is never rewritten.
 - Good: the job's image is pinned by digest, so a retargeted tag or a compromised publisher
   cannot run its own code in the job that holds the deploy key. That pin is what makes the
   "pinned job image" of the trust boundary true, and it keeps the accepted `PATH`-override risk
@@ -102,11 +103,11 @@ sync runs makes the push fail instead of being overwritten.
   bump merge requests, signature verification of the pulled images being the stronger control
   that is not set up here.
 - Bad: GitHub gets one commit per merged merge request, not its individual
-  commits. *(Amended 2026-10-16: in `append` mode only; see the amendment below.)* A merge whose pipeline fails reaches GitHub only with the next green
-  one, under that one's title. *(Amended 2026-10-16: in `append` mode only; see the amendment below.)*
+  commits. A merge whose pipeline fails reaches GitHub only with the next green
+  one, under that one's title.
 - Bad: a commit that reached GitHub `main` another way is not refused. The next
   sync fast-forwards over it: the commit stays in history and its tree is
-  replaced. *(Amended 2026-10-16: in `append` mode only; see the amendment below.)* A ruleset on GitHub `main` that lets only the deploy key push is
+  replaced. A ruleset on GitHub `main` that lets only the deploy key push is
   what keeps such commits out, and the organization's plan offers rulesets
   only once the repository is public; until then, write access to the GitHub
   repository is the control.

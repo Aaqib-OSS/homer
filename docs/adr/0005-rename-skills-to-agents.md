@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-04-10
 deciders: Lukáš Vlk
+amended: 2026-10-20
 ---
 # ADR-0005: Rename "skills" to "agents" throughout the codebase
 
@@ -79,9 +80,7 @@ keeps a field named `skills`. That field deserialises Claude Code's own
 `skill` concept. A comment in the source pins this down so future grep
 sweeps don't "fix" it.
 
-*(Superseded in part by [ADR-0057](0057-claude-output-modelled-only-where-read.md):
-`ClaudeEvent.System`, which held the `skills` field, was deleted, so this
-exception no longer exists.)*
+> **Amendment (2026-10-20) —** Superseded in part by [ADR-0057](0057-claude-output-modelled-only-where-read.md): `ClaudeEvent.System`, which held the `skills` field, was deleted, so this exception no longer exists.
 
 ### Consequences
 

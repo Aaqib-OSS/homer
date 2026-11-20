@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-06-12
 deciders: Lukáš Vlk
+amended: 2026-10-09, 2026-10-20
 ---
 # ADR-0019: Human-in-the-loop questions — per-process callback tokens, in-memory lifecycle, MCP SSE response mode
 
@@ -62,9 +63,8 @@ waits again, so engine stop cancelling a held long-poll mid-hold is harmless.
 A server restart loses open questions and tokens; a blocked helper then gets
 401 and exits with an error. This is documented, accepted behavior —
 consistent with `ProcessManager` losing process state on restart.
-*(Superseded in part by [ADR-0020](0020-durable-state-in-sqlite.md), 2026-10-09
-note: questions are stored in SQLite and survive restart (open ones are expired
-on boot); only the callback-token registry and waiter deferreds stay in memory.)*
+
+> **Amendment (2026-10-09) —** Superseded in part by [ADR-0020](0020-durable-state-in-sqlite.md): questions are stored in SQLite and survive restart (open ones are expired on boot); only the callback-token registry and waiter deferreds stay in memory.
 
 **MCP long waits.** The `/mcp/questions` endpoint uses SSE response mode
 (`enableJsonResponse = false`) so the first byte flushes immediately,
@@ -88,7 +88,7 @@ the JSON-RPC request id; exotic tokens just drop the notification).
 - Good: real API credentials never enter agent workspaces; leaking a
   workspace leaks only the ability to ask/read that one process's questions.
 - Good: no new persistence layer; lifecycle matches the rest of Homer's
-  in-memory process model. *(Superseded in part by ADR-0020: questions persist.)*
+  in-memory process model.
 - Good: waiting is connection-failure-tolerant by construction (resumable
   waits, server-side state).
 - Bad: restart loses open questions — operators re-trigger the run; helpers
@@ -97,6 +97,8 @@ the JSON-RPC request id; exotic tokens just drop the notification).
   bounded by live process count, negligible in practice.
 - Bad: chunked holds + progress notifications add MCP-side complexity that a
   reliable client timeout would have made unnecessary.
+
+> **Amendment (2026-10-20) —** Superseded in part by ADR-0020: questions persist.
 
 ## More Information
 

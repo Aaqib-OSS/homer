@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-24
 deciders: Lukáš Vlk, Tomas Hladik
-amended: 2026-11-09
+amended: 2026-10-09, 2026-11-09
 ---
 # ADR-0050: Per-agent telemetry is one block, and every start path goes through it
 
@@ -55,9 +55,7 @@ telemetry:
   traceTags: [project, mr]   # paramNames of declared inputs
 ```
 
-*(Amended 2026-10-09: `telemetry.traceTags` is deprecated in favour of the top-level
-`tags.fromInputs`; the two are unioned into `effectiveFromInputTags`, see
-[ADR-0060](0060-run-tags.md). The validation rules below apply to the union.)*
+> **Amendment (2026-10-09) —** `telemetry.traceTags` is deprecated in favour of the top-level `tags.fromInputs`; the two are unioned into `effectiveFromInputTags`, see [ADR-0060](0060-run-tags.md). The validation rules below apply to the union.
 
 The per-input flag was the more obvious design, and it had one real advantage:
 no indirection, so it cannot drift. It lost on two counts.
@@ -154,9 +152,9 @@ only one of several records such a principal could already influence.
   the check is load-bearing — deleting it re-introduces silent drift.
 - Bad: tag *cardinality* is still unbounded (only length is capped at 128). The
   cost lands in the collector, which Homer cannot see, so it is documented as an
-  authoring rule rather than enforced. *(Amended 2026-11-09: bounded after all —
-  a v4 trace copies the list onto every span of the run, so `MAX_TRACE_TAGS`
-  caps it where it is stamped. See the amendment below.)*
+  authoring rule rather than enforced.
+
+> **Amendment (2026-11-09) —** Bounded after all — a v4 trace copies the list onto every span of the run, so `MAX_TRACE_TAGS` caps it where it is stamped. See the amendment below.
 
 ## Amendment (2026-11-09): the trace name and tags ride on every observation
 

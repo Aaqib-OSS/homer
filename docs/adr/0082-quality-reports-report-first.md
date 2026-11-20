@@ -88,20 +88,20 @@ into this gate as the `crap` check.
 | `size-console` | ESLint `max-lines` (600) and `max-lines-per-function` (60), blank lines and comments not counted, in its own run over console production code | the file and function size limits the backend uses too |
 | `dto-contract` | backend DTO serial descriptors (`DtoContractTest`) vs the TS mirrors in `console/types/homer.ts` (TypeScript compiler API); widened 2026-11-16 to every wire type the backend sends, with the root list guarded by a fail-closed scan of the routes' output, see the amendment below | `console/CLAUDE.md` § Types & backend coupling, `app/CLAUDE.md` § Console DTO contract |
 
-*Amended (2026-10-13):* `duplication` became `required` once its clones were
-merged. jscpd does not count import and package lines, which two files that use the
-same APIs share without copying logic. Repetition that a contract fixes, such as a
-`@Serializable` variant restating its base's fields or an interface override's
-signature, may be wrapped in `// jscpd:ignore-start` … `// jscpd:ignore-end`, with
-a one-line reason above it. That is not the rejected baseline: a baseline is a
-generated file that freezes the whole backlog in place. A marker sits on one block,
-in the code, next to its reason, so each exception gets reviewed where it is
-added and remains visible afterwards. `size-console` became `required` on the same day, once its
-34 over-long functions were split. The backend size rules (file ≤ 600, class ≤ 400, function ≤ 60
-lines) left the pending lane for `architecture-backend` the same way, once their 57
-findings were split; the layering rule followed with ADR-0083's ports, and the cycle rule with its one
-package per layer. That emptied the lane, so the `architecture-backend-pending` check and its
-`quality-gate` line were removed; a rule tagged `report-only` again brings them back.
+> **Amendment (2026-10-13) —** `duplication` became `required` once its clones were
+> merged. jscpd does not count import and package lines, which two files that use the
+> same APIs share without copying logic. Repetition that a contract fixes, such as a
+> `@Serializable` variant restating its base's fields or an interface override's
+> signature, may be wrapped in `// jscpd:ignore-start` … `// jscpd:ignore-end`, with
+> a one-line reason above it. That is not the rejected baseline: a baseline is a
+> generated file that freezes the whole backlog in place. A marker sits on one block,
+> in the code, next to its reason, so each exception gets reviewed where it is
+> added and remains visible afterwards. `size-console` became `required` on the same day, once its
+> 34 over-long functions were split. The backend size rules (file ≤ 600, class ≤ 400, function ≤ 60
+> lines) left the pending lane for `architecture-backend` the same way, once their 57
+> findings were split; the layering rule followed with ADR-0083's ports, and the cycle rule with its one
+> package per layer. That emptied the lane, so the `architecture-backend-pending` check and its
+> `quality-gate` line were removed; a rule tagged `report-only` again brings them back.
 
 Mutation testing of the backend (PIT, Nightly job `backend-mutation`) is a
 scheduled, non-gating pilot; its scope is in the amendment of 2026-11-04 below. PIT mutates bytecode, so
@@ -164,242 +164,242 @@ locally too.
 - [Code Climate engine output format](https://github.com/codeclimate/platform/blob/master/spec/analyzers/SPEC.md) (Code Quality reports),
   [Cobertura coverage](https://cobertura.github.io/cobertura/).
 
-*Amended (2026-10-13):* `detekt` joined as a `warn` pilot. Konsist checks declarations and reads code
-bodies only as text. detekt analyses bodies with type resolution, so it finds what no other check
-does: coroutine misuse, swallowed exceptions and likely bugs. It runs only those three rule sets,
-because complexity, size, formatting and naming already have their own checks. It is on detekt 2.0,
-still an alpha, because 1.23 is built on the K1 compiler and cannot resolve types on Kotlin 2.4. The pilot ends in one of
-two ways. Either the rules worth keeping are fixed and the check becomes `required` (detekt then moves to
-2.0 stable), or the few rules that matter are rewritten as Konsist tests and detekt is removed.
-It is not part of `check` and runs in its own CI job, `homer-app-detekt`, on a larger runner: its
-Analysis API loads into the Gradle daemon, and inside the `homer-app-tests` build that job ran out of memory.
-`MissingUseCall` is off: all 39 of its findings were ownership transfers (a session or stream returned,
-wrapped, stored, or closed in a `finally`), not leaks; the rule cannot follow ownership, so keeping it
-would only have produced suppressions.
+> **Amendment (2026-10-13) —** `detekt` joined as a `warn` pilot. Konsist checks declarations and reads code
+> bodies only as text. detekt analyses bodies with type resolution, so it finds what no other check
+> does: coroutine misuse, swallowed exceptions and likely bugs. It runs only those three rule sets,
+> because complexity, size, formatting and naming already have their own checks. It is on detekt 2.0,
+> still an alpha, because 1.23 is built on the K1 compiler and cannot resolve types on Kotlin 2.4. The pilot ends in one of
+> two ways. Either the rules worth keeping are fixed and the check becomes `required` (detekt then moves to
+> 2.0 stable), or the few rules that matter are rewritten as Konsist tests and detekt is removed.
+> It is not part of `check` and runs in its own CI job, `homer-app-detekt`, on a larger runner: its
+> Analysis API loads into the Gradle daemon, and inside the `homer-app-tests` build that job ran out of memory.
+> `MissingUseCall` is off: all 39 of its findings were ownership transfers (a session or stream returned,
+> wrapped, stored, or closed in a `finally`), not leaks; the rule cannot follow ownership, so keeping it
+> would only have produced suppressions.
 
-*Amended (2026-10-14):* the `detekt` pilot ended the first way: each finding was fixed, or its rule
-was turned off with the reason recorded (in `app/config/detekt/detekt.yml`, or above for `MissingUseCall`),
-and the check is `required`. It stays on the 2.0 alpha until 2.0 stable ships.
+> **Amendment (2026-10-14) —** the `detekt` pilot ended the first way: each finding was fixed, or its rule
+> was turned off with the reason recorded (in `app/config/detekt/detekt.yml`, or above for `MissingUseCall`),
+> and the check is `required`. It stays on the 2.0 alpha until 2.0 stable ships.
 
-*Amended (2026-10-14):* `query-plans` joined as `warn`. SQLite rule 1 in `app/CLAUDE.md` (no full
-scan of a growing table) was checked by hand and by plan tests pinned per query, so a new query that
-nobody pinned went unchecked. The check needs no list of queries: a test-only Exposed interceptor
-records every distinct statement production code runs during `:app:test` with the source line that
-ran it, and `:app:queryPlanReport` plans each one on a freshly migrated database. The plans are the
-planner's choice without `sqlite_stat1`, as on a first boot, which makes them deterministic; a query
-`:app:test` never runs is not checked. Not findings: a scan through an index, and an unfiltered page
-in primary-key order (`ORDER BY id LIMIT n`), which reads only the rows it returns. It fails
-closed: a statement the planner cannot prepare is a finding, and an empty capture fails the report.
-It becomes `required` once its findings are fixed.
+> **Amendment (2026-10-14) —** `query-plans` joined as `warn`. SQLite rule 1 in `app/CLAUDE.md` (no full
+> scan of a growing table) was checked by hand and by plan tests pinned per query, so a new query that
+> nobody pinned went unchecked. The check needs no list of queries: a test-only Exposed interceptor
+> records every distinct statement production code runs during `:app:test` with the source line that
+> ran it, and `:app:queryPlanReport` plans each one on a freshly migrated database. The plans are the
+> planner's choice without `sqlite_stat1`, as on a first boot, which makes them deterministic; a query
+> `:app:test` never runs is not checked. Not findings: a scan through an index, and an unfiltered page
+> in primary-key order (`ORDER BY id LIMIT n`), which reads only the rows it returns. It fails
+> closed: a statement the planner cannot prepare is a finding, and an empty capture fails the report.
+> It becomes `required` once its findings are fixed.
 
-*Amended (2026-10-14):* `query-repeats` joined as `warn`, read from the same capture: a statement
-production code runs three or more times in one transaction is a query per row in a loop (SQLite
-rule 2). Twice is not counted, as two separate reads of one shape are common and harmless; a JDBC
-batch counts once, and a run test code issues is not counted.
+> **Amendment (2026-10-14) —** `query-repeats` joined as `warn`, read from the same capture: a statement
+> production code runs three or more times in one transaction is a query per row in a loop (SQLite
+> rule 2). Twice is not counted, as two separate reads of one shape are common and harmless; a JDBC
+> batch counts once, and a run test code issues is not counted.
 
-*Amended (2026-10-14):* `query-plans` and `query-repeats` are `required`. Paging `GET /api/v1/questions`,
-with its visibility moved into SQL, removed the last full scan.
+> **Amendment (2026-10-14) —** `query-plans` and `query-repeats` are `required`. Paging `GET /api/v1/questions`,
+> with its visibility moved into SQL, removed the last full scan.
 
-*Amended (2026-10-14):* the checks have a diff mode, `node tools/quality/changed.mjs`, for coding
-agents to run in their edit loop. A full gate run needs the whole backend and console suites, far
-too slow to repeat after every edit. The diff mode reads the working tree against the merge base
-with `origin/main`, uncommitted and untracked files included, and runs only the checks the change
-can affect. Tests run only where they relate to the change: a changed Kotlin file's own
-`<Name>*Test` classes, else the test classes that name its declarations, and `vitest related` in the
-console. That coverage is partial, so `crap` and `diff-coverage` judge only the functions and lines
-the change touches, and a Kotlin file no test relates to is listed as not measured rather than
-reported as uncovered. Every other check still reads the whole project and reports everything it
-finds, marking findings outside the change. Main has no findings in a required check, so anything
-these checks find comes from the change, and a change can surface a finding in a file it never
-touched: an export left unused, a query that loses its index. Filtering those out would only move
-the failure to the merge request. CI keeps the full checks; the diff mode is a faster approximation
-for the edit loop and does not replace the gate.
+> **Amendment (2026-10-14) —** the checks have a diff mode, `node tools/quality/changed.mjs`, for coding
+> agents to run in their edit loop. A full gate run needs the whole backend and console suites, far
+> too slow to repeat after every edit. The diff mode reads the working tree against the merge base
+> with `origin/main`, uncommitted and untracked files included, and runs only the checks the change
+> can affect. Tests run only where they relate to the change: a changed Kotlin file's own
+> `<Name>*Test` classes, else the test classes that name its declarations, and `vitest related` in the
+> console. That coverage is partial, so `crap` and `diff-coverage` judge only the functions and lines
+> the change touches, and a Kotlin file no test relates to is listed as not measured rather than
+> reported as uncovered. Every other check still reads the whole project and reports everything it
+> finds, marking findings outside the change. Main has no findings in a required check, so anything
+> these checks find comes from the change, and a change can surface a finding in a file it never
+> touched: an export left unused, a query that loses its index. Filtering those out would only move
+> the failure to the merge request. CI keeps the full checks; the diff mode is a faster approximation
+> for the edit loop and does not replace the gate.
 
-*Amended (2026-11-04):* the backend PIT pilot widened from `homer.app.config` to the validators,
-parsers and security helpers listed in `app/app/build.gradle.kts` (864 mutants, about 12 minutes on
-a CI runner). It excludes `*$$serializer` classes. PIT runs, for each mutant, only the tests that
-cover the mutated line; those are now chosen from every backend package (`targetTests =
-homer.app.*`), so code tested from another package is no longer reported as uncovered. The report
-(`tools/quality/pit.mjs`) ignores mutants that only remove a call the Kotlin compiler adds (null
-checks, coroutine result checks, index-overflow guards): outside the score, no finding. PIT's own
-`avoidCallsTo` was tried for this and dropped: it skips every line that calls a listed class, and
-Kotlin compiles `==` on objects to `Intrinsics.areEqual`, so it hid 37 mutants that tests do kill.
+> **Amendment (2026-11-04) —** the backend PIT pilot widened from `homer.app.config` to the validators,
+> parsers and security helpers listed in `app/app/build.gradle.kts` (864 mutants, about 12 minutes on
+> a CI runner). It excludes `*$$serializer` classes. PIT runs, for each mutant, only the tests that
+> cover the mutated line; those are now chosen from every backend package (`targetTests =
+> homer.app.*`), so code tested from another package is no longer reported as uncovered. The report
+> (`tools/quality/pit.mjs`) ignores mutants that only remove a call the Kotlin compiler adds (null
+> checks, coroutine result checks, index-overflow guards): outside the score, no finding. PIT's own
+> `avoidCallsTo` was tried for this and dropped: it skips every line that calls a listed class, and
+> Kotlin compiles `==` on objects to `Intrinsics.areEqual`, so it hid 37 mutants that tests do kill.
 
-*Amended (2026-11-04):* pull requests get the backend counterpart of the console's changed-lines
-run: check `mutation-backend` (`warn`, optional, job `homer-app-mutation`, `tools/quality/pit-changed.mjs`).
-PIT has no free filter by line, so it mutates each changed class whole, and only the mutants on
-changed lines count. The covering tests are chosen from every backend package, not the diff mode's
-related tests: a covering test that heuristic misses would turn a killed mutant into a false survivor.
-Only `:app` is mutated. The nightly scope stays a list in `app/app/build.gradle.kts`, which
-`tools/quality/pit.test.mjs` reads to check that each entry still names a source file; a manifest
-both Gradle and the test read was not worth a second file format for some 25 entries.
-Whether either backend run turns `required` is decided on their numbers.
+> **Amendment (2026-11-04) —** pull requests get the backend counterpart of the console's changed-lines
+> run: check `mutation-backend` (`warn`, optional, job `homer-app-mutation`, `tools/quality/pit-changed.mjs`).
+> PIT has no free filter by line, so it mutates each changed class whole, and only the mutants on
+> changed lines count. The covering tests are chosen from every backend package, not the diff mode's
+> related tests: a covering test that heuristic misses would turn a killed mutant into a false survivor.
+> Only `:app` is mutated. The nightly scope stays a list in `app/app/build.gradle.kts`, which
+> `tools/quality/pit.test.mjs` reads to check that each entry still names a source file; a manifest
+> both Gradle and the test read was not worth a second file format for some 25 entries.
+> Whether either backend run turns `required` is decided on their numbers.
 
-*Amended (2026-11-05):* both mutation checks accept exceptions from a reviewed file per stack
-(`tools/quality/mutation-exceptions/backend.json` and `console.json`, a JSON object of key → reason).
-An accepted mutant leaves the score and the findings, is counted as `accepted` and listed with its
-reason in `<check>-accepted.txt`. This is not a baseline: there is no list of known findings, every
-unaccepted survivor stays visible, and an entry matching no mutant is a finding of its own in a full
-run (a pull request's changed-lines run never judges that); an entry is stale when it matches no
-survived or uncovered mutant. Keys carry no line number (backend: source path, mutated method,
-description and the mutant's line text, `<inline>` when the line is past the file's end or the source is unreadable; console:
-file, mutator, the original text with its replacement and the mutated line's text), so an edit above
-a mutant does not invalidate its entry. Both keys include the line's text, since neither PIT's
-description nor Stryker's original text and replacement tells two mutants of a method apart: an entry
-covers only that exact line's mutants of that kind, and editing the line makes the entry stale, which
-forces a re-review. An `<inline>` key has no line to tell them apart: it matches every mutant of its
-description that the Kotlin compiler inlined into the method (or whose source is unreadable), so its entry is
-`{ "reason": "…", "count": N }`, and a full run reports an entry matching any other number of mutants
-as a finding (still accepting them, so the score stays stable); a new inlined survivor there is never
-accepted silently. The exceptions live in one reviewed place for both languages instead of Stryker's
-in-code disable comments, which PIT has no counterpart for.
+> **Amendment (2026-11-05) —** both mutation checks accept exceptions from a reviewed file per stack
+> (`tools/quality/mutation-exceptions/backend.json` and `console.json`, a JSON object of key → reason).
+> An accepted mutant leaves the score and the findings, is counted as `accepted` and listed with its
+> reason in `<check>-accepted.txt`. This is not a baseline: there is no list of known findings, every
+> unaccepted survivor stays visible, and an entry matching no mutant is a finding of its own in a full
+> run (a pull request's changed-lines run never judges that); an entry is stale when it matches no
+> survived or uncovered mutant. Keys carry no line number (backend: source path, mutated method,
+> description and the mutant's line text, `<inline>` when the line is past the file's end or the source is unreadable; console:
+> file, mutator, the original text with its replacement and the mutated line's text), so an edit above
+> a mutant does not invalidate its entry. Both keys include the line's text, since neither PIT's
+> description nor Stryker's original text and replacement tells two mutants of a method apart: an entry
+> covers only that exact line's mutants of that kind, and editing the line makes the entry stale, which
+> forces a re-review. An `<inline>` key has no line to tell them apart: it matches every mutant of its
+> description that the Kotlin compiler inlined into the method (or whose source is unreadable), so its entry is
+> `{ "reason": "…", "count": N }`, and a full run reports an entry matching any other number of mutants
+> as a finding (still accepting them, so the score stays stable); a new inlined survivor there is never
+> accepted silently. The exceptions live in one reviewed place for both languages instead of Stryker's
+> in-code disable comments, which PIT has no counterpart for.
 
-*Amended (2026-11-05):* both full mutation runs are weekly (Nightly workflow, Sunday schedule, or
-by hand through its inputs), and the narrow nightly backend scope is dropped: PIT mutates every
-class of `:app`. A whole-backend run takes longer than GitHub's 6-hour job limit, so it is sharded
-per package (`tools/quality/pit-full.mjs`): one job per directory that holds Kotlin sources, each
-writing its PIT XML, and one job merging them into the single `mutation-backend` report. A shard
-that fails or times out leaves the report `partial`, which names the missing shards and judges no
-stale exception. A shard that outgrows the limit on its own is split further or, failing that, run
-on a self-hosted runner instead of a GitHub job. The scope list in `app/app/build.gradle.kts` and the test
-checking its entries are gone with it.
+> **Amendment (2026-11-05) —** both full mutation runs are weekly (Nightly workflow, Sunday schedule, or
+> by hand through its inputs), and the narrow nightly backend scope is dropped: PIT mutates every
+> class of `:app`. A whole-backend run takes longer than GitHub's 6-hour job limit, so it is sharded
+> per package (`tools/quality/pit-full.mjs`): one job per directory that holds Kotlin sources, each
+> writing its PIT XML, and one job merging them into the single `mutation-backend` report. A shard
+> that fails or times out leaves the report `partial`, which names the missing shards and judges no
+> stale exception. A shard that outgrows the limit on its own is split further or, failing that, run
+> on a self-hosted runner instead of a GitHub job. The scope list in `app/app/build.gradle.kts` and the test
+> checking its entries are gone with it.
 
-*Amended (2026-11-06):* the pull request's backend run has a time budget of its own,
-`MUTATE_BUDGET_SEC` (default 14 minutes, inside the job's 20-minute bound). A change to classes that
-most tests run through (the run starters on PR #124) did not finish within the job's bound: the coverage
-pass alone took four minutes, and the mutants that keep a run from starting time out one by one, so
-GitHub cancelled the job, left no report and held `quality-gate`, which needs it, for the whole 20
-minutes. A run over the budget is now stopped (Gradle's daemon with it) and the check reports itself
-skipped with the budget as the reason; the weekly full run covers those classes. It reports nothing
-of what PIT judged before the budget, and no `partial` list as the weekly merge does: PIT writes
-`mutations.xml` through a buffer and closes its root element only when the run ends, so a stopped run
-leaves at most a cut-off file that cannot say which classes it finished. Raising the job's
-bound would only hold `quality-gate` longer, and narrowing the tests to the ones the change touches
-would report every mutant other tests kill as uncovered.
+> **Amendment (2026-11-06) —** the pull request's backend run has a time budget of its own,
+> `MUTATE_BUDGET_SEC` (default 14 minutes, inside the job's 20-minute bound). A change to classes that
+> most tests run through (the run starters on PR #124) did not finish within the job's bound: the coverage
+> pass alone took four minutes, and the mutants that keep a run from starting time out one by one, so
+> GitHub cancelled the job, left no report and held `quality-gate`, which needs it, for the whole 20
+> minutes. A run over the budget is now stopped (Gradle's daemon with it) and the check reports itself
+> skipped with the budget as the reason; the weekly full run covers those classes. It reports nothing
+> of what PIT judged before the budget, and no `partial` list as the weekly merge does: PIT writes
+> `mutations.xml` through a buffer and closes its root element only when the run ends, so a stopped run
+> leaves at most a cut-off file that cannot say which classes it finished. Raising the job's
+> bound would only hold `quality-gate` longer, and narrowing the tests to the ones the change touches
+> would report every mutant other tests kill as uncovered.
 
-*Amended (2026-11-11):* the backend report also ignores `replaced return value with null` mutants on
-a function or lambda that returns Unit, beside the compiler-added calls and the same way: outside the
-score, no finding, counted under `ignored`. Nothing reads such a value, so no test can kill the
-mutant, yet the weekly full run scored 860 of them (30% of its findings) as survivors, burying the
-real ones and pushing agents towards meaningless tests or an accepted exception per mutant. The
-decision comes from what the mutated function actually returns, never from its name: the JVM
-descriptor PIT already emits decides a plain function or lambda (`)V`, or `)Lkotlin/Unit;` for a
-boxed Unit), and a suspend function, whose state machine returns `Object` whatever it returns, is
-resolved against its `fun` declaration in the source the report already reads for exception keys — a
-block body or `: Unit` is Unit, while an inferred `=` body, another return type, no matching
-declaration and an overload the name cannot tell apart are not. A lambda or suspend function that
-returns a value therefore keeps its mutants. What the rule cannot decide is a suspend *lambda*: its
-`invokeSuspend` takes the lambda instance, not a `Continuation`, and has no declaration to read, so
-`CsrfProtection.kt#invokeSuspend` stays a reviewed exception rather than a silently ignored mutant.
-The three backend exceptions the rule does cover are removed with it, since an entry matching no
-mutant is a finding of its own.
+> **Amendment (2026-11-11) —** the backend report also ignores `replaced return value with null` mutants on
+> a function or lambda that returns Unit, beside the compiler-added calls and the same way: outside the
+> score, no finding, counted under `ignored`. Nothing reads such a value, so no test can kill the
+> mutant, yet the weekly full run scored 860 of them (30% of its findings) as survivors, burying the
+> real ones and pushing agents towards meaningless tests or an accepted exception per mutant. The
+> decision comes from what the mutated function actually returns, never from its name: the JVM
+> descriptor PIT already emits decides a plain function or lambda (`)V`, or `)Lkotlin/Unit;` for a
+> boxed Unit), and a suspend function, whose state machine returns `Object` whatever it returns, is
+> resolved against its `fun` declaration in the source the report already reads for exception keys — a
+> block body or `: Unit` is Unit, while an inferred `=` body, another return type, no matching
+> declaration and an overload the name cannot tell apart are not. A lambda or suspend function that
+> returns a value therefore keeps its mutants. What the rule cannot decide is a suspend *lambda*: its
+> `invokeSuspend` takes the lambda instance, not a `Continuation`, and has no declaration to read, so
+> `CsrfProtection.kt#invokeSuspend` stays a reviewed exception rather than a silently ignored mutant.
+> The three backend exceptions the rule does cover are removed with it, since an entry matching no
+> mutant is a finding of its own.
 
-*Amended (2026-11-13):* `mock-calls` joined as `warn`, with a hard limit beside it. `homer-app-tests`
-ran out of its 2g heap on main (#198) without a failing assertion: fakes of a timed wait answered "not
-yet" at once, so the executors' poll loops busy-spun for each test's timeout, and mockk recorded
-about 140,000 calls in each of six tests, with their stack traces, and kept them until the suite
-ended (#200). The `MockCallBudget` extension, autodetected for the `:app` test task only (mockk-jvm's own
-`MockKExtension` is registered for autodetection too and stays opt-in), counts the calls each mock
-method took after every test and then clears the recorded calls, answers kept. Every mock's calls
-are cleared, those of a mock shared across tests (a field of a per-class test instance, a companion
-object) too: a later test's `verify` sees only its own calls, by design, as no test may depend on
-another's. Clearing only what each test added was rejected: it would need a snapshot of every
-mock's calls before each test, and the suite has no test that counts calls across tests. A test that called
-one method 20,000 times or more fails; 1,000 or more is a warn-mode finding. Measured over the whole
-suite, the busiest ordinary test calls one method 454 times (99.9% stay at 204 or fewer), and a
-one-second spin calls it about 140,000 times on a developer machine: the failure limit sits 44 times
-above the first and still catches the second on a runner several times slower, so more calls from a
-growing test never fail the build. Raising the test heap instead was rejected: it hides the next spin
-until it outgrows the new limit.
+> **Amendment (2026-11-13) —** `mock-calls` joined as `warn`, with a hard limit beside it. `homer-app-tests`
+> ran out of its 2g heap on main (#198) without a failing assertion: fakes of a timed wait answered "not
+> yet" at once, so the executors' poll loops busy-spun for each test's timeout, and mockk recorded
+> about 140,000 calls in each of six tests, with their stack traces, and kept them until the suite
+> ended (#200). The `MockCallBudget` extension, autodetected for the `:app` test task only (mockk-jvm's own
+> `MockKExtension` is registered for autodetection too and stays opt-in), counts the calls each mock
+> method took after every test and then clears the recorded calls, answers kept. Every mock's calls
+> are cleared, those of a mock shared across tests (a field of a per-class test instance, a companion
+> object) too: a later test's `verify` sees only its own calls, by design, as no test may depend on
+> another's. Clearing only what each test added was rejected: it would need a snapshot of every
+> mock's calls before each test, and the suite has no test that counts calls across tests. A test that called
+> one method 20,000 times or more fails; 1,000 or more is a warn-mode finding. Measured over the whole
+> suite, the busiest ordinary test calls one method 454 times (99.9% stay at 204 or fewer), and a
+> one-second spin calls it about 140,000 times on a developer machine: the failure limit sits 44 times
+> above the first and still catches the second on a runner several times slower, so more calls from a
+> growing test never fail the build. Raising the test heap instead was rejected: it hides the next spin
+> until it outgrows the new limit.
 
-*Amended (2026-11-14):* `infra-lint` joined as `required` (#225): the change that added it fixed or
-marked every finding. No check read the shell scripts (six of them ship into every agent workspace and
-handle the callback token), the GitHub workflows or the Dockerfiles. One check runs four tools:
-shellcheck, actionlint, zizmor and hadolint. The four share one check rather than being four checks fed
-by one job: together they cover one set of files, need one install step and give one gate row. The cost
-is one mode for all four, so a tool that misfires cannot be set apart from the other three; if that is
-ever needed, the tool moves into a check of its own, `infra-lint.mjs` writing a second report under that
-tool's name and `checks.json` listing it with its own mode. It is a gate check, not a CI job that fails
-on its own: the gate is the one required status for quality, so a new job outside it would block nothing
-until the ruleset named it. Job `homer-infra-lint` installs each tool as a release binary pinned by
-version and SHA-256, runs `tools/quality/infra-lint.mjs` and hands the report to `quality-gate`; a
-failed job leaves the report missing, which fails the gate. zizmor runs `--offline`: its online audits
-would make a pull request's result depend on the network and on advisories published after it was
-written. A finding whose fix would change behaviour is not fixed in the code. It is marked inline with
-the tool's own comment and its reason, or, for a hadolint rule that holds for the whole repository,
-ignored in `.hadolint.yaml` with its reason. A baseline file would hide the reason.
+> **Amendment (2026-11-14) —** `infra-lint` joined as `required` (#225): the change that added it fixed or
+> marked every finding. No check read the shell scripts (six of them ship into every agent workspace and
+> handle the callback token), the GitHub workflows or the Dockerfiles. One check runs four tools:
+> shellcheck, actionlint, zizmor and hadolint. The four share one check rather than being four checks fed
+> by one job: together they cover one set of files, need one install step and give one gate row. The cost
+> is one mode for all four, so a tool that misfires cannot be set apart from the other three; if that is
+> ever needed, the tool moves into a check of its own, `infra-lint.mjs` writing a second report under that
+> tool's name and `checks.json` listing it with its own mode. It is a gate check, not a CI job that fails
+> on its own: the gate is the one required status for quality, so a new job outside it would block nothing
+> until the ruleset named it. Job `homer-infra-lint` installs each tool as a release binary pinned by
+> version and SHA-256, runs `tools/quality/infra-lint.mjs` and hands the report to `quality-gate`; a
+> failed job leaves the report missing, which fails the gate. zizmor runs `--offline`: its online audits
+> would make a pull request's result depend on the network and on advisories published after it was
+> written. A finding whose fix would change behaviour is not fixed in the code. It is marked inline with
+> the tool's own comment and its reason, or, for a hadolint rule that holds for the whole repository,
+> ignored in `.hadolint.yaml` with its reason. A baseline file would hide the reason.
 
-*Amended (2026-11-15):* the architecture module's internals, cut from `app/CLAUDE.md` so the guide
-keeps the rule table and this ADR the reasoning behind it. **Why source text and not bytecode.**
-ArchUnit was the first candidate for the layering and cycle rules and was rejected: compiled Kotlin
-inlines `const val`s and inline functions, so a bytecode graph hides edges that exist and invents
-edges that do not, and a finding has to point at the import line that added the dependency. The rules
-therefore read source text and imports. **The route rule's walk.** It reads the routes with a small
-Kotlin text lexer and walk (`KotlinText`, `SecuredRoutes`) rather than a PSI parser, and its safety
-net is a fail-closed guard: any handler-shaped call (`get`, `post`, …, `connect`, `route`, `method`,
-`webSocket`, `sse`, `static*`) inside a `Route`/`Routing` extension, block or expression body, outside
-the handler bodies, that the walk did not attribute is a finding. A handler given as `::fn` is
-followed into `fn` when exactly one function in `routes/` has that name, else it stays unattributed;
-all overloads of a builder are walked. A registration-named call on an explicit receiver
-(`routing.get("/x", ::h)`, `x.staticResources(…)`), with or without a lambda, is a finding anywhere in
-`routes/` except inside handler bodies and inside route-free top-level functions — ones whose
-signature and body name no `Route`, `Routing` or `Application` type, no import alias or typealias of
-one, and no `route`, `routing` or `application` identifier. **The cycle rule's report.** It reports,
-per cycle, the edges cheapest to cut: a kernel package's import of another package first, then the
-edge with the fewest imports. **Where the size limits came from.** They complement the CRAP check
-(ADR-0081), which misses long code that branches little; they were set where the outliers showed — 9
-files, 16 classes and 67 functions at introduction — and became `required` once those were split.
-The test-file cap (3,300 lines) came later, for agents that had to load a 3,000-line test to add one
-test: it sits at the largest test file left once `AgentExecutorTest` and `ApplicationTest` were split
-(`DatabaseMigrationTest`, 3,292), and may only be lowered. It skipped the pending lane because it was
-born with no finding.
-The parameter cap (13) came in `required` after GH #257's parameter objects, at the widest signatures
-then left (`createWorkspaceConfig`, `handleResume`, `AgentExecutor`'s constructor); it may only be
-lowered.
+> **Amendment (2026-11-15) —** the architecture module's internals, cut from `app/CLAUDE.md` so the guide
+> keeps the rule table and this ADR the reasoning behind it. **Why source text and not bytecode.**
+> ArchUnit was the first candidate for the layering and cycle rules and was rejected: compiled Kotlin
+> inlines `const val`s and inline functions, so a bytecode graph hides edges that exist and invents
+> edges that do not, and a finding has to point at the import line that added the dependency. The rules
+> therefore read source text and imports. **The route rule's walk.** It reads the routes with a small
+> Kotlin text lexer and walk (`KotlinText`, `SecuredRoutes`) rather than a PSI parser, and its safety
+> net is a fail-closed guard: any handler-shaped call (`get`, `post`, …, `connect`, `route`, `method`,
+> `webSocket`, `sse`, `static*`) inside a `Route`/`Routing` extension, block or expression body, outside
+> the handler bodies, that the walk did not attribute is a finding. A handler given as `::fn` is
+> followed into `fn` when exactly one function in `routes/` has that name, else it stays unattributed;
+> all overloads of a builder are walked. A registration-named call on an explicit receiver
+> (`routing.get("/x", ::h)`, `x.staticResources(…)`), with or without a lambda, is a finding anywhere in
+> `routes/` except inside handler bodies and inside route-free top-level functions — ones whose
+> signature and body name no `Route`, `Routing` or `Application` type, no import alias or typealias of
+> one, and no `route`, `routing` or `application` identifier. **The cycle rule's report.** It reports,
+> per cycle, the edges cheapest to cut: a kernel package's import of another package first, then the
+> edge with the fewest imports. **Where the size limits came from.** They complement the CRAP check
+> (ADR-0081), which misses long code that branches little; they were set where the outliers showed — 9
+> files, 16 classes and 67 functions at introduction — and became `required` once those were split.
+> The test-file cap (3,300 lines) came later, for agents that had to load a 3,000-line test to add one
+> test: it sits at the largest test file left once `AgentExecutorTest` and `ApplicationTest` were split
+> (`DatabaseMigrationTest`, 3,292), and may only be lowered. It skipped the pending lane because it was
+> born with no finding.
+> The parameter cap (13) came in `required` after GH #257's parameter objects, at the widest signatures
+> then left (`createWorkspaceConfig`, `handleResume`, `AgentExecutor`'s constructor); it may only be
+> lowered.
 
-*Amended (2026-11-16):* `dto-contract` widened from the hand-kept root list to every wire type the
-backend sends: the request and response bodies, the error body, and the `data:` payload of every SSE
-frame. The root list stopped being trust-on-first-use. A fail-closed scan over the `routes/` sources
-(`DtoContractRootsTest`, the home of the rule beside `DtoContract`, whose export it reads) judges the
-route output from source text — every `respond`/`respondNoStore` argument (a constructor, a call
-judged by the callee's declared return type, a name a `val`, a parameter or a lambda parameter binds;
-an elvis judged by each operand, a `return` or `throw` operand handing back none), the `data:` of every
-`sendEvent` call, and the frame constructors inside every `SseFrame` builder —
-and fails, naming the type, when the body it reads is neither reachable from a root in `DtoContract`
-nor listed in `DtoContract.routeBodiesNotMirrored`. An argument or payload the scan cannot read is a
-finding of its own, so no body passes unjudged; a new output form is resolved into the scan, never
-taught to skip. **The exemption-with-reason contract.** An entry in `routeBodiesNotMirrored` names
-the `@Serializable` class and the route (with its method) and caller that actually receive the body,
-with the reason the console never reads it: it is the audit trail for a deliberate hole in the
-contract, so an entry whose class the main sources no longer declare as `@Serializable` fails the
-test like an unrooted body does; that the reason names a route that still exists stays on the
-reviewer — the route text in a reason is free text no check validates. A shape the console *builds* rather than
-receives keeps its `CONSOLE_ONLY` reason in `dto-contract.mjs` instead; a `CONSOLE_ONLY` key naming a
-root DTO would silently skip that type's comparison, so the check's test derives the forbidden names
-from the root list itself. **Rejected alternatives for body discovery.** A PSI or detekt pass with
-type resolution was rejected: it needs detekt's Analysis API, its own daemon and a larger runner (see
-the 2026-10-13 amendment) to answer a question the route source text already answers, and it would
-tie the check to detekt's alpha lifecycle; a Konsist rule over the same sources was rejected for the
-same resolution cost without the fail-closed unread-shape guard. Widening the TypeScript extract to
-scan more console files was rejected too: the extract stays `console/types/homer.ts` alone, and the
-scope widens on the backend side.
+> **Amendment (2026-11-16) —** `dto-contract` widened from the hand-kept root list to every wire type the
+> backend sends: the request and response bodies, the error body, and the `data:` payload of every SSE
+> frame. The root list stopped being trust-on-first-use. A fail-closed scan over the `routes/` sources
+> (`DtoContractRootsTest`, the home of the rule beside `DtoContract`, whose export it reads) judges the
+> route output from source text — every `respond`/`respondNoStore` argument (a constructor, a call
+> judged by the callee's declared return type, a name a `val`, a parameter or a lambda parameter binds;
+> an elvis judged by each operand, a `return` or `throw` operand handing back none), the `data:` of every
+> `sendEvent` call, and the frame constructors inside every `SseFrame` builder —
+> and fails, naming the type, when the body it reads is neither reachable from a root in `DtoContract`
+> nor listed in `DtoContract.routeBodiesNotMirrored`. An argument or payload the scan cannot read is a
+> finding of its own, so no body passes unjudged; a new output form is resolved into the scan, never
+> taught to skip. **The exemption-with-reason contract.** An entry in `routeBodiesNotMirrored` names
+> the `@Serializable` class and the route (with its method) and caller that actually receive the body,
+> with the reason the console never reads it: it is the audit trail for a deliberate hole in the
+> contract, so an entry whose class the main sources no longer declare as `@Serializable` fails the
+> test like an unrooted body does; that the reason names a route that still exists stays on the
+> reviewer — the route text in a reason is free text no check validates. A shape the console *builds* rather than
+> receives keeps its `CONSOLE_ONLY` reason in `dto-contract.mjs` instead; a `CONSOLE_ONLY` key naming a
+> root DTO would silently skip that type's comparison, so the check's test derives the forbidden names
+> from the root list itself. **Rejected alternatives for body discovery.** A PSI or detekt pass with
+> type resolution was rejected: it needs detekt's Analysis API, its own daemon and a larger runner (see
+> the 2026-10-13 amendment) to answer a question the route source text already answers, and it would
+> tie the check to detekt's alpha lifecycle; a Konsist rule over the same sources was rejected for the
+> same resolution cost without the fail-closed unread-shape guard. Widening the TypeScript extract to
+> scan more console files was rejected too: the extract stays `console/types/homer.ts` alone, and the
+> scope widens on the backend side.
 
-*Amended (2026-11-16):* `detekt` also runs its unused-code rules (GH #297): `UnusedParameter`,
-`UnusedPrivateClass`, `UnusedPrivateFunction`, `UnusedPrivateProperty` and `UnusedVariable`. The backend
-had no dead-code check, while the console has knip, and the compiler reports neither unused private
-members nor unused parameters. Every other rule of the `style` set stays off, listed in
-`app/config/detekt/detekt.yml`. The 23 findings at introduction were fixed in the same change: 13
-constructor properties read only while the object is built became plain parameters, and 4 parameters and
-6 destructured variables nothing read were removed.
+> **Amendment (2026-11-16) —** `detekt` also runs its unused-code rules (GH #297): `UnusedParameter`,
+> `UnusedPrivateClass`, `UnusedPrivateFunction`, `UnusedPrivateProperty` and `UnusedVariable`. The backend
+> had no dead-code check, while the console has knip, and the compiler reports neither unused private
+> members nor unused parameters. Every other rule of the `style` set stays off, listed in
+> `app/config/detekt/detekt.yml`. The 23 findings at introduction were fixed in the same change: 13
+> constructor properties read only while the object is built became plain parameters, and 4 parameters and
+> 6 destructured variables nothing read were removed.
 
-*Amended (2026-11-17):* GH #289 — `SuspendFunSwallowedCancellation`, enforced by the required `detekt` check, is the rule against
-`runCatching` around suspend calls, the pairing detekt's docs recommend with a cancellation-safe helper,
-now `homer.app.infra.coRunCatching`; no separate rule was added. All 38 `SuspendFunSwallowedCancellation`
-suppressions stay: each is cleanup-before-rethrow, a deliberate cancellation boundary, or a best-effort
-cleanup whose catch would change behaviour if it rethrew a cancellation or stopped catching `Error`, and
-each carries its reason.
+> **Amendment (2026-11-17) —** GH #289 — `SuspendFunSwallowedCancellation`, enforced by the required `detekt` check, is the rule against
+> `runCatching` around suspend calls, the pairing detekt's docs recommend with a cancellation-safe helper,
+> now `homer.app.infra.coRunCatching`; no separate rule was added. All 38 `SuspendFunSwallowedCancellation`
+> suppressions stay: each is cleanup-before-rethrow, a deliberate cancellation boundary, or a best-effort
+> cleanup whose catch would change behaviour if it rethrew a cancellation or stopped catching `Error`, and
+> each carries its reason.
 
-*Amended (2026-11-17):* The size caps ratchet (GH #306). A cap more than 5% of itself (rounded up, at least 1) above the current maximum now fails, in `SizeLimitsTest` for the backend and in `size-console` for the console, with a message naming the constant, its file, the current maximum and the value to lower it to; the cap then becomes exactly that maximum. Lowered now: `MAX_FILE_LINES` 600 → 542 (backend), `MAX_FILE_LINES` 600 → 500 (console). The other caps were within the slack and stay. The slack exists because requiring the cap to equal the maximum exactly would force a cap edit in every commit that shrinks the worst offender slightly; it absorbs that churn while still catching a cap set at a single outlier far above the rest (the cap itself still limits growth).
+> **Amendment (2026-11-17) —** The size caps ratchet (GH #306). A cap more than 5% of itself (rounded up, at least 1) above the current maximum now fails, in `SizeLimitsTest` for the backend and in `size-console` for the console, with a message naming the constant, its file, the current maximum and the value to lower it to; the cap then becomes exactly that maximum. Lowered now: `MAX_FILE_LINES` 600 → 542 (backend), `MAX_FILE_LINES` 600 → 500 (console). The other caps were within the slack and stay. The slack exists because requiring the cap to equal the maximum exactly would force a cap edit in every commit that shrinks the worst offender slightly; it absorbs that churn while still catching a cap set at a single outlier far above the rest (the cap itself still limits growth).
 
 ## Amendment (2026-11-17): suppression budget (GH #310)
 

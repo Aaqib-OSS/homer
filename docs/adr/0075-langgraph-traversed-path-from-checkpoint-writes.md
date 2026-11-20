@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-10-03
 deciders: Lukáš Vlk
+amended: 2026-10-09
 ---
 # ADR-0075: The traversed path comes from checkpoint routing writes
 
@@ -61,9 +62,9 @@ inspected:
   of any static edge.
 - A task that completed (has a result) in that checkpoint and
   wrote none of the above routing channels ended its branch:
-  `<node> → __end__`. *(Amended 2026-10-09: the original "no error" condition
-  was dropped in commit `209604e5`, so a node recovered after a failure still
-  ends its branch.)*
+  `<node> → __end__`.
+
+> **Amendment (2026-10-09) —** The original "no error" condition was dropped in commit `209604e5`, so a node recovered after a failure still ends its branch.
 
 These channel names and the `__pregel_tasks` packet shape were verified
 empirically against the installed runtime (langgraph 1.2.5); they are

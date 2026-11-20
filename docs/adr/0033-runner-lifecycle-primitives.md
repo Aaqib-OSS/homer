@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-07-27
 deciders: Lukáš Vlk
+amended: 2026-10-09
 ---
 # ADR-0033: Runner contract decomposed into lifecycle primitives
 
@@ -25,11 +26,12 @@ open/close inside each backend.
   back) without a parallel SSH code path.
 - One uniform orchestration sequence for all backends; a backend whose
   execution filesystem is the server's (local, k8s shared PVC) no-ops
-  what does not apply. *(Amended 2026-10-09: kubernetes no longer shares
-  a PVC; it syncs via tar-over-exec, see [ADR-0043](0043-k8s-sync-workspaces.md).)*
+  what does not apply.
 - Zero behavior change for existing runs.
 - Remove the k8s-specific `podName` leak from the generic session
   interface.
+
+> **Amendment (2026-10-09) —** Kubernetes no longer shares a PVC; it syncs via tar-over-exec, see [ADR-0043](0043-k8s-sync-workspaces.md).
 
 ## Considered Options
 
@@ -59,13 +61,13 @@ primitives, each defaulting to no-op:
   callers never learn the backend's path scheme. Directional methods
   (not a generic `copy(src, dst)`) keep direction type-safe. Downloads
   default to overlay (keep local files); `overlay = false` overwrites
-  them with the remote content. *(Amended 2026-10-09: the flag is now
-  `mode: DownloadMode = OVERLAY` with `OVERLAY` / `OVERWRITE` / `MIRROR`,
-  see [ADR-0055](0055-workdir-sync-down-is-a-mirror.md).)*
+  them with the remote content.
 - `cleanWorkspace()` — remove the backend-side workspace root.
 - `metadata: Map<String, String>` — backend-resource facts (e.g.
   `pod.name`), stamped onto command-execution spans; replaces `podName`.
 - `shell` / `close()` — unchanged (execute / destroy).
+
+> **Amendment (2026-10-09) —** The flag is now `mode: DownloadMode = OVERLAY` with `OVERLAY` / `OVERWRITE` / `MIRROR`, see [ADR-0055](0055-workdir-sync-down-is-a-mirror.md).
 
 Full-run *policy* moves to `AgentExecutor`: upload workspace + agent
 dir after `createWorkspace`; on finish (best-effort, NonCancellable)

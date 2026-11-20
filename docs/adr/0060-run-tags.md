@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-09-08
 deciders: Lukáš Vlk
-amended: 2026-09-29
+amended: 2026-09-29, 2026-10-09, 2026-11-09
 ---
 # ADR-0060: Run tags — subject tags stored per run and filterable through the API
 
@@ -148,8 +148,6 @@ Specifics:
   is the single value every start path and the load-time validation read, so the
   alias cannot drift from the new field, and an agent that sets both simply gets the
   de-duplicated union alongside the deprecation WARN.
-  *(Amended 2026-10-09: deprecated in 1.22.0, the alias is still accepted; it stays
-  until a release removes it.)*
 
 Trust boundary touched: **principals** (the callback route — a run tags only itself)
 and **availability** (two local bounds: 20 runtime tags per run, 10 tag filters per
@@ -159,17 +157,14 @@ by refusing a value the run's `SecretRedactor` would alter (rule 7) plus a read-
 screen, each with a denial-path test (substring embed, `@SYSENV:` value, own callback
 token, post-run `secret` flip).
 
+> **Amendment (2026-10-09) —** Deprecated in 1.22.0, the alias is still accepted; it stays until a release removes it.
+
 ### Consequences
 
 - Good: "find runs by subject" is answered by Homer's own API and console, for every
   run including telemetry-`OFF` ones, with no external dependency.
 - Good: one derivation feeds both trace tags and run tags; the deprecated alias funnels
-  through `effectiveFromInputTags`, so the two cannot disagree. *(Amended
-  2026-11-09: below the ceiling they still cannot — past it, the exported trace
-  tags truncate at `MAX_TRACE_TAGS` while these stored `?tag=` rows keep every
-  tag. Export-only, to bound per-span payload; see the ADR-0050 amendment.
-  `MAX_TRACE_TAGS` is bound to `MAX_RUNTIME_TAGS_PER_RUN`, so the two ceilings
-  cannot drift.)*
+  through `effectiveFromInputTags`, so the two cannot disagree.
 - Good: a run can only tag itself, and only with keys its author allowed; the cap and
   charset bound what it can write.
 - Neutral: tags are `key:value` strings — a numeric `mr:4211` is the string `"4211"`,
@@ -182,6 +177,8 @@ token, post-run `secret` flip).
 - Bad: the runtime-tag secret screen is substring matching with an 8-character floor.
   An encoded or split secret, or one shorter than 8 characters, is not caught —
   accepted, for the channel-capacity reasons above.
+
+> **Amendment (2026-11-09) —** Below the ceiling they still cannot — past it, the exported trace tags truncate at `MAX_TRACE_TAGS` while these stored `?tag=` rows keep every tag. Export-only, to bound per-span payload; see the ADR-0050 amendment. `MAX_TRACE_TAGS` is bound to `MAX_RUNTIME_TAGS_PER_RUN`, so the two ceilings cannot drift.
 
 ## Pros and Cons of the Options
 

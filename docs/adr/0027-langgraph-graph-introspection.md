@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-19
 deciders: Lukáš Vlk
-amended: 2026-09-30
+amended: 2026-09-30, 2026-10-09, 2026-10-20
 ---
 # ADR-0027: Read-only LangGraph graph introspection
 
@@ -18,10 +18,9 @@ call LangGraph's `get_graph().draw_mermaid()`.
 
 Expose `GET /api/v1/agents/{name}/langgraph`, backed by `LangGraphInspectService`,
 which shells out to a new read-only `homer_langgraph inspect --module <m>` mode
-once per LangGraph command and returns the Mermaid source. *(Superseded in
-part by [ADR-0073](0073-langgraph-topology-is-structured-data.md), 2026-10-09
-note: the endpoint returns structured topology drawn by the console with dagre;
-`mermaid` is deprecated and no longer used by the console.)*
+once per LangGraph command and returns the Mermaid source.
+
+> **Amendment (2026-10-09) —** Superseded in part by [ADR-0073](0073-langgraph-topology-is-structured-data.md): the endpoint returns structured topology drawn by the console with dagre; `mermaid` is deprecated and no longer used by the console.
 
 Key choices:
 
@@ -51,16 +50,16 @@ Key choices:
 - Good: static topology visualization, enabling console UI to render the graph
   structure upfront.
 - Bad: static topology only — no live per-run execution highlighting (would need
-  per-node execution state Homer does not track). *(Amended 2026-10-09: per-run
-  status and traversed-path overlays exist since
-  [ADR-0044](0044-langgraph-resume-and-run-introspection.md) and
-  [ADR-0075](0075-langgraph-traversed-path-from-checkpoint-writes.md).)*
+  per-node execution state Homer does not track).
 - Bad: in Kubernetes deployments the server image must have `python` +
   `homer_langgraph` installed for introspection to succeed; otherwise the
   endpoint returns `error` entries and the console shows an inline message.
 - Neutral: rendering is client-side (`mermaid`); the backend never produces an image
-  (LangGraph's PNG path needs network or headless Chrome). *(Superseded in part by
-  ADR-0073: still client-side, now dagre SVG instead of `mermaid`.)*
+  (LangGraph's PNG path needs network or headless Chrome).
+
+> **Amendment (2026-10-20) —** Superseded in part by ADR-0073: still client-side, now dagre SVG instead of `mermaid`.
+
+> **Amendment (2026-10-09) —** Per-run status and traversed-path overlays exist since [ADR-0044](0044-langgraph-resume-and-run-introspection.md) and [ADR-0075](0075-langgraph-traversed-path-from-checkpoint-writes.md).
 
 ## Amendment (2026-09-30): why introspection is bounded, and why one permit covers a whole request
 
