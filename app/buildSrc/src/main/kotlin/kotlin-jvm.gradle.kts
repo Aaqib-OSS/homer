@@ -4,6 +4,8 @@ package buildsrc.convention
 
 import CrapReportTask
 import CrapScore
+import kotlinx.kover.gradle.plugin.dsl.AggregationType
+import kotlinx.kover.gradle.plugin.dsl.CoverageUnit
 import org.gradle.api.tasks.testing.logging.TestLogEvent
 import org.jetbrains.kotlin.gradle.plugin.getKotlinPluginVersion
 
@@ -106,13 +108,13 @@ tasks.register<CrapReportTask>("crapReport") {
     outputDir.set(layout.buildDirectory.dir("reports/crap"))
 }
 
+// A module's line-coverage floor is today's measured value, rounded down, and only goes up (ADR-0082).
+// A module without `koverMinLine` in its gradle.properties (no tests, empty report) has no rule.
 kover {
     reports {
         verify {
-            rule {
-                // Coverage threshold intentionally 0% at adoption. Tune upward as
-                // coverage is measured and improved.
-                minBound(0)
+            findProperty("koverMinLine")?.let { floor ->
+                rule { minBound(floor.toString().toInt(), CoverageUnit.LINE, AggregationType.COVERED_PERCENTAGE) }
             }
         }
     }

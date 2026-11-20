@@ -3,7 +3,7 @@ status: accepted
 date: 2026-10-12
 deciders: Lukáš Vlk
 consulted: ADR-0081
-amended: 2026-10-13, 2026-10-14, 2026-11-04, 2026-11-05, 2026-11-06, 2026-11-11, 2026-11-13, 2026-11-14, 2026-11-15, 2026-11-16, 2026-11-17, 2026-11-19
+amended: 2026-10-13, 2026-10-14, 2026-11-04, 2026-11-05, 2026-11-06, 2026-11-11, 2026-11-13, 2026-11-14, 2026-11-15, 2026-11-16, 2026-11-17, 2026-11-19, 2026-11-20
 ---
 
 # ADR-0082: Quality checks are reported first and made required one by one
@@ -437,3 +437,7 @@ The console gets its counterpart of the backend's parameter cap. Its ESLint conf
 ## Amendment (2026-11-19): suppression budgets move to `comment-policy`
 
 The `@Suppress` and `eslint-disable` budgets and their reason rules moved from `SuppressionBudgetTest` and `size.mjs` to the `comment-policy` check, which counts a directive only where it takes effect (not inside a string). The `jscpd:ignore-start` and `@Tag(REPORT_ONLY)` budgets stay; ADR-0117 records the check. A check may also be `required` from day one, with its existing findings budgeted at today's counts and ratcheted down (ADR-0117); for such a budgeted check, this replaces "required once its backlog is at zero".
+
+## Amendment (2026-11-20): a real Kover coverage floor (GH #350)
+
+The Kover rule was `minBound(0)`, a floor nothing could fall under. Each backend module with tests now has a line-coverage floor, `koverMinLine` in its `gradle.properties`, set to the coverage measured on 2026-11-20 rounded down to the whole percent (`app` 98, `homer-runner` 94, `agentdebug` 91). `kotlin-jvm.gradle.kts` reads it per module, so no module is held to another's floor; a module without the property (`utils`, `architecture`, `e2e`: no covered lines) gets no rule rather than a failing one. CI already runs `koverVerify`. The floor ratchets up only: a change that raises coverage may raise it, none may lower it.
