@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-05
 deciders: Lukáš Vlk
-amended: 2026-09-24, 2026-09-30
+amended: 2026-09-24, 2026-09-30, 2026-11-20
 ---
 # ADR-0014: Per-caller rate limiting on the secured API
 
@@ -239,3 +239,22 @@ bucket drained and is still bounded by the per-peer `login` bucket; a login
 flood that no per-peer limit catches gets `429` from the aggregate login bucket
 without touching the global one; without a `password` scheme the login path
 keeps the global bucket.
+
+## Amendment 2026-11-20: Ktor held at 3.5.0, and the exit
+
+Ktor 3.5.1 runs rate limiting before authentication
+([KTOR-9621](https://youtrack.jetbrains.com/issue/KTOR-9621)). That breaks the correctness
+constraint above: `requestKey` sees no principal and falls back to the peer address, so every
+caller behind one address shares one bucket. Homer therefore holds Ktor at 3.5.0, and holds the MCP Kotlin SDK at 0.14.0, because
+0.15.0 needs Ktor 3.5.1 and would raise the whole Ktor stack past the hold.
+
+The hold ends in one of two ways:
+
+- a Ktor release runs rate limiting after authentication again, and `PerCallerRateLimitTest`
+  passes on it; or
+- the per-caller limiter is reworked to key requests before authentication, which takes a new
+  amendment to this ADR.
+
+The MCP SDK hold goes with the Ktor hold. Both are registered as W-001 and W-002 in
+[`docs/workarounds.md`](../workarounds.md), whose `decision-records` check fails whenever either
+version moves, so each upgrade re-checks this exit.
