@@ -99,8 +99,7 @@ internal class LlmAttemptPricing(
             // fallback reason when there was a configured rung to skip.
             return ResolvedCost(cliCostUsd, CostSource.CLI, if (llmCostResolver.configured) "run cancelled before lookup" else null)
         }
-        // 107AaI5G / CWE-400: bound what reaches the poll loop; only this consumer
-        // is capped, the scan figure itself is untouched.
+        // CWE-400: bounds what reaches the poll loop; the scan figure itself is untouched.
         val pollingCalls = scan.modelCalls.coerceAtMost(MAX_EXPECTED_CALLS_FOR_POLLING).takeIf { harness.countsModelCalls }
         return llmCostResolver.resolve(scan.sessionId, cliCostUsd, pollingCalls, startedAtMs, endedAtMs)
     }

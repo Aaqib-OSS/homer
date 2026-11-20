@@ -84,7 +84,7 @@ class SshShellExecutor(
                             awaitClose(channel, stdOut, stdErr, timeout, kill)
                         } catch (e: Throwable) {
                             withContext(NonCancellable) {
-                                // MINA 2.18.0 exposes no client-side SSH signal API (RFC 4254 channel
+                                // MINA 2.20.0 exposes no client-side SSH signal API (RFC 4254 channel
                                 // signal request), so close(true) is the only lever on the exec channel
                                 // itself. When reaping is enabled the command leads its own remote
                                 // process group; kill that whole group over a control channel FIRST so a

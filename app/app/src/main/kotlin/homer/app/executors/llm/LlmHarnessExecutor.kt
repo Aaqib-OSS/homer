@@ -128,9 +128,8 @@ class LlmHarnessExecutor<C>(
         val retry = command.retryPolicy()
         span.setAttribute("retry.attempts", retry.attempts.toLong())
 
-        // Cost cap is enforced at the request boundary (handleAgentExecution /
-        // handleRetry) so a refusal can return HTTP 429. The executor only
-        // records cost; it does not re-check caps mid-run.
+        // The cost cap is checked before the run starts (AgentRunStarter, RunHandlers); the executor
+        // only records cost. See ADR-0007.
 
         var last: Attempted<RetryOutcome>? = null
 
