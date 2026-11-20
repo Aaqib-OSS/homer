@@ -5,9 +5,7 @@ import ProcessesPage from './page';
 import type { ProcessInfo } from '@/types/homer';
 import { HomerApiError } from '@/lib/api/client';
 
-// Children that pull query hooks / rendering irrelevant to the URL-state
-// behavior under test. ProcessTable stands in for the real one, rendering the
-// Flow render slot it is handed so the page's wiring of it stays observable.
+// ProcessTable stands in, rendering the Flow slot it is handed so the wiring stays observable.
 vi.mock('@/components/processes/process-table', () => ({
   ProcessTable: ({
     processes,

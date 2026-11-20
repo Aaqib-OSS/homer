@@ -1,10 +1,15 @@
 package homer.app.routes
 
 import homer.app.exceptions.BodylessBadRequestException
+import homer.app.fixtures.TestFixtures
 import homer.app.fixtures.mountApiV1Routes
+import homer.app.infra.SecretRedactor
+import homer.app.models.ExecutionInfo
 import homer.app.models.LlmEvent
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
+import homer.app.services.LlmArtifact
+import homer.app.services.LlmEventStreamService
 import homer.app.services.LlmStreamEvent
 import homer.app.services.LogTailService
 import homer.app.services.ProcessEvent
@@ -15,18 +20,24 @@ import io.kotest.property.arbitrary.string
 import io.kotest.property.checkAll
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.testApplication
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import kotlin.io.path.Path
+import kotlin.io.path.writeText
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class StreamingRoutesTest {
     @Test
@@ -201,6 +212,118 @@ class StreamingRoutesTest {
             }
 
             assertEquals(listOf(0 to LogTailService.Stream.OUT, 3 to LogTailService.Stream.OUT), resolved)
+        }
+
+    @Test
+    fun `the logs stream serves the file of the command the cmd index names`(
+        @TempDir dir: java.nio.file.Path,
+    ) = testApplication {
+        // A run that executes a subset of its commands records each row's own index, so the row
+        // at position 0 is command 2's: `cmd=0` must not serve command 2's output.
+        dir.resolve("cmd_2.out").writeText("command two\n")
+        val pm =
+            mockk<ProcessManager>(relaxed = true) {
+                every { hasLiveJob(any()) } returns false
+                coEvery { getCommandArtifacts(any(), any()) } returns null
+                coEvery { getProcessStatus(42) } returns ProcessStatus.FINISHED
+                coEvery { getProcessInfo(42) } returns
+                    ProcessInfo(
+                        id = 42,
+                        status = ProcessStatus.FINISHED,
+                        agentName = "deploy",
+                        owner = "alice",
+                        artifactsDir = dir,
+                        executions =
+                            listOf(
+                                ExecutionInfo(
+                                    label = "two",
+                                    start = 0,
+                                    end = 1,
+                                    resultCode = 0,
+                                    stdOut = Path("cmd_2.out"),
+                                    stdErr = null,
+                                    errMsg = null,
+                                    commandIndex = 2,
+                                ),
+                            ),
+                    )
+            }
+        mountApiV1Routes {
+            every { processManager } returns pm
+            every { logTailService } returns LogTailService(pm, TestFixtures.mockLogger(), pollIntervalMs = 1L)
+        }
+
+        val served = client.get("/api/v1/stream/processes/42/logs?cmd=2").bodyAsText()
+        assertTrue(served.contains("command two"), "cmd=2 names command 2: $served")
+
+        // Command 0 and the indexes the run never executed recorded no row, so their `cmd_N`
+        // defaults are tried and serve nothing: no cmd value reaches the row at position 0.
+        for (query in listOf("", "?cmd=0", "?cmd=-1", "?cmd=x")) {
+            val other = client.get("/api/v1/stream/processes/42/logs$query").bodyAsText()
+            assertFalse(other.contains("command two"), "query=$query must not serve command 2's output: $other")
+        }
+    }
+
+    @Test
+    fun `the llm-events stream serves the command the cmd index names and refuses one the run did not execute`() =
+        testApplication {
+            // The same debug-run record: the row at position 0 is command 2's, so `cmd=0` names a
+            // command the run did not execute and must not fall back to that position.
+            val llmService =
+                mockk<LlmEventStreamService>(relaxed = true) {
+                    coEvery { resolve(42, 2) } returns LlmArtifact(Path("cmd_2.out"), "codex", 0, SecretRedactor.NONE)
+                    coEvery { resolve(42, 0) } returns null
+                    every { streamCommand(42, 2, any()) } returns
+                        flowOf(
+                            LlmStreamEvent.Event(2, 0, 0L, 0, LlmEvent.SessionStart("s", null)),
+                            LlmStreamEvent.End,
+                        )
+                }
+            val pm =
+                mockk<ProcessManager>(relaxed = true) {
+                    coEvery { getProcessInfo(42) } returns
+                        ProcessInfo(
+                            id = 42,
+                            status = ProcessStatus.FINISHED,
+                            agentName = "deploy",
+                            owner = "alice",
+                            executions =
+                                listOf(
+                                    ExecutionInfo(
+                                        label = "two",
+                                        start = 0,
+                                        end = 1,
+                                        resultCode = 0,
+                                        stdOut = Path("cmd_2.out"),
+                                        stdErr = null,
+                                        errMsg = null,
+                                        commandIndex = 2,
+                                    ),
+                                ),
+                        )
+                }
+            mountApiV1Routes {
+                every { processManager } returns pm
+                every { llmEventStreamService } returns llmService
+            }
+
+            val served = client.get("/api/v1/stream/processes/42/llm-events?cmd=2").bodyAsText()
+            assertTrue(served.contains("llm.event"), "cmd=2 names command 2: $served")
+            assertTrue(served.contains("llm.end"), "the stream of a finished command ends: $served")
+
+            assertEquals(
+                HttpStatusCode.NotFound,
+                client.get("/api/v1/stream/processes/42/llm-events?cmd=0").status,
+                "cmd=0 names a command the run did not execute",
+            )
+            // Unlike `/logs`, whose `cmd` defaults a non-integer to 0, this stream rejects one.
+            for (bad in listOf("-1", "x")) {
+                assertEquals(
+                    HttpStatusCode.BadRequest,
+                    client.get("/api/v1/stream/processes/42/llm-events?cmd=$bad").status,
+                    "cmd=$bad",
+                )
+            }
         }
 
     @Test

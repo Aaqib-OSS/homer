@@ -126,9 +126,8 @@ function useNavItems(): NavItem[] {
   const { isAdmin, can } = useCan();
   const { plugins } = usePlugins();
 
-  // A denied plugin is already absent from `plugins` — the provider never
-  // imported it — but the gate is re-applied here rather than assumed, so the
-  // sidebar's answer cannot drift from the route's. See lib/plugins/gate.ts.
+  // Re-apply the plugin gate rather than trust `plugins`, so the sidebar cannot
+  // drift from the route's answer (lib/plugins/gate.ts).
   const pluginItems: NavItem[] = plugins
     .filter((p) => canUsePlugin(p.requires, { isAdmin, can }))
     .map((p) => ({ name: p.title, href: p.route, icon: Puzzle }));

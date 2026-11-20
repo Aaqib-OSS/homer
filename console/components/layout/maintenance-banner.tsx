@@ -3,13 +3,9 @@
 import { useHealth } from '@/lib/api/queries';
 
 /**
- * The server's maintenance mode, shown on every dashboard page: while it is on the
- * backend skips cron fires and holds new starts in a queue, so a run that seems to
- * do nothing has an explanation on screen. Renders nothing while the mode is off
- * or while health has not answered yet.
- *
- * Fixed brand colors rather than theme tokens, like the status badges: the alarm
- * has to read the same under every theme.
+ * The server's maintenance mode, on every dashboard page: while on, the backend skips cron
+ * fires and queues new starts. Renders nothing while off or before health has answered.
+ * Fixed brand colors, not theme tokens, so the alarm reads the same under every theme.
  */
 export function MaintenanceBanner() {
   const { data } = useHealth();

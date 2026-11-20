@@ -36,6 +36,8 @@ data class Execution(
     val stoppedBy: String? = null,
     // Whether this entry is one of the agent's `onStop:` steps.
     val onStop: Boolean = false,
+    // The command's index in the agent's `commands`; null for runs recorded before the field existed.
+    val commandIndex: Int? = null,
 )
 
 @Serializable
@@ -100,6 +102,19 @@ data class ErrorBody(
 data class SchemaErrorBody(
     val msg: String,
     val errors: List<String> = emptyList(),
+)
+
+@Serializable
+data class MeGrant(
+    val agents: List<String>,
+    val actions: List<String>,
+)
+
+@Serializable
+data class Me(
+    val username: String,
+    val role: String? = null,
+    val grants: List<MeGrant> = emptyList(),
 )
 
 @Serializable

@@ -27,7 +27,7 @@ export default function PluginRoutePage() {
   }
 
   // Denied and non-existent render the same thing on purpose: a gated plugin's
-  // existence must not leak to callers who cannot open it (root CLAUDE.md §12).
+  // existence must not leak to callers who cannot open it (ADR-0047 rule 3).
   if (!plugin || !canUsePlugin(plugin.requires, { isAdmin, can })) {
     return <NotFound />;
   }
@@ -36,10 +36,8 @@ export default function PluginRoutePage() {
 }
 
 /**
- * A plugin owns its first segment and everything below it, so `/p/a` resolves
- * to the plugin at `/p` with sub-path `/a`. Matching the first segment
- * exactly (rather than by string prefix) is what stops `/pluginx` from
- * resolving to the plugin at `/plugin`.
+ * A plugin owns its first segment and everything below it: `/p/a` resolves to
+ * the plugin at `/p` with sub-path `/a`. The first segment matches exactly, never by prefix.
  */
 function splitPluginPath(pluginRoute: string | string[] | undefined): {
   route: string | null;

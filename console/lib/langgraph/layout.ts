@@ -1,9 +1,7 @@
 import * as dagre from '@dagrejs/dagre';
 import type { LangGraphTopology } from '@/types/homer';
 
-// Console-side cap: layout cost is the console's own resource, so it does not
-// rely on the backend's bound. Edges sit below the backend's 1000 because
-// synchronous dagre layout grows steeply with them. See ADR-0073.
+// The console's own render cap, independent of the backend's bound. See ADR-0073.
 export const MAX_RENDER_NODES = 200;
 const MAX_RENDER_EDGES = 300;
 const MAX_LABEL_CHARS = 40;
@@ -18,9 +16,8 @@ const NODE_HEIGHT = 36;
 const TERMINAL_HEIGHT = 28;
 const EDGE_LABEL_HEIGHT = 16;
 const NODESEP = 32;
-// Self-loops are drawn here, not by dagre (its points land away from the node).
-// Each further loop on a node reaches LOOP_STEP px further, so they nest; dagre
-// gets a box widened by whatever the loops and labels need beyond NODESEP.
+// Self-loops are drawn here, not by dagre; each further loop on a node reaches
+// LOOP_STEP px further, and dagre gets a box widened to fit them.
 const LOOP_REACH = 18;
 const LOOP_STEP = 8;
 const LOOP_SPREAD = 7;
@@ -324,20 +321,15 @@ export function layoutTopology(topology: LangGraphTopology): GraphLayout | null 
     return null;
   }
   const g = newGraph();
-  // Node ids are agent-authored and can collide with Object.prototype keys
-  // (constructor, toString, __proto__, …), which dagre/graphlib object-keys
-  // internally and mishandles or crashes on. Every dagre-facing node id is
-  // therefore an index-based internal id, never the real one (§12 rule 2).
+  // Agent-authored ids can collide with Object.prototype keys, so dagre only
+  // ever sees index-based ids (ADR-0047 rule 2, ADR-0073).
   const { internalId, realId, meta } = addNodes(g, topology.nodes);
   const { edgeMeta, selfLoops } = addEdges(g, topology.edges, internalId);
   const loopsByNode = groupByNode(selfLoops);
-  // Nodes whose dagre box was grown for their loops: the drawn rect keeps this
-  // size at the box's left, vertically centered.
+  // Nodes whose dagre box was grown for loops; the drawn rect keeps the real size.
   const realSize = reserveLoopSpace(g, loopsByNode);
 
-  // Belt-and-braces: internal ids already avoid the known prototype-key
-  // crashes, but a future dagre version or an id shape we have not seen must
-  // not take the whole page down — fail into the render-cap fallback instead.
+  // A dagre failure falls into the render-cap fallback instead of crashing the page.
   try {
     dagre.layout(g);
   } catch {

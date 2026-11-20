@@ -7,34 +7,14 @@ export interface AppConfig {
   api: {
     baseUrl: string;
     timeout: number;
-    /**
-     * Operator allowlist of backend origins the console may target
-     * (`CONSOLE_ALLOWED_API_ORIGINS`). Empty = unrestricted (any endpoint can be
-     * entered at login). When non-empty, the login endpoint field is restricted
-     * to these and the CSP `connect-src` is pinned to them. See
-     * `console/CLAUDE.md` § Content-Security-Policy.
-     */
+    /** `CONSOLE_ALLOWED_API_ORIGINS`: empty is unrestricted; else login endpoints and CSP `connect-src` are pinned to it. */
     allowedOrigins: string[];
   };
   auth: {
     enabled: boolean;
-    /**
-     * Selects how the console authenticates requests.
-     *  - `cookie`  — POST `/api/v1/auth/login` to mint an `HttpOnly` session
-     *               cookie; every request runs with `credentials: 'include'`.
-     *               No bearer is sent. Server must be configured with
-     *               `apiAuth: !<password>` (or `!<combined>` containing one).
-     *  - `bearer`  — legacy localStorage-token flow; `Authorization: Bearer`
-     *               on every request. Cookie is not used.
-     *  - `disabled` — no auth (matches backend `apiAuth: !<unsecured>`).
-     */
+    /** `cookie`: `HttpOnly` session cookie; `bearer`: `Authorization: Bearer` from `localStorage`; `disabled`: no auth. */
     mode: AuthMode;
-    /**
-     * Whether the login screen offers bearer (token) mode. Defaults to `false`
-     * so the console is cookie-only unless the operator opts in via
-     * `CONSOLE_ALLOW_BEARER=true`. Bearer tokens live in `localStorage` and are
-     * exfiltratable by any XSS foothold; cookie mode is `HttpOnly`. See ADR-0011.
-     */
+    /** `CONSOLE_ALLOW_BEARER`: offers token sign-in; off by default as a `localStorage` token is XSS-exfiltratable (ADR-0011). */
     allowBearer: boolean;
     tokenKey: string;
   };
@@ -52,30 +32,13 @@ export interface AppConfig {
     defaultTheme: string;
   };
   plugins: {
-    /**
-     * Raw `CONSOLE_PLUGINS` entries — a same-origin module path, optionally
-     * `@<requirement>` (`/plugins/costs.js@admin`). Imported at runtime and
-     * executed in the console's own origin, so every entry here is code the
-     * operator trusts as much as the console itself. See ADR-0059.
-     */
+    /** Raw `CONSOLE_PLUGINS` entries, each code run in the console's origin and so as trusted as the console (ADR-0059). */
     entries: string[];
   };
   themes: {
-    /**
-     * Raw `CONSOLE_THEMES` entries — a theme name and the same-origin `.css`
-     * path that defines it (`brand-dark:/themes/brand-dark.css`).
-     * The stylesheet runs no code, but it *is* served from the console's own
-     * origin and can redress the UI, so it carries the same operator trust as
-     * anything else on the console's disk. See ADR-0069.
-     */
+    /** Raw `CONSOLE_THEMES` entries (`name:/same-origin.css`); a stylesheet can redress the UI, so operator-trusted (ADR-0069). */
     entries: string[];
-    /**
-     * The validated `CONSOLE_THEME_MODES` pair (`light:<name>,dark:<name>`).
-     * When set, the switcher and `next-themes` offer only the configured
-     * entries plus `System`, which resolves to `light`/`dark` per the OS
-     * colour scheme; when unset, the built-ins stay. Absent until the root
-     * layout resolves a valid pair. See ADR-0069.
-     */
+    /** The validated `CONSOLE_THEME_MODES` pair; when set, the switcher offers only it plus `System` (ADR-0069). */
     modes?: ThemeModes;
   };
 }
@@ -116,14 +79,11 @@ function applyRuntimeAuth(config: AppConfig, rc: RuntimeConfig): void {
 function getConfig(): AppConfig {
   const config: AppConfig = JSON.parse(JSON.stringify(defaultConfig));
 
-  // `default.json` is operator-replaceable at image build time, and `themes` is
-  // an additive key a pre-themes copy does not carry; without this the first
-  // `getConfig()` throws reading `.entries` off undefined — a blank console.
+  // An operator-replaced `default.json` may lack `themes`; without this `.entries` throws.
   config.themes ??= { entries: [] };
 
   if (typeof window !== 'undefined') {
-    // Injected by the root layout on every render. The only client-side source:
-    // a browser bundle never sees non-NEXT_PUBLIC_ env vars like CONSOLE_*.
+    // Injected by the root layout: a browser bundle never sees `CONSOLE_*` env vars.
     const rc = (window as Window & { __HOMER_CONFIG__?: RuntimeConfig }).__HOMER_CONFIG__;
     if (rc) applyRuntimeConfig(config, rc);
   }

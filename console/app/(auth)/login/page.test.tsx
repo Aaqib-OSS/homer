@@ -1,5 +1,7 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -55,6 +57,15 @@ async function signIn(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText(/username/i), 'alice');
   await user.type(screen.getByLabelText(/^password$/i), 'pw');
   await user.click(screen.getByRole('button', { name: /^login$/i }));
+}
+
+function findBackendFile(relative: string): string {
+  const target = path.join('app/app/src/main/kotlin/homer/app', relative);
+  for (let dir = __dirname; dir !== path.dirname(dir); dir = path.dirname(dir)) {
+    const candidate = path.join(dir, target);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  throw new Error(`${target} not found above ${__dirname}`);
 }
 
 describe('LoginPage', () => {
@@ -173,6 +184,26 @@ describe('LoginPage', () => {
     expect(push).not.toHaveBeenCalled();
   });
 
+  it("counts the cooldown down from the backend's default login refill period", async () => {
+    const serverConfig = fs.readFileSync(findBackendFile('models/ServerConfig.kt'), 'utf8');
+    const refill = /loginRateLimit: RateLimitConfig = RateLimitConfig\(limit = \d+, refillPeriod = (\d+)\)/.exec(serverConfig)?.[1];
+    expect(refill).toBeDefined();
+    login.mockResolvedValue('rate-limited');
+    const user = userEvent.setup();
+    renderPage();
+    await user.type(screen.getByLabelText(/username/i), 'alice');
+    await user.type(screen.getByLabelText(/^password$/i), 'pw');
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      fireEvent.click(screen.getByRole('button', { name: /^login$/i }));
+      await act(async () => {});
+      expect(screen.getByRole('button', { name: `Try again in ${refill}s` })).toBeDisabled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('surfaces a server-unreachable message on a non-auth error', async () => {
     login.mockResolvedValue('error');
     const user = userEvent.setup();
@@ -244,7 +275,7 @@ describe('LoginPage', () => {
       value: { ...original, protocol: 'https:' },
     });
     renderPage();
-    // Default endpoint is http://localhost:8080 → mixed content under https.
+    // The default endpoint is plain http, so https is mixed content.
     expect(screen.getByText(/mixed content/i)).toBeInTheDocument();
     Object.defineProperty(window, 'location', { configurable: true, value: original });
   });
@@ -376,9 +407,7 @@ describe('LoginPage', () => {
 
   it('preselects Token when bearer is the deployment default', () => {
     appConfigMock.auth.allowBearer = true;
-    // No saved mode resolves (no active instance), so the `?? 'bearer'`
-    // deployment default alone decides — a saved mode has the sibling test
-    // above.
+    // No saved mode resolves, so the deployment default alone decides.
     instancesMock.instances = [];
     renderPage();
     expect(screen.getByRole('radio', { name: /token/i })).toBeChecked();

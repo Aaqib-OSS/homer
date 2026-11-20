@@ -14,12 +14,7 @@ export function normalizeBaseUrl(raw: string): string {
   return trimmed.replace(/\/+$/, '');
 }
 
-/**
- * Derive a stable, localStorage-key-safe instance id from a base URL by
- * slugifying its scheme-less form (e.g. `https://homer-b.example.com:8443` →
- * `homer-b-example-com-8443`). Stable so re-logging into the same endpoint
- * updates the existing instance instead of creating a duplicate.
- */
+/** A stable, key-safe instance id slugified from the scheme-less URL, so re-login updates rather than duplicates. */
 export function instanceIdFromUrl(baseUrl: string): string {
   return baseUrl
     .replace(/^https?:\/\//, '')
@@ -46,13 +41,7 @@ export function isMixedContent(baseUrl: string): boolean {
   return window.location.protocol === 'https:' && /^http:\/\//i.test(baseUrl.trim());
 }
 
-/**
- * True when `baseUrl`'s origin is permitted by the operator allowlist. An empty
- * allowlist means "unrestricted" (returns true). Comparison is by URL origin, so
- * allowlist entries and the endpoint are compared scheme+host+port, ignoring
- * path/trailing-slash differences. Used to reject an off-allowlist login endpoint
- * (`console/CLAUDE.md` § Content-Security-Policy).
- */
+/** Whether `baseUrl`'s origin (scheme+host+port) is on the operator allowlist; an empty list allows all (`console/CLAUDE.md`, Content-Security-Policy). */
 export function isOriginAllowed(baseUrl: string, allowedOrigins: string[]): boolean {
   if (allowedOrigins.length === 0) return true;
   let origin: string;

@@ -61,13 +61,9 @@ function LinkChip({ tag }: { tag: string }) {
 }
 
 /**
- * Renders a run's subject tags (`key:value` strings) as clickable chips.
- *
- * By default a chip links to the process list filtered to that single tag
- * (`/processes?tag=<tag>`). Pass `onTagClick` to intercept the click instead —
- * the list page uses it to AND the tag into the current filter set. Long tags
- * are truncated visually only; the full value stays in the `title` tooltip and
- * the link/callback always carry the untruncated string.
+ * Renders a run's subject tags (`key:value`) as chips linking to `/processes?tag=<tag>`, or
+ * calling `onTagClick` instead (the list page ANDs the tag into its filter set). Long tags
+ * truncate visually only: the title tooltip and the link or callback carry the full string.
  */
 export function TagChips({
   tags,

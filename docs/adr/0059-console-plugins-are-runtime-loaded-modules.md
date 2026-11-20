@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-07
 deciders: Lukáš Vlk
+amended: 2026-11-20
 ---
 # ADR-0059: Console plugins are same-origin ES modules imported at runtime
 
@@ -156,6 +157,8 @@ What same-origin buys, and what it does not:
   compromise, no CORS to configure, no DNS or TLS to trust, and no remote host
   that can change a plugin's contents after the fact. `script-src 'self'`
   covers the import on its own merits.
+  > **Amendment (2026-11-20) — `'self'` does not cover the import.** Under `'strict-dynamic'` the browser
+  > ignores `'self'`; see the amendment "the strict CSP admits a plugin import" below.
 - **It does not sandbox anything.** A requirement decides who may *load* a
   plugin and nothing more. Once loaded, the plugin has the operator's
   privileges; the backend authorizer remains the real boundary for the data it
@@ -189,6 +192,52 @@ What same-origin buys, and what it does not:
 - `Dockerfile` must copy `public/` explicitly; `output: 'standalone'` omits it.
   Before this ADR the console shipped without `public/` at all — it happened to
   be unused — so the omission was invisible.
+
+## Amendment (2026-11-20): capabilities come from `/auth/me` in both auth modes
+
+The gate above is only as good as the capabilities it filters against. In
+bearer mode the console had none to read — `GET /api/v1/auth/me` answered only
+a session cookie — so it gave every bearer token a synthetic `role: 'admin'`.
+Every bearer user therefore imported every `@admin` plugin and saw every
+admin-only page, whatever the token's own grants: the gate decided nothing.
+
+The backend now answers `/auth/me` for a bearer token too, with that token's
+name, role and grants from the same `Authorizer` data the routes enforce, and
+never the token itself. The route is mounted whenever a `bearer` or `password`
+scheme is configured. A request carrying `Authorization: Bearer` is answered
+for the token; any other request for its session cookie, exactly as before.
+The header goes first because it is the credential the caller chose: a bearer
+console on the API's own origin may also carry a stale cookie, which must not
+lock `/me` out or speak for the token there. The secured routes keep
+`FirstSuccessful` in `apiAuth` order, so with both credentials present they can
+act as a different principal than `/me` describes. That gap is UI-only; see the
+ADR-0011 amendment of the same date.
+
+The console reads `/auth/me` in both modes, so `useCan` and the plugin gate see
+the reported role and grants. Against a server that predates this (a `404`, or a
+`401` under a combined scheme) it validates the token with `/heartbeat` and
+grants nothing: no role, no grants, and no run counted as its own. It never falls back to admin — failing open
+is the defect this amendment removes.
+
+## Amendment (2026-11-20): the strict CSP admits a plugin import through the trusted bundle, not `'self'`
+
+`script-src 'self'` does not cover the plugin import, contrary to the decision above: once `'strict-dynamic'` is
+present, the browser ignores `'self'` and every host source. The `import()` takes the fetch options of the
+bundle script that issues it, so it is admitted by that script's nonce when the dashboard page was loaded
+directly, and by `'strict-dynamic'` as a non-parser-inserted load when the bundle arrived by client
+navigation; either way the policy checks no origin, so `checkPluginEntry`'s same-origin rule alone keeps
+plugin code local.
+
+## Amendment (2026-11-20): the provider starts in `loading`
+
+`PluginsProvider` starts in `loading` even when no plugin is configured: the
+server renders with no `window.__HOMER_CONFIG__`, so it always sees zero
+entries, and deriving the initial value from the entry count would render a
+different tree on server and client and break hydration. The plugin route waits
+on `loading` before it renders not-found, so a hard refresh on a plugin URL does
+not flash "not found" while the module is in flight. If the loader rejects
+unexpectedly, the provider settles with no plugins so the dashboard is never
+left loading.
 
 ## Pros and Cons of the Options
 

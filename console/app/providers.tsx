@@ -13,19 +13,9 @@ import {
 } from '@/lib/themes/loader';
 
 /**
- * `themeEntries` are the raw `CONSOLE_THEMES` entries and `themeModes` the
- * validated `CONSOLE_THEME_MODES` pair, both resolved server-side by the root
- * layout. They arrive as props rather than being read from `appConfig` here,
- * because `next-themes` renders its pre-paint `<script>` with the theme list
- * inlined: the server never sees `window.__HOMER_CONFIG__`, so a config read
- * here would render four themes on the server and five on the client and fail
- * hydration. The props are the server's answer, so both sides agree — and the
- * pre-paint script knows a custom name in time to apply a stored theme without
- * a flash of the default look.
- *
- * The layout's `x-nonce` rides along as `nonce`: the pre-paint script is an
- * inline `<script>` that production CSP blocks unless it carries the request's
- * nonce, and without it the pair would not be applied until React mounts.
+ * App-wide providers. `themeEntries` and `themeModes` are resolved by the root
+ * layout and arrive as props, never read from `appConfig`, so server and client
+ * agree on the theme list; `nonce` is the request's, for the pre-paint script (ADR-0069).
  */
 export function Providers({
   children,
@@ -72,12 +62,8 @@ function createQueryClient() {
   });
 }
 
-// A theme file that is absent is a 404: the browser drops the sheet, the
-// theme's class applies no tokens and every token falls back to the `:root`
-// (light) values, with nothing said. Report it — but only once the load has
-// settled (`window` `load`): this effect runs at mount, when a healthy sheet
-// may still be in flight and absent from `document.styleSheets`, so probing
-// immediately would log a false error on every slow network.
+// Reports a missing theme sheet once the window has loaded; at mount a healthy sheet may
+// still be in flight (ADR-0069).
 function useMissingStylesheetReport(themes: ThemeEntry[]) {
   useEffect(() => {
     const report = () => {
@@ -100,10 +86,7 @@ function useMissingStylesheetReport(themes: ThemeEntry[]) {
   }, [themes]);
 }
 
-// With a valid pair the built-ins are hidden: `themes` lists only the
-// configured names, `System` is the default, and `system` is mapped onto the
-// pair so the follower applies the light or dark theme per the OS scheme.
-// Without one, every prop is exactly what it was before.
+// With a valid pair only the configured names are listed and `system` maps onto the pair (ADR-0069).
 function themeProviderLists(themes: ThemeEntry[], themeModes: ThemeModes | null | undefined) {
   const customNames = themes.map(({ name }) => name);
   const themeNames = themeModes ? customNames : [...BUILT_IN_THEME_NAMES, ...customNames];

@@ -41,9 +41,8 @@ export function useProcessStatusStream() {
   const activeInstanceId = useActiveInstanceId();
 
   useEffect(() => {
-    // Process events are coalesced like useLlmEventStream's frames — a burst
-    // within one animation frame costs one invalidation per query, flushed after the
-    // burst so the last event's state is always refetched.
+    // Coalesced per animation frame, flushed after the burst so the last event's
+    // state is always refetched.
     const pendingIds = new Set<number>();
     let rafId: number | null = null;
     let cancelled = false;
@@ -57,11 +56,8 @@ export function useProcessStatusStream() {
       if (ids.size === 0) return;
       for (const processId of ids) {
         queryClient.invalidateQueries({ queryKey: queryKeys.process(processId) });
-        // The artifact REST snapshot carries X-File-Complete (isComplete);
-        // nothing else refreshes it, so a finished process would leave an
-        // open output dialog stuck in "streaming" mode (persistent Live
-        // badge). Invalidate the process's artifact snapshots so they
-        // refetch with the now-complete flag.
+        // The artifact snapshot's X-File-Complete flag refreshes only here; without it
+        // a finished run's open output dialog stays on the Live badge.
         queryClient.invalidateQueries({
           queryKey: queryKeys.artifactContentByProcess(processId),
         });
@@ -107,9 +103,8 @@ export function useAgentReloadStream() {
   useEffect(() => {
     const close = openStream('/api/v1/stream/agents', {
       onEvent(name) {
-        // The payload is the grant-narrowed reload diff (AgentReloadFrame); the frame
-        // itself is the reload-completed signal, so the queries invalidate whatever
-        // the diff holds — an empty diff is a real completed reload.
+        // The frame is the reload-completed signal: an empty diff is a real completed
+        // reload, so invalidate regardless of the diff.
         if (name === 'agent.reload') {
           queryClient.invalidateQueries({ queryKey: queryKeys.agents() });
         }
@@ -149,49 +144,14 @@ export function useProcessLogStream(
     const close = openStream(path, {
       onEvent(name, data) {
         if (name === 'log.chunk') {
-          // The wire payload is `{ content }`: the bytes since the previous
-          // chunk. The END byte offset of this chunk rides the frame's `id:`,
-          // which this handler does not read, so `offset` stays optional here
-          // and a payload without it takes the best-effort append below.
-          // We can't rely on appending blindly: openStream auto-reconnects
-          // on transient errors and the backend restarts at byte 0 unless
-          // we pass resumeFromOffset (which we don't), so the post-reconnect
-          // first chunk would re-deliver content we already have.
-          const d = data as Partial<LogChunkFrame> & { offset?: number };
-          const incomingOffset = typeof d.offset === 'number' ? d.offset : -1;
-          const incomingContent = d.content ?? '';
-          setState((s) => {
-            if (incomingOffset < 0) {
-              // Old/unexpected payload shape — best-effort append.
-              return {
-                content: s.content + incomingContent,
-                offset: s.offset + byteLength(incomingContent),
-                ended: s.ended,
-              };
-            }
-            const incomingByteLen = byteLength(incomingContent);
-            const expectedPrev = incomingOffset - incomingByteLen;
-            if (expectedPrev === s.offset) {
-              // Strict continuation of our current buffer — append.
-              return {
-                content: s.content + incomingContent,
-                offset: incomingOffset,
-                ended: s.ended,
-              };
-            }
-            if (incomingOffset <= s.offset) {
-              // Reconnect re-delivered bytes we already have — drop.
-              return s;
-            }
-            // Gap (we lost bytes somehow) or restart from a different
-            // baseline — replace the buffer so the dialog shows what the
-            // backend currently has rather than splice corruption.
-            return {
-              content: incomingContent,
-              offset: incomingOffset,
-              ended: s.ended,
-            };
-          });
+          // A reconnect resumes after the last chunk: its frame id is the end offset, which
+          // openStream resends as `Last-Event-ID`, so every chunk continues the buffer.
+          const content = (data as Partial<LogChunkFrame>).content ?? '';
+          setState((s) => ({
+            content: s.content + content,
+            offset: s.offset + byteLength(content),
+            ended: s.ended,
+          }));
         } else if (name === 'log.end') {
           setState((s) => ({ ...s, ended: true }));
         }
@@ -210,24 +170,19 @@ export interface LlmEventStreamState {
   truncated: boolean;
 }
 
-// CWE-400: an unbounded event buffer (and a `[...events, frame.event]` copy on
-// every frame) lets a flooding or endless harness stream exhaust the tab's
-// memory. Cap the buffer and drop the oldest entries past this size; the cap
-// is a constant, so the drop is O(1) amortized relative to the number of
-// events received.
+// CWE-400: caps the buffer, dropping the oldest entries past this size, so a
+// flooding stream cannot exhaust the tab's memory. See ADR-0070.
 export const MAX_LLM_EVENTS = 5000;
 
-// CWE-400 (review thread bf4839ea): one event can carry a multi-MiB tool input or
-// output, so the count cap alone does not bound memory. Bound each event and the
-// buffer's total size here, not only through the server's output cap.
+// CWE-400: one event can hold a multi-MiB payload, so the count cap alone does
+// not bound memory; bound each event and the buffer total. See ADR-0070.
 export const MAX_LLM_EVENT_CHARS = 64 * 1024;
 export const MAX_LLM_BUFFER_CHARS = 16 * 1024 * 1024;
 
 const NOTE_SUFFIX = " characters, too large to show here; the command's raw output artifact has it in full]";
 
-// Nesting cap for the pre-pass walk. Exceeding it reports an oversized value
-// rather than aborting the walk silently, so a deeply nested payload is clipped
-// instead of slipping past the bound (and the recursion cannot overflow).
+// Exceeding the depth reports an oversized value, so a deeply nested payload is
+// clipped, never walked unbounded.
 const MAX_LLM_SIZE_DEPTH = 256;
 
 // A UTF-16 unit JSON.stringify writes as more than itself: a quote, a backslash,
@@ -235,12 +190,8 @@ const MAX_LLM_SIZE_DEPTH = 256;
 const ESCAPED_UNIT = /["\\\u0000-\u001f\ud800-\udfff]/;
 
 /**
- * Serialized length of a JSON string, counted without allocating the serialized
- * form. `s.length` alone would miss the `\uXXXX` inflation of control characters
- * and lone surrogates, under-counting exactly the payloads the cap exists for.
- * Costs O(cap), not O(s). A string whose first `cap - 1` units need no escape is
- * sized by one native regex test instead of the per-unit walk, with the same
- * result: the walk would add 1 per unit and pass the cap at exactly `cap + 1`.
+ * Serialized length of a JSON string, counted without allocating it, including
+ * the \uXXXX inflation of control characters and lone surrogates. O(cap), not O(s).
  */
 export function boundedStringSize(s: string, cap: number): number {
   if (cap < 2 || ESCAPED_UNIT.test(s.length < cap ? s : s.slice(0, cap - 1))) return walkedStringSize(s, cap);
@@ -278,14 +229,9 @@ function escapedUnitSize(unit: number): number {
 }
 
 /**
- * Bounds the pre-serialization cost of measuring a payload value. A plain
- * `JSON.stringify(value).length` would itself copy a multi-MiB value, which is
- * the cost this pre-pass exists to avoid, so the value is walked in place and
- * only until the cap is passed. Every JSON-significant character is counted
- * (string escapes, keys, separators, container punctuation), so the result never
- * falls below the serialized size and a payload of empty containers or nulls
- * cannot slip past the cap. Returns a length that may overshoot the cap, which
- * is all the oversize check needs.
+ * Bounds the cost of measuring a payload value: walks it in place, only until the
+ * cap is passed, counting every JSON-significant character so the result never
+ * falls below the serialized size. May overshoot the cap (CWE-400, ADR-0070).
  */
 function boundedSize(value: unknown, cap: number, depth = 0): number {
   if (depth > MAX_LLM_SIZE_DEPTH) return Number.MAX_SAFE_INTEGER;
@@ -333,22 +279,15 @@ function clippableField(event: LlmEvent): unknown {
     case 'turn_end': return event.resultText;
     case 'session_start': return event.tools;
     case 'transient_error': return event.message;
-    // CWE-400: the frame's event is only cast to LlmEvent on
-    // arrival, so a newer server or a malformed frame can carry a discriminator
-    // no arm matches. Offer the whole event to the pre-pass: an oversized
-    // unknown event is reduced below to the transient-error note, never
-    // serialized whole; one that fits is kept as-is.
+    // CWE-400: a frame can carry an unknown kind no arm matches; offer the whole
+    // event so an oversized one takes the transient-error note (ADR-0070).
     default: return event;
   }
 }
 
 /**
- * CWE-400: the pre-pass sees the whole event, not only its
- * payload field — a known kind can also carry an undeclared extra field
- * (`{type:'tool_result', output:'ok', extra:<4 MiB>}`) the walk above is blind
- * to, so `clipLlmEvent` would copy it in the whole-event stringify below just
- * to discard it. Offering the whole envelope keeps that cost on the same
- * bounded path as an unknown kind.
+ * CWE-400: measures the whole event, since a known kind can carry an undeclared
+ * extra field the payload walk is blind to (ADR-0070).
  */
 function wholeEventSize(event: LlmEvent, cap: number): number {
   return boundedSize(event, cap);
@@ -362,19 +301,16 @@ function replaceClippableField(event: LlmEvent, note: string): LlmEvent {
     case 'turn_end': return { ...event, resultText: note };
     case 'session_start': return { ...event, tools: [] };
     case 'transient_error': return { ...event, message: note };
-    // CWE-400: an unknown or absent discriminator has no
-    // payload field to reduce — degrade the whole event to the transient-error
-    // note, mirroring the bounded transient_error case.
+    // CWE-400: an unknown or absent discriminator has no payload field to reduce,
+    // so the whole event degrades to the transient-error note (ADR-0070).
     default: return { type: 'transient_error', message: note };
   }
 }
 
 /**
- * Length of the first identity scalar past the cap — an id, name, messageId,
- * model, sessionId or a failed or stopped turn's status reason — or null if none
- * is. Unlike the payload field these cannot be reduced to the note, so an
- * oversized one must take the transient-error fallback before the event is
- * serialized whole.
+ * Length of the first identity scalar (id, name, model, status reason, ...) past
+ * the cap, or null. It cannot be reduced to the note, so an oversized one takes
+ * the transient-error fallback.
  */
 function oversizedScalarSize(event: LlmEvent): number | null {
   for (const scalar of identityScalars(event)) {
@@ -404,9 +340,8 @@ function identityScalars(event: LlmEvent): (string | null)[] {
 
 /** A failed or stopped turn's reason, or null for any other status. */
 function stopReason(status: LlmTurnStatus | null | undefined): string | null {
-  // CWE-20: the frame's event is only cast to LlmEvent on
-  // arrival, so `status` can be missing, null or shaped wrong on a
-  // malformed or newer frame — reading `.type` on it must not throw.
+  // CWE-20: `status` can be missing, null or shaped wrong on a malformed frame;
+  // reading `.type` must not throw (ADR-0070).
   return typeof status?.type === 'string'
     && (status.type === 'failed' || status.type === 'stopped')
     && typeof status.reason === 'string'
@@ -419,11 +354,8 @@ function transientNote(note: string): { event: LlmEvent; size: number } {
 }
 
 /**
- * CWE-20: the frame's `event` is only cast to LlmEvent on
- * arrival, so a malformed frame can carry `event: null` or omit it — reading
- * the discriminator in the clip pipeline would throw, aborting onEvent, and
- * the SSE retry would replay the same frame forever. Such an event has no
- * payload to bound, so it degrades to the transient-error note.
+ * CWE-20: a malformed frame can carry `event: null` or omit it; such an event has
+ * no payload to bound and degrades to the transient-error note (ADR-0070).
  */
 function shapedEvent(event: LlmEvent | null | undefined): LlmEvent | null {
   return event !== null && typeof event === 'object' ? event : null;
@@ -450,14 +382,8 @@ function isLlmTurnStatus(value: unknown): value is LlmTurnStatus {
 }
 
 /**
- * CWE-20: the frame's `event` is only cast to LlmEvent
- * on arrival, so a hostile or buggy backend can send an event whose fields are
- * not the declared shape — and the conversation view dereferences some of them
- * unconditionally (`turn_end`: `status.type`, `usage.input`; `assistant_message`:
- * `text.trim()`), where a throw white-screens the whole subtree: no error
- * boundary wraps it. Every field listed here is one the renderer reads without
- * guarding; an event failing any of them degrades to the transient-error note
- * so every buffered event is render-safe.
+ * CWE-20: whether every field the renderer reads unguarded has the declared shape;
+ * an unsafe event degrades to the transient-error note (ADR-0070).
  */
 function isRenderSafe(event: LlmEvent): boolean {
   switch (event.type) {
@@ -468,25 +394,13 @@ function isRenderSafe(event: LlmEvent): boolean {
 }
 
 /**
- * Replaces an oversized event's payload field with a note, so a held event never
- * exceeds MAX_LLM_EVENT_CHARS of serialized size. An event still oversized after
- * that — an oversized identity scalar that cannot be reduced, or a reduced event
- * still past the cap — becomes a transient-error note. Returns the event and its
- * size.
- *
- * CWE-400: the pre-pass walks the whole event in place before
- * any whole-event JSON.stringify, so a multi-MiB payload — in the payload field,
- * an undeclared extra field or an unknown kind — is never copied just to be
- * discarded. It is not a guarantee that no serialization remains: an event still
- * oversized after reduction — an identity scalar, or the event's JSON overhead —
- * is serialized once more and takes the transient-error fallback below.
+ * Replaces an oversized event's payload field with a note so a held event stays
+ * within MAX_LLM_EVENT_CHARS; one still oversized becomes a transient-error note.
+ * Returns the event and its size. Measures in place before any stringify (CWE-400, ADR-0070).
  */
 export function clipLlmEvent(event: LlmEvent): { event: LlmEvent; size: number } {
-  // Pre-pass: measure the whole event without serializing it
-  // (CWE-400), so a multi-MiB payload — in the payload field, in an undeclared
-  // extra field of a known kind, or in an unknown kind — is never copied just
-  // to be discarded. Then reduce the payload field when it alone is at or past
-  // the cap.
+  // Measure the whole event in place before any stringify, then reduce the
+  // payload field when it alone is at or past the cap (CWE-400, ADR-0070).
   const wholeSize = wholeEventSize(event, MAX_LLM_EVENT_CHARS);
   const fieldSize = boundedSize(clippableField(event), MAX_LLM_EVENT_CHARS);
   let note: string | null = null;
@@ -500,12 +414,8 @@ export function clipLlmEvent(event: LlmEvent): { event: LlmEvent; size: number }
   if (scalarSize !== null) return transientNote(`[${scalarSize}${NOTE_SUFFIX}`);
 
   if (wholeSize >= MAX_LLM_EVENT_CHARS) {
-    // CWE-400: the size hides outside the declared payload
-    // field — an undeclared extra property of a known kind. Reducing the field
-    // alone cannot shed it (the reduction spreads the event, so unknown
-    // properties survive), so re-measure the reduced event and degrade to the
-    // transient-error note when it still carries the size — never serializing
-    // the oversized original.
+    // CWE-400: the size hides outside the payload field; reduce, re-measure, and
+    // degrade to the transient-error note if it persists (ADR-0070).
     if (note === null) {
       note = `[${wholeSize}${NOTE_SUFFIX}`;
       clipped = replaceClippableField(event, note);
@@ -529,9 +439,8 @@ function serializedClip(
 ): { event: LlmEvent; size: number } {
   let size = JSON.stringify(clipped).length;
   if (size > MAX_LLM_EVENT_CHARS && note === null) {
-    // Defensive: the walk reported the event under the cap but its serialized
-    // form is past it. Apply the note exactly as the pre-pass would have, so a
-    // boundary-sized payload keeps its typed event.
+    // The walk reported the event under the cap but its serialized form is past it;
+    // apply the note as the pre-pass would have.
     note = `[${size}${NOTE_SUFFIX}`;
     clipped = replaceClippableField(event, note);
     size = JSON.stringify(clipped).length;
@@ -560,9 +469,8 @@ function parseFrameId(id: string | undefined): FrameCursor | null {
 
 /**
  * Moves the dedupe cursor past a frame's `cmd:attempt:lineOffset:eventIndex` id.
- * Returns null for a replayed frame to drop, otherwise whether the frame starts a
- * newer attempt (the buffer resets). An id that does not parse leaves the cursor
- * alone and keeps the frame.
+ * Returns null for a replayed frame, else whether it starts a newer attempt (reset);
+ * an unparseable id keeps the frame and leaves the cursor.
  */
 function advanceCursor(cursor: FrameCursor, id: string | undefined): boolean | null {
   const frame = parseFrameId(id);
@@ -629,9 +537,8 @@ function createLlmEventBuffer(publish: (state: LlmEventStreamState) => void): Ll
   };
 
   return {
-    // CWE-400: both the malformed-event note and a
-    // clipped event land in this buffer, so the eviction caps must run for both
-    // arms — a malformed frame that skipped them would grow it without limit.
+    // CWE-400: the malformed-event note and a clipped event share this buffer, so
+    // the eviction caps run for both arms (ADR-0070).
     push(event, size) {
       buffer.push(event);
       sizes.push(size);
@@ -661,19 +568,9 @@ function createLlmEventBuffer(publish: (state: LlmEventStreamState) => void): Ll
 }
 
 /**
- * Tails `GET /llm-events?cmd=` for one command. The SSE id is
- * `cmdIndex:attemptIndex:lineOffset:eventIndex`. An attempt change (a retried
- * command's stream picks up the newer attempt) resets the buffer; otherwise a
- * frame is dropped when its `(lineOffset, eventIndex)` pair is lexicographically
- * <= the last accepted one, so a reconnect replay is deduped while two sibling
- * events parsed from the same line (distinct eventIndex) are both kept. A frame
- * without a parseable 4-part id is appended as-is.
- *
- * Incoming frames are accumulated into a plain array (capped at
- * MAX_LLM_EVENTS events and MAX_LLM_BUFFER_CHARS in total, each event clipped
- * by clipLlmEvent) and published to React state at most once per animation
- * frame, rather than once per event — so a flood of frames costs one state
- * copy per frame tick, not one per event (CWE-400).
+ * Tails `GET /llm-events?cmd=` for one command. A newer attempt resets the buffer;
+ * a frame at or before the last `(lineOffset, eventIndex)` is a replay and dropped.
+ * State publishes at most once per animation frame (CWE-400, ADR-0070).
  */
 export function useLlmEventStream(processId: number, cmd: number, enabled: boolean): LlmEventStreamState {
   const [state, setState] = useState<LlmEventStreamState>({ events: [], ended: false, truncated: false });

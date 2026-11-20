@@ -199,9 +199,7 @@ describe('layoutTopology', () => {
   });
 
   it('lays out nodes named after Object.prototype members without crashing', () => {
-    // Node ids are agent-authored; dagre/graphlib object-keys internally, so a
-    // real id must never become a dagre-facing key (§12 rule 2) — this is the
-    // installed dagre crashing today without the internal-id indirection.
+    // Agent-authored ids must never become dagre keys (ADR-0047 rule 2, ADR-0073).
     const ids = ['constructor', 'toString', '__proto__', 'hasOwnProperty'];
     const layout = layoutTopology({
       nodes: ids.map((id) => ({ id })),

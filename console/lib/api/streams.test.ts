@@ -30,8 +30,7 @@ function capturedHandlers(): CapturedHandlers {
 }
 
 // The hook publishes to React state at most once per animation frame (CWE-400);
-// tests that assert on `result.current` after firing events must let one frame
-// run first.
+// tests asserting on `result.current` after events must let one frame run first.
 function flushFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
@@ -52,9 +51,8 @@ describe('useLlmEventStream', () => {
   beforeEach(() => {
     openStreamMock.mockReset();
     openStreamMock.mockReturnValue(closeMock);
-    // RTL's auto-cleanup unmounts each test's hooks, so without this the close
-    // spy carries stale calls into the next test and an assertion on it passes
-    // vacuously.
+    // RTL's auto-cleanup unmounts each test's hooks; without this, stale close
+    // calls carry over and an assertion on the spy passes vacuously.
     closeMock.mockClear();
   });
 
@@ -255,9 +253,8 @@ describe('useLlmEventStream', () => {
   });
 
   it('CWE-400 keeps the typed event when the payload is exactly MAX_LLM_EVENT_CHARS of JSON', () => {
-    // A payload at the cap itself takes the note (its JSON punctuation no longer
-    // fits alongside the event's own), but the event keeps its kind — it must not
-    // degrade to a generic transient-error note.
+    // A payload at the cap takes the note, but the event keeps its kind rather
+    // than degrading to a generic transient-error note.
     const payload = 'x'.repeat(MAX_LLM_EVENT_CHARS - 2); // + 2 quotes = exactly the cap
     const tools = ['x'.repeat(MAX_LLM_EVENT_CHARS - 5)]; // brackets + comma = exactly the cap
     const cases: LlmEvent[] = [
@@ -355,11 +352,8 @@ describe('useLlmEventStream', () => {
   });
 
   it('CWE-400 keeps escaped characters from under-counting: an escape-inflated payload is still clipped', () => {
-    // Each character serializes as a >1-char JSON escape, so a payload whose
-    // `.length` is below the cap has a serialized JSON past it; a per-value walk
-    // that counted `.length` would let every one of these through. One row per
-    // escape class of `boundedStringSize`, built from explicit escapes so no
-    // raw control byte can be normalized or stripped out from under the test.
+    // Each character serializes as a >1-char escape, so a payload under the cap by
+    // `.length` is past it serialized; rows use explicit escapes, not raw bytes.
     const escaped: [string, number][] = [
       ["\u0007", 6], // control character escapes as a 6-char \uXXXX
       ["\b", 2],     // short escapes serialize as 2 chars
@@ -381,9 +375,8 @@ describe('useLlmEventStream', () => {
   });
 
   it('CWE-400 does not over-count a surrogate pair: a pair payload under the cap is kept', () => {
-    // A surrogate pair serializes as the pair itself (2 units -> 2 chars), so it
-    // must not be reported as inflated and clipped while it still fits; leave
-    // headroom for the event's JSON overhead so the whole event stays under the cap.
+    // A surrogate pair serializes as itself, so it must not be counted as inflated;
+    // headroom is left for the event's JSON overhead.
     const text = '😀'.repeat(Math.floor((MAX_LLM_EVENT_CHARS - 500) / 2));
     expect(text.length).toBeLessThan(MAX_LLM_EVENT_CHARS);
     expect(JSON.stringify({ text }).length).toBeLessThan(MAX_LLM_EVENT_CHARS);
@@ -442,10 +435,8 @@ describe('useLlmEventStream', () => {
   });
 
   it('CWE-400 turns an unknown or absent event discriminator into a transient-error note', () => {
-    // The frame's event is only cast to LlmEvent on arrival: a newer server or a
-    // malformed frame can carry a discriminator (or none) that no clipping arm
-    // matches. Unknown-kind and type-less frames must land on the same
-    // transient-error note as any other oversized event, never serialize whole.
+    // A frame can carry a discriminator (or none) no clipping arm matches; it must
+    // land on the transient-error note, never serialize whole.
     const huge = 'x'.repeat(4 * 1024 * 1024);
     const unknown = { type: 'future_kind', input: huge } as unknown as LlmEvent;
     const typeless = { input: huge } as unknown as LlmEvent;
@@ -459,10 +450,8 @@ describe('useLlmEventStream', () => {
   });
 
   it('CWE-400 keeps every oversized event within the cap without serializing it whole', () => {
-    // The pre-pass measures the whole event, so a multi-MiB value in any position
-    // — a declared payload field, an undeclared extra field of a known kind, an
-    // unknown kind, a missing discriminator — is reduced before the stringify,
-    // never carried through it. One denial row per shape.
+    // A multi-MiB value in any position (payload field, undeclared extra field,
+    // unknown kind, no discriminator) is reduced before the stringify. One row per shape.
     const stringifySpy = vi.spyOn(JSON, 'stringify');
     try {
       const huge = 'x'.repeat(4 * 1024 * 1024);
@@ -484,9 +473,8 @@ describe('useLlmEventStream', () => {
         expect(JSON.stringify(clipped)).not.toContain(huge);
       }
 
-      // The bounded-work property: the oversized string must never reach
-      // JSON.stringify as part of an unclipped event — the pre-pass reduces
-      // before the only whole-event serialization runs.
+      // The oversized string must never reach JSON.stringify as part of an
+      // unclipped event.
       const reachedHuge = stringifySpy.mock.calls.some(([arg]) => holdsStringLongerThan(arg, MAX_LLM_EVENT_CHARS));
       expect(reachedHuge).toBe(false);
     } finally {
@@ -511,11 +499,8 @@ describe('useLlmEventStream', () => {
   });
 
   it('CWE-20 survives a malformed frame whose scalars or status are not the declared shape', () => {
-    // The frame's event is only cast to LlmEvent on arrival, so a malformed or
-    // newer frame can carry a non-string id/name/model or a status that is not
-    // the declared union. The size walk must gate every read on its shape and
-    // degrade to the transient-error fallback instead of throwing, so one bad
-    // frame cannot abort onEvent and stop the stream.
+    // A non-string id/name/model or a status outside the declared union must
+    // degrade to the transient-error fallback, not throw and stop the stream.
     const cases: unknown[] = [
       { type: 'tool_result', id: ['x'], output: 'ok', isError: false },
       { type: 'tool_call', id: 't1', name: ['x'], input: {}, messageId: {} },
@@ -542,11 +527,8 @@ describe('useLlmEventStream', () => {
   });
 
   it('CWE-20 degrades a frame carrying a null or absent event instead of aborting onEvent', async () => {
-    // CWE-20: `event: null` is valid JSON and an `llm.event`
-    // frame can omit the field entirely. Reading the discriminator on such an
-    // event would throw inside onEvent; the SSE retry then replays the same
-    // frame from the start forever and the Live view dies. Both shapes must
-    // land on the transient-error note and let the stream continue.
+    // `event: null` is valid JSON and a frame can omit the field; both must land
+    // on the transient-error note and let the stream continue.
     const { result } = renderHook(() => useLlmEventStream(7, 0, true));
     const { onEvent } = capturedHandlers();
 
@@ -576,12 +558,8 @@ describe('useLlmEventStream', () => {
   });
 
   it('denial_of_service CWE-20 degrades a turn_end whose status or usage is not the declared shape', async () => {
-    // The frame's event is only cast to LlmEvent, so a hostile or buggy backend
-    // can send a small `turn_end` whose `status` is null (or whose `usage` is
-    // missing). The summary card dereferences `status.type` and `usage.input`
-    // unguarded; buffering such an event would throw in render and white-screen
-    // the page subtree. A shape-invalid turn_end must degrade to the
-    // transient-error note so every buffered event is render-safe.
+    // A turn_end with a null status or missing usage would throw in render and
+    // replace the page with the route error card; it must degrade to the transient-error note.
     const { result } = renderHook(() => useLlmEventStream(7, 0, true));
     const { onEvent } = capturedHandlers();
 
@@ -622,10 +600,8 @@ describe('useLlmEventStream', () => {
   // ~700k frames to overflow the 16 MiB budget: well under a second locally, over 5 s on a
   // loaded CI runner, hence the explicit timeout.
   it('denial_of_service CWE-400 evicts malformed frames past MAX_LLM_EVENTS and past MAX_LLM_BUFFER_CHARS', async () => {
-    // The malformed-event note is appended to the same buffer as any clipped
-    // event, so the eviction caps must run on that path too — a hostile or
-    // buggy backend streaming `event: null` (or omitting `event`) forever would
-    // otherwise grow the buffer without limit.
+    // The malformed-event note shares the buffer with clipped events, so the
+    // eviction caps must run on that path too.
     const { result } = renderHook(() => useLlmEventStream(7, 0, true));
     const { onEvent } = capturedHandlers();
 
@@ -647,14 +623,8 @@ describe('useLlmEventStream', () => {
       expect(JSON.stringify(event).length).toBeLessThanOrEqual(MAX_LLM_EVENT_CHARS);
     }
 
-    // Absent-`event` frames past MAX_LLM_BUFFER_CHARS. The frames must land past
-    // the replay cursor arm 1 left behind (`lastLineOffset = MAX_LLM_EVENTS`) or
-    // the guard drops them before pushEvent, and the ~50-char notes they cost are
-    // nowhere near a 16 MiB budget on their own — so fill the buffer with large
-    // well-formed events first and let the malformed flood push it over. The
-    // assertion is eviction (the buffer shrank and the first good events are
-    // gone), not the cap inequality, which would hold vacuously on an empty
-    // buffer.
+    // Fill the buffer with large well-formed events, then let the malformed flood
+    // push it over; assert eviction (the buffer shrank), not the cap inequality.
     const fillText = 'y'.repeat(MAX_LLM_EVENT_CHARS - 200);
     const fillCount = Math.floor((MAX_LLM_BUFFER_CHARS / MAX_LLM_EVENT_CHARS) * 0.75);
     const malformedCount = Math.ceil((2 * MAX_LLM_BUFFER_CHARS) / 50);

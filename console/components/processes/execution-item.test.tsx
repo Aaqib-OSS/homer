@@ -143,6 +143,24 @@ describe('ExecutionItem', () => {
     });
   });
 
+  it("subscribes the expanded item with the row's command index, not its list position", () => {
+    // A run restricted to a subset of its commands records each row's own index, and the
+    // streams' `cmd` parameter names that index: position 0 of such a run is command 2's.
+    renderItem({
+      expanded: true,
+      index: 0,
+      execution: makeExecution({ kind: 'codex', commandIndex: 2 }),
+    });
+    const props = JSON.parse(screen.getByTestId('artifact-output-tabs').getAttribute('data-props') ?? '{}');
+    expect(props.executionIndex).toBe(2);
+  });
+
+  it('falls back to the list position for a row written before commandIndex existed', () => {
+    renderItem({ expanded: true, index: 1, execution: makeExecution({ commandIndex: null }) });
+    const props = JSON.parse(screen.getByTestId('artifact-output-tabs').getAttribute('data-props') ?? '{}');
+    expect(props.executionIndex).toBe(1);
+  });
+
   it('hands the step accounting to ArtifactOutputTabs', () => {
     const llmAccounting = { sessionId: 's', costUsd: 0.008, source: 'session' as const, fallbackReason: null };
     renderItem({ expanded: true, execution: makeExecution({ kind: 'codex', llmAccounting }) });

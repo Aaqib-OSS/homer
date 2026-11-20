@@ -87,9 +87,8 @@ describe('RunnerPanel', () => {
   });
 
   it('hides the startup-failure block for a runner without a pod', () => {
-    // A persisted pre-create failure can carry startupFailure on an
-    // otherwise pod-less runner; the panel claims the run had no pod, so the
-    // pod-only details block must not surface.
+    // A persisted pre-create failure can carry startupFailure on a pod-less runner;
+    // the pod-only details block must not surface.
     render(
       <RunnerPanel
         runner={make({

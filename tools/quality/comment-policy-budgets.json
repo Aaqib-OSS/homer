@@ -1,10 +1,10 @@
 {
   "$comment": "Budgets of tools/quality/comment-policy.mjs per rule and area, seeded with the counts of 2026-11-19 (GH #344). They only go down: lower one when its count falls (the check names the value), never raise one to fit a new finding. node tools/quality/comment-policy.mjs --counts prints the counts.",
-  "length": { "backend-main": 449, "backend-test": 634, "console": 263, "python": 0, "infra": 0, "tools": 0 },
-  "citation": { "backend-main": 12, "backend-test": 28, "console": 13, "python": 0, "infra": 0, "tools": 0 },
-  "shortcut-word": { "backend-main": 20, "backend-test": 30, "console": 20, "python": 0, "infra": 0, "tools": 0 },
+  "length": { "backend-main": 449, "backend-test": 634, "console": 0, "python": 0, "infra": 0, "tools": 0 },
+  "citation": { "backend-main": 12, "backend-test": 28, "console": 0, "python": 0, "infra": 0, "tools": 0 },
+  "shortcut-word": { "backend-main": 20, "backend-test": 30, "console": 0, "python": 0, "infra": 0, "tools": 0 },
   "todo": { "backend-main": 0, "backend-test": 0, "console": 0, "python": 0, "infra": 0, "tools": 0 },
-  "narration": { "backend-main": 9, "backend-test": 13, "console": 7, "python": 0, "infra": 0, "tools": 0 },
+  "narration": { "backend-main": 9, "backend-test": 13, "console": 0, "python": 0, "infra": 0, "tools": 0 },
   "suppression-reason": { "backend-main": 1, "backend-test": 1, "console": 0, "python": 0, "infra": 0, "tools": 0 },
   "suppression": { "backend-main": 54, "backend-test": 7, "console": 17, "python": 4, "infra": 6, "tools": 1 },
   "remove-in": { "backend-main": 0, "backend-test": 0, "console": 0, "python": 0, "infra": 0, "tools": 0 }

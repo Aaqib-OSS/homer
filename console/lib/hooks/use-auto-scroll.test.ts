@@ -2,10 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useAutoScroll } from './use-auto-scroll';
 
-// A sentinel element nested inside a scrollable container. The hook walks up
-// from the sentinel to the nearest overflow:auto|scroll ancestor, so we stub
-// getComputedStyle to report the container as scrollable and drive its scroll
-// geometry to control the pinned-to-bottom decision.
+// Stubs getComputedStyle so the container reads as scrollable, and drives its
+// scroll geometry to control the pinned-to-bottom decision.
 function makeSentinel(geometry: {
   scrollHeight: number;
   scrollTop: number;

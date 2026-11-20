@@ -1,14 +1,8 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 
 /**
- * `appConfig` is resolved once at module import, so each case has to reset the
- * module registry and re-import after setting the global up.
- *
- * Scope is deliberately narrow: the runtime-config branches for operator-supplied
- * plugin and theme entries. The injected global is the only client-side source:
- * a browser bundle never sees `CONSOLE_*` env vars, so if the client stopped
- * reading `pluginEntries`/`themeEntries` from it, every deployment, dev
- * included, would quietly load no plugins and no themes at all.
+ * `appConfig` resolves at import, so each case resets the module registry and re-imports.
+ * Covers the injected global's plugin and theme entries, the only client-side source.
  */
 type Global = typeof globalThis & { __HOMER_CONFIG__?: Record<string, unknown> };
 

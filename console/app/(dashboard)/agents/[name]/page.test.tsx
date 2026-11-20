@@ -47,10 +47,7 @@ function mockCan(can: (action: string, name?: string) => boolean, isAdmin = fals
   );
 }
 
-// React's `use()` always suspends on a plain Promise, even an already-settled
-// one. Next.js's real params promise pre-attaches the {status, value}
-// thenable-cache fields React's `use()` reads synchronously. Mirror that here
-// so the page renders in one synchronous pass.
+// Pre-attaches the {status, value} fields React's `use()` reads synchronously, like Next.js's params.
 function fulfilledParams(name: string): Promise<{ name: string }> {
   const p = Promise.resolve({ name }) as Promise<{ name: string }> & {
     status?: string;

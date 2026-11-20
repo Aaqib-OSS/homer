@@ -226,7 +226,18 @@ data class ExecutionInfo(
     val stoppedBy: String? = null,
     // Whether this row is one of the agent's `onStop:` steps.
     val onStop: Boolean = false,
+    // The command's index in the agent's `commands`, the index the streams' `cmd` parameter
+    // names; null for rows written before this field existed.
+    val commandIndex: Int? = null,
 )
+
+/**
+ * The row of command [cmdIndex]: the row that recorded that index, else the row at that list
+ * position when it recorded none. A run that executes a subset of its commands records no row
+ * for the ones it skips, so a position is only the index for the in-order rows of older runs.
+ */
+fun List<ExecutionInfo>.forCommand(cmdIndex: Int): ExecutionInfo? =
+    firstOrNull { it.commandIndex == cmdIndex } ?: getOrNull(cmdIndex)?.takeIf { it.commandIndex == null }
 
 @Serializable
 enum class ProcessStatus {

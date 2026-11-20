@@ -1,16 +1,8 @@
 #!/usr/bin/env node
 /**
- * Renders the `## Homer console` region of the repository's THIRD-PARTY-LICENSES.md from the
- * production dependency graph in `package-lock.json`. Policy: ADR-0056.
- *
- * The console half of the inventory the backend's :app:generateThirdPartyNotices writes; the
- * rendering rules (grouping, bullet shape, copyright-line extraction, region replacement) mirror
- * `app/buildSrc/src/main/kotlin/ThirdPartyNotices.kt` so both regions read as one document.
- *
- * Input is the lock's production graph, not the built `.next/standalone` tree; ADR-0056's addendum
- * says why.
- *
- * Node built-ins only, on purpose: a dependency of its own would be one more package to inventory.
+ * Renders the `## Homer console` region of THIRD-PARTY-LICENSES.md from the production graph in
+ * `package-lock.json`, mirroring the rendering rules of the backend's `ThirdPartyNotices.kt`.
+ * Policy and generator rules (Node built-ins only, among them): ADR-0056.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -27,20 +19,12 @@ const LICENSE_TEXTS_HEADING = '## License texts';
 
 const MAX_COPYRIGHT_LINES = 5;
 
-// The sharp image-processing binaries: console/Dockerfile deletes @img/* and sharp from the
-// standalone tree before the runner copies it (image optimization is off, so they are never
-// loaded), and the build-homer-console license gate fails the push if that stops working. Never
-// shipped, so never attributed — which is also what keeps the @img LGPL-3.0 binaries out.
+// `sharp` and `@img/*` are deleted from the image, so never attributed (ADR-0056).
 function isSkipped(name) {
   return name === 'sharp' || name.startsWith('@img/');
 }
 
-/**
- * Whether a lock path lies in a pruned subtree: the prune removes a skipped package's whole
- * directory, nested node_modules included. Reading only the last segment would attribute what
- * the prune drops, and only on an npm that happened to unpack it, so the gate would turn on the
- * npm version.
- */
+/** Whether a lock path lies in a pruned subtree, nested `node_modules` included (ADR-0056). */
 function isSkippedPath(lockPath) {
   return lockPath
     .split(NODE_MODULES_SEGMENT)
@@ -48,16 +32,12 @@ function isSkippedPath(lockPath) {
     .some((segment) => isSkipped(segment.replace(/\/$/, '')));
 }
 
-// Packages whose lock entry and manifest both declare no license. The license each one actually
-// ships, read from its own license file — any other unlicensed package fails the run rather than
-// being guessed at.
+// The license, read from its own file, of each package declaring none; any other fails the run (ADR-0056).
 const LICENSE_OVERRIDES = {
   khroma: 'MIT', // node_modules/khroma/license: "The MIT License (MIT)"
 };
 
-// npm declares SPDX ids; the backend region uses jk1's display names. Ids that already have an
-// appendix section map onto that section's name so one text serves both regions. Every other id
-// is its own heading and gets its own appendix section.
+// SPDX ids that already have a backend appendix section map onto its name; any other id is its own heading.
 const APPENDIX_NAMES = {
   'Apache-2.0': 'Apache License, Version 2.0',
   MIT: 'MIT License',
@@ -74,23 +54,17 @@ const APPENDIX_NAMES = {
 };
 
 const LEGAL_FILE_NAME = /^(licen[cs]e|notice|copying)/i;
-// An attribution line opens with "Copyright" (optionally behind a (c)/©/Portions marker).
-// Matching "copyright" anywhere instead pulls in license boilerplate that also carries a digit —
-// "2. Grant of Copyright License…" from every embedded Apache-2.0 LICENSE.
+// An attribution opens with "Copyright" (ADR-0056); matching it anywhere pulls in license clauses.
 const COPYRIGHT_LINE = /^(\(c\)|©|portions)?\s*copyright\b/i;
 const NAMES_A_HOLDER = /\d|\(c\)|©/i;
 // Everything up to and including the copyright marker, so what remains is the holder.
 const COPYRIGHT_MARKER = /^(\(c\)|©|portions)?\s*copyright\s*(\(c\)|©)?[\s,:;.-]*/i;
-// A holder named without a year or marker ("Copyright Eemeli Aro"). Requiring the lowercase second
-// letter is what still rejects the all-caps warranty boilerplate ("COPYRIGHT HOLDERS BE LIABLE").
+// A holder named without a year or marker; the lowercase second letter rejects all-caps warranty text.
 const HOLDER_NAME = /^[A-Z][a-z]/;
-// A license's "how to apply these terms" template, reproduced inside the license text itself:
-// <year>, <YEAR>, [yyyy], {yyyy}, [name of copyright owner]. Case-sensitive on purpose — a
-// placeholder is written all-lowercase or all-caps, so a bracketed holder ("[Ohad Shai]") and an
-// e-mail or URL in angle brackets are not mistaken for one.
+// A license's apply-these-terms placeholder (`<year>`, `[yyyy]`, `[name of copyright owner]`);
+// case-sensitive so a bracketed holder or an angle-bracketed e-mail is not mistaken for one.
 const TEMPLATE_BRACKETS = /[<[{](?:[a-z][a-z _-]*|[A-Z][A-Z _-]*)[>\]}]/;
-// The same template written without brackets. Kept apart from TEMPLATE_BRACKETS so it can be
-// case-insensitive — the GPL's own text spells it in caps — without loosening the bracket forms.
+// The same placeholder without brackets; case-insensitive, as the GPL text spells it in caps.
 const TEMPLATE_PHRASE = /\byear name of author\b/i;
 // Steward of a license text, never a holder of the dependency shipping that text.
 const LICENSE_STEWARD = /free software foundation/i;
@@ -151,14 +125,8 @@ function declaredLicense(source) {
 }
 
 /**
- * Extracts attribution lines from license/notice file contents: lines opening with `copyright` that
- * either carry a year or a `(c)`/`©` marker, or name a holder outright, so neither prose such as
- * "copyright notice" nor a license's own numbered clauses and warranty boilerplate are mistaken for
- * an attribution. Lines naming no holder at all, and a license template's `<year>` / `[yyyy]`
- * placeholders, are dropped too.
- *
- * Set `fromLicenseText` when the contents are license texts rather than NOTICE files: a license's
- * steward holds the copyright on the license, not on the dependency quoting it.
+ * Attribution lines of license/notice contents: `copyright` lines carrying a year, `(c)`/`©` or a
+ * holder; prose, clauses and placeholders are dropped, and `fromLicenseText` also a steward's own.
  */
 export function copyrightLines(fileContents, fromLicenseText) {
   const lines = fileContents
@@ -189,8 +157,7 @@ function legalFilesIn(dir) {
     .readdirSync(dir)
     .filter((name) => LEGAL_FILE_NAME.test(name))
     .map((name) => path.join(dir, name))
-    // CWE-59: lstat, so a LICENSE or NOTICE that is a symlink is
-    // never followed — a package must not make the inventory quote a file outside itself.
+    // CWE-59: lstat, so a symlinked LICENSE or NOTICE is never followed (ADR-0056).
     .filter((file) => fs.lstatSync(file, { throwIfNoEntry: false })?.isFile() ?? false)
     .sort();
 }
@@ -204,8 +171,7 @@ function readManifest(dir) {
 function attributions(dir) {
   const legalFiles = legalFilesIn(dir);
   const noticeFiles = legalFiles.filter((file) => /^notice/i.test(path.basename(file)));
-  // Attributions come from NOTICE files whenever the package ships one. A LICENSE file is the
-  // license text, and its own headers attribute the license, not the dependency quoting it.
+  // NOTICE files win when shipped: a LICENSE's headers attribute the license, not the package (ADR-0056).
   const sources = noticeFiles.length > 0 ? noticeFiles : legalFiles;
   return copyrightLines(
     sources.map((file) => fs.readFileSync(file, 'utf8')),
@@ -214,17 +180,8 @@ function attributions(dir) {
 }
 
 /**
- * The production dependency graph of `<rootDir>/package-lock.json`, sorted by `name@version`:
- * every entry except the root project and the `dev: true` ones, minus [isSkipped].
- *
- * The lock names and versions every package; its license, homepage and copyright lines come from
- * `<rootDir>/<lock path>` where `npm ci` unpacked it. Packages the lock restricts by `os` or `cpu`
- * are read from the lock alone, so they render identically on every platform — the lock knows they
- * are redistributed, but only the copy this machine happens to unpack knows their holders, and
- * reading it would make the CI gate fail on the platform it was not generated on.
- *
- * Fails rather than publishing an incomplete attribution: on a package whose lock entry and
- * manifest both declare no license and that has no [LICENSE_OVERRIDES] entry.
+ * The production graph of the lock sorted by `name@version`, minus [isSkipped]; `os`/`cpu`-restricted
+ * packages are read from the lock alone (ADR-0056). Throws on a package with no license or override.
  */
 export function collectPackages(rootDir) {
   const lockFile = path.join(rootDir, 'package-lock.json');
@@ -233,21 +190,18 @@ export function collectPackages(rootDir) {
   }
   const lock = JSON.parse(fs.readFileSync(lockFile, 'utf8'));
   const nodeModulesDir = path.resolve(rootDir, 'node_modules') + path.sep;
-  // The realpath re-check below compares resolved paths, so its prefix must be resolved too — else a
-  // checkout reached through a symlink (macOS /var -> /private/var) reads as an escape.
+  // Resolved, so a checkout reached through a symlink (macOS /var) does not read as an escape.
   const realNodeModulesDir = path.join(fs.realpathSync(rootDir), 'node_modules') + path.sep;
   const packages = new Map();
   const unlicensed = [];
   for (const [lockPath, entry] of Object.entries(lock.packages ?? {})) {
     if (lockPath === '' || entry.dev) continue;
-    // CWE-22: the key names the directory read below, so it must resolve
-    // inside node_modules — a crafted lock must not make the inventory read and quote other files.
+    // CWE-22: a crafted lock key must resolve inside node_modules (ADR-0056).
     const packageDir = path.resolve(rootDir, lockPath);
     if (!packageDir.startsWith(nodeModulesDir)) {
       throw new Error(`Lock entry "${lockPath}" resolves outside node_modules — refusing to read it.`);
     }
-    // realpath re-check: the lexical startsWith above passes for a directory symlink; re-verify
-    // containment after resolving.
+    // The lexical check passes a directory symlink; re-verify containment after resolving.
     let resolvedDir = packageDir;
     try {
       const real = fs.realpathSync(packageDir);
@@ -256,8 +210,7 @@ export function collectPackages(rootDir) {
       }
       resolvedDir = real;
     } catch (error) {
-      // Directory absent (uninstalled platform-optional package) — isDirectory() below returns false
-      // and the entry falls through to the lock-only path. Any other error is a real failure.
+      // An absent directory (uninstalled optional package) falls through to the lock-only path.
       if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error;
     }
     const name = lockPath.slice(lockPath.lastIndexOf(NODE_MODULES_SEGMENT) + NODE_MODULES_SEGMENT.length);
@@ -265,12 +218,9 @@ export function collectPackages(rootDir) {
     const key = `${name}@${entry.version}`;
     // npm lists one lock path per place it nests a package; the same name@version needs one bullet.
     if (packages.has(key)) continue;
-    // A package `npm ci` installs only on some platforms is read from the lock alone: reading the
-    // one copy this machine unpacked would make the region — and so the CI gate — platform-specific.
     const dir = entry.os || entry.cpu ? null : resolvedDir;
     const manifest = dir && isDirectory(dir) ? readManifest(dir) : null;
-    // Through declaredLicense, not entry.license directly: npm carries the deprecated object and
-    // array forms too, and a non-string there must fall back rather than throw.
+    // `declaredLicense` tolerates the object and array forms of npm's license field.
     const license = declaredLicense(entry) || (manifest && declaredLicense(manifest)) || LICENSE_OVERRIDES[name];
     if (!license) {
       unlicensed.push(key);
@@ -331,8 +281,7 @@ export function renderInventory(packages) {
 
 /** Replaces the text between the `begin` and `end` marker lines of `document` with `body`. */
 export function replaceRegion(document, begin, end, body) {
-  // The body is built from dependency-supplied text, so a license file carrying a marker string
-  // would otherwise move the region boundary on the next generate.
+  // Dependency text must not move the region boundary (ADR-0056).
   if (body.includes(begin) || body.includes(end)) {
     throw new Error(
       `The generated body contains a region marker — a dependency's own legal files must not be able to ` +
@@ -351,10 +300,8 @@ export function replaceRegion(document, begin, end, body) {
 }
 
 /**
- * The appendix names of `licenseIdsInUse` that have no `### <name>` heading in `document`'s
- * `## License texts` appendix. Scoped to the appendix: a `### ` line before it — a future section
- * heading, or one inside a quoted license text — reproduces no license text, so counting it would
- * pass coverage for a license the document never carries.
+ * The appendix names of `licenseIdsInUse` with no `### <name>` heading under `## License texts`;
+ * a `### ` line before the appendix reproduces no license text and does not count.
  */
 export function licenseHeadingsMissing(document, licenseIdsInUse) {
   const lines = document.split('\n');

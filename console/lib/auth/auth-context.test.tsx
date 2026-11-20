@@ -101,7 +101,7 @@ describe('AuthProvider (cookie mode)', () => {
       return Promise.resolve(undefined);
     });
 
-    renderWithProvider();
+    const { client } = renderWithProvider();
     await waitFor(() =>
       expect(screen.getByTestId('status')).toHaveTextContent('anon'),
     );
@@ -115,14 +115,11 @@ describe('AuthProvider (cookie mode)', () => {
     );
     expect(login).toHaveBeenCalledWith('alice', 'pw');
     expect(getAuthMe).toHaveBeenCalled();
+    expect(client.getQueryData(['auth', 'me'])).toEqual({ username: 'alice', role: 'admin', grants: [] });
   });
 
   it('login never transitions through loading after the initial anon state', async () => {
-    // Pins the fix for the post-login "Loading..." stuck screen: once the
-    // auth-me probe has resolved once (success or failure), the AuthProvider
-    // must never bounce back into status='loading' on subsequent login()
-    // calls. The synchronous override flips status to 'authed' without
-    // depending on the React Query observer's re-render landing first.
+    // After the probe resolves once, login() never bounces status back to 'loading'.
     let probeShouldSucceed = false;
     getAuthMe.mockImplementation(() => {
       if (probeShouldSucceed) {
@@ -174,9 +171,7 @@ describe('AuthProvider (cookie mode)', () => {
   });
 
   it('exposes the principal synchronously after login (no flicker through user=undefined)', async () => {
-    // The override carries the user object so subscribers don't have to wait
-    // for the next query observer re-render to read query.data. This pins
-    // that login() seeds *both* status and user in one synchronous update.
+    // login() seeds both status and user in one synchronous update.
     let probeShouldSucceed = false;
     getAuthMe.mockImplementation(() => {
       if (probeShouldSucceed) {
@@ -205,9 +200,7 @@ describe('AuthProvider (cookie mode)', () => {
   });
 
   it('clears the authed override when the auth-expired bus fires', async () => {
-    // A 401 on any other API call notifies the auth-expired bus. The
-    // override must drop back to 'anon' so a later remount doesn't keep
-    // showing the user as authed after the session got nuked.
+    // An auth-expired notification drops the override back to 'anon'.
     let probeShouldSucceed = false;
     getAuthMe.mockImplementation(() => {
       if (probeShouldSucceed) {
@@ -260,12 +253,44 @@ describe('AuthProvider (cookie mode)', () => {
       expect(screen.getByTestId('status')).toHaveTextContent('anon'),
     );
     expect(client.getQueryData(['scratch'])).toBeUndefined();
+    expect(screen.getByTestId('logout-outcome')).toHaveTextContent('ok');
+  });
+
+  /** Renders an authed session with a scratch cache entry, then logs out against a failing server. */
+  async function logoutAgainstFailingServer() {
+    getAuthMe.mockResolvedValue({ username: 'alice', role: 'admin', grants: [] });
+    logout.mockRejectedValue(new HomerApiError('Service Unavailable', 503));
+    const { client } = renderWithProvider();
+    await waitFor(() =>
+      expect(screen.getByTestId('status')).toHaveTextContent('authed'),
+    );
+    client.setQueryData(['scratch'], { keep: true });
+    await act(async () => {
+      screen.getByText('do-logout').click();
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId('logout-outcome')).not.toBeEmptyDOMElement(),
+    );
+    return client;
+  }
+
+  it('logout reports server-unconfirmed when the request fails', async () => {
+    await logoutAgainstFailingServer();
+    expect(screen.getByTestId('logout-outcome')).toHaveTextContent('server-unconfirmed');
+  });
+
+  it('a failed logout still signs out locally', async () => {
+    await logoutAgainstFailingServer();
+    expect(screen.getByTestId('status')).toHaveTextContent('anon');
+  });
+
+  it('a failed logout still clears the cached data', async () => {
+    const client = await logoutAgainstFailingServer();
+    expect(client.getQueryData(['scratch'])).toBeUndefined();
   });
 
   it('login returns rate-limited when the login endpoint responds 429', async () => {
-    // The distinct outcome is what lets the login form show a "wait" message
-    // instead of "invalid credentials" — mislabeling a 429 makes users retry
-    // harder and drain the login limiter's shared bucket.
+    // A 429 is its own outcome, so the form says wait, not invalid credentials.
     getAuthMe.mockRejectedValue(new Error('401')); // mount lands anon
     login.mockRejectedValue(new HomerApiError('Too Many Requests', 429));
 
@@ -302,9 +327,7 @@ describe('AuthProvider (cookie mode)', () => {
   });
 
   it('reads a status only off the client\'s own error type', async () => {
-    // Only HomerApiError carries a backend status. A foreign throwable that
-    // happens to have a `status` field must not be classified as rate-limited —
-    // the form would tell the user to wait for a window that never opened.
+    // Only HomerApiError carries a backend status; a foreign `status` field is not a 429.
     getAuthMe.mockRejectedValue(new Error('401')); // mount lands anon
     login.mockRejectedValue(Object.assign(new Error('Too Many Requests'), { status: 429 }));
 

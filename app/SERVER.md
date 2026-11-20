@@ -1168,6 +1168,10 @@ curl -H "Authorization: Bearer ci-token-value" \
   "http://localhost:8080/api/v1/agent/my-agent"
 ```
 
+`GET /api/v1/auth/me` with a token returns `{ username, role, grants }` for
+it: the map key as `username`, and the token's own `role` and `grants` —
+never the token itself. The console reads its capabilities there.
+
 > **Legacy:** a plain-string token (`"username": "token-value"`) still
 > parses, but carries no `role`/`grants` and is therefore rejected at
 > startup by the same check that rejects `endpoints` (see
@@ -1379,16 +1383,17 @@ apiAuth: !<password>
 |---|---|---|---|
 | `POST` | `/api/v1/auth/login` | None | Body: `{ "username": "...", "password": "..." }`. Rate-limited per remote IP via `server.loginRateLimit` (default 5/min). |
 | `POST` | `/api/v1/auth/logout` | None (idempotent) | Clears the session cookie; 204. |
-| `GET`  | `/api/v1/auth/me` | Valid cookie | Returns `{ username, role, grants }`. |
+| `GET`  | `/api/v1/auth/me` | Valid cookie, or a bearer token | Returns `{ username, role, grants }`. |
 
 These three `/auth/*` routes are mounted **outside** the per-user
 grant checks by design: `/login` is unauthenticated, `/logout`
-must be idempotent against a stale cookie, and `/me` reads the cookie
-directly so it isn't mis-authenticated as a bearer principal under a
+must be idempotent against a stale cookie, and `/me` reads its one
+credential itself — a bearer token when the request carries one and a
+`bearer` scheme is configured, else the cookie — so neither is answered as the other's principal under a
 combined deployment. A user with only a narrow `read` grant can still
 call `/auth/me` to discover their own identity and capabilities —
 that's intentional, and it's the console's capability source. See
-ADR-0011 invariant 7.
+ADR-0011 invariant 7 and its 2026-11-20 amendment.
 
 **Generating a hash:**
 
@@ -2783,7 +2788,7 @@ Emits an event every time the agent set is reloaded: after `POST /api/v1/agents/
 
 ### GET /api/v1/stream/processes/{processId}/llm-events
 
-Streams the canonical LLM events of one run the caller can see (`404` otherwise, the same as not-found), live or finished. Query `cmd` follows one `!<claude>`/`!<codex>`/`!<opencode>` command (`404` for any other command type); without it the stream follows every LLM command of the run in order. Poll latency is set by [`server.claudeStreamPollMs`](#server-fields). Event kinds and resume: [README](README.md#get-apiv1streamprocessesprocessidllm-events).
+Streams the canonical LLM events of one run the caller can see (`404` otherwise, the same as not-found), live or finished. Query `cmd` names a command by its index in the agent's `commands` and follows that one `!<claude>`/`!<codex>`/`!<opencode>` command (`404` for any other command type or an index the run did not execute, except on a run recorded before the index field existed, where the row at that position still resolves); without it the stream follows every LLM command of the run in order. Poll latency is set by [`server.claudeStreamPollMs`](#server-fields). Event kinds and resume: [README](README.md#get-apiv1streamprocessesprocessidllm-events).
 
 | Event | Id | Data |
 |-------|-----|------|
@@ -2798,7 +2803,7 @@ Tails a command's stdout or stderr file. New bytes are emitted as they are writt
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `cmd` | integer | No | `0` | Command index (0-based) |
+| `cmd` | integer | No | `0` | The command's index in the agent's `commands` (0-based); a step is matched by the index it recorded, or, for a run recorded before the field existed, by the row's position among the run's rows |
 | `stream` | string | No | `out` | `out` or `err` |
 
 **Headers**:

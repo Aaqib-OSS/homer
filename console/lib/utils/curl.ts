@@ -1,10 +1,7 @@
 import { agentExecutionPath, type ExecuteAgentOptions } from '@/lib/api/client';
 import { activeBaseUrl } from '@/lib/instances/store';
 
-// Wraps a string in single quotes for safe POSIX shell embedding.
-// `'\''` ends the quoted run, inserts a literal `'`, and reopens — immune
-// to `$`, backticks, and embedded double quotes that bash would otherwise
-// expand inside double-quoted strings.
+// Single-quotes a string for POSIX shell; an embedded `'` becomes `'\''`.
 function shellSingleQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
@@ -15,9 +12,8 @@ export function generateAgentCurlCommand(
 ): string {
   const url = `${activeBaseUrl()}${agentExecutionPath(agentName, opts.queryParams)}`;
 
-  // The instance URL is user-entered, so it is single-quoted like the body.
-  // The auth header stays double-quoted so bash expands $HOMER_AUTH_TOKEN at
-  // paste time. The real token must never enter generated text. See ADR-0047 rule 7.
+  // The auth header stays double-quoted so bash expands $HOMER_AUTH_TOKEN at paste time;
+  // the real token never enters generated text (ADR-0047 rule 7).
   const lines: string[] = [`curl -X POST ${shellSingleQuote(url)}`];
   lines.push('-H "Authorization: Bearer $HOMER_AUTH_TOKEN"');
   Object.entries(opts.headers ?? {}).forEach(([k, v]) => {

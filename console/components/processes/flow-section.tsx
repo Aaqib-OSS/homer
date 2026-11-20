@@ -16,14 +16,9 @@ import { Eye, EyeOff } from 'lucide-react';
 export const FLOW_RUNS_LIMIT = 500;
 
 /**
- * The Flow section of a root run's page: every visible run of this flow in id
- * order, one flat list. The flow is reconstructed from the stored root ids
- * (ADR-0058), and a tree's indentation would say nothing the parent column
- * does not already say.
- *
- * A resume of a terminal run starts a new segment of the same agent as the
- * root; those segments are the noisiest part of a long flow, so they are
- * hidden by default, with a toggle to show them.
+ * The Flow section of a root run's page: every visible run of the flow (by stored root id,
+ * ADR-0058) in id order, one flat list since the parent column carries the tree. Resume
+ * segments of the root's agent are hidden by default, with a toggle to show them.
  */
 export function FlowSection({
   processId,
@@ -39,9 +34,8 @@ export function FlowSection({
   if (!data) return null;
 
   const runs = data.processes;
-  // Matched by agent name, not by `parentProcessId === root`: a resume's parent
-  // is the source run it replays, which may be a deeper descendant, so the
-  // agent is what identifies the orchestrator's own segments.
+  // Matched by agent name: a resume's parent is the run it replays, possibly a deeper
+  // descendant, so `parentProcessId === root` would miss the orchestrator's segments.
   const hasSegments = rootAgentName !== null && runs.some((run) => run.agentName === rootAgentName);
   const visibleRuns = showSegments ? runs : runs.filter((run) => run.agentName !== rootAgentName);
 

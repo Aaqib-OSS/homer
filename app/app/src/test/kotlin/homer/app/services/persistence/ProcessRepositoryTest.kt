@@ -1568,6 +1568,27 @@ class ProcessRepositoryTest {
         }
 
     @Test
+    fun `execution command index round-trips and an old row without it reads as null`() =
+        runTest {
+            val db = PersistenceTestSupport.tempDatabase()
+            val repo = repo(db)
+            val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
+            repo.completeStep(id, execution("build").copy(commandIndex = 2), null, null)
+
+            val recorded = repo.getProcessInfo(id)!!.executions.single()
+            assertEquals(2, recorded.commandIndex)
+
+            // Simulate a pre-release row: raw JSON without the field (ADR-0020).
+            db.query {
+                Processes.update({ Processes.id eq id }) {
+                    it[executions] = """[{"label":"l","start":1,"end":2,"resultCode":0,"stdOut":null,"stdErr":null,"errMsg":null}]"""
+                }
+            }
+            val old = repo.getProcessInfo(id)!!.executions.single()
+            assertNull(old.commandIndex)
+        }
+
+    @Test
     fun `cost_source starts as cli and stays cli for cli charges`() =
         runTest {
             val repo = repo()

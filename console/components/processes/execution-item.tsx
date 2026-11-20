@@ -134,7 +134,7 @@ function ExecutionDetails({
           processId={processId}
           stdoutPath={execution.stdOut}
           stderrPath={execution.stdErr}
-          executionIndex={index}
+          executionIndex={execution.commandIndex ?? index}
           defaultTab={execution.stdOut ? 'stdout' : 'stderr'}
           kind={execution.kind}
           accounting={execution.llmAccounting ?? null}

@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-09-27
 deciders: Lukáš Vlk
-amended: 2026-10-09, 2026-10-31, 2026-11-12, 2026-11-19
+amended: 2026-10-09, 2026-10-31, 2026-11-12, 2026-11-19, 2026-11-20
 ---
 # ADR-0070: LLM harness adapter boundary and canonical event model
 
@@ -274,6 +274,26 @@ this needs a lookup that outlives the cancelled attempt without holding its
 block: a bounded background reconcile, with its own queue bound per §12
 rule 5. That is structural work of its own and a follow-up to this ADR, not
 part of it.
+
+## Amendment (2026-11-20): The console bounds and render-guards the event buffer
+
+The console tails `/llm-events` frames whose `event` is only cast to the canonical event type, so the
+frame is attacker-influenced input (ADR-0047 rule 2).
+
+- **Bounded memory (CWE-400).** The buffer holds at most `MAX_LLM_EVENTS` events and
+  `MAX_LLM_BUFFER_CHARS` characters, dropping the oldest; one event is at most `MAX_LLM_EVENT_CHARS`.
+  The size is measured by walking the event in place, never by serializing it, so a multi-MiB payload
+  is not copied just to be discarded, whether it sits in the payload field, in an undeclared extra
+  field of a known kind, or in an unknown kind. A payload field past the cap is replaced by a note; an
+  event still past it (an identity scalar, or JSON overhead) becomes a `transient_error` note. The walk
+  has a depth limit and reports a deeper value as oversized. Every arm that pushes into the buffer,
+  the malformed-event note included, runs the same eviction caps.
+- **Render safety (CWE-20).** A missing or null `event`, or one whose fields the renderer reads without
+  a guard (`turn_end` status and usage, `assistant_message` text), degrades to the `transient_error`
+  note: an unguarded throw there reaches the `(dashboard)` route error boundary, which replaces the whole
+  conversation page with its error card, and "Try again" would replay the same frame forever.
+- **Flushing.** Frames accumulate in a plain array and publish to React state at most once per
+  animation frame, so a flood costs one state copy per frame, not one per event.
 
 ## More Information
 

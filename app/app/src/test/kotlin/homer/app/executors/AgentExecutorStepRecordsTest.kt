@@ -167,6 +167,55 @@ class AgentExecutorStepRecordsTest : AgentExecutorTestBase() {
     // ========== ExecutionInfo Tests ==========
 
     @Test
+    fun `each row records its command's index in the agent's commands`() =
+        runTest {
+            val agent = AgentFixtures.multiCommandAgent() // 3 commands
+
+            executor(agent = agent).execute()
+
+            assertEquals(listOf(0, 1, 2), executionInfos.map { it.commandIndex })
+        }
+
+    @Test
+    fun `a run restricted to one command records that command's own index`() =
+        runTest {
+            // A debug run of the agent's third command: its only row is command 2's, so the
+            // row's list position (0) must not stand in for the index the streams are asked for.
+            val agent = AgentFixtures.multiCommandAgent()
+
+            executor(agent = agent, commandIndices = listOf(2)).execute()
+
+            assertEquals(listOf(2), executionInfos.map { it.commandIndex })
+        }
+
+    @Test
+    fun `a skipped row records the index of the command it skipped`() =
+        runTest {
+            val agent =
+                Agent(
+                    name = "skip_index_test",
+                    commands =
+                        listOf(
+                            Command.Cmd(cmd = listOf("echo", "first"), timeout = 60),
+                            Command.Cmd(
+                                cmd = listOf("echo", "second"),
+                                timeout = 60,
+                                whenClause = When(When.Operator.ALL, listOf("false-expr")),
+                            ),
+                        ),
+                    env = emptyMap(),
+                )
+            coEvery { mockShell.cmd(any(), any(), any(), any(), any(), any()) } answers {
+                TestFixtures.mockCommandResult(exitCode = 1, stdOut = arg(1), stdErr = arg(2))
+            }
+
+            executor(agent = agent).execute()
+
+            assertEquals(listOf(0, 1), executionInfos.map { it.commandIndex })
+            assertTrue(executionInfos[1].skipped)
+        }
+
+    @Test
     fun `llmAccounting on the CommandResult lands on the ExecutionInfo`() =
         runTest {
             // Same arrangement as the "actual paths" test in AgentExecutorArtifactsTest, but the returned

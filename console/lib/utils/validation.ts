@@ -7,7 +7,7 @@ export interface ValidationResult {
 
 const INTEGER = /^-?\d+$/;
 
-// Per-type pre-checks of a non-empty value. Only the legacy `STRING` type
+// Per-type pre-checks of a non-empty value. Only the uppercase `STRING` type
 // rejects spaces; `string` and `ANY` accept any non-empty value, so they have none.
 const TYPE_CHECKS = new Map<AgentQueryParam['type'], { valid: (value: string) => boolean; error: string }>([
   ['STRING', { valid: (value) => !value.includes(' '), error: 'String values cannot contain spaces' }],
@@ -62,9 +62,7 @@ export function validateParameterValue(
     }
   }
 
-  // Type-specific validation: a best-effort pre-check; the server's 400 is
-  // authoritative. Constraint fields (values/pattern/min/...) are checked
-  // server-side only.
+  // Pre-check only: the server's 400 is authoritative and alone checks constraint fields.
   const error = typeError(param.type, value);
   if (error) {
     return { isValid: false, error };

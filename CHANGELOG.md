@@ -4,6 +4,7 @@
 
 ### Homer
 
+- **Added: `GET /api/v1/auth/me` answers a bearer token** — A request carrying a bearer token gets that token's name, role and grants, and the route is mounted whenever a `bearer` or `password` scheme is configured.
 - **BREAKING: the LangGraph runtime needs Python 3.12** — A runner host that runs `!<langgraph>` commands needs Python 3.12 or newer to install `homer_langgraph`.
 - **BREAKING: the optional Artifactory build path is removed** — Gradle builds and the backend and E2E image builds no longer read `ARTIFACTORY_URL`, `ARTIFACTORY_USER` or `ARTIFACTORY_TOKEN` and resolve from Maven Central and the Gradle Plugin Portal, so an operator whose network reaches dependencies only through Artifactory must provide another route to them.
 - **Security: the host launch scripts start the JVM with Base64 intrinsics off** — `homer-runner.sh` and `agentdebug.sh` pass `-XX:-UseBASE64Intrinsics`, as the images do, mitigating Java4Shell (CVE-2026-114938).
@@ -26,6 +27,18 @@
 - **Fixed: the log tail after a restart follows the run's recorded output file** — `GET /api/v1/stream/processes/{processId}/logs` serves the stdout/stderr path the step recorded instead of guessing `cmd_N`, and answers `404` when the step recorded no file or a path that is not a file directly inside the run's artifacts.
 - **Changed: a continuation marks a transformed result too large to deliver** — A resume payload whose result is over the 4 MiB transform cap now carries `resultTooLarge: true`, and `homer_fanout` reports it on stderr. See [ADR-0025](docs/adr/0025-capability-token-result-read.md).
 - **Fixed: a refused ssh exec request is named in the step's error** — A step whose exec request the ssh server refuses (a `ForceCommand`, a restricted shell or a session limit) fails saying the server refused it, instead of only that the channel closed without an exit status.
+- **Fixed: the log streams' `cmd` parameter means the command index everywhere** — `GET /api/v1/stream/processes/{id}/logs` and `/llm-events` serve the step whose command index `cmd` names, on a live run and after a restart, instead of the step at that position in the run's rows — so a run that executes only some of its commands streams each one's own output.
+
+### Console
+
+- **Fixed: an expanded step subscribes with its own command index** — The process detail asks the log and LLM-event streams for the command the step ran, so a debug run's single step streams its output instead of the run's first command.
+
+### Console
+
+- **Security: bearer-mode sign-in no longer grants admin** — A bearer token now sees only the pages, controls and plugins its own role and grants allow, and none of the admin ones against a server too old to report them. See [ADR-0059](docs/adr/0059-console-plugins-are-runtime-loaded-modules.md).
+- **Security: one strict Content-Security-Policy on every route** — The agent file editor route no longer allows inline scripts, `eval` or `blob:` workers; it gets the same nonce policy as every other page.
+- **Security: a bearer token saved before multi-instance support is deleted on load** — The console deletes that old copy on every load instead of keeping it next to the default instance's token, so a token it removes (expired or rejected) is gone from browser storage.
+- **Fixed: runner capacity of an external runner** — The runners page shows `—` instead of "unbounded" when a runner reports no concurrency, since every configured runner has a finite one.
 
 ## [1.43.2] - 2026-11-18
 

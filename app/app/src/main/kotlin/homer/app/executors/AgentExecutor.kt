@@ -182,7 +182,16 @@ class AgentExecutor(
 
         if (whenResult is WhenEvaluator.Result.Skip) {
             return StepHandover(
-                recordSkip(command, startTime, nextCommand, executionContext, commandSpan, whenResult, plan.onStop),
+                recordSkip(
+                    command,
+                    startTime,
+                    nextCommand,
+                    executionContext,
+                    commandSpan,
+                    whenResult,
+                    plan.onStop,
+                    plan.artifactIndex,
+                ),
                 finishRun = false,
             )
         }
@@ -229,6 +238,9 @@ class AgentExecutor(
         commandSpan: Span,
         whenResult: WhenEvaluator.Result.Skip,
         onStop: Boolean = false,
+        // The skipped step's index in the agent's `commands`, the index the streams' `cmd`
+        // parameter names.
+        commandIndex: Int? = null,
     ): Long? {
         var nextStart: Long? = null
         withContext(NonCancellable) {
@@ -253,6 +265,7 @@ class AgentExecutor(
                     skipped = true,
                     kind = command.kind,
                     onStop = onStop,
+                    commandIndex = commandIndex,
                 ),
                 next?.first,
                 next?.second,

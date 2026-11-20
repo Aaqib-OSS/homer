@@ -3,11 +3,9 @@
 import { useEffect, useState } from 'react';
 
 /**
- * Returns the current time in whole seconds (`Math.floor(Date.now() / 1000)`),
- * refreshed once per second. Returns 0 until the first tick, and stays 0 while
- * `enabled` is falsy (the interval is not started). The clock re-seeds whenever
- * `enabled` changes, so passing a value (e.g. a start timestamp) re-syncs
- * immediately when it changes. Seeding happens in an effect so render stays pure.
+ * The current time in whole seconds, refreshed once per second. It is 0 until
+ * the first tick and while `enabled` is falsy, and re-seeds whenever `enabled`
+ * changes.
  */
 export function useNow(enabled: unknown = true): number {
   const [now, setNow] = useState(0);
