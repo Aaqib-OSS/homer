@@ -4,10 +4,8 @@ import homer.app.models.RunnerFilter
 import kotlin.time.Duration
 
 /**
- * Both renderings of a claim's expiry reason: with aliases for the log, run-visible without.
- * A preference that held the whole wait is the cause on top of the states: matching runners
- * shown free passed the run over on purpose (ADR-0099). The run-visible rendering names no
- * instance (ADR-0077).
+ * Both renderings of a claim's expiry reason: with aliases for the log, and run-visible naming no instance (ADR-0077).
+ * A preference that held the whole wait is the cause, as matching runners passed the run over on purpose (ADR-0099).
  */
 internal fun claimExpiryReasons(
     consumers: List<ClaimConsumerInfo>,
@@ -15,10 +13,7 @@ internal fun claimExpiryReasons(
     affinity: ClaimAffinity?,
     timeout: Duration,
 ): Pair<String, String> {
-    // The preference is the cause only while it actually blocked someone: if the preferred
-    // instance has left (unregistered or draining) or never matched the run's filter, it ordered
-    // no consumer at expiry, and the run-visible cause must not send the debug of a failed run
-    // after a preference that was not in the way. See ADR-0099.
+    // The preference is the cause only while its instance is live and matches the filter: else it blocked no one (ADR-0099).
     val preferenceHeld =
         affinity != null &&
             affinity.heldWholeWait(timeout.inWholeMilliseconds) &&
@@ -39,7 +34,7 @@ private fun matchingStates(
 ): String =
     consumers
         .filter { it.matches(filter) }
-        .joinToString(", ") { "runner '${it.alias}' at concurrency ${it.inUse}/${it.concurrency ?: "unbounded"}" }
+        .joinToString(", ") { "runner '${it.alias}' at concurrency ${it.inUse}/${it.concurrency}" }
 
 private fun expiryReason(
     consumers: List<ClaimConsumerInfo>,
@@ -66,9 +61,7 @@ private fun expiryReason(
             }
         }
     }
-    // The alias-free rendering names the observation, not the runners: it is stored on the
-    // run and served to every caller who can see it, and a runner alias is admin-only there
-    // (ADR-0077). Both renderings read the same snapshot, so they cannot disagree.
+    // Run-visible, so it names no runner alias (ADR-0077); both renderings read one snapshot and cannot disagree.
     if (!withAliases) return "every matching runner was at its concurrency limit"
     return matchingStates(consumers, filter)
 }

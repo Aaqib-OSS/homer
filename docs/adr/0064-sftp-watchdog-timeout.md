@@ -1,9 +1,12 @@
 ---
 status: accepted
 date: 2026-09-16
+amended: 2026-11-20
 deciders: Lukáš Vlk
 ---
 # ADR-0064: SFTP blocking-I/O timeout via a watchdog coroutine
+
+> **Amendment (2026-11-20) — `sftpTransferTimeoutSeconds` no longer accepts `null`.** The deadline is always on, default 300 s, so a `null` that disabled the bound (below) is rejected.
 
 ## Context and Problem Statement
 
@@ -130,6 +133,18 @@ tar data would block those loops indefinitely. Fixing this requires a
 different mechanism — a thread that calls `proc.destroyForcibly()` after a
 deadline, analogous to how this watchdog calls `session.close(true)` — and
 is tracked as a separate follow-up.
+
+### Amendment (2026-11-20): the client release runs non-cancellably
+
+`withSftp` releases the client inside `NonCancellable`. The watchdog is a child of the caller's
+job, so for a caller already cancelled when the release starts, the watchdog's `delay()` would end
+at once without closing anything, and the client close would run with no deadline.
+
+### Amendment (2026-11-20): More Information is out of date
+
+More Information below is out of date in two places. `sftpTransferTimeoutSeconds` no longer
+accepts `null` (the amendment at the top), so nothing disables the bound. `withSftp` and
+`withTransferTimeout` now live in `SftpTransferDeadline`, which `WorkspaceSync` delegates to.
 
 ## More Information
 

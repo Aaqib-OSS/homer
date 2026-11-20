@@ -107,12 +107,9 @@ class LlmHarnessExecutor<C>(
         }
 
     /**
-     * Invokes the harness CLI, validating its output, and retrying transient failures
-     * (non-zero exit — except a terminal stop the command opted into, never retried — or
-     * [MalformedLlmOutputException]) per [LlmRetry]; the default `attempts = 1` runs once.
-     * The last attempt's outcome surfaces: a success is returned directly; if every attempt
-     * failed the most recent [MalformedLlmOutputException] is rethrown, else the most recent
-     * non-zero [CommandResult] is returned (preserving `continueIfFail` / `finishExitCode`).
+     * Runs the harness CLI up to [LlmRetry.attempts] times, retrying a non-zero exit (never an opted-in terminal stop)
+     * or [MalformedLlmOutputException]. A success returns; otherwise the last attempt surfaces, a malformed one rethrown
+     * and a non-zero one returned, so `continueIfFail` and `finishExitCode` apply.
      */
     private suspend fun runWithRetry(
         command: C,
@@ -128,9 +125,8 @@ class LlmHarnessExecutor<C>(
         val retry = command.retryPolicy()
         span.setAttribute("retry.attempts", retry.attempts.toLong())
 
-        // Cost cap is enforced at the request boundary (handleAgentExecution /
-        // handleRetry) so a refusal can return HTTP 429. The executor only
-        // records cost; it does not re-check caps mid-run.
+        // The cost cap is checked before the run starts (AgentRunStarter, RunHandlers); the executor
+        // only records cost. See ADR-0007.
 
         var last: Attempted<RetryOutcome>? = null
 
@@ -162,16 +158,14 @@ class LlmHarnessExecutor<C>(
         attemptBase: Int,
         attemptIndex: Int,
     ): Attempted<RetryOutcome> {
-        // Per-attempt paths: with the default artifactNameTemplate these are
-        // identical across attempts (today's truncate-in-place behavior); a
-        // template referencing HMR_CMD_ATTEMPT gives each attempt its own file.
+        // The default artifactNameTemplate gives every attempt one file, truncated in place; a
+        // template using HMR_CMD_ATTEMPT gives each attempt its own.
         val attemptOut = context.artifactNames.stdOut(attemptBase + attemptIndex)
         val attemptErr = context.artifactNames.stdErr(attemptBase + attemptIndex)
         trackAttemptArtifacts(command, context, redactor, attemptOut, attemptErr, attemptBase + attemptIndex)
         val dropFilter = harness.stdOutFilter(command)
-        // The attempt's own wall-clock window, captured here (Homer server time, never a
-        // runner-local clock) and handed to the resolver so it can price this attempt from
-        // only its own requests. See ADR-0061.
+        // Opens the attempt's window on Homer's clock, never a runner's: the resolver prices the attempt
+        // from the requests inside it (ADR-0061).
         val attempt = Attempt(command, compiledPrompt, context, span, redactor, attemptOut, System.currentTimeMillis())
         val result =
             try {
@@ -181,9 +175,8 @@ class LlmHarnessExecutor<C>(
                     dropFilter?.let { output.appendDropSummary(it, attemptErr, span) }
                 }
             }
-        // Account EVERY attempt before deciding what it means: a killed or crashed CLI
-        // still made billable requests. Lenient scan + resolver; strict validation of a
-        // usable success stays below and only for exit 0. See ADR-0061.
+        // Every attempt is accounted before it is judged: a killed or crashed CLI still made billable
+        // requests. Strict validation stays below, for exit 0 only (ADR-0061).
         val (accounting, settlement) = accountFinished(attempt, endedAtMs = System.currentTimeMillis())
 
         if (result.exitCode != 0) return Attempted(output.nonZeroOutcome(command, result, accounting, attemptOut, span), settlement)
@@ -249,14 +242,8 @@ class LlmHarnessExecutor<C>(
                 interruptGrace = attempt.context.interruptGrace,
             )
         } catch (e: Throwable) {
-            // `e` must be the exception rethrown below — AgentExecutor branches on
-            // its type (OutputCapExceededException vs CancellationException). See ADR-0061.
-            // [denial_of_service / CWE-400] Capture cancellation state before
-            // entering NonCancellable — inside it isActive is always true, so
-            // this is the only place a genuine cancellation (parent job killed)
-            // can still be told apart from the shell's own throw; a genuinely
-            // cancelled attempt must not hold this block open for a remote lookup,
-            // though its spend is real and is still accounted.
+            // Rethrow `e` itself: AgentExecutor tells a kill from an output-cap trip by its type. Read isActive
+            // here, as NonCancellable hides it: a cancelled attempt is charged without the lookup (CWE-400, ADR-0061).
             val callerActive = currentCoroutineContext().isActive
             val endedAtMs = System.currentTimeMillis()
             accountAborted(attempt, allowRemoteLookup = callerActive, endedAtMs, abortedBy = "the shell aborted the attempt")
@@ -272,19 +259,16 @@ class LlmHarnessExecutor<C>(
         try {
             accounting.finished(attempt.out, attempt.context, attempt.span, attempt.startedAtMs, endedAtMs)
         } catch (e: CancellationException) {
-            // A cancellation arriving while the resolver waits out its poll schedule
-            // must not lose the attempt's spend: re-account it locally, uncancellable
-            // and without the remote lookup, then rethrow. See ADR-0061.
+            // A cancellation during the resolver's poll must not lose the spend: re-account it locally,
+            // uncancellable and without the lookup, then rethrow (ADR-0061).
             accountAborted(attempt, allowRemoteLookup = false, endedAtMs, abortedBy = "the run was cancelled")
             throw e
         }
 
     /**
-     * Accounts an aborted attempt uncancellably and hands its telemetry off, since `execute`'s
-     * hand-off never runs on this path. A failure is logged, never thrown: the caller rethrows
-     * the attempt's own exception. An attempt a graceful stop interrupted is accounted the same
-     * way and additionally hands [ExecutionContext.facts] the spend (the step's row carries it)
-     * and the CLI session id, so the stop steps receive it as `HMR_STOP_SESSION_ID`. See ADR-0108.
+     * Accounts an aborted attempt uncancellably and hands off its telemetry, which `execute` never does here; a failure
+     * is logged, never thrown, so the caller rethrows the attempt's own exception. A stop-interrupted attempt also gives
+     * [ExecutionContext.facts] its spend and CLI session id, for the step's row and `HMR_STOP_SESSION_ID` (ADR-0108).
      */
     @Suppress("SuspendFunSwallowedCancellation") // NonCancellable inside; its caller rethrows the original
     private suspend fun accountAborted(

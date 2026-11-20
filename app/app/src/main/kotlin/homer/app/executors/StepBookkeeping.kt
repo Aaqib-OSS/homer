@@ -24,10 +24,8 @@ import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
 /**
- * Step [index]'s artifact names and attempt-0 paths: the default stem's when [agent]'s own template
- * fails to render. Part of the bookkeeping `AgentExecutor` writes around one step — the paths and
- * span it prepares before the command runs, the `when:` predicate it evaluates for it, and the row
- * it completes with, on the success, skip and failure paths alike.
+ * Step [index]'s artifact names and attempt-0 paths, the default stem's when [agent]'s own template
+ * fails to render; that failure is returned for the step's try to rethrow.
  */
 internal fun stepArtifacts(
     agent: Agent,
@@ -50,12 +48,8 @@ internal fun stepArtifacts(
                     minNeedleLength = SecretRedactor.ARTIFACT_STEM_MIN_NEEDLE_LENGTH,
                 ),
         )
-    // A rendered-stem validation failure (§12: the workspace env feeding the
-    // template is attacker-influenced) must NOT bypass per-command bookkeeping —
-    // caught here and re-thrown inside the try below, mirroring the EvalError
-    // pattern just below, so it still gets an ExecutionInfo, a closed span, and
-    // a cleared currentCommand. Placeholder attempt-0-shaped paths let
-    // ExecutionContext/ExecutionInfo be built even though nothing was written.
+    // A stem validation failure (its env is attacker-influenced, ADR-0047 rule 2) is rethrown inside
+    // the step's try, so the step still gets its row, a closed span and a cleared current command.
     val artifactNameFailure = runCatching { artifactNames.stdOut(0) to artifactNames.stdErr(0) }
     val (stdOut, stdErr) =
         artifactNameFailure.getOrElse {
@@ -86,9 +80,7 @@ internal fun startCommandSpan(
             .setParent(parentContext)
             .startSpan()
     commandSpan.setAttribute(SpanAttributes.RUNNER_ALIAS, session.runnerAlias)
-    // The step's own name, next to the index the span is named after: an LLM
-    // step's generation carries it too, a script step's span is the only place
-    // it appears.
+    // The step's name next to the span's index: a script step's span is the only place it appears.
     commandSpan.setAttribute("command.label", command.label)
     session.metadata.forEach { (key, value) -> commandSpan.setAttribute(key, value) }
     return commandSpan
@@ -122,12 +114,9 @@ internal fun nextBoundary(
 }
 
 /**
- * True when the step's outcome ends the run, so no later step starts and the
- * boundary clears the current command. A failure always stops: the catch block
- * rethrows unconditionally, so a Failure outcome ends the run whatever
- * `continueIfFail` says — `continueIfFail` only covers a non-zero exit code
- * reaching the outcome as Success. A `finishExitCode` match stops unless
- * `continueIfFail`.
+ * True when the outcome ends the run, so the boundary clears the current command: always on a
+ * Failure (the catch rethrows whatever `continueIfFail` says), and on a `finishExitCode` match
+ * unless `continueIfFail`.
  */
 private fun shouldStopAfter(
     outcome: CommandOutcome,
@@ -154,14 +143,8 @@ internal suspend fun completeCommand(
 ): Long? {
     val (index, command, nextCommand, startTime, commandSpan, stdOut, stdErr, _, onStop) = run
     val endTime = Clock.System.now().epochSeconds
-    // Record the executor-returned result's actual paths when one exists —
-    // with a per-attempt artifactNameTemplate a retried Claude/Codex command's
-    // winning attempt writes to a different file than the attempt-0 paths
-    // built above. A thrown exception on the final attempt (e.g.
-    // MalformedLlmOutputException) means executedResult is never set even
-    // though the retry loop ran and wrote to later attempts' files — prefer the
-    // tracked per-attempt paths on StepRecords over the stale attempt-0 fallback;
-    // only an error before the executor ran (e.g. an EvalError) falls through.
+    // A retried attempt may write other files than attempt 0: the result's paths, else the tracked
+    // per-attempt ones (the last attempt threw), else attempt 0 (the executor never ran).
     val recordedStdOut =
         executedResult?.stdOut ?: stepRecords.getCommandArtifacts(processId, index)?.stdOut ?: stdOut
     val recordedStdErr =
@@ -176,17 +159,15 @@ internal suspend fun completeCommand(
             stdErr = recordedStdErr.relativeTo(artifactsDir),
             errMsg = (outcome as? CommandOutcome.Failure)?.errMsg,
             outputTruncated = (outcome as? CommandOutcome.Failure)?.outputTruncated ?: false,
-            // A step interrupted by a graceful stop throws, so it never returns a result to
-            // read the accounting off; its executor leaves the charge it made here instead,
-            // so the step still carries the cost the CLI really spent. See ADR-0108.
+            // A step a graceful stop interrupted returns no result; its executor left the charge here,
+            // so the step still carries what the CLI spent. ADR-0108.
             llmAccounting = executedResult?.llmAccounting ?: run.executionContext.facts.interruptedAccounting,
             kind = command.kind,
             stoppedBy = stoppedBy?.wire,
             onStop = onStop,
         )
-    // The step is done, so the current command clears unless the next
-    // step starts now. Success and skip share nextBoundary, so the
-    // two paths cannot drift.
+    // The current command clears unless the next step starts now; success and skip share
+    // nextBoundary, so the two paths cannot drift.
     val next = nextBoundary(nextCommand, stop = shouldStopAfter(outcome, command))
     stepRecords.completeStep(processId, executionInfo, next?.first, next?.second)
     commandSpan.end()

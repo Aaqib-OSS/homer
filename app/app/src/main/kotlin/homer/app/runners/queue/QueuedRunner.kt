@@ -8,12 +8,9 @@ import homer.app.runners.RunnerSessionParams
 import kotlin.time.Duration
 
 /**
- * The Runner every run sees: openSession() waits in the claim queue for a consumer matching
- * [filter]. For an alias filter the backend is known up front and the env-shaping facets are its
- * own; for a tags filter they are derived from every runner that could match (remote if any is,
- * secret names unioned, no runnerEnv: the serving runner's env arrives via RunnerSession.env).
- * [affinity] is the agent's own `runnerAffinity`, carried into the claim so the queue prefers the
- * instance its flow last ran on; a run through [forAlias] (a `runnerCmd` step) has none. See ADR-0066, ADR-0099.
+ * The Runner every run sees (ADR-0066): openSession() waits in the claim queue for a consumer matching [filter]. A tags
+ * filter derives its facets from every candidate (remote if any is, secret names unioned, runnerEnv via the session).
+ * [affinity] is the agent's `runnerAffinity` (ADR-0099); a `runnerCmd` step's runner has none.
  */
 class QueuedRunner(
     private val filter: RunnerFilter,

@@ -11,8 +11,8 @@ interface ClaimConsumerInfo {
     val alias: String
     val tags: Set<String>
 
-    /** Permit count; null = unbounded. */
-    val concurrency: Int?
+    /** Permit count. */
+    val concurrency: Int
     val inUse: Int
 
     /**

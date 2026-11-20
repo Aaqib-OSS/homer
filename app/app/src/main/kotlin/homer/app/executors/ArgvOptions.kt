@@ -23,10 +23,8 @@ internal fun MutableList<String>.addListOpt(
 }
 
 /**
- * Emits `name v1 v2 v3` for CLI flags whose commander option is variadic
- * (`--add-dir`, `--mcp-config`, `--file`). Safe because Homer always appends
- * `--output-format`/`--print`/`--verbose` after the option block, so commander
- * stops consuming values at the next flag.
+ * Emits `name v1 v2 v3` for variadic CLI flags (`--add-dir`, `--mcp-config`, `--file`).
+ * ClaudeArgvBuilder emits these last, so the fixed tail flags close each block.
  */
 internal fun MutableList<String>.addVariadicOpt(
     optionName: String,

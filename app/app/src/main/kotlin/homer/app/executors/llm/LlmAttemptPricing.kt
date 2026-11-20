@@ -54,9 +54,8 @@ internal class LlmAttemptPricing(
             runCatching { stdoutFile.bufferedReader().useLines { scanLlmAccounting(it, harness.translator()) } }
                 .getOrElse { LlmAccountingScan(sessionId = null, cliCostUsd = null, resultSeen = false, modelCalls = 0, usage = null) }
         if (harness.reportsCost && scan.resultSeen && scan.cliCostUsd == null) {
-            // Same observability hook the strict path had for a missing/unparseable field —
-            // gated on resultSeen: a missing result event (kill, crash, timeout) is a normal
-            // accounting case with its own "no result event" reason below, not schema drift.
+            // Gated on resultSeen: a missing result event (kill, crash, timeout) is no schema drift,
+            // and gets its own "no result event" reason below.
             logger.warn("{} turn end has no parseable cost; this may indicate a CLI schema change", harness.id)
             span.setAttribute("llm.cost.parse_failed", true)
         }
@@ -99,8 +98,7 @@ internal class LlmAttemptPricing(
             // fallback reason when there was a configured rung to skip.
             return ResolvedCost(cliCostUsd, CostSource.CLI, if (llmCostResolver.configured) "run cancelled before lookup" else null)
         }
-        // 107AaI5G / CWE-400: bound what reaches the poll loop; only this consumer
-        // is capped, the scan figure itself is untouched.
+        // CWE-400: bounds what reaches the poll loop; the scan figure itself is untouched.
         val pollingCalls = scan.modelCalls.coerceAtMost(MAX_EXPECTED_CALLS_FOR_POLLING).takeIf { harness.countsModelCalls }
         return llmCostResolver.resolve(scan.sessionId, cliCostUsd, pollingCalls, startedAtMs, endedAtMs)
     }
@@ -134,7 +132,7 @@ internal class LlmAttemptPricing(
             }
 
     private companion object {
-        // CWE-400: agent-stdout must not drive the poll schedule. See ADR-0047 §12 rule 4, ADR-0061.
+        // CWE-400: agent-stdout must not drive the poll schedule. See ADR-0047 rule 4, ADR-0061.
         const val MAX_EXPECTED_CALLS_FOR_POLLING = 1_000
     }
 }

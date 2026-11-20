@@ -37,12 +37,8 @@ object RunnerProtocol {
 }
 
 /**
- * Wire format of the bodies this protocol carries. Deliberately not `apiJson`: that one is
- * strict, so a key this binary does not know fails the whole body — and an instance and the
- * Homer it reports to are upgraded independently, while every DTO here only ever gains
- * optional fields. An unknown key is ignored instead of answered with a 400. The instance's
- * own client reads with the same rule — `HomerClient` uses this one definition, so both ends
- * of one wire cannot drift apart.
+ * Wire format of the bodies this protocol carries: unlike the strict `apiJson`, an unknown key is ignored, because an
+ * instance and Homer upgrade independently (ADR-0066, decision 10). `HomerClient` reads with this same definition.
  */
 val runnerProtocolJson = Json { ignoreUnknownKeys = true }
 
@@ -140,10 +136,8 @@ sealed class RunnerOp {
     ) : RunnerOp()
 
     /**
-     * [opId] is the running `cmd`'s id; the instance stops it gracefully — SIGINT its process
-     * group, then SIGKILL after the grace its [Cmd] carried — and reports the cmd result as
-     * usual. Best-effort: an instance that ignores it, or an interrupt that is lost, still
-     * ends in the normal kill path. See ADR-0108.
+     * [opId] is the running `cmd`'s id; the instance SIGINTs its process group, SIGKILLs it after the grace its [Cmd]
+     * carried, and reports the cmd result as usual. An ignored or lost interrupt ends in the normal kill path (ADR-0108).
      */
     @Serializable
     @SerialName("interrupt")
@@ -167,8 +161,8 @@ data class OpResult(
     val timedOut: Boolean = false,
     /**
      * How many chunks a `cmd` handed to the `output` route for this stream — one past the
-     * last `seq` it posted, a chunk whose post it gave up on included. Null when the
-     * instance reports no count (an older runner), which leaves the check inert.
+     * last `seq` it posted, a chunk whose post it gave up on included. Required on a `cmd`
+     * result; null on every other op.
      */
     val stdoutChunks: Long? = null,
     /** The same for `stderr`. */

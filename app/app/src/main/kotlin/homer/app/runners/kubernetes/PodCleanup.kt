@@ -9,12 +9,8 @@ import io.kubernetes.client.util.PatchUtils
 import org.slf4j.LoggerFactory
 
 /**
- * Shared pod teardown for session close and startup failures: delete
- * outright, or — when keepPodOnFailure applies — label the pod kept and
- * bound its lifetime with a TTL so the startup sweep skips it. Both
- * operations are 404-tolerant and never throw ApiException. If the
- * keep-with-TTL patch itself fails (non-404), keepWithTtl falls back to
- * deleting the pod rather than leaving it unbounded and unlabeled.
+ * Pod teardown for session close and startup failures: delete, or under keepPodOnFailure label the pod kept with a TTL
+ * the startup sweep honours. 404-tolerant, never throws ApiException; a failed keep patch deletes the pod instead.
  */
 object PodCleanup {
     fun delete(
@@ -41,13 +37,13 @@ object PodCleanup {
         namespace: String,
         podName: String,
         ttlSeconds: Long,
-        existingDeadlineSeconds: Long? = null,
+        existingDeadlineSeconds: Long,
     ): Boolean {
         // Kubernetes only lowers an existing activeDeadlineSeconds, never raises it (422): set it
-        // only when unset or ttl is lower, else label only. "add" overwrites, so it fits either way.
+        // only when ttl is lower, else label only.
         val label = PodLabels.KEPT_LABEL_OP
         val patch =
-            if (existingDeadlineSeconds == null || ttlSeconds < existingDeadlineSeconds) {
+            if (ttlSeconds < existingDeadlineSeconds) {
                 "[\n" +
                     """{"op":"add","path":"/spec/activeDeadlineSeconds","value":$ttlSeconds},""" + "\n" +
                     label + "\n]"
@@ -55,9 +51,7 @@ object PodCleanup {
                 "[\n$label\n]"
             }
         return try {
-            // Must go through PatchUtils: the generated CoreV1Api declares no patch media
-            // types, so execute() sends the body as application/json and the apiserver
-            // rejects the PATCH with 415. PatchUtils re-wraps it as json-patch+json.
+            // Only PatchUtils sends json-patch+json; the generated call's application/json gets a 415 (W-017).
             PatchUtils.patch(
                 V1Pod::class.java,
                 { api.patchNamespacedPod(podName, namespace, V1Patch(patch)).buildCall(null) },

@@ -24,10 +24,8 @@ import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Runner backed by a remote host reached over SSH. `openSession` only
- * connects + authenticates; workspace creation, upload/download, and env
- * translation happen through the [SshRunnerSession] primitives, driven by
- * `AgentExecutor`'s sync policy (ADR-0033).
+ * Runner backed by a remote host reached over SSH. `openSession` only connects and authenticates; the
+ * [SshRunnerSession] primitives, driven by `AgentExecutor`'s sync policy, do the rest (ADR-0033).
  */
 class SshRunner(
     override val alias: String,
@@ -74,7 +72,7 @@ class SshRunner(
                             reapProcessGroup = reapCapable,
                             reapDir = reapDir,
                         ),
-                    sync = WorkspaceSync(session, config.sftpTransferTimeoutSeconds?.seconds),
+                    sync = WorkspaceSync(session, config.sftpTransferTimeoutSeconds.seconds),
                     remoteWorkspaceRoot = config.remoteWorkspaceRoot,
                     remoteProjectRoot = remoteProjectRoot,
                     remoteWorkdir = remoteWorkdir,
@@ -91,11 +89,8 @@ class SshRunner(
         }
 
     /**
-     * Runs a cheap read-only probe on the target to check whether `setsid -w`
-     * (util-linux) is available, which the reaping command form in
-     * [RemoteCommandBuilder.buildReaping] requires. Any failure (missing binary,
-     * unsupported `-w`, channel error) fails closed to `false`, so reaping is
-     * only enabled where it is known to work. See ADR-0041.
+     * Whether the target runs `setsid -w` (util-linux), which [RemoteCommandBuilder.buildReaping] needs. Any
+     * failure reads as `false`, so reaping is enabled only where it is known to work (ADR-0041).
      */
     private fun canReapProcessGroup(session: ClientSession): Boolean =
         runCatching {
@@ -126,9 +121,7 @@ class SshRunner(
                 }
 
                 is SshAuth.Agent -> {
-                    // MINA picks up the running ssh-agent via ServiceLoader-discovered
-                    // channel factories when the client is created with the default
-                    // channel-forwarder support; no explicit identity registration needed.
+                    // No identity is registered: auth relies on MINA's own ssh-agent discovery, unverified (ADR-0032).
                 }
             }
             session.auth().verify(cfg.connectTimeoutSeconds, TimeUnit.SECONDS)

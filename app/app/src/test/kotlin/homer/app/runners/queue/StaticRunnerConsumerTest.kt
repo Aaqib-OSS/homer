@@ -41,11 +41,11 @@ class StaticRunnerConsumerTest {
     }
 
     @Test
-    fun `unbounded consumer serves every request immediately`() =
+    fun `a consumer with free permits serves every request immediately`() =
         runTest {
             val queue = RunnerClaimQueue(maxPending = 10)
             val runner = FakeRunner("local")
-            StaticRunnerConsumer(runner, tags = emptySet(), concurrency = null, queue = queue).start(backgroundScope)
+            StaticRunnerConsumer(runner, tags = emptySet(), concurrency = 10, queue = queue).start(backgroundScope)
 
             val a = async { queue.awaitClaim(params(1), RunnerFilter.Alias("local"), 300.seconds) }
             val b = async { queue.awaitClaim(params(2), RunnerFilter.Alias("local"), 300.seconds) }
@@ -95,10 +95,30 @@ class StaticRunnerConsumerTest {
         }
 
     @Test
+    fun `a runner at its concurrency bound does not serve the next claim and the run fails at the claim TTL`() =
+        runTest {
+            val queue = RunnerClaimQueue(maxPending = 100)
+            val runner = FakeRunner("build-host")
+            val consumer = StaticRunnerConsumer(runner, tags = emptySet(), concurrency = 10, queue = queue)
+            consumer.start(backgroundScope)
+
+            val held = (1..10).map { async { queue.awaitClaim(params(it), RunnerFilter.Alias("build-host"), 300.seconds) } }
+            runCurrent()
+            assertTrue(held.all { it.isCompleted })
+            val eleventh = async { runCatching { queue.awaitClaim(params(11), RunnerFilter.Alias("build-host"), 30.seconds) } }
+            runCurrent()
+            assertFalse(eleventh.isCompleted)
+
+            assertIs<homer.app.exceptions.RunnerClaimTimeoutException>(eleventh.await().exceptionOrNull())
+            assertEquals(10, runner.opened)
+            assertEquals(10, consumer.inUse)
+        }
+
+    @Test
     fun `tagged consumer takes only matching tag requests`() =
         runTest {
             val queue = RunnerClaimQueue(maxPending = 10)
-            StaticRunnerConsumer(FakeRunner("k8s"), tags = setOf("linux"), concurrency = null, queue = queue).start(backgroundScope)
+            StaticRunnerConsumer(FakeRunner("k8s"), tags = setOf("linux"), concurrency = 10, queue = queue).start(backgroundScope)
 
             val linux = async { queue.awaitClaim(params(1), RunnerFilter.Tags(setOf("linux")), 300.seconds) }
             val gpu = async { runCatching { queue.awaitClaim(params(2), RunnerFilter.Tags(setOf("linux", "gpu")), 30.seconds) } }
@@ -172,7 +192,7 @@ class StaticRunnerConsumerTest {
             val session = mockk<RunnerSession>(relaxed = true)
             every { session.env } returns mapOf("HMR_API_URL" to "u")
             val runner = FakeRunner("k8s", open = { session }, runnerEnv = mapOf("TOKEN" to "t"))
-            StaticRunnerConsumer(runner, tags = setOf("linux"), concurrency = null, queue = queue).start(backgroundScope)
+            StaticRunnerConsumer(runner, tags = setOf("linux"), concurrency = 10, queue = queue).start(backgroundScope)
 
             val result = async { queue.awaitClaim(params(1), RunnerFilter.Tags(setOf("linux")), 300.seconds) }
             runCurrent()
@@ -187,7 +207,7 @@ class StaticRunnerConsumerTest {
             val session = mockk<RunnerSession>(relaxed = true)
             every { session.env } returns mapOf("HMR_API_URL" to "u")
             val runner = FakeRunner("k8s", open = { session }, runnerEnv = mapOf("TOKEN" to "t"))
-            StaticRunnerConsumer(runner, tags = emptySet(), concurrency = null, queue = queue).start(backgroundScope)
+            StaticRunnerConsumer(runner, tags = emptySet(), concurrency = 10, queue = queue).start(backgroundScope)
 
             val result = async { queue.awaitClaim(params(1), RunnerFilter.Alias("k8s"), 300.seconds) }
             runCurrent()
@@ -205,7 +225,7 @@ class StaticRunnerConsumerTest {
             val env = mapOf("HMR_API_URL" to "u")
             every { session.env } returns env
             val runner = FakeRunner("k8s", open = { session }, runnerEnv = mapOf("TOKEN" to "t"))
-            StaticRunnerConsumer(runner, tags = emptySet(), concurrency = null, queue = queue).start(backgroundScope)
+            StaticRunnerConsumer(runner, tags = emptySet(), concurrency = 10, queue = queue).start(backgroundScope)
 
             val result = async { queue.awaitClaim(params(1), RunnerFilter.Alias("k8s"), 300.seconds) }
             runCurrent()

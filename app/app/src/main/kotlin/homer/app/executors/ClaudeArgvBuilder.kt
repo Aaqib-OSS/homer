@@ -10,12 +10,9 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /**
- * Builds the Claude CLI argv from a [ClaudeCmdOptions] block, shared by
- * [homer.app.executors.llm.ClaudeHarness] and the agentdebug dry-run printer so neither
- * drifts from what actually runs. Template resolution (`{{VAR}}`, see AGENT.md) is applied
- * against [env] here: subagent fields are resolved BEFORE JSON-encoding `--agents` (so the
- * encoder escapes substituted values rather than templating the encoded blob), and every
- * other argument is resolved after the list is assembled.
+ * Builds the Claude CLI argv from [ClaudeCmdOptions] for [homer.app.executors.llm.ClaudeHarness] and the agentdebug
+ * printer alike. `{{VAR}}` resolves against [env]: subagent fields before `--agents` is JSON-encoded, every other
+ * argument after. Raw `options` come before the variadic options, which sit directly before the fixed tail.
  */
 class ClaudeArgvBuilder(
     private val textCompiler: TextCompiler = DefaultTextCompiler(),
@@ -44,6 +41,7 @@ class ClaudeArgvBuilder(
                 addMiscOpts(opts)
 
                 opts.options?.let { addAll(it) }
+                addVariadicOpts(opts)
                 add("--output-format")
                 add("stream-json")
                 add("--print")
@@ -90,12 +88,8 @@ class ClaudeArgvBuilder(
         opts: ClaudeCmdOptions,
         env: Map<String, String>,
     ): Int {
-        // Subagents. Resolve placeholders BEFORE encoding so the encoder
-        // escapes substituted values, then EXCLUDE the encoded blob from the
-        // second pass in build: a resolved value that itself contains `{{VAR}}`
-        // would otherwise be re-substituted unescaped inside the JSON string,
-        // letting a caller break out of a subagent field and inject sibling
-        // keys (JSON injection).
+        // Resolved before encoding and skipped by build's second pass: a value holding `{{VAR}}` would
+        // otherwise be substituted unescaped into the JSON and inject sibling keys (CWE-116).
         if (opts.agents == null) return -1
         add("--agents")
         val resolvedAgents = opts.agents.mapValues { (_, sub) -> sub.resolveTemplates(env) }
@@ -111,7 +105,6 @@ class ClaudeArgvBuilder(
         addBoolOpt("--disable-slash-commands", opts.disableSlashCommands)
 
         // MCP
-        addVariadicOpt("--mcp-config", opts.mcpConfig)
         addBoolOpt("--strict-mcp-config", opts.strictMcpConfig)
 
         // Settings
@@ -121,10 +114,15 @@ class ClaudeArgvBuilder(
         addListOpt("--setting-sources", opts.settingSources)
     }
 
-    private fun MutableList<String>.addMiscOpts(opts: ClaudeCmdOptions) {
-        addStringOpt("--max-turns", opts.maxTurns.toString())
+    /** Emitted last, so the fixed `--output-format` tail closes each block for every input. */
+    private fun MutableList<String>.addVariadicOpts(opts: ClaudeCmdOptions) {
+        addVariadicOpt("--mcp-config", opts.mcpConfig)
         addVariadicOpt("--add-dir", opts.addDir)
         addVariadicOpt("--file", opts.file)
+    }
+
+    private fun MutableList<String>.addMiscOpts(opts: ClaudeCmdOptions) {
+        addStringOpt("--max-turns", opts.maxTurns.toString())
         addDoubleOpt("--max-budget-usd", opts.maxBudgetUsd)
         addStringOpt("--effort", opts.effort)
         addBoolOpt("--bare", opts.bare)

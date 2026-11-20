@@ -3,6 +3,7 @@ status: accepted
 date: 2026-08-24
 deciders: Lukáš Vlk
 consulted: SAST (MR !6)
+amended: 2026-11-20
 ---
 # ADR-0052: Input-redaction metadata is captured with the run, not re-derived from the agent
 
@@ -199,3 +200,10 @@ it has no stored history to honour and needs no snapshot.
   a historical fact re-derived from current state instead of recorded when it
   happened. Different surface, so a separate ADR.
 - Reported by the security scanner on MR !6.
+
+## Amendment (2026-11-20): the snapshot also masks spans and the live log
+
+The snapshot has a third consumer on a replay path. The run's workspace secret names, which mask
+values in span input and output and in the live log stream, are built from `secretInputKeys` (the
+snapshot plus `extraSecretInputKeys`), never from a fresh read of the agent's current flags.
+Recomputing them there let a historically secret value reach those sinks unmasked.

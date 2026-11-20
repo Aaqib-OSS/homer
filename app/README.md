@@ -378,7 +378,7 @@ live registered instances. See [ADR-0066](../docs/adr/0066-external-pull-runners
 ```json
 {
   "runners": [
-    { "alias": "local", "kind": "local", "tags": [], "concurrency": null, "inUse": 0, "instances": null },
+    { "alias": "local", "kind": "local", "tags": [], "concurrency": 100, "inUse": 0, "instances": null },
     { "alias": "gpu-box", "kind": "ssh", "tags": ["gpu"], "concurrency": 2, "inUse": 1, "instances": null },
     {
       "alias": "workers",
@@ -404,7 +404,7 @@ live registered instances. See [ADR-0066](../docs/adr/0066-external-pull-runners
 }
 ```
 
-`concurrency: null` means unbounded; `instances` is `null` on non-external
+`concurrency` is `null` on an `external` row, whose instances carry their own; `instances` is `null` on non-external
 rows. `lastSeenAt` / `registeredAt` are Unix epoch seconds. `version` is the
 version the instance reported when it registered, and `null` when it reported
 none. The `local` row is

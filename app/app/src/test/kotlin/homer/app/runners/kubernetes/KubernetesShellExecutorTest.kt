@@ -27,6 +27,10 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
+import java.io.PrintWriter
+import java.io.StringWriter
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -36,6 +40,8 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
+
+private const val RUN_LIMIT_SECONDS = 86_400L
 
 class KubernetesShellExecutorTest {
     @Test
@@ -51,7 +57,7 @@ class KubernetesShellExecutorTest {
                 proc
             }
 
-        val executor = KubernetesShellExecutor(client, api, "homer", "pod-1")
+        val executor = KubernetesShellExecutor(client, api, "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS)
         val result =
             executor.cmd(
                 command = listOf("echo", "hello"),
@@ -72,7 +78,7 @@ class KubernetesShellExecutorTest {
         val api = mockk<CoreV1Api>(relaxed = true)
         val proc = fakeProcess(stdout = "hi\n", stderr = "warn\n", exit = 0)
         val client = KubernetesExecClient { _, _, _, _ -> proc }
-        val executor = KubernetesShellExecutor(client, api, "homer", "pod-1")
+        val executor = KubernetesShellExecutor(client, api, "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS)
 
         val out = tmp.resolve("out")
         val err = tmp.resolve("err")
@@ -89,7 +95,7 @@ class KubernetesShellExecutorTest {
         val api = mockk<CoreV1Api>(relaxed = true)
         val proc = fakeProcess(stdout = "keep 1\ndrop me\nkeep 2\n", stderr = "drop err\n", exit = 0)
         val client = KubernetesExecClient { _, _, _, _ -> proc }
-        val executor = KubernetesShellExecutor(client, api, "homer", "pod-1")
+        val executor = KubernetesShellExecutor(client, api, "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS)
 
         val out = tmp.resolve("out")
         val err = tmp.resolve("err")
@@ -124,7 +130,7 @@ class KubernetesShellExecutorTest {
                 if (argv.take(3) == listOf("sh", "-c", "kill -KILL -1")) killProc else neverFinishes
             }
 
-        val executor = KubernetesShellExecutor(client, api, "homer", "pod-1")
+        val executor = KubernetesShellExecutor(client, api, "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS)
         val err = tmp.resolve("err")
         // Timeout must propagate so callers fail fast.
         var thrown: Throwable? = null
@@ -175,7 +181,7 @@ class KubernetesShellExecutorTest {
             }
         val client = KubernetesExecClient { _, _, _, _ -> proc }
 
-        val executor = KubernetesShellExecutor(client, api, "homer", "pod-1")
+        val executor = KubernetesShellExecutor(client, api, "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS)
 
         assertThrows<PodFailedDuringExecutionException> {
             executor.cmd(
@@ -217,7 +223,7 @@ class KubernetesShellExecutorTest {
                 if (argv.take(3) == listOf("sh", "-c", "kill -KILL -1")) killProc else neverFinishes
             }
 
-        val executor = KubernetesShellExecutor(client, api, "homer", "pod-1", maxOutputBytes = cap)
+        val executor = KubernetesShellExecutor(client, api, "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS, maxOutputBytes = cap)
 
         assertFailsWith<OutputCapExceededException> {
             executor.cmd(
@@ -286,7 +292,15 @@ class KubernetesShellExecutorTest {
             KubernetesExecClient { _, _, argv, _ ->
                 if (argv.take(3) == listOf("sh", "-c", "kill -KILL -1")) killProc else overflowing
             }
-        val executor = KubernetesShellExecutor(client, mockk(relaxed = true), "homer", "pod-1", maxOutputBytes = cap)
+        val executor =
+            KubernetesShellExecutor(
+                client,
+                mockk(relaxed = true),
+                "homer",
+                "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
+                maxOutputBytes = cap,
+            )
 
         assertFailsWith<OutputCapExceededException> {
             executor.cmd(command = listOf("x"), stdOut = stdOut, stdErr = stdErr, timeout = 5.seconds)
@@ -346,7 +360,15 @@ class KubernetesShellExecutorTest {
                 if (argv.take(3) == listOf("sh", "-c", "kill -KILL -1")) killProc else overflowing
             }
         val executor =
-            KubernetesShellExecutor(client, mockk(relaxed = true), "homer", "pod-1", maxOutputBytes = cap, pumpJoinMs = 200)
+            KubernetesShellExecutor(
+                client,
+                mockk(relaxed = true),
+                "homer",
+                "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
+                maxOutputBytes = cap,
+                pumpJoinMs = 200,
+            )
 
         val started = System.nanoTime()
         assertFailsWith<OutputCapExceededException> {
@@ -373,7 +395,14 @@ class KubernetesShellExecutorTest {
                 every { exitValue() } returns 0
             }
         val executor =
-            KubernetesShellExecutor({ _, _, _, _ -> exited }, mockk(relaxed = true), "homer", "pod-1", pumpJoinMs = 200)
+            KubernetesShellExecutor(
+                { _, _, _, _ -> exited },
+                mockk(relaxed = true),
+                "homer",
+                "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
+                pumpJoinMs = 200,
+            )
 
         val started = System.nanoTime()
         val result = executor.cmd(command = listOf("x"), stdOut = tmp.resolve("out"), stdErr = tmp.resolve("err"), timeout = 5.seconds)
@@ -393,7 +422,14 @@ class KubernetesShellExecutorTest {
         val exited = CountDownLatch(1)
         val lateClosing = lateClosingProcess(exited, lateStdout = "last stdout line\n")
         val executor =
-            KubernetesShellExecutor({ _, _, _, _ -> lateClosing }, mockk(relaxed = true), "homer", "pod-1", pumpJoinMs = 2_000)
+            KubernetesShellExecutor(
+                { _, _, _, _ -> lateClosing },
+                mockk(relaxed = true),
+                "homer",
+                "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
+                pumpJoinMs = 2_000,
+            )
 
         val out = tmp.resolve("out")
         val err = tmp.resolve("err")
@@ -412,7 +448,14 @@ class KubernetesShellExecutorTest {
         val exited = CountDownLatch(1)
         val lateClosing = lateClosingProcess(exited, lateStderr = "last stderr line\n")
         val executor =
-            KubernetesShellExecutor({ _, _, _, _ -> lateClosing }, mockk(relaxed = true), "homer", "pod-1", pumpJoinMs = 2_000)
+            KubernetesShellExecutor(
+                { _, _, _, _ -> lateClosing },
+                mockk(relaxed = true),
+                "homer",
+                "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
+                pumpJoinMs = 2_000,
+            )
 
         val out = tmp.resolve("out")
         val err = tmp.resolve("err")
@@ -447,7 +490,14 @@ class KubernetesShellExecutorTest {
                 every { exitValue() } returns 0
             }
         val executor =
-            KubernetesShellExecutor({ _, _, _, _ -> exited }, mockk(relaxed = true), "homer", "pod-1", pumpJoinMs = 200)
+            KubernetesShellExecutor(
+                { _, _, _, _ -> exited },
+                mockk(relaxed = true),
+                "homer",
+                "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
+                pumpJoinMs = 200,
+            )
 
         val started = System.nanoTime()
         val result =
@@ -479,7 +529,14 @@ class KubernetesShellExecutorTest {
                 every { waitFor(any<Long>(), any<TimeUnit>()) } answers { stderrPipe.closed }
                 every { exitValue() } returns 0
             }
-        val executor = KubernetesShellExecutor({ _, _, _, _ -> blockedOnStderr }, mockk(relaxed = true), "homer", "pod-1")
+        val executor =
+            KubernetesShellExecutor(
+                { _, _, _, _ -> blockedOnStderr },
+                mockk(relaxed = true),
+                "homer",
+                "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
+            )
 
         // The pump cannot open its file: the directory does not exist.
         val result =
@@ -569,13 +626,17 @@ class KubernetesShellExecutorTest {
         @TempDir tmp: Path,
     ) = runTest {
         val api = runningPodApi()
-        // client-java's ExecProcess returns -1975219 from exitValue() when the
-        // websocket closed without a status (e.g. the 101 upgrade was refused).
+        // client-java's ExecProcess returns -1975219 from exitValue() after a websocket failure
+        // (e.g. the 101 upgrade was refused).
         val proc = fakeProcess(stdout = "", stderr = "", exit = EXEC_NO_EXIT_STATUS_SENTINEL)
         val client = KubernetesExecClient { _, _, _, _ -> proc }
         val seen = mutableListOf<PodTermination>()
 
-        val executor = KubernetesShellExecutor(client, api, "homer", "pod-1", onTermination = { seen += it })
+        val executor =
+            KubernetesShellExecutor(client, api, "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS, onTermination = {
+                seen +=
+                    it
+            })
 
         val thrown =
             assertThrows<PodFailedDuringExecutionException> {
@@ -592,8 +653,8 @@ class KubernetesShellExecutorTest {
             "the step error must name the loss: ${thrown.message}",
         )
         assertTrue(
-            thrown.message.orEmpty().contains("closed without an exit status"),
-            "the step error must say the channel closed without a status: ${thrown.message}",
+            thrown.message.orEmpty().contains("ended without an exit status"),
+            "the step error must say the channel ended without a status: ${thrown.message}",
         )
         assertEquals(1, seen.size)
         assertEquals(EXEC_CHANNEL_LOST, seen.single().reason)
@@ -622,6 +683,7 @@ class KubernetesShellExecutorTest {
                 api,
                 "homer",
                 "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
                 onTermination = { seen += it },
             )
 
@@ -633,7 +695,6 @@ class KubernetesShellExecutorTest {
             "the step error must carry the websocket cause: ${thrown.message}",
         )
         assertTrue(thrown.message.orEmpty().contains("BackOff: restarting the container"), "and the last pod event: ${thrown.message}")
-        assertTrue(thrown.cause is IllegalThreadStateException, "the cause must survive, got ${thrown.cause}")
         assertEquals(EXEC_CHANNEL_LOST, seen.single().reason)
     }
 
@@ -655,6 +716,7 @@ class KubernetesShellExecutorTest {
                 runningPodApi(),
                 "homer",
                 "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
                 onTermination = { killedBeforeFailing = started.any { it == KILL_ARGV } },
             )
 
@@ -662,6 +724,37 @@ class KubernetesShellExecutorTest {
 
         assertTrue(killedBeforeFailing, "the leftover command must be killed before the step fails: $started")
         verify { proc.destroyForcibly() }
+    }
+
+    @Test
+    fun `exit value -1 fails as ExecChannelLost`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val proc = fakeProcess(stdout = "", stderr = "", exit = EXEC_ENDED_WITHOUT_EXIT_CODE)
+        val client = KubernetesExecClient { _, _, _, _ -> proc }
+        val executor = KubernetesShellExecutor(client, runningPodApi(), "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS)
+
+        val thrown = assertFailsWith<PodFailedDuringExecutionException> { run(executor, tmp) }
+
+        assertEquals(EXEC_CHANNEL_LOST, thrown.reason)
+    }
+
+    @Test
+    fun `exit value -1 kills the leftover command`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val started = mutableListOf<List<String>>()
+        val proc = fakeProcess(stdout = "", stderr = "", exit = EXEC_ENDED_WITHOUT_EXIT_CODE)
+        val client =
+            KubernetesExecClient { _, _, argv, _ ->
+                started += argv
+                proc
+            }
+        val executor = KubernetesShellExecutor(client, runningPodApi(), "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS)
+
+        assertFailsWith<PodFailedDuringExecutionException> { run(executor, tmp) }
+
+        assertTrue(started.any { it == KILL_ARGV }, "the leftover command must be killed: $started")
     }
 
     @Test
@@ -675,7 +768,11 @@ class KubernetesShellExecutorTest {
                 proc
             }
         val seen = mutableListOf<PodTermination>()
-        val executor = KubernetesShellExecutor(client, runningPodApi(), "homer", "pod-1", onTermination = { seen += it })
+        val executor =
+            KubernetesShellExecutor(client, runningPodApi(), "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS, onTermination = {
+                seen +=
+                    it
+            })
 
         val thrown = assertFailsWith<PodFailedDuringExecutionException> { run(executor, tmp) }
 
@@ -694,7 +791,7 @@ class KubernetesShellExecutorTest {
                 every { errorStream } returns ByteArrayInputStream(ByteArray(0))
                 every { outputStream } returns ByteArrayOutputStream()
                 every { waitFor(any<Long>(), any<TimeUnit>()) } returns true
-                every { exitValue() } throws IllegalThreadStateException("wss://api/exec?command=env+TOKEN=$secret")
+                every { exitValue() } throws IllegalThreadStateException("stream reset after TOKEN=$secret")
             }
         val seen = mutableListOf<PodTermination>()
         val executor =
@@ -703,6 +800,7 @@ class KubernetesShellExecutorTest {
                 runningPodApi(),
                 "homer",
                 "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
                 onTermination = { seen += it },
             )
 
@@ -727,8 +825,8 @@ class KubernetesShellExecutorTest {
     fun `a query-encoded secret in the cause text is redacted`(
         @TempDir tmp: Path,
     ) = runTest {
-        // The cause quotes the exec URL, where the argv is query-encoded, so a secret holding a
-        // reserved character never appears raw there — its encoded form must be masked too.
+        // A cause can quote the argv query-encoded, so a secret holding a reserved character
+        // never appears raw there — its encoded form must be masked too.
         val secret = "a/b+c=d&e"
         val encoded = "a%2Fb%2Bc%3Dd%26e"
         val closed =
@@ -737,7 +835,7 @@ class KubernetesShellExecutorTest {
                 every { errorStream } returns ByteArrayInputStream(ByteArray(0))
                 every { outputStream } returns ByteArrayOutputStream()
                 every { waitFor(any<Long>(), any<TimeUnit>()) } returns true
-                every { exitValue() } throws IllegalThreadStateException("wss://api/exec?command=env+TOKEN=$encoded")
+                every { exitValue() } throws IllegalThreadStateException("stream reset after TOKEN=$encoded")
             }
         val seen = mutableListOf<PodTermination>()
         val executor =
@@ -746,6 +844,7 @@ class KubernetesShellExecutorTest {
                 runningPodApi(),
                 "homer",
                 "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
                 onTermination = { seen += it },
             )
 
@@ -767,6 +866,91 @@ class KubernetesShellExecutorTest {
     }
 
     @Test
+    fun `a short env value in the exec URL reaches neither the step error nor the termination`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val short = "q7z"
+        val closed =
+            mockk<Process>(relaxed = true) {
+                every { inputStream } returns ByteArrayInputStream(ByteArray(0))
+                every { errorStream } returns ByteArrayInputStream(ByteArray(0))
+                every { outputStream } returns ByteArrayOutputStream()
+                every { waitFor(any<Long>(), any<TimeUnit>()) } returns true
+                every { exitValue() } throws
+                    IllegalThreadStateException("wss://api/exec?command=env&command=PIN%3D$short&command=true closed")
+            }
+        val seen = mutableListOf<PodTermination>()
+        val executor =
+            KubernetesShellExecutor(
+                KubernetesExecClient { _, _, _, _ -> closed },
+                runningPodApi(),
+                "homer",
+                "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
+                onTermination = { seen += it },
+            )
+
+        val thrown =
+            assertFailsWith<PodFailedDuringExecutionException> {
+                executor.cmd(
+                    command = listOf("true"),
+                    stdOut = tmp.resolve("out"),
+                    stdErr = tmp.resolve("err"),
+                    env = mapOf("PIN" to short),
+                    timeout = 10.seconds,
+                )
+            }
+
+        assertFalse(thrown.message.orEmpty().contains(short), "the short value must not reach the step error: ${thrown.message}")
+        assertFalse(seen.single().message.contains(short), "the short value must not reach the termination: ${seen.single().message}")
+        assertTrue(seen.single().message.contains("[exec URL]"), "the URL must be replaced: ${seen.single().message}")
+    }
+
+    @Test
+    fun `a lost channel's exception chain carries no env value`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val secret = "s3cr3t/t0ken+value"
+        val encoded = URLEncoder.encode(secret, StandardCharsets.UTF_8)
+        val closed =
+            mockk<Process>(relaxed = true) {
+                every { inputStream } returns ByteArrayInputStream(ByteArray(0))
+                every { errorStream } returns ByteArrayInputStream(ByteArray(0))
+                every { outputStream } returns ByteArrayOutputStream()
+                every { waitFor(any<Long>(), any<TimeUnit>()) } returns true
+                every { exitValue() } throws
+                    IllegalThreadStateException("wss://api/exec?command=env&command=TOKEN=$encoded raw TOKEN=$secret")
+            }
+        val executor =
+            KubernetesShellExecutor(
+                KubernetesExecClient { _, _, _, _ -> closed },
+                runningPodApi(),
+                "homer",
+                "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
+            )
+
+        val thrown =
+            assertFailsWith<PodFailedDuringExecutionException> {
+                executor.cmd(
+                    command = listOf("true"),
+                    stdOut = tmp.resolve("out"),
+                    stdErr = tmp.resolve("err"),
+                    env = mapOf("TOKEN" to secret),
+                    timeout = 10.seconds,
+                )
+            }
+
+        val chain = generateSequence<Throwable>(thrown) { it.cause }.toList()
+        val printed = StringWriter().also { thrown.printStackTrace(PrintWriter(it)) }.toString()
+        val texts = chain.flatMap { listOf(it.message.orEmpty(), it.toString()) } + printed
+        texts.forEach { text ->
+            assertFalse(text.contains(secret), "the raw env value must not reach the exception chain: $text")
+            assertFalse(text.contains(encoded), "the encoded env value must not reach the exception chain: $text")
+        }
+    }
+
+    @Test
     fun `a channel-lost message over the bound is cut`(
         @TempDir tmp: Path,
     ) = runTest {
@@ -785,6 +969,7 @@ class KubernetesShellExecutorTest {
                 runningPodApi(),
                 "homer",
                 "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
                 onTermination = { seen += it },
             )
 
@@ -813,7 +998,7 @@ class KubernetesShellExecutorTest {
                 proc
             }
 
-        val executor = KubernetesShellExecutor(client, mockk(relaxed = true), "homer", "pod-1")
+        val executor = KubernetesShellExecutor(client, mockk(relaxed = true), "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS)
         executor.cmd(listOf("sh", "-s", "-"), tmp.resolve("out"), tmp.resolve("err"), stdIn = "echo hi", timeout = 10.seconds)
 
         assertTrue(stdinRequested)
@@ -829,7 +1014,15 @@ class KubernetesShellExecutorTest {
         val client = KubernetesExecClient { _, _, _, _ -> proc }
         val stdErr = tmp.resolve("err")
 
-        val executor = KubernetesShellExecutor(client, mockk(relaxed = true), "homer", "pod-1", maxOutputBytes = cap)
+        val executor =
+            KubernetesShellExecutor(
+                client,
+                mockk(relaxed = true),
+                "homer",
+                "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
+                maxOutputBytes = cap,
+            )
 
         assertFailsWith<OutputCapExceededException> {
             executor.cmd(listOf("yes"), tmp.resolve("out"), stdErr, timeout = 10.seconds)
@@ -889,7 +1082,11 @@ class KubernetesShellExecutorTest {
         val api = podStatusApi(podWithStatus("Running"))
         var called = false
         val client = KubernetesExecClient { _, _, _, _ -> fakeProcess("", "", 1) }
-        val executor = KubernetesShellExecutor(client, api, "homer", "pod-1", onTermination = { called = true })
+        val executor =
+            KubernetesShellExecutor(client, api, "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS, onTermination = {
+                called =
+                    true
+            })
 
         assertEquals(1, run(executor, tmp).exitCode)
         verify(exactly = 1) { api.readNamespacedPodStatus(any(), any()) }
@@ -903,7 +1100,7 @@ class KubernetesShellExecutorTest {
         val api = podStatusApi(podWithStatus("Failed"))
         val client = KubernetesExecClient { _, _, _, _ -> fakeProcess("", "", 0) }
 
-        assertEquals(0, run(KubernetesShellExecutor(client, api, "homer", "pod-1"), tmp).exitCode)
+        assertEquals(0, run(KubernetesShellExecutor(client, api, "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS), tmp).exitCode)
         verify(exactly = 0) { api.readNamespacedPodStatus(any(), any()) }
     }
 
@@ -935,6 +1132,7 @@ class KubernetesShellExecutorTest {
                 api,
                 "homer",
                 "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
             )
 
         val e = assertFailsWith<PodFailedDuringExecutionException> { run(executor, tmp) }
@@ -960,7 +1158,7 @@ class KubernetesShellExecutorTest {
                 every { fieldSelector(any()) } returns this
                 every { execute() } returns CoreV1EventList()
             }
-        val executor = KubernetesShellExecutor(client, api, "homer", "pod-1")
+        val executor = KubernetesShellExecutor(client, api, "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS)
 
         val e = assertFailsWith<PodFailedDuringExecutionException> { run(executor, tmp) }
 
@@ -974,7 +1172,11 @@ class KubernetesShellExecutorTest {
     ) = runTest {
         val seen = mutableListOf<PodTermination>()
         val api = stoppedPodApi(podWithStatus("Failed", "Evicted", "The node was low on resource: memory."))
-        val executor = KubernetesShellExecutor(killedClient(1), api, "homer", "pod-1", onTermination = { seen += it })
+        val executor =
+            KubernetesShellExecutor(killedClient(1), api, "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS, onTermination = {
+                seen +=
+                    it
+            })
 
         val e = assertFailsWith<PodFailedDuringExecutionException> { run(executor, tmp) }
 
@@ -996,7 +1198,11 @@ class KubernetesShellExecutorTest {
                 starts++
                 fakeProcess("", "", EXEC_NO_EXIT_STATUS_SENTINEL)
             }
-        val executor = KubernetesShellExecutor(client, stoppedPodApi(oomKilled), "homer", "pod-1", onTermination = { seen += it })
+        val executor =
+            KubernetesShellExecutor(client, stoppedPodApi(oomKilled), "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS, onTermination = {
+                seen +=
+                    it
+            })
 
         val e = assertFailsWith<PodFailedDuringExecutionException> { run(executor, tmp) }
 
@@ -1022,6 +1228,7 @@ class KubernetesShellExecutorTest {
                 sequencedPodApi(sidecarFailed, sidecarFailed),
                 "homer",
                 "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
             )
 
         val e = assertFailsWith<PodFailedDuringExecutionException> { run(executor, tmp) }
@@ -1085,7 +1292,15 @@ class KubernetesShellExecutorTest {
     ) = runTest {
         val api = podStatusApi(podWithStatus("Running"))
         val executor =
-            KubernetesShellExecutor(killedClient(143), api, "homer", "pod-1", stopReasonPollMs = 10, stopReasonBudgetMs = 50)
+            KubernetesShellExecutor(
+                killedClient(143),
+                api,
+                "homer",
+                "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
+                stopReasonPollMs = 10,
+                stopReasonBudgetMs = 50,
+            )
 
         assertEquals(143, run(executor, tmp).exitCode)
         verify(exactly = 6) { api.readNamespacedPodStatus(any(), any()) }
@@ -1097,7 +1312,15 @@ class KubernetesShellExecutorTest {
     ) = runTest {
         val api = podStatusApi(podWithStatus("Running"))
         val executor =
-            KubernetesShellExecutor(killedClient(1), api, "homer", "pod-1", stopReasonPollMs = 10, stopReasonBudgetMs = 50)
+            KubernetesShellExecutor(
+                killedClient(1),
+                api,
+                "homer",
+                "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
+                stopReasonPollMs = 10,
+                stopReasonBudgetMs = 50,
+            )
 
         assertEquals(1, run(executor, tmp).exitCode)
         verify(exactly = 1) { api.readNamespacedPodStatus(any(), any()) }
@@ -1109,7 +1332,15 @@ class KubernetesShellExecutorTest {
     ) = runTest {
         val api = sequencedPodApi(podWithStatus("Running"), error = ApiException(404, "gone"))
         val executor =
-            KubernetesShellExecutor(killedClient(137), api, "homer", "pod-1", stopReasonPollMs = 10, stopReasonBudgetMs = 500)
+            KubernetesShellExecutor(
+                killedClient(137),
+                api,
+                "homer",
+                "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
+                stopReasonPollMs = 10,
+                stopReasonBudgetMs = 500,
+            )
 
         val e = assertFailsWith<PodFailedDuringExecutionException> { run(executor, tmp) }
 
@@ -1123,7 +1354,15 @@ class KubernetesShellExecutorTest {
     ) = runTest {
         val api = sequencedPodApi(podWithStatus("Running"), error = ApiException(500, "boom"))
         val executor =
-            KubernetesShellExecutor(killedClient(137), api, "homer", "pod-1", stopReasonPollMs = 10, stopReasonBudgetMs = 50)
+            KubernetesShellExecutor(
+                killedClient(137),
+                api,
+                "homer",
+                "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
+                stopReasonPollMs = 10,
+                stopReasonBudgetMs = 50,
+            )
 
         assertEquals(137, run(executor, tmp).exitCode)
     }
@@ -1141,7 +1380,15 @@ class KubernetesShellExecutorTest {
             running
         }
         val executor =
-            KubernetesShellExecutor(killedClient(137), api, "homer", "pod-1", stopReasonPollMs = 10, stopReasonBudgetMs = 500)
+            KubernetesShellExecutor(
+                killedClient(137),
+                api,
+                "homer",
+                "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
+                stopReasonPollMs = 10,
+                stopReasonBudgetMs = 500,
+            )
 
         job = launch { run(executor, tmp) }
         job.join()
@@ -1160,7 +1407,7 @@ class KubernetesShellExecutorTest {
                 started += argv
                 fakeProcess("", "", 0)
             }
-        val executor = KubernetesShellExecutor(client, mockk(relaxed = true), "homer", "pod-1")
+        val executor = KubernetesShellExecutor(client, mockk(relaxed = true), "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS)
 
         val result =
             executor.cmd(
@@ -1191,7 +1438,7 @@ class KubernetesShellExecutorTest {
                 started += argv
                 fakeProcess("", "", 0)
             }
-        val executor = KubernetesShellExecutor(client, mockk(relaxed = true), "homer", "pod-1")
+        val executor = KubernetesShellExecutor(client, mockk(relaxed = true), "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS)
 
         executor.cmd(
             command = listOf("echo"),
@@ -1214,7 +1461,7 @@ class KubernetesShellExecutorTest {
                 started += argv
                 fakeProcess("", "", 0)
             }
-        val executor = KubernetesShellExecutor(client, mockk(relaxed = true), "homer", "pod-1")
+        val executor = KubernetesShellExecutor(client, mockk(relaxed = true), "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS)
 
         executor.cmd(
             command = listOf("echo", "hi"),
@@ -1237,7 +1484,7 @@ class KubernetesShellExecutorTest {
                 started += argv
                 if (isSignalling(argv) || argv.last() == "true") fakeProcess("", "", 0) else neverFinishing()
             }
-        val executor = KubernetesShellExecutor(client, mockk(relaxed = true), "homer", "pod-1")
+        val executor = KubernetesShellExecutor(client, mockk(relaxed = true), "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS)
 
         assertFailsWith<kotlinx.coroutines.CancellationException> {
             executor.cmd(
@@ -1303,7 +1550,7 @@ class KubernetesShellExecutorTest {
                     else -> neverFinishing()
                 }
             }
-        val executor = KubernetesShellExecutor(client, mockk(relaxed = true), "homer", "pod-1")
+        val executor = KubernetesShellExecutor(client, mockk(relaxed = true), "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS)
 
         assertFailsWith<kotlinx.coroutines.CancellationException> {
             executor.cmd(
@@ -1333,7 +1580,7 @@ class KubernetesShellExecutorTest {
                     else -> neverFinishing()
                 }
             }
-        val executor = KubernetesShellExecutor(client, mockk(relaxed = true), "homer", "pod-1")
+        val executor = KubernetesShellExecutor(client, mockk(relaxed = true), "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS)
 
         assertFailsWith<kotlinx.coroutines.CancellationException> {
             executor.cmd(
@@ -1373,7 +1620,15 @@ class KubernetesShellExecutorTest {
                     else -> neverFinishing()
                 }
             }
-        val executor = KubernetesShellExecutor(client, mockk(relaxed = true), "homer", "pod-1", signalExecSlackMs = 200)
+        val executor =
+            KubernetesShellExecutor(
+                client,
+                mockk(relaxed = true),
+                "homer",
+                "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
+                signalExecSlackMs = 200,
+            )
 
         val startedAt = System.nanoTime()
         assertFailsWith<kotlinx.coroutines.CancellationException> {
@@ -1404,7 +1659,7 @@ class KubernetesShellExecutorTest {
                 // No setsid: both probe forms fail, so the command runs exactly as it does today.
                 if (argv.last() == "true") throw IllegalStateException("setsid: not found") else neverFinishing()
             }
-        val executor = KubernetesShellExecutor(client, mockk(relaxed = true), "homer", "pod-1")
+        val executor = KubernetesShellExecutor(client, mockk(relaxed = true), "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS)
 
         assertFailsWith<kotlinx.coroutines.CancellationException> {
             executor.cmd(

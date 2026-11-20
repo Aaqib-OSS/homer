@@ -2355,7 +2355,7 @@ commands: [ !&lt;langgraph&gt; { module: g.flow, inputEnv: GRAPH_INPUT } ]</code
           after.</p>
         <p>Every run waits in one claim queue until a runner with a free permit takes it. An agent picks a runner by
           alias (<code>runner:</code>) or by tags (<code>runnerTags:</code>); a runner declares the <code>tags</code> it
-          serves and an optional <code>concurrency</code>. One claim TTL (<code>server.runnerClaimTimeoutSec</code>,
+          serves and a <code>concurrency</code> (default 10, 100 for the local runner). One claim TTL (<code>server.runnerClaimTimeoutSec</code>,
           or the agent's own <code>runnerClaimTimeoutSec</code>) bounds the wait, and the failure names why nobody claimed the run.</p>
       </div>
 
@@ -2467,10 +2467,10 @@ commands: [ !&lt;langgraph&gt; { module: g.flow, inputEnv: GRAPH_INPUT } ]</code
 
         <article class="f">
           <h3>SSH session timing <span class="where">ssh runner</span></h3>
-          <p>Idle timeout is disabled by default so a quiet command is never killed by the transport; the command's own <code>timeout</code> is the intended cap. 30 s keepalives are on by default, keeping NAT/proxy idle timers on the path alive and letting the client detect a dead link. Each blocking SFTP round trip (file copy, directory listing, stat, mkdir, and the SFTP client's own close) is additionally bounded by a transfer deadline, so a peer answering keepalives while stalling data cannot hold a run forever. All fields are nullable.</p>
+          <p>Idle timeout is disabled by default so a quiet command is never killed by the transport; the command's own <code>timeout</code> is the intended cap. 30 s keepalives are on by default, keeping NAT/proxy idle timers on the path alive and letting the client detect a dead link. Each blocking SFTP round trip (file copy, directory listing, stat, mkdir, and the SFTP client's own close) is additionally bounded by a transfer deadline, so a peer answering keepalives while stalling data cannot hold a run forever. <code>idleTimeoutSeconds</code> and <code>heartbeatIntervalSeconds</code> are nullable.</p>
           <pre><code>idleTimeoutSeconds: 600       # re-enable; null = disabled (default)
 heartbeatIntervalSeconds: 10  # seconds; null = disable keepalives (default 30)
-sftpTransferTimeoutSeconds: 60 # per-operation SFTP deadline; null = unbounded (default 300)</code></pre>
+sftpTransferTimeoutSeconds: 60 # per-operation SFTP deadline (default 300)</code></pre>
         </article>
 
         <article class="f">
@@ -2494,7 +2494,7 @@ sftpTransferTimeoutSeconds: 60 # per-operation SFTP deadline; null = unbounded (
         <article class="f">
           <h3>Kubernetes runner <span class="where">server config</span></h3>
           <p>One ephemeral pod per run with a pod-local <code>emptyDir</code> workspace; content moves as gzip'd tar over
-            the exec channel. The image must ship <code>tar</code> and <code>gzip</code>. <code>maxRunSeconds</code> is a
+            the exec channel. The image must ship <code>tar</code> and <code>gzip</code>. <code>maxRunSeconds</code> (default 24 h) is a
             hard run limit Kubernetes enforces on the pod, even while Homer is down; opt-in <code>gracefulStopSeconds</code>
             puts a soft deadline in front of it, interrupting the running step so the agent's <code>onStop:</code> steps can
             save state before the pod goes; opt-in <code>workload: Job</code> runs
@@ -2509,8 +2509,8 @@ sftpTransferTimeoutSeconds: 60 # per-operation SFTP deadline; null = unbounded (
     resources: { limits: { cpu: "2", memory: 2Gi } }
     homerApiUrl: http://homer.homer.svc.cluster.local:8080
     workload: Job        # default Pod
-    maxRunSeconds: 7200
-    gracefulStopSeconds: 300  # soft deadline 300 s earlier; needs maxRunSeconds</code></pre>
+    maxRunSeconds: 7200       # default 86400
+    gracefulStopSeconds: 300  # soft deadline 300 s earlier</code></pre>
         </article>
 
         <article class="f">

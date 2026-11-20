@@ -1,11 +1,14 @@
 ---
 status: accepted
 date: 2026-11-06
+amended: 2026-11-20
 deciders: Lukáš Vlk
 consulted: ADR-0043, ADR-0047
 ---
 
 # ADR-0100: The Kubernetes runner can run a session in a one-pod Job, and its run limit is on the pod
+
+> **Amendment (2026-11-20) — `maxRunSeconds` defaults to 86400.** Every pod now carries `activeDeadlineSeconds`, so the "when set" and "without `maxRunSeconds`" wording below describes the opt-out that no longer exists.
 
 ## Context and Problem Statement
 

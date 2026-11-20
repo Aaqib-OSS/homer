@@ -42,9 +42,7 @@ class SshRunnerSession(
     override suspend fun createWorkspace(): Map<String, String> =
         withContext(Dispatchers.IO) {
             sync.mkdirs(remoteProjectRoot)
-            // The session shell cd's into remoteWorkdir on every command; a
-            // runnerCmd check may run before anything is uploaded, so the
-            // directory must exist as part of workspace creation.
+            // Every command cd's into remoteWorkdir, and a runnerCmd check may run before any upload.
             sync.mkdirs(remoteWorkdir)
             translator.overrides(initialEnv) +
                 extraUploads.mapNotNull { spec -> spec.env?.let { it to "$remoteProjectRoot/${spec.remote}" } }
@@ -67,28 +65,21 @@ class SshRunnerSession(
     }
 
     /**
-     * One `rm -rf` over the exec channel; the SFTP walk (one readDir/remove round
-     * trip per file, serialized on the session) only as fallback on a non-zero
-     * exit, a transport error, the command's own timeout or an output-cap
-     * abort. The shell cd's into
-     * [remoteWorkdir], inside the tree — removing a running process's cwd is
-     * fine on POSIX. See ADR-0067.
+     * One `rm -rf` over the exec channel, run from [remoteWorkdir] inside the tree, which POSIX allows. The SFTP
+     * walk is the fallback on a non-zero exit, a transport error, a timeout or an output-cap abort (ADR-0067).
      */
     override suspend fun cleanWorkspace() =
         withContext(Dispatchers.IO) {
-            // [security_misconfiguration / CWE-732] The composed root is the one string
-            // that reaches `rm -rf`; a value that is not an absolute, normalized path at
-            // least two segments deep is refused outright — no rm, no walk (ADR-0067).
+            // CWE-732: the composed root is the one string that reaches `rm -rf`; one that is not absolute,
+            // normalized and two segments deep refuses the sweep, rm and walk alike (ADR-0067).
             assertSafeRemoteRoot("remote project root", remoteProjectRoot, minDepth = 2)
             assertNoSymlinkComponentsBelowRoot()
             if (!removeViaShell()) sync.removeRecursively(remoteProjectRoot)
         }
 
     /**
-     * [path_traversal / CWE-59] `rm -rf` resolves every component of its argument,
-     * so a symlinked component under [remoteWorkspaceRoot] would steer the sweep
-     * at the link's target; each component below the root is `lstat`ed and a link
-     * refuses the sweep outright. See ADR-0067 for the scope and accepted race.
+     * Refuses the sweep when a component below [remoteWorkspaceRoot] is a symlink, which path resolution in `rm -rf`
+     * would follow (CWE-59). The `lstat`s and the removal are separate round trips: their same-UID race is AR-11 (ADR-0067).
      */
     private suspend fun assertNoSymlinkComponentsBelowRoot() {
         val root = remoteWorkspaceRoot.trimEnd('/')
@@ -129,9 +120,8 @@ class SshRunnerSession(
             logger.warn("rm -rf {} exceeded the output cap — falling back to the SFTP walk: {}", remoteProjectRoot, e.message)
             false
         } catch (e: CancellationException) {
-            // SshShellExecutor signals its own timeout with a plain CancellationException;
-            // only a cancelled caller propagates. Cleanup runs NonCancellable, so in
-            // practice this is the timeout, and the walk is the documented fallback.
+            // SshShellExecutor signals its own timeout as a CancellationException: only a cancelled caller
+            // rethrows, and a timeout falls back to the walk (ADR-0067).
             if (!currentCoroutineContext().isActive) throw e
             logger.warn("rm -rf {} timed out after {} — falling back to the SFTP walk", remoteProjectRoot, CLEAN_TIMEOUT)
             false

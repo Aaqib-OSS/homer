@@ -79,8 +79,8 @@ class FiniteLimitsContractTest {
                 "Agent.maxQueuedRuns",
                 "kubernetes.concurrency",
                 "ssh.concurrency",
-                "external.maxInstances",
                 "LocalRunnerConfig.concurrency",
+                "external.maxInstances",
                 "ClaudeCmdOptions.maxTurns",
                 "DispatchConfig.maxPending",
             )
@@ -176,15 +176,10 @@ class FiniteLimitsContractTest {
                 "ClaudeCmdOptions.maxMcpOutputTokens" to "unset leaves the Claude CLI's own output cap in force; removed by #347",
                 "ClaudeCmdOptions.maxTurnsExitCode" to "an exit code, not a bound: the name matches the pattern by accident",
                 "DispatchConfig.defaultTtlSec" to "null means a dispatch has no expiry of its own; removed by #347",
-                "LocalRunnerConfig.concurrency" to "null leaves local runs bounded only by the agents' maxParallelRuns; removed by #345",
                 "Param.max" to "opt-in numeric value constraint on a caller's input, not a resource bound",
                 "Param.maxLength" to "opt-in length constraint on a caller's input, not a resource bound",
-                "kubernetes.concurrency" to "null is an unbounded runner queue; removed by #345",
                 "kubernetes.jobTtlSecondsAfterFinished" to "null falls back to the finite effectiveJobTtlSeconds of 3600",
-                "kubernetes.maxRunSeconds" to "null means no hard run deadline; removed by #345",
-                "ssh.concurrency" to "null is an unbounded runner queue; removed by #345",
-                "ssh.idleTimeoutSeconds" to "null disables the MINA idle timeout; removed by #345",
-                "ssh.sftpTransferTimeoutSeconds" to "null disables the per-file transfer deadline; removed by #345",
+                "ssh.idleTimeoutSeconds" to "null disables MINA's idle disconnect; every command's finite timeout bounds the session",
             )
     }
 }

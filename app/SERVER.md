@@ -526,7 +526,7 @@ server:
 | `hooks` | `HookConfig` | No | `{maxPending=200, maxChainDepth=8, settledRetentionSec=604800}` | Bounds on agent-declared status hooks — see [Status hooks](#status-hooks). |
 | `langGraph` | `LangGraphConfig` | No | `{stateDir=null}` | LangGraph runtime settings (durable checkpoint root) — see [LangGraph](#langgraph). |
 | `agentGrants` | `Map<String, List<Grant>>` | No | `{}` | Per-agent delegation: which target agents an agent's own nested dispatches may reach, keyed by the dispatching agent's name — see [Grants and roles](#grants-and-roles). |
-| `localRunner` | `LocalRunnerConfig` | No | `{enabled=true, tags=[], concurrency=null}` | The built-in `local` runner: `enabled` (`false` registers none, so no run executes in the server's container), the `tags` it serves for `runnerTags` agents and `concurrency` (runs at once; `null` = unbounded). `tags` and `concurrency` are refused while `enabled` is `false`. See [Runner claim queue](#runner-claim-queue). |
+| `localRunner` | `LocalRunnerConfig` | No | `{enabled=true, tags=[], concurrency=100}` | The built-in `local` runner: `enabled` (`false` registers none, so no run executes in the server's container), the `tags` it serves for `runnerTags` agents and `concurrency` (runs at once, `>= 1`, default `100`). A non-empty `tags` or a `concurrency` other than `100` is refused while `enabled` is `false`. See [Runner claim queue](#runner-claim-queue). |
 | `runnerClaimTimeoutSec` | `Int` | No | `300` | Seconds a run waits in the claim queue for a runner with a free permit before it fails; agents override with `runnerClaimTimeoutSec`. See [Runner claim queue](#runner-claim-queue). |
 | `maxPendingRunnerClaims` | `Int` | No | `1000` | Bound on runs waiting in the claim queue; a run arriving at the bound fails immediately. See [Runner claim queue](#runner-claim-queue). |
 | `maintenance` | `MaintenanceConfig` | No | `{maxQueuedStarts=500, maxQueuedStartsPerPrincipal=50, queueWaitSec=600, releaseConcurrency=4}` | Bounds of the admin maintenance-mode queue: how many starts may wait, how much of it one caller may hold, how long a start may wait, and how many are released at a time. See [Maintenance mode](#maintenance-mode). |
@@ -2919,13 +2919,13 @@ started in-process by Homer ([ADR-0030](../docs/adr/0030-runagent-in-process-dis
 | `keepPodOnFailure` | `Boolean` | No | `false` | On a failed run — or a failed pod startup, if the pod already reached a node — patch the pod's TTL instead of deleting it: a failed run keeps its synced workspace under `/homer/workspace` available for inspection, a startup-failed pod keeps its image/init state inspectable. A pod that never got scheduled is always deleted (its TTL could never fire). A command timeout and an output-cap kill both count as a failure; an operator-initiated kill does not (the pod is still deleted). |
 | `keepPodTtlSeconds` | `Long` | No | `3600` | TTL applied to kept-for-debug pods. With `workload: Job`, the cluster removes a kept pod `jobTtlSecondsAfterFinished` after its Job ends; see [Job workload](#job-workload). |
 | `workload` | `Pod` \| `Job` | No | `Pod` | Kubernetes object each run executes in; `Job` is opt-in — see [Job workload](#job-workload). |
-| `maxRunSeconds` | `Long?` | No | `null` | Upper bound on a whole run's wall-clock time in the cluster, `>= 1`; `null` = no limit. Kubernetes stops the pod at the limit, and the run fails up to `terminationGracePeriodSeconds` (30 s by default) later, because the main container ignores SIGTERM; the run's `runner.termination` says `DeadlineExceeded`. Set on the pod in both modes — see [Job workload](#job-workload). |
-| `gracefulStopSeconds` | `Long?` | No | `null` | Opt-in soft deadline: this many seconds before the pod's `maxRunSeconds` hard deadline, Homer interrupts the step that is running so the agent's `onStop:` steps can save state before Kubernetes kills the pod. Requires `maxRunSeconds`, `>= 1` and smaller than it; `null` (default) = no soft deadline, and no extra Kubernetes read. The pod's `activeDeadlineSeconds` is unchanged, so a stop phase that overruns still ends with the pod. See [Job workload](#job-workload) and [AGENT.md → Graceful stop](AGENT.md#graceful-stop). |
+| `maxRunSeconds` | `Long` | No | `86400` | Upper bound on a whole run's wall-clock time in the cluster, `>= 1` (default 24 h). Kubernetes stops the pod at the limit, and the run fails up to `terminationGracePeriodSeconds` (30 s by default) later, because the main container ignores SIGTERM; the run's `runner.termination` says `DeadlineExceeded`. Set on the pod in both modes — see [Job workload](#job-workload). |
+| `gracefulStopSeconds` | `Long?` | No | `null` | Opt-in soft deadline: this many seconds before the pod's `maxRunSeconds` hard deadline, Homer interrupts the step that is running so the agent's `onStop:` steps can save state before Kubernetes kills the pod. `>= 1` and smaller than `maxRunSeconds`; `null` (default) = no soft deadline, and no extra Kubernetes read. The pod's `activeDeadlineSeconds` is unchanged, so a stop phase that overruns still ends with the pod. See [Job workload](#job-workload) and [AGENT.md → Graceful stop](AGENT.md#graceful-stop). |
 | `jobTtlSecondsAfterFinished` | `Long?` | No | `null` | Seconds a finished Job is kept before the cluster deletes it, `>= 0`; only valid with `workload: Job`; `null` = `3600` — see [Job workload](#job-workload). |
 | `homerApiUrl` | `String?` | No | `null` | Cluster-internal Homer URL; exposed in-pod as `HMR_API_URL` so the `homer-*` helpers and MCP question tools can reach Homer from inside the pod. |
 | `env` | `Map<String, String>` | No | `{}` | Per-runner environment variables, layered between `globalEnv` and agent `env` — the place for values describing *this* runner's host/image (`PATH` with `/opt/homebrew/bin` on a macOS ssh box, `JAVA_HOME`, `HOME` for a uid with no passwd entry). Values support `@SYSENV:VAR` (fail-fast at startup, and the resolved names join the telemetry redaction set exactly like `@SYSENV` in `globalEnv`); keys must not be blank or use the reserved `HMR_` prefix. Remote runners receive no `parentEnvAllowlist` host env, so this is also where a value the image must still see goes. Like agent `env`, values ride the per-exec `env K=V…` delivery — **visible in the remote process list (`ps`)** on multi-tenant hosts; forward credentials via `@SYSENV:` and prefer file delivery where possible. For a run that selected this runner via `runnerTags` rather than by alias, these keys are instead merged **above** agent `env` when the run is claimed — see [Runner claim queue](#runner-claim-queue). |
 | `tags` | `List<String>` | No | `[]` | Tags this runner serves for agents that select a runner with `runnerTags` (every requested tag must be present). Empty = reachable by alias only. Shape `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`, at most 32. See [Runner claim queue](#runner-claim-queue). |
-| `concurrency` | `Int?` | No | `null` | Runs this runner serves at once. A run addressed to a saturated runner waits in the claim queue and fails at the claim TTL. `null` = unbounded. |
+| `concurrency` | `Int` | No | `10` | Runs this runner serves at once, `>= 1`. A run addressed to a saturated runner waits in the claim queue and fails at the claim TTL. |
 | `imagePullSecrets` | `List<String>` | No | `[]` | Pull secrets referenced by name. |
 | `serviceAccountName` | `String?` | No | `null` | ServiceAccount for the pod. |
 | `securityContext` | `SecurityContextSpec?` | No | `null` | Pod- and container-level security context. Required when the namespace enforces Pod Security Admission `restricted` or otherwise sets `runAsNonRoot: true` — see below. |
@@ -2968,8 +2968,7 @@ each a `List<String>` of Linux capability names, default `[]`.
 (required; `RuntimeDefault`, `Localhost` or `Unconfined`) and
 `localhostProfile` (`String?`, the profile path, needed when `type` is `Localhost`); both are passed to Kubernetes as-is.
 
-**A pod Kubernetes stops mid-run.** In both modes, and also without
-`maxRunSeconds` or `workload` set, Homer reads the pod's status once after
+**A pod Kubernetes stops mid-run.** In both modes Homer reads the pod's status once after
 a command fails. If Kubernetes stopped the pod (`DeadlineExceeded` from
 `maxRunSeconds`, eviction, an OOM kill, deletion), the run fails with the
 reason in its `runner.termination` ([status API](README.md#example-api-usage)). After a killed
@@ -2979,7 +2978,9 @@ names the reason. Homer does not poll the pod while a command runs.
 
 **A lost exec channel.** The exec channel into the pod can close without a
 `v1.Status` — an API server or proxy restart, an idle timeout on the
-websocket — or the client can report its no-exit-status sentinel. When the
+websocket — or the client can report its no-exit-status sentinel, or the
+channel can end on a status that carries no exit code, as current API servers
+report a lost connection to the kubelet. When the
 pod itself is still running, the step fails with `ExecChannelLost` and the
 run's `runner.termination` carries the same reason, the underlying cause
 and the pod's last event, so the failure names the loss without the server
@@ -3049,7 +3050,7 @@ default `Pod` mode; only the object that owns the pod changes.
   can save state. The soft deadline is measured from the pod's
   `status.startTime`, clamped to the earlier of it and the creation time
   Homer recorded, so a skewed pod-reported value may shorten the deadline
-  but never extend it. It needs both bounds configured, and it is
+  but never extend it. It needs `gracefulStopSeconds` set, and it is
   deliberately **not** set on the pod: `activeDeadlineSeconds` stays the
   bound the kubelet enforces, so a stop phase that overruns the remaining
   seconds ends exactly as it would without the feature. See
@@ -3198,8 +3199,8 @@ See [ADR-0043](../docs/adr/0043-k8s-sync-workspaces.md).
   start**, not from the failure — a long-running agent has already
   spent part of that budget by the time it fails, so a run whose
   duration approaches `keepPodTtlSeconds` may leave little or no
-  inspection window before the kubelet terminates the pod. With
-  `maxRunSeconds` set, a kept pod's deadline is the smaller of
+  inspection window before the kubelet terminates the pod. A kept
+  pod's deadline is the smaller of
   `maxRunSeconds` and `keepPodTtlSeconds` (it is never raised; both
   count from pod start).
 - **No live tailing mid-run.** Artifacts only appear host-side at the
@@ -3488,12 +3489,12 @@ discriminator instead:
 | `homerApiUrl` | `String?` | No | `null` | Homer URL reachable from the remote host; overrides `HMR_API_URL` remotely (like the kubernetes runner's `homerApiUrl`) so the `homer-*` helpers and MCP question tools reach Homer instead of `127.0.0.1`. |
 | `env` | `Map<String, String>` | No | `{}` | Per-runner environment variables for this remote host, layered between `globalEnv` and agent `env` — e.g. `PATH` with `/opt/homebrew/bin`, `JAVA_HOME`, `CI`. Values support `@SYSENV:VAR` (fail-fast at startup, and the resolved names join the telemetry redaction set exactly like `@SYSENV` in `globalEnv`); keys must not be blank or use the reserved `HMR_` prefix. The ssh target's own login shell supplies `HOME`/`PATH`/`LANG`/`TZ` unless overridden here, because remote runners receive no `parentEnvAllowlist` host env — see [Remote runners](#remote-runners). Like agent `env`, values ride the per-exec `env K=V…` delivery and are **visible in the remote process list (`ps`)** on multi-tenant hosts (see Security posture below). For a run that selected this runner via `runnerTags` rather than by alias, these keys are instead merged **above** agent `env` when the run is claimed — see [Runner claim queue](#runner-claim-queue). |
 | `tags` | `List<String>` | No | `[]` | Tags this runner serves for agents that select a runner with `runnerTags` (every requested tag must be present). Empty = reachable by alias only. Shape `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`, at most 32. See [Runner claim queue](#runner-claim-queue). |
-| `concurrency` | `Int?` | No | `null` | Runs this runner serves at once. A run addressed to a saturated runner waits in the claim queue and fails at the claim TTL. `null` = unbounded. |
+| `concurrency` | `Int` | No | `10` | Runs this runner serves at once, `>= 1`. A run addressed to a saturated runner waits in the claim queue and fails at the claim TTL. |
 | `shell` | `String` | No | `/bin/sh` | Shell used for `Script` commands on the remote host. |
 | `connectTimeoutSeconds` | `Long` | No | `30` | Timeout for connect and authentication. |
 | `idleTimeoutSeconds` | `Long?` | No | `null` | SSH-idle timeout in seconds. `null` disables it: the SSH session is never closed for lack of output — a remote command that stays quiet (compile, `git clone`, a long Claude tool call) is a normal state, and the command's own `timeout` is the intended cap. Set a value to re-enable MINA's inactivity disconnect deliberately. |
 | `heartbeatIntervalSeconds` | `Long?` | No | `30` | SSH keepalive interval in seconds; `null` disables keepalives. Heartbeats keep NAT/proxy idle timers on the path alive and let the client detect a dead link while the idle timeout is off. |
-| `sftpTransferTimeoutSeconds` | `Long?` | No | `300` | Per-operation SFTP transfer deadline in seconds; `null` disables the bound. Each blocking SFTP round trip (file copy, directory listing, stat, mkdir, the SFTP subsystem handshake, and the client close) must complete within this time or the SSH session is closed and the transfer fails — a peer answering keepalives while stalling SFTP data cannot hold a run slot and the workspace lock indefinitely; a timed-out or failed close is the exception: it is logged and swallowed and does not fail the operation. Bounds SFTP operations only, not remote commands. |
+| `sftpTransferTimeoutSeconds` | `Long` | No | `300` | Per-operation SFTP transfer deadline in seconds, `>= 1`. Each blocking SFTP round trip (file copy, directory listing, stat, mkdir, the SFTP subsystem handshake, and the client close) must complete within this time or the SSH session is closed and the transfer fails — a peer answering keepalives while stalling SFTP data cannot hold a run slot and the workspace lock indefinitely; a timed-out or failed close is the exception: it is logged and swallowed and does not fail the operation. Bounds SFTP operations only, not remote commands. |
 | `syncExcludes` | `List<String>` | No | `[]` | Directory-entry names excluded from upload (applied during sync-up only). A bare name (e.g. `build`) matches that entry at every directory level; a leading `/` (e.g. `/build`) anchors the match to the upload root only, so a path-shaped entry like `build/tmp` matches nothing unless anchored (`/build/tmp`). |
 | `extraUploads` | `List<ExtraUploadSpec>` | No | `[]` | Host files/folders uploaded into every remote workspace on this runner (`{local, remote, env?}`); `remote` is projectRoot-relative in normalized form (no `.`, `//`, or trailing `/`) and may not target `workdir/`, `artifacts/`, `.homer/agent`, `.homer/bin`, or `.homer/mcp.json` — nor an ancestor of them like `.homer`; `env` (optional, non-`HMR_`) is repointed at the remote copy. `local` must exist at startup. See ADR-0042. |
 
@@ -3517,8 +3518,8 @@ expiry the SSH session is closed immediately to unblock the interrupted
 operation and the transfer fails. A release that fails or exceeds the
 deadline is logged and swallowed — the session is discarded at the end
 of the run either way, so cleanup never masks the operation's own
-outcome. Set the field to `null` to disable the bound (e.g. a trusted,
-very slow link with multi-gigabyte transfers).
+outcome. The bound cannot be disabled; for a trusted, very slow link
+with multi-gigabyte transfers, raise it.
 
 **Directory listing cap.** During sync-down each remote directory
 listing is read into memory before its entries are transferred, so it
@@ -3591,8 +3592,12 @@ auth: !<key>
   sent as `cd <workdir> && exec env K=V… <argv…>` over the SSH exec
   channel (many sshd configs reject `SendEnv`/`AcceptEnv`), so any
   secret passed via `env` is visible to other users on the remote host
-  via `ps` for the life of the command — the same property k8s exec
-  has. Avoid putting secrets in `env` on multi-tenant remote hosts.
+  via `ps` while the command starts: the shell `exec`s `env`, which
+  `exec`s the command, after which the values sit only in its
+  environment. An `execve` audit record on the host keeps them for as
+  long as the host retains it. Avoid putting secrets in `env` on
+  multi-tenant remote hosts. See `AR-09` in
+  [`SECURITY.md`](../SECURITY.md#accepted-risks).
 
 #### Workspace sync
 
@@ -3657,8 +3662,7 @@ and is taken by the first runner that matches it and has a free permit
    the tag set from `runnerTags:`, and its claim TTL starts.
 2. A runner takes the run only if it matches the filter **and** has a free
    permit. A runner with `concurrency: 2` and two runs in flight leaves a third
-   waiting. A runner without `concurrency` is unbounded and takes the run at
-   once.
+   waiting. `concurrency` defaults to `100` on the local runner and `10` on `ssh` and `kubernetes` runners.
 3. One claim TTL (`server.runnerClaimTimeoutSec`, or the agent's
    `runnerClaimTimeoutSec`) covers the whole wait. At expiry the run fails and
    the failure names what was observed, for example
@@ -3677,7 +3681,7 @@ server:
   maxPendingRunnerClaims: 1000    # runs waiting in the claim queue, all agents together
   localRunner:
     tags: [linux]                 # the built-in local runner serves these runnerTags
-    concurrency: 2                # runs at once on the local runner; omit for unbounded
+    concurrency: 2                # runs at once on the local runner; default 100
 runners:
   build-host: !<ssh>
     host: build.internal
@@ -3733,8 +3737,8 @@ by `local` may not receive the allowlisted host env), and the serving runner's
 `env` is merged after the session opens, above agent `env`. Session-contributed
 values such as `HMR_API_URL` take precedence over the runner's `env`.
 
-A configuration without `tags` or `concurrency` on any runner behaves exactly as
-it did before the queue existed.
+A runner without `tags` is reachable by alias only, and one without `concurrency`
+serves ten runs at once (the local runner a hundred).
 
 **Turning the local runner off.** `server.localRunner.enabled: false` registers
 no local runner, so no run executes in the server's own container. A run routed
@@ -3944,7 +3948,7 @@ primitives:
 | --- | --- | --- |
 | `createWorkspace` | `{opId}` | `{opId, root}`: absolute path the instance created, with `workdir`, `artifacts` and `.homer` inside. |
 | `upload` | `{opId, remoteRelative, isDir}` | `{opId}` after the instance fetched and extracted the tar. |
-| `cmd` | `{opId, argv, env, stdin?, timeoutMs, cwd, interruptGraceSeconds?}` — how long the command may keep running after a SIGINT before it is killed; null or absent means the immediate kill | `{opId, exitCode, timedOut, stdoutChunks?, stderrChunks?}`; output arrives through the `output` route while running. |
+| `cmd` | `{opId, argv, env, stdin?, timeoutMs, cwd, interruptGraceSeconds?}` — how long the command may keep running after a SIGINT before it is killed; null or absent means the immediate kill | `{opId, exitCode, timedOut, stdoutChunks, stderrChunks}`; output arrives through the `output` route while running. |
 | `download` | `{opId, remoteRelative, mode}` | `{opId, missing}`; the instance posts the tar first, then the result. |
 | `cleanWorkspace` | `{opId}` | `{opId}`. |
 | `close` | `{opId, reason}` | none; the session is over. |
@@ -3952,30 +3956,30 @@ primitives:
 | `interrupt` | `{opId}` of the running `cmd` | none; the instance stops it gracefully — SIGINT its process group, then kill after the grace the `cmd` carried — and reports the `cmd` result as usual. Best-effort: an interrupt for a command that has already exited, or that the instance cannot stop, still ends in the normal kill path. |
 
 Every result carries `ok` (default `true`) and, when `ok` is `false`, `error`. A `cmd`
-result may also carry `stdoutChunks`/`stderrChunks`, one past the last `seq` the instance
+result carries `stdoutChunks`/`stderrChunks`, one past the last `seq` the instance
 posted or gave up posting for that stream — a chunk whose post was abandoned after its
 retries is counted too, so a lost chunk shows up as a short count and never as a complete
 one. The one exception: a chunk still unsent when the instance's bounded post-exit drain
 expires is dropped with one warning naming the session, op, stream and count, and reaches
 no count — that result then matches what Homer holds while output is missing, and the
-instance's log is the only trace. Both fields are optional, so a result from an
-older runner binary omits them. When one is present and ahead of the chunks Homer has
-received, Homer waits once, briefly, for the rest and then fails the step with
-`output incomplete on <stream>` instead of running on truncated output.
+instance's log is the only trace. A `cmd` result that omits either count, as a runner
+older than 1.37.1 does, fails the step: that runner must be upgraded. When a count is
+ahead of the chunks Homer has received, Homer waits once, briefly, for the rest and
+then fails the step with `output incomplete on <stream>` instead of running on
+truncated output.
 
 Both ends of this protocol are upgraded independently, so every body it carries is
 decoded with unknown keys ignored: an instance newer than the server it reports to is
 read for the fields this server knows, never refused as a malformed body.
 
 **Nested runs hold a permit.** A run holds its runner's permit for its whole
-duration, not just while it is opening the session. If `concurrency` is set on
-a runner, a `RunAgent` child targeting the same runner, or a `runnerCmd` step
-targeting `local` while `server.localRunner.concurrency` is set, can end up
+duration, not just while it is opening the session. A `RunAgent` child
+targeting the same runner, or a `runnerCmd` step targeting `local`, can end up
 waiting for a permit its own parent already holds — and fail at the claim TTL
 once that permit never frees. `runnerCmd` steps take a permit on their target
 runner the same way a whole agent run does, so they carry the same hazard.
-Leave `concurrency` unset on a runner that serves both a parent agent and its
-`RunAgent` children or `runnerCmd` targets, or size it for the deepest chain
+Size `concurrency` on a runner that serves both a parent agent and its
+`RunAgent` children or `runnerCmd` targets for the deepest chain
 of nested runs that can land on it at once.
 
 **The queue bound is global.** `server.maxPendingRunnerClaims` bounds the
@@ -3993,7 +3997,11 @@ backstop that only trips on misconfiguration, never in steady state.
 Homer logs via **logback-classic** (`app/src/main/resources/logback.xml`).
 The bundled defaults set `homer.app` to `DEBUG`, frameworks (`io.ktor`,
 `io.netty`, `io.opentelemetry`) to `INFO`, and the root level to
-`${HOMER_LOG_LEVEL:-INFO}`. (`agentdebug` is the exception — it keeps
+`${HOMER_LOG_LEVEL:-INFO}`. Two Apache MINA SSHD loggers have fixed levels,
+because their lower levels quote the ssh runner's remote command and the env
+it carries: `org.apache.sshd.client.channel.ChannelExec` is pinned to `ERROR`
+and `org.apache.sshd.client.session.ClientSessionImpl` to `INFO`.
+`HOMER_LOG_LEVEL` does not lower either. (`agentdebug` is the exception — it keeps
 slf4j-simple to avoid a double SLF4J binding.)
 
 Two log streams:

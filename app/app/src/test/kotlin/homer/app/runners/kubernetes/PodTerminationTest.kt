@@ -181,11 +181,6 @@ class PodTerminationTest {
     }
 
     @Test
-    fun `summary of a deadline without maxRunSeconds falls back to the message`() {
-        assertEquals("x (DeadlineExceeded)", PodTermination("DeadlineExceeded", "x").summary(null))
-    }
-
-    @Test
     fun `summary of another reason is message and reason`() {
         assertEquals("m (OOMKilled)", PodTermination("OOMKilled", "m").summary(10800))
     }

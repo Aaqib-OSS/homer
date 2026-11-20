@@ -16,6 +16,8 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
+import org.apache.sshd.client.channel.ChannelExec
+import org.apache.sshd.client.session.ClientSessionImpl
 import org.junit.jupiter.api.io.TempDir
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -132,6 +134,59 @@ class AccessLoggingTest {
         }
     }
 
+    @Test
+    fun `the ssh exec channel logger keeps the remote command out of the log at any HOMER_LOG_LEVEL`(
+        @TempDir tmp: Path,
+    ) {
+        val appLog =
+            logThroughProductionConfig(tmp, ChannelExec::class.java.name, LogbackLevel.ERROR) { channel ->
+                channel.warn("handleFailure(ch) pending since=0, command={}", SSH_COMMAND)
+                channel.debug("doOpen(ch) send SSH_MSG_CHANNEL_REQUEST exec command={}", SSH_COMMAND)
+            }
+
+        assertFalse(appLog.contains(SSH_SECRET), "the remote command must not reach app.log")
+    }
+
+    @Test
+    fun `the ssh session logger keeps the remote command out of the log at any HOMER_LOG_LEVEL`(
+        @TempDir tmp: Path,
+    ) {
+        val appLog =
+            logThroughProductionConfig(tmp, ClientSessionImpl::class.java.name, LogbackLevel.INFO) { session ->
+                session.debug("createExecChannel({})[{}] created id={} - PTY={}", "session", SSH_COMMAND, 0, null)
+                session.trace("encode(session) packet #7 {}", SSH_COMMAND)
+                session.warn("exceptionCaught(session) session-warning")
+            }
+
+        assertFalse(appLog.contains(SSH_SECRET), "the remote command must not reach app.log")
+        assertTrue(appLog.contains("session-warning"), "the session's own warnings must still reach app.log")
+    }
+
+    /** Loads the production config at `HOMER_LOG_LEVEL=TRACE`, logs through [loggerName] and returns app.log. */
+    private fun logThroughProductionConfig(
+        tmp: Path,
+        loggerName: String,
+        pinnedLevel: LogbackLevel,
+        log: (LogbackLogger) -> Unit,
+    ): String {
+        System.setProperty("HOMER_LOG_DIR", tmp.toString())
+        System.setProperty("HOMER_LOG_LEVEL", "TRACE")
+        val ctx = LoggerContext().apply { mdcAdapter = LogbackMDCAdapter() }
+        try {
+            val configurator = JoranConfigurator().apply { context = ctx }
+            javaClass.getResourceAsStream("/logback.xml").use { configurator.doConfigure(it) }
+            val logger = ctx.getLogger(loggerName)
+            assertEquals(pinnedLevel, logger.effectiveLevel)
+            log(logger)
+            ctx.stop()
+            return tmp.resolve("app.log").readText()
+        } finally {
+            ctx.stop()
+            System.clearProperty("HOMER_LOG_DIR")
+            System.clearProperty("HOMER_LOG_LEVEL")
+        }
+    }
+
     // ---- CallLogging routing to the homer.access logger ----
 
     @Test
@@ -170,5 +225,10 @@ class AccessLoggingTest {
             accessLogger.detachAppender(appender)
             accessLogger.isAdditive = wasAdditive
         }
+    }
+
+    private companion object {
+        const val SSH_SECRET = "s3cr3t-value"
+        const val SSH_COMMAND = "cd '/w' && exec env 'TOKEN=$SSH_SECRET' 'true'"
     }
 }

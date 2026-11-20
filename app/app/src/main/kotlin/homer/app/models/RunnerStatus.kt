@@ -18,7 +18,7 @@ data class RunnerStatus(
     val alias: String,
     val kind: String, // "local" | "ssh" | "kubernetes" | "external"
     val tags: List<String>, // sorted; empty for external (instances carry tags)
-    val concurrency: Int? = null, // null = unbounded; always null for external
+    val concurrency: Int? = null, // null on an external row, whose instances carry their own
     val inUse: Int, // static: permits held; external: sum of instance activeSessions
     val instances: List<RunnerInstanceStatus>? = null, // external only
 )

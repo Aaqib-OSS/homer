@@ -20,9 +20,9 @@ internal interface SubRunStarter {
     ): Boolean
 
     /**
-     * [information_disclosure / CWE-200] The flow root a child of [originProcessId] attributed to
+     * CWE-200: the flow root a child of [originProcessId] attributed to
      * [principal] may carry: null when the origin is unreadable or [principal] cannot see the root.
-     * See ADR-0058. §12.
+     * See ADR-0058, ADR-0047 rule 3.
      */
     suspend fun visibleOriginRootProcessId(
         originProcessId: Int,

@@ -718,6 +718,26 @@ class KubernetesWorkspaceSyncTest {
     }
 
     @Test
+    fun `a probe on a channel closed without a status fails as no exit status, not as exit -1`(
+        @TempDir local: Path,
+    ) {
+        val closedProbe =
+            mockk<Process>(relaxed = true) {
+                every { inputStream } returns ByteArrayInputStream(ByteArray(0))
+                every { errorStream } returns ByteArrayInputStream(ByteArray(0))
+                every { waitFor(any<Long>(), any<TimeUnit>()) } returns true
+                every { exitValue() } returns EXEC_ENDED_WITHOUT_EXIT_CODE
+            }
+        val client = KubernetesExecClient { _, _, _, _ -> closedProbe }
+        val ex =
+            assertFailsWith<IllegalStateException> {
+                KubernetesWorkspaceSync(client, "ns", "pod-1").download("/homer/workspace/x", local, DownloadMode.OVERLAY)
+            }
+        assertTrue(ex.message!!.contains("no exit status"), ex.message)
+        assertFalse(ex.message!!.contains("exit -1"), ex.message)
+    }
+
+    @Test
     fun `containedEntryPath rejects escaping and absolute entry names`(
         @TempDir base: Path,
     ) {

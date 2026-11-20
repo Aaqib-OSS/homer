@@ -255,7 +255,7 @@ class RunnerCmdExecutorTest {
                         is RunnerOp.Cmd -> {
                             cmdOp.complete(op)
                             session.sink(op.opId)!!.append("stdout", 0, "hi\n".toByteArray())
-                            session.mailbox.complete(OpResult(op.opId, exitCode = 0))
+                            session.mailbox.complete(OpResult(op.opId, exitCode = 0, stdoutChunks = 1, stderrChunks = 0))
                         }
 
                         is RunnerOp.CleanWorkspace -> {

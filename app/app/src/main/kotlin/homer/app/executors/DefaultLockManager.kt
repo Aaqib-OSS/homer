@@ -60,7 +60,7 @@ class DefaultLockManager(
 
                     WAIT -> {
                         // The place in the lock-wait bound is reserved before the run is enqueued,
-                        // so a refused surplus run leaves no queue entry behind (§12 rules 4-5).
+                        // so a refused surplus run leaves no queue entry behind (ADR-0047 rules 4-5).
                         waitTicket = waitGate.enter()
                         entry.waitQueue.addLast(processID to deferred)
                         null

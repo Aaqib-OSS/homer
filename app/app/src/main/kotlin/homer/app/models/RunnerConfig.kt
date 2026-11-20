@@ -63,12 +63,12 @@ sealed class RunnerConfig {
         val keepPodOnFailure: Boolean = false,
         val keepPodTtlSeconds: Long = 3600,
         val workload: KubernetesWorkload = KubernetesWorkload.Pod,
-        val maxRunSeconds: Long? = null,
+        val maxRunSeconds: Long = DEFAULT_MAX_RUN_SECONDS,
         /**
          * Opt-in soft deadline: this many seconds before the pod's `maxRunSeconds`
          * hard deadline, the run's running step is interrupted (SIGINT) so its
-         * `onStop:` steps can save state before the kubelet kills the pod. Requires
-         * `maxRunSeconds`. Null = no soft deadline, and no extra Kubernetes read.
+         * `onStop:` steps can save state before the kubelet kills the pod.
+         * Null = no soft deadline, and no extra Kubernetes read.
          * See ADR-0108.
          */
         val gracefulStopSeconds: Long? = null,
@@ -82,7 +82,7 @@ sealed class RunnerConfig {
         val syncExcludes: List<String> = emptyList(),
         override val extraUploads: List<ExtraUploadSpec> = emptyList(),
         override val tags: List<String> = emptyList(),
-        override val concurrency: Int? = null,
+        override val concurrency: Int = DEFAULT_RUNNER_CONCURRENCY,
     ) : RunnerConfig(),
         RunnerQueueFacets {
         val effectiveJobTtlSeconds: Long get() = jobTtlSecondsAfterFinished ?: 3600
@@ -95,16 +95,13 @@ sealed class RunnerConfig {
         }
 
         internal fun validateWorkload(alias: String) {
-            require(maxRunSeconds == null || maxRunSeconds >= 1) {
+            require(maxRunSeconds >= 1) {
                 "kubernetes runner '$alias': maxRunSeconds must be >= 1"
-            }
-            require(gracefulStopSeconds == null || maxRunSeconds != null) {
-                "kubernetes runner '$alias': gracefulStopSeconds requires maxRunSeconds"
             }
             require(gracefulStopSeconds == null || gracefulStopSeconds >= 1) {
                 "kubernetes runner '$alias': gracefulStopSeconds must be >= 1"
             }
-            require(maxRunSeconds == null || gracefulStopSeconds == null || gracefulStopSeconds < maxRunSeconds) {
+            require(gracefulStopSeconds == null || gracefulStopSeconds < maxRunSeconds) {
                 "kubernetes runner '$alias': gracefulStopSeconds must be less than maxRunSeconds"
             }
             require(jobTtlSecondsAfterFinished == null || jobTtlSecondsAfterFinished >= 0) {
@@ -137,13 +134,10 @@ sealed class RunnerConfig {
         val idleTimeoutSeconds: Long? = null,
         /** Client heartbeat interval in seconds; default `30`, `null` disables keepalives. */
         val heartbeatIntervalSeconds: Long? = 30,
-        /**
-         * Per-file SFTP transfer deadline in seconds; default `300`, `null`
-         * disables the bound. See SERVER.md.
-         */
-        val sftpTransferTimeoutSeconds: Long? = 300,
+        /** Per-file SFTP transfer deadline in seconds; default `300`. See SERVER.md. */
+        val sftpTransferTimeoutSeconds: Long = 300,
         override val tags: List<String> = emptyList(),
-        override val concurrency: Int? = null,
+        override val concurrency: Int = DEFAULT_RUNNER_CONCURRENCY,
     ) : RunnerConfig(),
         RunnerQueueFacets {
         internal override fun validate(alias: String) {
@@ -162,8 +156,8 @@ sealed class RunnerConfig {
             heartbeatIntervalSeconds?.let {
                 require(it >= 1) { "runner '$alias' heartbeatIntervalSeconds must be >= 1 when set; got $it" }
             }
-            sftpTransferTimeoutSeconds?.let {
-                require(it >= 1) { "runner '$alias' sftpTransferTimeoutSeconds must be >= 1 when set; got $it" }
+            require(sftpTransferTimeoutSeconds >= 1) {
+                "runner '$alias' sftpTransferTimeoutSeconds must be >= 1; got $sftpTransferTimeoutSeconds"
             }
         }
 
@@ -267,6 +261,15 @@ internal fun assertSafeRemoteRoot(
     require(segments.size >= minDepth) { "$owner must be at least $minDepth segment(s) below '/'; got '$path'" }
 }
 
+/** Default claim-queue permits per runner, the same as an agent's default `maxParallelRuns`. See ADR-0066. */
+const val DEFAULT_RUNNER_CONCURRENCY = 10
+
+/** Default permits of the local runner, where parent and child runs most often share a runner. See ADR-0066. */
+const val DEFAULT_LOCAL_CONCURRENCY = 100
+
+/** Default hard deadline of a Kubernetes run pod: 24 hours. See ADR-0066. */
+const val DEFAULT_MAX_RUN_SECONDS = 86_400L
+
 /**
  * Facets of the built-in `local` runner as a claim-queue consumer
  * (`server.localRunner`). Same rules as `tags`/`concurrency` on `ssh` and
@@ -277,11 +280,12 @@ internal fun assertSafeRemoteRoot(
 data class LocalRunnerConfig(
     val enabled: Boolean = true,
     val tags: List<String> = emptyList(),
-    val concurrency: Int? = null,
+    val concurrency: Int = DEFAULT_LOCAL_CONCURRENCY,
 ) {
     init {
         validateRunnerQueueFacets("server.localRunner", tags, concurrency)
-        require(enabled || (tags.isEmpty() && concurrency == null)) {
+        // Compares against the default: a defaulted field cannot report whether it was set (ADR-0066).
+        require(enabled || (tags.isEmpty() && concurrency == DEFAULT_LOCAL_CONCURRENCY)) {
             "server.localRunner.tags and .concurrency have no effect while server.localRunner.enabled is false; remove them"
         }
     }
@@ -292,8 +296,8 @@ sealed interface RunnerQueueFacets {
     /** Tags this runner serves for tag-filtered runs; empty = alias-addressed only. See ADR-0066. */
     val tags: List<String>
 
-    /** Permits for the claim queue; `null` = unbounded (the historical behaviour). See ADR-0066. */
-    val concurrency: Int?
+    /** Permits for the claim queue; default [DEFAULT_RUNNER_CONCURRENCY]. See ADR-0066. */
+    val concurrency: Int
 }
 
 /** Shape rules for [RunnerQueueFacets.tags] and [RunnerQueueFacets.concurrency], naming the runner [alias]. */
@@ -303,12 +307,10 @@ internal fun RunnerQueueFacets.validateQueueFacets(alias: String) = validateRunn
 internal fun validateRunnerQueueFacets(
     owner: String,
     tags: List<String>,
-    concurrency: Int?,
+    concurrency: Int,
 ) {
     RunnerTagValidation.validate(owner, tags)
-    concurrency?.let {
-        require(it >= 1) { "$owner: concurrency must be >= 1 when set; got $it" }
-    }
+    require(concurrency >= 1) { "$owner: concurrency must be >= 1; got $concurrency" }
 }
 
 /** Shape rules shared by every runner that declares extraUploads (ADR-0042). */

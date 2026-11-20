@@ -218,10 +218,8 @@ class ClaudeHarness(
         )
 
     /**
-     * The reason for an `is_error` turn, from the CLI's own diagnosis fields only. The `result`
-     * text is an error string the CLI may echo from an API response, so it never enters the
-     * reason, the step error or a log line (§12 rule 7); the fields are CLI-written, so the
-     * reason is stripped of control characters and capped like any stored one. See ADR-0047.
+     * The reason for an `is_error` turn, from the CLI's diagnosis fields only: the `result` text may echo an API
+     * response, so it never reaches the reason, step error or a log (ADR-0047 rule 7). The reason is sanitized and capped.
      */
     private fun isErrorReason(r: ClaudeEvent.Result): String {
         val details =

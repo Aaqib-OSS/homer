@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-08-26
+amended: 2026-11-20
 deciders: Lukáš Vlk
 ---
 # ADR-0054: Kubernetes `workdir` uploads without its tar entry
@@ -142,3 +143,19 @@ The other four options are rejected:
   entirely, the former only skips one directory's own tar entry).
 - Extends [ADR-0043](0043-k8s-sync-workspaces.md) (sync-mode kubernetes
   workspaces).
+
+## Amendment (2026-11-20): what the `workdir` subPath mount achieves
+
+Two statements above are corrected. The decision stands.
+
+- **The cited upstream issue does not concern subPath.** kubernetes/kubernetes#81089 is "Allow
+  setting ownership on mounted secrets" and says nothing about subPath. No upstream issue is known
+  that records when the kubelet creates a subPath directory. The behaviour is the kubelet's own:
+  when the container starts, `makeMounts` creates a missing subPath directory with the mode of the
+  volume root, which is set up, `fsGroup` included, before any container starts. The observation
+  above, owner `root:<fsGroup>` and the volume root's mode, stands.
+- **The mount is not what makes the working directory exist.** runc creates a missing working
+  directory itself, after the mounts and before it switches to the container's user, with
+  `MkdirAll` at mode `0755`, so it would be owned by root. What the second mount gives is the
+  directory's mode: the kubelet copies the volume root's (observed `2777` above), so the pod's
+  non-root user can write into its working directory, the `workdir` content upload included.

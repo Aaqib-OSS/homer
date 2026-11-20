@@ -32,14 +32,14 @@ object TarStreams {
     // Extraction bound where the caller configures none; matches `maxTransferBytes`'s default.
     const val DEFAULT_MAX_EXTRACTED_BYTES: Long = 1L * 1024 * 1024 * 1024
 
-    /** Directory nesting an upload walk descends, here and in the ssh upload (§12 rule 4). */
+    /** Directory nesting an upload walk descends, here and in the ssh upload (ADR-0047 rule 4, CWE-674). */
     internal const val MAX_UPLOAD_DEPTH = 64
 
     /** Octal `0100`, the owner-execute mode bit. */
     internal const val OWNER_EXECUTE_BIT = 64
 
     // Realpath of an operator-configured pack source, so [pack]'s symlink refusal does not break
-    // a legitimate link; never call on an agent-written path (§12 rule 2). See ADR-0042.
+    // a legitimate link; never call on an agent-written path (ADR-0047 rule 2, CWE-59). See ADR-0042.
     fun resolvedPackSource(local: Path): Path = runCatching { local.toRealPath() }.getOrDefault(local)
 
     // Writes [local] as a gzip'd tar to [out] and closes [out]; a directory contributes its
@@ -52,7 +52,7 @@ object TarStreams {
         singleFileEntryName: String? = null,
     ) {
         // A symlink at the source itself is checked nowhere else — isDirectory()/isRegularFile()
-        // below follow it and addFile would stream the target's bytes (§12 rule 2).
+        // below follow it and addFile would stream the target's bytes (ADR-0047 rule 2, CWE-59).
         if (Files.isSymbolicLink(local)) {
             throw SecurityException("pack source '$local' is a symlink")
         }
@@ -77,7 +77,7 @@ object TarStreams {
     }
 
     // Extracts a gzip'd tar from [input] into [local]; [maxDecompressedBytes] bounds decompressed size
-    // (§12 rule 4). A refused entry leaves only a partial tree, never anything outside [local].
+    // (ADR-0047 rule 4, CWE-409). A refused entry leaves only a partial tree, never anything outside [local].
     fun extract(
         input: InputStream,
         local: Path,
@@ -112,8 +112,8 @@ object TarStreams {
             .forEach { Files.deleteIfExists(it) }
     }
 
-    // [visited]/[depth] bound the walk: a symlink resolving back inside the upload root would loop
-    // forever (§12 rule 4). A real directory is always packed; only a symlink to a visited one skips.
+    // [visited]/[depth] bound the walk: a symlink resolving back inside the upload root would loop forever
+    // (ADR-0047 rule 4, CWE-835). A real directory is always packed; only a symlink to a visited one skips.
     private fun addDirContents(
         out: TarArchiveOutputStream,
         dir: Path,
@@ -202,8 +202,8 @@ object TarStreams {
         root: Path,
     ): Path? = runCatching { path.toRealPath() }.getOrNull()?.takeIf { it.startsWith(root.toRealPath()) }
 
-    // Opens [file] NOFOLLOW_LINKS before reading size or bytes, so one pinned handle answers both and
-    // a swapped-in symlink is refused (§12 rule 2). An ancestor-dir swap residual is accepted (ADR-0047).
+    // Opens [file] NOFOLLOW_LINKS before reading size or bytes, so one pinned handle answers both and a swapped-in
+    // symlink is refused (ADR-0047 rule 2, CWE-367). An ancestor-dir swap residual is accepted (ADR-0047).
     private fun addFile(
         out: TarArchiveOutputStream,
         file: Path,
@@ -306,7 +306,7 @@ object TarStreams {
 }
 
 // Fails with [RunnerTransferTooLargeException] once more than [limit] bytes were read; one copy
-// for both sides of a transfer (§12 rule 4).
+// for both sides of a transfer (ADR-0047 rule 4, CWE-400).
 internal class BoundedInputStream(
     private val inner: InputStream,
     private val limit: Long,

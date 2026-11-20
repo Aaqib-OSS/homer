@@ -5,10 +5,8 @@ import homer.app.runners.queue.ClaimConsumerInfo
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * One registered pull-mode runner instance: a claim-queue consumer whose permits
- * are its declared `concurrency`. It claims through the `claim` long-poll, so
- * [matches] also refuses while saturated or draining — the queue's `take` must
- * never hand it a request it cannot serve. See ADR-0066.
+ * One registered pull-mode instance: a claim-queue consumer whose permits are its declared `concurrency` (ADR-0066).
+ * [matches] also refuses while saturated or draining, so the queue's `take` never hands it a request it cannot serve.
  */
 class ExternalRunnerInstance(
     val id: String,
@@ -21,13 +19,11 @@ class ExternalRunnerInstance(
     /** The name the request declared, null when it sent none ([name] then falls back to an id prefix). */
     val declaredName: String? = null,
 ) : ClaimConsumerInfo {
-    override val concurrency: Int? get() = declaredConcurrency
+    override val concurrency: Int get() = declaredConcurrency
 
     /**
-     * The instance's affinity identity: its declared name qualified with the domain alias, so a
-     * preference can never name an instance of another domain. Null for a nameless instance —
-     * an id prefix is not a stable identity across reconnects, so it is never preferred and
-     * never recorded. See ADR-0099.
+     * The affinity identity: the declared name qualified with the domain alias, so a preference never names another
+     * domain's instance. Null for a nameless instance, whose id prefix is not stable across reconnects (ADR-0099).
      */
     override val affinityInstance: String? get() = declaredName?.let { "$alias:$it" }
 
@@ -45,7 +41,7 @@ class ExternalRunnerInstance(
     /**
      * At most `concurrency` claim polls may be open at once, counting live sessions
      * too — an open poll can turn into one more session, so a poll and a session
-     * both hold a share of the same budget (§12 rule 4).
+     * both hold a share of the same budget (ADR-0047 rule 4, CWE-770).
      */
     fun tryAcquirePoll(): Boolean {
         while (true) {

@@ -239,8 +239,15 @@ extraUploads:
     }
 
     @Test
-    fun `sftpTransferTimeoutSeconds null disables the bound`() {
-        appConfig(ssh(emptyList()).copy(sftpTransferTimeoutSeconds = null))
+    fun `an explicit null sftpTransferTimeoutSeconds is rejected`() {
+        val ex =
+            assertFailsWith<com.charleskorn.kaml.YamlException> {
+                Yaml.default.decodeFromString(
+                    RunnerConfig.serializer(),
+                    "!<ssh>\nhost: h\nuser: u\nauth: !<agent> {}\nremoteWorkspaceRoot: /ws\nsftpTransferTimeoutSeconds: null",
+                )
+            }
+        assertTrue(ex.message.contains("sftpTransferTimeoutSeconds"), ex.message)
     }
 
     @Test

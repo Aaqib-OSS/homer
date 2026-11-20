@@ -15,10 +15,8 @@ import java.nio.file.Path
 import kotlin.io.path.bufferedReader
 
 /**
- * Reads what one [LlmHarnessExecutor] attempt wrote: its stdout strictly, to judge an exit-0
- * attempt fail-closed, or leniently, to look for a configured terminal stop on a non-zero exit
- * and for the telemetry hand-off of any other outcome; and records the stdout filter's drops on
- * its stderr. Logs to the executor's [logger].
+ * Reads one [LlmHarnessExecutor] attempt's stdout: strictly to judge exit 0 fail-closed, leniently for a configured
+ * terminal stop on a non-zero exit and for the telemetry hand-off. Records the stdout filter's drops on its stderr.
  */
 internal class LlmAttemptOutput<C>(
     private val harness: LlmHarness<C>,
@@ -33,9 +31,8 @@ internal class LlmAttemptOutput<C>(
         attemptIndex: Int,
         span: Span,
     ): RetryOutcome {
-        // Fail-closed: an exit-0 stdout that cannot be read as the harness's event
-        // stream must not be marked succeeded — downstream env mappers would consume
-        // output nobody can interpret.
+        // Fail-closed: an exit-0 stdout that is not the harness's event stream never succeeds, or env
+        // mappers would consume output nobody can interpret (ADR-0061).
         val stream =
             try {
                 readStream(attemptOut)
@@ -58,11 +55,8 @@ internal class LlmAttemptOutput<C>(
     }
 
     /**
-     * What a non-zero attempt means. The CLI can end a turn-cap stop on a non-zero exit code, so a
-     * harness with a terminal stop configured gets its stream read (leniently, and bounded) for the
-     * same [Inspection.Terminal] an exit-0 attempt yields; everything else stays the failure the
-     * exit code already is — including a stream that cannot be read or holds no usable result.
-     * Never malformed: a non-zero exit is judged by its exit code. See ADR-0070.
+     * What a non-zero attempt means: a harness with a terminal stop configured has its stream read, leniently and
+     * bounded, for an [Inspection.Terminal]; anything else stays the exit's own failure, never malformed (ADR-0070).
      */
     fun nonZeroOutcome(
         command: C,
@@ -74,11 +68,8 @@ internal class LlmAttemptOutput<C>(
         // Nothing to look for without an opt-in cap: the exit code is the whole verdict, and the
         // stream is left to the telemetry hand-off's own lenient read.
         if (!harness.terminalStopConfigured(command)) return RetryOutcome.OtherFailure(result.copy(llmAccounting = accounting))
-        // The stdout of a non-zero exit is agent-written and may be unreadable, truncated or
-        // oversized (§12 rule 2), and inspecting it can throw where an adapter checks something
-        // only a success carries (Claude's version pin). Neither turns the exit into another
-        // failure: only a terminal verdict is taken from it. The read is kept on the failure
-        // either way, so the telemetry hand-off never parses the file a second time.
+        // Agent-written (ADR-0047 rule 2): a failed read or a throwing inspect (Claude's version pin) keeps the
+        // exit's failure, carrying any read made so the telemetry hand-off never parses the file twice.
         val stream =
             runCatching { readLeniently(attemptOut, span) }.getOrNull()
                 ?: return RetryOutcome.OtherFailure(result.copy(llmAccounting = accounting))
@@ -118,10 +109,8 @@ internal class LlmAttemptOutput<C>(
         }
 
     /**
-     * The attempt's stdout as a stream for telemetry, skipping lines it cannot parse instead of
-     * failing on them. Bounded on bytes read and events kept (denial_of_service / CWE-400): the
-     * shell's `maxOutputBytes` bounds what the CLI could write, never what this parse keeps.
-     * Every skipped line is counted into `malformed`, and a tripped bound is put on the span.
+     * The attempt's stdout for telemetry, counting each unparseable line into `malformed`. Bounded on bytes read and
+     * events kept, as `maxOutputBytes` bounds only what the CLI wrote (CWE-400); a tripped bound marks the span.
      */
     fun readLeniently(
         stdOut: Path,
@@ -166,9 +155,8 @@ internal class LlmAttemptOutput<C>(
     }
 
     private companion object {
-        // CWE-400: the lenient hand-off's own bounds, comfortably above any real CLI stream. The
-        // event cap stops the parse on events kept; the byte cap stops the read, so a flood of
-        // unparseable lines cannot outrun the event cap. See ADR-0047 §12 rule 4.
+        // CWE-400: the hand-off's own bounds, above any real CLI stream. The byte cap stops the read, so
+        // unparseable lines, which the event cap does not count, cannot outrun it (ADR-0047 rule 4).
         const val HANDOFF_PARSE_MAX_EVENTS = 50_000
         const val HANDOFF_PARSE_MAX_BYTES = 32L * 1024 * 1024
     }

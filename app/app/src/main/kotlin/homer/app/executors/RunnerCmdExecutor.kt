@@ -39,12 +39,8 @@ class RunnerCmdExecutor(
         span: Span,
     ): CommandResult {
         val runner = runners.forAlias(command.runner)
-        // Two redactors, never one merged env map: Kotlin `+` keeps only the
-        // right-hand value for a shared key, so a runner `env` name colliding with a
-        // workspace env name would silently drop one side's credential from the
-        // redaction needles. The colliding entries are distinct operator-declared
-        // credentials (each side sourced its own `@SYSENV:`), so both must screen.
-        // CWE-200
+        // Two redactors, never one merged map: `+` keeps one value per key, so a runner `env` name
+        // colliding with a workspace one would drop that side's credential from the needles (CWE-200).
         val redactor =
             SecretRedactor.from(context.workspace.config.env, context.workspace.config.secretEnvNames) +
                 SecretRedactor.from(runner.runnerEnv, runner.sysEnvBackedEnvNames)
@@ -89,18 +85,12 @@ class RunnerCmdExecutor(
     ): CommandResult {
         val session = target.session
         val overrides = session.createWorkspace()
-        // Local copy for the target's check/execute only — never merged
-        // into the agent env (would repoint HMR_* for later local commands).
-        // runner.runnerEnv carries the TARGET runner's config.env (e.g. PATH on
-        // a macOS ssh box); without it an ssh target would only receive the
-        // requesting process's workspace env, which has no runner-specific values.
-        // session.env holds backend-derived facts (HMR_API_URL) that override it.
+        // The target's own copy, never merged into the agent env (ADR-0034); the target runner's `env`,
+        // then the session's backend facts, layer over the forwarded env (ADR-0065).
         val targetEnv = target.forwardedEnv + target.runner.runnerEnv + session.env + overrides
 
-        // Extras before checks: checks may source the uploaded tooling, and
-        // the env override from createWorkspace must be truthful whenever
-        // the session env is used. Deliberate exception to ADR-0034's
-        // no-transfer-before-checks — see ADR-0042.
+        // Extras go before the checks, which may source them: ADR-0042 records this exception to
+        // ADR-0034's no transfer before checks.
         uploadExtras(command, context, session)
 
         val failedCheck = runChecks(command, context, session, targetEnv)
@@ -126,12 +116,8 @@ class RunnerCmdExecutor(
     }
 
     /**
-     * The workspace env the target receives. Allowlisted host-env keys still carrying
-     * the host value Homer layered them with must not reach a remote target — the same
-     * CWE-200-adjacent rule that keeps them out of a remote run's composed env
-     * (ADR-0065): they describe Homer's host, not the target's. Keys an operator re-set
-     * via globalEnv/runnerEnv/agentEnv are absent from the set and survive. A local
-     * target keeps them: it runs on Homer's own host, where they are correct.
+     * The workspace env the target receives: a remote target loses the allowlisted host-env keys still carrying
+     * Homer's host value, while a key an operator re-set survives. A local target keeps them all (ADR-0065).
      */
     private fun forwardedEnv(
         runner: Runner,
@@ -171,8 +157,8 @@ class RunnerCmdExecutor(
         }
     }
 
-    /** Best-effort teardown: cleans the target workspace, unregisters and closes [session]. */
-    @Suppress("SuspendFunSwallowedCancellation") // best-effort, and only ever runs under NonCancellable
+    /** Cleans the target workspace, unregisters and closes [session]; a failure is logged or dropped (ADR-0034). */
+    @Suppress("SuspendFunSwallowedCancellation") // teardown failures never fail the step (ADR-0034); runs under NonCancellable
     private suspend fun releaseSession(
         command: Command.RunnerCmd,
         context: ExecutionContext,
@@ -222,9 +208,8 @@ class RunnerCmdExecutor(
                     check,
                     res.exitCode,
                 )
-                // Returned (not thrown) so continueIfFail/finishExitCode
-                // apply uniformly — AgentExecutor rethrows executor
-                // exceptions regardless of continueIfFail.
+                // Returned, not thrown: AgentExecutor rethrows an executor exception whatever
+                // continueIfFail says (ADR-0034).
                 return res
             }
         }
@@ -254,10 +239,8 @@ class RunnerCmdExecutor(
     }
 
     /**
-     * Resolves a `sync*` path under the workspace and asserts it stays inside it.
-     * The load-time check on these paths is only lexical (no `..`, not absolute),
-     * so a symlink written into the workspace by an earlier command could redirect
-     * the resolved path at host files; `PathSafety` catches that via realpath.
+     * Resolves a `sync*` path under [workdir], refusing one whose realpath leaves it: the load-time check is only
+     * lexical, and an earlier step can plant a symlink there (CWE-59, ADR-0047 rule 2).
      */
     private fun containedLocalPath(
         workdir: Path,

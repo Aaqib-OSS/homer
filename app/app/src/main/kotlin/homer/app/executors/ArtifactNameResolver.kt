@@ -7,12 +7,9 @@ import homer.app.infra.TextCompiler
 import java.nio.file.Path
 
 /**
- * Renders the per-command, per-attempt artifact names from an agent's `artifactNameTemplate`,
- * validated at the point of use — fail closed (root §12): the env is attacker-influenced and
- * the rendered stem becomes a server-local file name; the exception names the template, never
- * the stem (it can embed secrets). [secretEnvNames] is excluded from the render map and
- * [secretRedactor] rejects any stem it would alter; callers must raise its needle-length floor
- * (`SecretRedactor.ARTIFACT_STEM_MIN_NEEDLE_LENGTH`) — a shorter one matches nearly any stem and hard-fails every command.
+ * Renders an agent's `artifactNameTemplate` into per-attempt artifact paths, validated fail-closed at the point of use
+ * (ADR-0047 rule 2, CWE-22); errors name the template, never the stem. [secretEnvNames] stay out of the render, and a stem
+ * [secretRedactor] would alter is refused: build it with `SecretRedactor.ARTIFACT_STEM_MIN_NEEDLE_LENGTH`.
  */
 class ArtifactNameResolver(
     private val template: String,
@@ -61,10 +58,8 @@ class ArtifactNameResolver(
                 command = template,
             )
         }
-        // Defense in depth for DERIVED secrets (e.g. a resultEnvParam-captured value
-        // copied into a non-secret-classified var): reject any stem the run's
-        // SecretRedactor would alter, even though it passed the syntax check above. A
-        // distinct message helps operators diagnose this case without naming the value.
+        // A derived secret (a captured value copied into a non-secret var) escapes [secretEnvNames]:
+        // refuse any stem the redactor would alter, with a message that names no value (CWE-200).
         if (secretRedactor.redact(stem) != stem) {
             throw CommandExecutionException(
                 message = "artifactNameTemplate '$template' rendered a name matching a secret value",

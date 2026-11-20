@@ -14,30 +14,26 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Claim-queue consumer for one configured runner (`local`, `ssh`, `kubernetes`).
- * Holds `concurrency` permits (null = unbounded); takes the oldest matching
- * request only when it holds a free permit; opens the real session in a child
- * coroutine so a slow backend (pod start) never serialises other claims. The
- * permit is released when the run closes the session. See ADR-0066.
+ * Claim-queue consumer for one configured runner (ADR-0066): takes the oldest matching request only with a free
+ * `concurrency` permit and opens its session in a child coroutine, so a slow backend never serialises other claims.
+ * The permit is freed when the run closes the session.
  */
 class StaticRunnerConsumer(
     private val runner: Runner,
     override val tags: Set<String>,
-    override val concurrency: Int?,
+    override val concurrency: Int,
     private val queue: RunnerClaimQueue,
 ) : ClaimConsumerInfo {
     init {
-        require(concurrency == null || concurrency >= 1) { "concurrency must be >= 1 when set; got $concurrency" }
+        require(concurrency >= 1) { "concurrency must be >= 1; got $concurrency" }
     }
 
     override val alias: String get() = runner.alias
 
-    // A static runner is its own single instance: `local`/`ssh` are one machine, and a
-    // `kubernetes` preference resolves to the only consumer that would have served the run
-    // anyway, so affinity is a no-op there with no per-kind branch. See ADR-0099.
+    // A static runner is its own single instance, so affinity needs no per-kind branch (ADR-0099).
     override val affinityInstance: String get() = runner.alias
 
-    private val permits: Semaphore? = concurrency?.let { Semaphore(it) }
+    private val permits = Semaphore(concurrency)
     private val inUseCount = AtomicInteger(0)
 
     override val inUse: Int get() = inUseCount.get()
@@ -49,12 +45,12 @@ class StaticRunnerConsumer(
         val job =
             scope.launch {
                 while (isActive) {
-                    permits?.acquire()
+                    permits.acquire()
                     val request =
                         try {
                             queue.take(this@StaticRunnerConsumer)
                         } catch (e: CancellationException) {
-                            permits?.release()
+                            permits.release()
                             throw e
                         }
                     inUseCount.incrementAndGet()
@@ -76,7 +72,7 @@ class StaticRunnerConsumer(
         fun releaseOnce() {
             if (released.compareAndSet(false, true)) {
                 inUseCount.decrementAndGet()
-                permits?.release()
+                permits.release()
             }
         }
         val session =

@@ -3,7 +3,7 @@ status: accepted
 date: 2026-10-27
 deciders: Lukáš Vlk
 consulted: ADR-0020, ADR-0047, ADR-0052, ADR-0058, ADR-0066, ADR-0077, ADR-0101
-amended: 2026-11-12
+amended: 2026-11-12, 2026-11-20
 ---
 
 # ADR-0098: The stored pre-start failure reason is a fixed-vocabulary sentence
@@ -125,3 +125,11 @@ branch and `ProcessRepository.setFailureReason` (schema v30 in the
 schema-version history). The runner alias rule is ADR-0077; the holder-id
 visibility rule is ADR-0058's linkage applied to a second principal-visible
 field.
+
+## Amendment (2026-11-20): the redactor is built with the run
+
+The redactor that screens the stored reason is built when the `Process` is constructed, from the
+agent's env and the run's inputs, not in the failure path. `ProcessExecutor`'s failure path has no
+workspace config: the config is local to `Process.execute`. Rebuilding it there is no way out
+either, because the one mapped cause raised while the config is built, an unresolved lock-key
+placeholder, would throw again.

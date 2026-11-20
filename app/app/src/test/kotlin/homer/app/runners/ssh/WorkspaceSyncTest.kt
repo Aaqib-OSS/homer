@@ -32,6 +32,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
+private val TEST_TRANSFER_TIMEOUT = 60.seconds
+
 class WorkspaceSyncTest {
     private lateinit var server: EmbeddedSshServer
     private lateinit var client: SshClient
@@ -41,7 +43,7 @@ class WorkspaceSyncTest {
     fun setup() {
         server = EmbeddedSshServer().also { it.start() }
         client = SshClient.setUpDefaultClient().also { it.start() }
-        sync = WorkspaceSync(server.newClientSession(client))
+        sync = WorkspaceSync(server.newClientSession(client), TEST_TRANSFER_TIMEOUT)
     }
 
     @AfterEach
@@ -532,6 +534,7 @@ class WorkspaceSyncTest {
         target: Path,
     ) = WorkspaceSync(
         server.newClientSession(client),
+        TEST_TRANSFER_TIMEOUT,
         beforeLocalOpen = { opened ->
             if (opened.toAbsolutePath().normalize() == victim.toAbsolutePath().normalize()) {
                 Files.delete(victim)
@@ -1075,24 +1078,6 @@ class WorkspaceSyncTest {
         }
 
     @Test
-    fun `null_timeout_leaves_the_release_unbounded`() =
-        runBlocking {
-            val release = CountDownLatch(1)
-            val session = server.newClientSession(client)
-            val stalling = mockk<SftpClient>(relaxed = true)
-            every { stalling.close() } answers { release.await() }
-            val unbounded = WorkspaceSync(session, transferTimeout = null) { stalling }
-
-            // No watchdog: the stalled release is not shed and the session stays open.
-            val stalled = launch(Dispatchers.IO) { unbounded.mkdirs("/hdh9-null") }
-            delay(1.seconds)
-            assertTrue(stalled.isActive, "a null transferTimeout must keep meaning no watchdog, close included")
-            assertFalse(session.isClosed())
-            release.countDown()
-            stalled.join()
-        }
-
-    @Test
     fun `cancelled_caller_still_sheds_a_stalled_release`() =
         runBlocking {
             val session = server.newClientSession(client)
@@ -1138,7 +1123,7 @@ class WorkspaceSyncTest {
         val remoteDir = server.rootDir.resolve("big-dir").createDirectories()
         repeat(4) { i -> remoteDir.resolve("f$i.txt").writeText("data") }
         // cap of 3 is below the 4 actual files (plus the . and .. entries the server returns)
-        val capped = WorkspaceSync(server.newClientSession(client), maxDirEntries = 3)
+        val capped = WorkspaceSync(server.newClientSession(client), TEST_TRANSFER_TIMEOUT, maxDirEntries = 3)
 
         assertThrows<IOException> {
             capped.downloadDir(remoteDir.toString(), local.resolve("out"), DownloadMode.OVERWRITE)

@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-08-26
+amended: 2026-11-20
 deciders: Lukáš Vlk
 ---
 # ADR-0055: `workdir` sync-down is a mirror, not an overlay
@@ -121,3 +122,13 @@ The other three options are rejected:
   [ADR-0033](0033-runner-lifecycle-primitives.md).
 - Backend mechanics: [ADR-0043](0043-k8s-sync-workspaces.md) (kubernetes,
   tar-over-exec) and [ADR-0032](0032-ssh-runner-backend.md) (ssh, SFTP).
+
+## Amendment (2026-11-20): the ssh download walk checks realpaths but stays lexical
+
+`WorkspaceSync.downloadDirInto` checks each entry twice. `containedChild` refuses a name that is
+not a plain single segment, and `PathSafety.assertContained` checks the realpath, so a symlink
+already in the destination cannot steer a write out of the workspace; symlinks inside it stay
+allowed. The realpath is only checked, never used. The recursion, the writes and the materialized
+set keep the lexical path: a realpath child compared with the lexical root one level down would
+reject every deep download on a host whose workspace path has a symlinked prefix (macOS `/var`),
+and the lexical prune walk must find the same paths the download recorded.

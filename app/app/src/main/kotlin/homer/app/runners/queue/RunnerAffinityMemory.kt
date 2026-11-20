@@ -1,12 +1,8 @@
 package homer.app.runners.queue
 
 /**
- * In-memory `(flow root, group) → runner instance` map: which instance last served a run of that
- * affinity key. A run whose key has an entry prefers that instance in the claim queue; an unknown
- * key records the instance that claims it. Bounded in entries (a full map evicts the least
- * recently used one, it never grows or rejects) and in age (an entry past the TTL is not used).
- * Deliberately not persisted: a restart costs the next run of a key one cold start. The bounds are
- * constants, not config. See ADR-0099, ADR-0047 rules 4–5.
+ * In-memory `(flow root, group) → instance` map of which instance last served that key, read to prefer it in the claim
+ * queue (ADR-0099). Bounded in entries (a full map evicts the least recently used) and in age (past the TTL, unused).
  */
 class RunnerAffinityMemory(
     private val maxEntries: Int = MAX_ENTRIES,
@@ -73,12 +69,7 @@ class RunnerAffinityMemory(
         /** Entries kept across every flow and group together. */
         const val MAX_ENTRIES = 1024
 
-        /**
-         * How long a recorded preference stays usable. Long enough to cover a
-         * flow's build/fix/verify rounds (a flow parks on human gates and CI
-         * waits), short enough that an instance reused for something else ages
-         * out. A stale entry only costs the next run a fallback.
-         */
+        /** How long a recorded preference stays usable (ADR-0099, amendment of 2026-11-20). */
         const val TTL_MS = 6 * 60 * 60 * 1000L
     }
 }

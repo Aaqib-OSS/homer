@@ -16,11 +16,9 @@ import org.slf4j.Logger
 import java.nio.file.Path
 
 /**
- * Charges one attempt with what [pricing] resolves: `addCost` accumulates onto the process
- * record (status API), `recordCost` charges the cap windows; both take the RESOLVED figure so
- * budgets follow the operator's spend source. Inline when the lookup is skipped or not
- * configured; otherwise the attempt gets the harness figure at once and the lookup settles on
- * [settlementScope], which outlives the run. See ADR-0061, ADR-0089.
+ * Charges one attempt what [pricing] resolves, onto the process record and the cap windows alike (ADR-0061). Inline
+ * when no lookup runs; otherwise the attempt gets the harness figure at once and the lookup settles on
+ * [settlementScope], which outlives the run (ADR-0089).
  */
 internal class LlmAttemptAccounting(
     private val pricing: LlmAttemptPricing,
@@ -36,10 +34,8 @@ internal class LlmAttemptAccounting(
     )
 
     /**
-     * Accounts a finished attempt. With a session lookup configured the attempt hands back the
-     * harness figure at once, marked pending, and [settle] replaces it in the background so the
-     * step does not wait out the resolver's poll schedule; otherwise it is priced and charged
-     * inline by [account], and a cancellation during that escapes to the caller.
+     * Accounts a finished attempt: with a session lookup, the pending harness figure at once and a background [settle]
+     * that replaces it (ADR-0089); otherwise [account] inline, where a cancellation escapes to the caller.
      */
     suspend fun finished(
         stdoutFile: Path,
@@ -60,12 +56,9 @@ internal class LlmAttemptAccounting(
     }
 
     /**
-     * Prices and charges one attempt inline, for every exit code (a no-op charge for 0.0).
-     * [allowRemoteLookup] false skips [LlmCostResolver.resolve] and charges the CLI figure
-     * directly — for a genuinely cancelled caller: the spend is real and still accounted, but a
-     * cancelled run must not hold the NonCancellable block open for a bounded-but-real remote
-     * HTTP call. [startedAtMs]/[endedAtMs] are the attempt's own wall-clock window; the resolver
-     * prices a request-window endpoint from the requests inside it. See ADR-0061.
+     * Prices and charges one attempt inline, whatever its exit code. [allowRemoteLookup] false skips
+     * [LlmCostResolver.resolve] for a cancelled caller, charging the CLI figure; [startedAtMs]/[endedAtMs] are the
+     * attempt's wall-clock window, which a request-window endpoint is priced from (ADR-0061).
      */
     suspend fun account(
         stdoutFile: Path,
@@ -87,10 +80,8 @@ internal class LlmAttemptAccounting(
     }
 
     /**
-     * The background half of [finished]: prices [scan] through the resolver, charges it once and
-     * swaps [pending] for the settled figure on the process record. A cancelled settlement (the
-     * scope shutting down mid-poll) still charges the harness figure, since the spend is real;
-     * any other failure leaves the attempt on its harness figure, logged.
+     * The background half of [finished]: prices [scan], charges it once and swaps [pending] for the settled figure. A
+     * cancelled or failed lookup still charges the harness figure; any other failure keeps [pending], logged (ADR-0089).
      */
     @Suppress("SuspendFunSwallowedCancellation") // charges under NonCancellable, as the inline path does
     private suspend fun settle(

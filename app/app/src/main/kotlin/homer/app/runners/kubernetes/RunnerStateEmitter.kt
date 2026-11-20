@@ -8,9 +8,8 @@ import homer.app.models.RunnerState
 import org.slf4j.LoggerFactory
 
 /**
- * One session's runner-state transitions, written to [sink] for [processId]. Each write rebuilds the
- * state when the sink holds none, keeping [jobName] (null in Pod mode). Best-effort: a failed write is
- * logged and dropped.
+ * One session's runner-state transitions, written to [sink] for [processId]. Each write rebuilds the state when the sink
+ * holds none, keeping [jobName] (null in Pod mode). A failed write is logged and dropped.
  */
 internal class RunnerStateEmitter(
     private val alias: String,
@@ -86,7 +85,7 @@ internal class RunnerStateEmitter(
         jobName = jobName,
     )
 
-    @Suppress("SuspendFunSwallowedCancellation") // best-effort status write; a kill surfaces at the pod wait's delay
+    @Suppress("SuspendFunSwallowedCancellation") // swallows only a status write; a kill surfaces at the pod wait's delay
     private suspend fun emit(update: (RunnerState?) -> RunnerState) {
         runCatching { sink.update(processId, update) }
             .onFailure { log.debug("Failed to emit runner state for pid={}: {}", processId, it.message) }

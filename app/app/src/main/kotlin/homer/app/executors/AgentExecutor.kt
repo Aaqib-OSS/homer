@@ -77,14 +77,9 @@ class AgentExecutor(
             runDeadline = session.runDeadline
             runSteps(session, runDeadline, inFlight)
         } catch (e: Throwable) {
-            // A kill is not a failure; the output-cap subclass of CancellationException is.
-            // A plain CancellationException can also arrive from a child (e.g. a runner-enforced
-            // timeout) without our own job being cancelled — detect a real kill by checking
-            // whether our coroutine is still active, not just the exception type.
             if (failsTheRun(e)) {
-                // The run's own graceful stop: a step that timed out with `onTimeout: stop`, or the
-                // backend's soft run deadline. A kill — API, MCP, reload, lock collision — never
-                // reaches it, and neither does an ordinary step failure. See ADR-0108.
+                // Only a stop trigger (`onTimeout: stop` or the soft run deadline) runs the stop phase;
+                // a kill never reaches it, and an ordinary step failure records no stop. ADR-0108.
                 inFlight.step?.let { runStopPhase(session, runDeadline, it, e) }
                 runCatching { session.markFailed() }
             }
@@ -164,9 +159,8 @@ class AgentExecutor(
 
         val (artifactNames, artifactNameFailure, stdOut, stdErr) =
             stepArtifacts(agent, textCompiler, workspace, plan.artifactIndex)
-        // Attempt-0 paths, so the console live tail (LogTailService) can follow this
-        // command as soon as it starts; LlmHarnessExecutor's retry loop updates this per
-        // attempt below.
+        // Attempt-0 paths, so the live log tail follows the command from its start; the LLM
+        // harness's retry loop updates them per attempt.
         val executionContextRedactor = SecretRedactor.from(workspace.config.env, workspace.config.secretEnvNames)
         stepRecords.setCommandArtifacts(
             processId,
@@ -182,12 +176,8 @@ class AgentExecutor(
             workspace.appendToEnv(plan.stopEnv)
         }
 
-        // Conditional execution: evaluate `when` predicate (if any) against the
-        // post-transformation env. A Skip result records its own ExecutionInfo
-        // and continues; an EvalError (like artifactNameFailure above) — including
-        // one the evaluator derived from a predicate timeout — is stored and
-        // re-thrown inside the try/catch below so it goes through the standard
-        // telemetry / ExecutionInfo path.
+        // A Skip records its own row and continues; an EvalError, like artifactNameFailure, is rethrown
+        // inside runCommand's try, so it gets the standard telemetry and row.
         val whenResult = evaluateWhen(workspace, command, session, plan.artifactIndex)
 
         if (whenResult is WhenEvaluator.Result.Skip) {
@@ -243,9 +233,8 @@ class AgentExecutor(
         var nextStart: Long? = null
         withContext(NonCancellable) {
             val endTime = Clock.System.now().epochSeconds
-            // Operator-authored text (when expression, Command.toString()) can carry
-            // a secret; it lands in ExecutionInfo.errMsg and the status API.
-            // CWE-532
+            // Operator-authored text (the `when` expression) can carry a secret, and errMsg reaches the
+            // status API. CWE-532
             val redactor = executionContext.secretRedactor()
             // A skip still hands over to the next step: its boundary sets that
             // step's currentCommand, in the same transaction as this append.
@@ -291,9 +280,8 @@ class AgentExecutor(
         var nextStart: Long? = null
         // Failure-shaped default so an Error escaping the try can't record a success-looking ExecutionInfo.
         var outcome: CommandOutcome = CommandOutcome.Failure(errMsg = null, exitCode = -1, outputTruncated = false)
-        // Null until the executor actually returns a result (e.g. an EvalError or an
-        // exception before executor.execute means the command never ran) — the finally
-        // block falls back to the attempt-0 stdOut/stdErr above in that case.
+        // Null until the executor returns: before that the command never ran, and the row falls back
+        // to the attempt-0 paths.
         var executedResult: CommandResult? = null
         // Why a graceful stop interrupted this step, decided where the step's own exception is
         // still in hand — the row is written below, before the stop phase runs. See ADR-0108.
@@ -336,12 +324,9 @@ class AgentExecutor(
     }
 
     /**
-     * The run's graceful stop: runs the agent's `onStop:` steps once, in this same session and before
-     * the teardown, when [cause] is a stop trigger — a step that timed out with `onTimeout: stop`, or
-     * the backend's soft run deadline. Records what happened and returns; the caller rethrows, so the
-     * run ends `FAILED` with its stop recorded and the remaining `commands` steps never start (the step
-     * loop was left by the throw). A stop detected between steps names the last step whose turn came
-     * and the `HMR_STOP_STEP_*` env — completed or skipped, nothing in flight. See ADR-0108.
+     * The run's graceful stop: when [cause] is a stop trigger, runs the agent's `onStop:` steps once in
+     * this session, before teardown, and records the stop. The caller rethrows, so the run ends `FAILED`
+     * and no further `commands` step starts. See ADR-0108.
      */
     @OptIn(ExperimentalTime::class)
     private suspend fun runStopPhase(
@@ -435,7 +420,10 @@ private class StepInFlight {
     var step: InterruptedStep? = null
 }
 
-/** True when [e] ends the run as a failure rather than a kill (see the catch in [AgentExecutor.execute]). */
+/**
+ * True when [e] ends the run as a failure, not a kill: a kill is a cancellation other than an output-cap
+ * trip, arriving once this coroutine is no longer active ("Status precedence rules", app/CLAUDE.md).
+ */
 private suspend fun failsTheRun(e: Throwable): Boolean =
     e !is CancellationException || e is OutputCapExceededException || currentCoroutineContext().isActive
 

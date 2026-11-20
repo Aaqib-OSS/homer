@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class RunnerConfigQueueFacetsTest {
@@ -31,13 +30,22 @@ $extra""",
         )
 
     @Test
-    fun `ssh and kubernetes default to no tags and unbounded concurrency`() {
+    fun `ssh and kubernetes default to no tags and a concurrency of 10`() {
         val s = assertIs<RunnerConfig.Ssh>(ssh(""))
         assertEquals(emptyList(), s.tags)
-        assertNull(s.concurrency)
+        assertEquals(10, s.concurrency)
         val k = assertIs<RunnerConfig.Kubernetes>(k8s(""))
         assertEquals(emptyList(), k.tags)
-        assertNull(k.concurrency)
+        assertEquals(10, k.concurrency)
+    }
+
+    @Test
+    fun `a concurrency of zero is rejected on every runner type`() {
+        val k = assertThrows<IllegalArgumentException> { RunnerConfig.Kubernetes(image = "img", concurrency = 0).validate("k8s") }
+        assertTrue(k.message!!.contains("concurrency must be >= 1"), k.message)
+        assertThrows<IllegalArgumentException> { LocalRunnerConfig(concurrency = 0) }
+        val ex = assertThrows<IllegalArgumentException> { ssh("concurrency: 0").validate("box") }
+        assertTrue(ex.message!!.contains("concurrency must be >= 1"), ex.message)
     }
 
     @Test
@@ -94,7 +102,7 @@ $extra""",
     @Test
     fun `LocalRunnerConfig validates its own tags and concurrency`() {
         assertEquals(emptyList(), LocalRunnerConfig().tags)
-        assertNull(LocalRunnerConfig().concurrency)
+        assertEquals(100, LocalRunnerConfig().concurrency)
         val ex = assertThrows<IllegalArgumentException> { LocalRunnerConfig(concurrency = 0) }
         assertTrue(ex.message!!.contains("server.localRunner"), ex.message)
         assertThrows<IllegalArgumentException> { LocalRunnerConfig(tags = listOf("no spaces")) }

@@ -118,7 +118,7 @@ class PodDiagnostics(
                 ?.sortedBy { it.lastTimestamp ?: it.eventTime ?: it.firstTimestamp }
                 .orEmpty()
 
-        /** Best-effort wrapper that never throws; turns ApiException into a stub snapshot. */
+        /** [collect] that never throws: an ApiException becomes a stub snapshot. */
         fun tryCollect(
             api: CoreV1Api,
             namespace: String,

@@ -76,7 +76,7 @@ with `server.localRunner.enabled: false` no local consumer exists and
 queued, rather than letting the claim wait out its TTL (ADR-0095). One
 `StaticRunnerConsumer` per configured runner (started once from
 `Application` on the application scope) takes the oldest matching request
-when it holds a free permit (`concurrency`; null = unbounded), opens the
+when it holds a free permit (`concurrency`), opens the
 real session in a child coroutine, and hands it back wrapped in
 `PermitReleasingSession` so the permit returns on `close()`.
 
@@ -132,16 +132,15 @@ returned `ClaimResponse`, or with `204` when the run stopped waiting). An
 `OpResult`s, tars ride the `tar` routes through `TarStreams`, and command
 output arrives as ordered chunks through `OutputSink` into the usual
 `cmd_N.out`/`cmd_N.err` files, so nothing above the session changes. A `cmd`
-result also reports one past the last `seq` each stream posted or gave up posting (a
+result reports one past the last `seq` each stream posted or gave up posting (a
 chunk abandoned after its retries is counted, so a lost one reads as a short count,
 never as a complete one), and the instance finishes posting before it reports its
 exit — or gives up on a stalled drain once the bounded wait expires, logging one
 warning naming the session, op, stream and count, and such a chunk reaches no count
-at all. A count ahead of what
-`OutputSink` received is waited on once, briefly, and then fails the step as
-*output incomplete* rather than passing truncated output off as a clean exit; a
-count the drain gave up on matches what `OutputSink` received, so the instance's
-warning is the only trace of the missing tail. A graceful stop rides two more ops
+at all. A result missing a count (runner older than 1.37.1) fails the step. A count ahead of what
+`OutputSink` holds gets one wait; if still ahead, the step fails as *output incomplete*, never
+a clean exit over truncated output; a count the drain gave up on matches, so the
+instance's warning is the only trace of the missing tail. A graceful stop rides two more ops
 (ADR-0108): `cmd` carries an optional `interruptGraceSeconds`, and `interrupt`
 stops the running command — SIGINT its process group, kill after the grace its
 `cmd` carried — with the `cmd` result reported as usual; the reference instance

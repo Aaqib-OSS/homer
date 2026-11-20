@@ -9,11 +9,8 @@ import homer.app.models.CommandResult
 import io.opentelemetry.api.trace.Span
 
 /**
- * Executor for Command.LangGraph - thin launcher for the Python `homer_langgraph`
- * runtime. Homer launches `python -m homer_langgraph run --module <module>`, passes
- * the workspace env through (so resume params arriving in env reach the runtime),
- * and injects the durable state dir resolved from server config. The Python runtime
- * owns all side effects and checkpointing. See ADR-0024.
+ * Runs `!<langgraph>` as a thin launcher of `python -m homer_langgraph run --module <module>`, with the workspace env
+ * (resume params included) and the server-resolved state dir; the runtime owns side effects and checkpoints (ADR-0024).
  */
 class LangGraphExecutor(
     private val fileOperations: FileOperations,
@@ -38,10 +35,8 @@ class LangGraphExecutor(
         val redactor = context.secretRedactor()
         span.setAttribute(SpanAttributes.INPUT_VALUE, redactor.redact(argv.joinToString(" ")))
 
-        // The state dir is authoritative: the runtime must open its checkpointer
-        // at the server's resolved directory, so it overrides any workspace value.
-        // Owner-scoped — see ADR-0046; must match what LangGraphRunStatusService
-        // resolves for this process, or status and resume open an empty store.
+        // Overrides any workspace value: the owner-scoped dir must match what LangGraphRunStatusService
+        // resolves for this run, or status and resume open an empty store (ADR-0046).
         val env =
             context.workspace.config.env +
                 (EnvConstants.LG_STATE_DIR to appConfig.resolveLangGraphStateDir(context.owner))

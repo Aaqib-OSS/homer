@@ -28,9 +28,8 @@ class CodexArgvBuilder(
             addStringOpt("--model", opts.model)
             addStringOpt("--profile", opts.profile)
 
-            // Sandboxing. `--sandbox` and the bypass flag are mutually
-            // exclusive on the CLI; sandbox wins when both are configured
-            // (same precedence rule as ClaudeCmdOptions.permissionMode).
+            // `--sandbox` and the bypass flag are mutually exclusive on the CLI; sandbox wins when both
+            // are configured, as ClaudeCmdOptions.permissionMode does.
             if (opts.sandbox != null) {
                 add("--sandbox")
                 add(opts.sandbox)

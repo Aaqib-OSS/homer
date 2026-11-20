@@ -12,12 +12,8 @@ interface Runner {
     val alias: String
 
     /**
-     * Whether commands run on a machine other than Homer's own host. The
-     * dispatcher strips `parentEnvAllowlist` host-env keys from the session
-     * env for a remote runner: those values describe Homer's host, not the
-     * remote one. The same rule applies to a cross-runner `runnerCmd` step:
-     * its target runner receives the requesting env minus the host layer.
-     * See SERVER.md, `parentEnvAllowlist`, and ADR-0065.
+     * Whether commands run on a machine other than Homer's own host. A remote runner's session env, and a
+     * cross-runner `runnerCmd` step's env on it, carry no `parentEnvAllowlist` host-env keys (ADR-0065).
      */
     val isRemote: Boolean
 
@@ -29,10 +25,8 @@ interface Runner {
     val runnerEnv: Map<String, String>
 
     /**
-     * Names of env keys in [runnerEnv] whose raw config values used `@SYSENV:`.
-     * Used by [RunnerCmdExecutor] to augment the telemetry redactor with the
-     * target runner's credentials when `command.runner` differs from the agent's
-     * own runner. See ADR-0047 §12 rule 7. // CWE-200
+     * Names of [runnerEnv] keys whose raw config values used `@SYSENV:`. [RunnerCmdExecutor] adds them to the
+     * telemetry redactor when `command.runner` is not the agent's own runner (ADR-0047 rule 7, CWE-200).
      */
     val sysEnvBackedEnvNames: Set<String>
 

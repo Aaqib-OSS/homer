@@ -33,7 +33,7 @@ class RunnerStatusReportTest {
 
     private fun sshRunnerConfig(
         tags: List<String> = emptyList(),
-        concurrency: Int? = null,
+        concurrency: Int = 10,
     ) = RunnerConfig.Ssh(
         host = "h",
         user = "u",

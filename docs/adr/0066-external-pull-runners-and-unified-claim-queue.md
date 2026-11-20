@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-09-18
+amended: 2026-11-20
 deciders: Lukáš Vlk
 ---
 # ADR-0066: External pull-mode runners and the unified claim queue
@@ -163,3 +164,73 @@ Chosen option: **A**.
   status/queue endpoints and the console `/runners` page shipped in the third.
 - Related: ADR-0003 (runners as backends), ADR-0033 (session primitives),
   ADR-0047 (threat model), ADR-0055 (mirror sync-down), ADR-0065 (remote env).
+
+## Amendment (2026-11-20): runner limits are finite by default
+
+A runner's `concurrency` no longer accepts `null`. It defaults to 10 on `ssh` and `kubernetes` runners,
+the same as an agent's default `maxParallelRuns`, and to 100 on `server.localRunner`, where parent and
+child runs (`RunAgent`, dispatch with `homer-join`) most often share a runner. The "no `concurrency` =
+unbounded" rule above no longer holds; a surplus run still waits in the claim queue and fails at the
+claim TTL. A Kubernetes run pod's `maxRunSeconds` likewise defaults to 86400 s (24 h), so every pod
+carries an `activeDeadlineSeconds`. Pull-mode instances were already bounded by their announced
+`concurrency`.
+
+The "run holds its permit for its whole duration" consequence above is now reachable under default
+settings on `ssh` and `kubernetes` runners, and on `local` only past 100 waiting parents: a `RunAgent`
+child, a dispatched child or a `runnerCmd` step that targets its parent's runner can wait for a permit
+that never frees once the parents hold them all. Operators with such chains raise `concurrency` to cover
+the deepest chain.
+
+A disabled `server.localRunner` refuses `tags` and a `concurrency` other than the default. It compares
+against the default value, because a defaulted field cannot report whether it was set. Raising the
+default therefore moves these together: `DEFAULT_LOCAL_CONCURRENCY`, the schema's default and the
+`const` in its disabled branch (with the plugin copy synced), and the `app/SERVER.md` field row and
+prose that name the number.
+
+## Amendment (2026-11-20): a `cmd` result must carry its output chunk counts
+
+A `cmd` result must carry both `stdoutChunks` and `stderrChunks`, and one without them fails the step.
+`homer-runner` older than 1.37.1, which omits them, is unsupported: this is the floor on decision (10),
+"upgraded independently". An instance that omits the counts can no longer have its output checked for
+completeness, so it is refused rather than trusted. The wire fields stay optional, because the other
+ops share `OpResult` and report no counts, which is consistent with (10); the check refuses at the
+point of use, not at decode.
+
+## Amendment (2026-11-20): bounds an external session holds itself
+
+- **`next` long-polls.** At most three `next` long-polls may be parked on one session; a fourth is
+  refused. Each holds a connection and a coroutine for a full poll window, and an instance's own
+  bound (its open claim polls plus its sessions, within its `concurrency`) covers `claim` only, so
+  without this an authenticated instance could park any number of them (§12 rule 4). Three, not
+  two: `homer-runner` keeps one dedicated poller open, and a `next` that carries a result and loses
+  the race for the following op stays parked for a full poll window while the worker already runs
+  that op. The bound covers the wait, never the result a poll carries: the route applies that
+  result before it takes a slot.
+- **The last output chunk.** A `cmd` result whose chunk counts are ahead of the output Homer holds
+  is waited on once, for a fixed 2 s; if chunks are still missing, the step fails as
+  output-incomplete. The instance reports its exit after its last post, but the two ride different
+  connections, so the last chunk can still be in flight; the wait is that flight, not a retry budget
+  (§12 rule 5). A clean result over truncated output is never returned: a `!<claude>` step would
+  then fail on a missing `result` event instead of on its real cause.
+
+## Amendment (2026-11-20): a draining instance releases its declared name
+
+ADR-0099 holds a declared instance name to one live instance per domain. A draining instance, one
+that deregistered and is finishing its last sessions, no longer holds the name, and a swept one is
+gone. So a `homer-runner` that restarts under the same name registers at once instead of being
+refused until its previous instance's drain ends.
+
+## Amendment (2026-11-20): a claimed run waits once more for its session
+
+The claim TTL bounds the wait for a claim, not the opening of a session. A run claimed when its TTL
+expires waits once more, for the same time, for its consumer to deliver the session (a pod start, an
+ssh connect). That second wait only backstops a consumer that never calls `complete()` or `fail()`,
+so a run fails after at most twice its TTL instead of hanging. A session delivered after the run
+stopped waiting is closed, by the consumer or by the queue.
+
+## Amendment (2026-11-20): a tag-filtered run's secret env names
+
+A tag-filtered run's queued alias (`tags:...`) has no entry in the workspace config factory's
+per-alias map of `@SYSENV`-backed names. `Process` therefore unions the queued runner's own
+`sysEnvBackedEnvNames`, every candidate's names, into the run's secret env names, so the
+per-runner `env` values that reach the run through `RunnerSession.env` are masked like any other.

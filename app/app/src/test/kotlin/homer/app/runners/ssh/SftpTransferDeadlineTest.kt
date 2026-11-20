@@ -19,6 +19,7 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 class SftpTransferDeadlineTest {
     private val logger = LoggerFactory.getLogger(SftpTransferDeadlineTest::class.java)
@@ -29,15 +30,6 @@ class SftpTransferDeadlineTest {
                 closed.set(true)
                 mockk(relaxed = true)
             }
-        }
-
-    @Test
-    fun `without a timeout the block runs unbounded and the session stays open`() =
-        runBlocking {
-            val deadline = SftpTransferDeadline(session, transferTimeout = null, openSftp = { mockk(relaxed = true) }, logger = logger)
-
-            assertEquals(42, deadline.withTransferTimeout { 42 })
-            verify(exactly = 0) { session.close(true) }
         }
 
     @Test
@@ -86,7 +78,7 @@ class SftpTransferDeadlineTest {
     fun `the client is released after the block, and a failed release sheds the session`() =
         runBlocking {
             val sftp = mockk<SftpClient>(relaxed = true)
-            val deadline = SftpTransferDeadline(session, transferTimeout = null, openSftp = { sftp }, logger = logger)
+            val deadline = SftpTransferDeadline(session, transferTimeout = 60.seconds, openSftp = { sftp }, logger = logger)
 
             assertEquals("done", deadline.withSftp { "done" })
             verify { sftp.close() }

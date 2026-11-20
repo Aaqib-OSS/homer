@@ -14,11 +14,8 @@ data class DroppedSubtype(
 )
 
 /**
- * Drops Claude `--output-format stream-json` lines that are `system` events with a
- * subtype in [subtypes]; everything else is kept. A line is parsed only when it
- * contains a configured subtype as a quoted string, so the common case costs one
- * substring scan. Counters are thread-safe: the pump thread writes, the executor
- * reads after the stream is closed. See ADR-0063.
+ * Drops Claude stream-json `system` lines whose subtype is in [subtypes]; a line is parsed only when it holds one
+ * as a quoted string. Counters are thread-safe: the pump thread writes, the executor reads once it closed (ADR-0063).
  */
 class ClaudeSystemEventFilter(
     subtypes: Set<String>,

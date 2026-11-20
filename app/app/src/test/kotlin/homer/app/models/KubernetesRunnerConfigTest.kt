@@ -28,10 +28,10 @@ class KubernetesRunnerConfigTest {
     }
 
     @Test
-    fun `a kubernetes runner without the new keys decodes to Pod, no limit, no TTL`() {
+    fun `a kubernetes runner without the new keys decodes to Pod, a 24 hour limit, no TTL`() {
         val k = runner()
         assertEquals(KubernetesWorkload.Pod, k.workload)
-        assertNull(k.maxRunSeconds)
+        assertEquals(86_400L, k.maxRunSeconds)
         assertNull(k.jobTtlSecondsAfterFinished)
     }
 

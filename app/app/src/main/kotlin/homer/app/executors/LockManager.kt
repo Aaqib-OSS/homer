@@ -3,10 +3,8 @@ package homer.app.executors
 import homer.app.models.OnKeyCollisionStrategy
 
 /**
- * The outcome of a lock decision: the run now holds the lock, and [displacedProcessId] names the
- * holder the collision displaced, if any. The displaced holder is killed by [LockManager.killDisplaced]
- * — not by the decision itself — so a `KILL_OLD_RUN_CURRENT` kill lands only once the new run can
- * actually run (ADR-0104).
+ * A granted lock; [displacedProcessId] names the holder the collision displaced, if any. [LockManager.killDisplaced]
+ * kills it, not the decision, so a `KILL_OLD_RUN_CURRENT` kill lands only once the new run can run (ADR-0104).
  */
 data class LockGrant(
     val displacedProcessId: Int? = null,

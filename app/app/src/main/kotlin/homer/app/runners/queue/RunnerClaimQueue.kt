@@ -19,12 +19,9 @@ import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.time.Duration
 
 /**
- * The one queue every run passes through. A run enqueues a [ClaimRequest] with a [RunnerFilter]
- * and waits; a consumer with a free permit takes the oldest request it matches. One claim TTL
- * covers waiting for a permit and waiting for a consumer to exist. Bounded by [maxPending]
- * (§12 rule 4). A new request wakes one parked consumer and is reserved for it; a run whose
- * agent declares `runnerAffinity` also carries a [ClaimAffinity] preferring the instance its
- * flow's key recorded. See ADR-0066, ADR-0096, ADR-0099.
+ * The one queue every run passes through (ADR-0066): a consumer with a free permit takes the oldest request it matches,
+ * one claim TTL covers waiting for a permit and for a consumer, and [maxPending] bounds it (ADR-0047 rule 4). A new
+ * request wakes one parked consumer, reserved for it (ADR-0096); a [ClaimAffinity] prefers the flow's last instance (ADR-0099).
  */
 class RunnerClaimQueue(
     private val maxPending: Int,
@@ -55,10 +52,8 @@ class RunnerClaimQueue(
     }
 
     /**
-     * Removes [info]'s records and wakes every waiter its active affinity preference held back, so
-     * a run queued behind the departing instance falls back at once instead of sleeping to its
-     * `waitSec` deadline. Deregister (drain) and the heartbeat sweep both leave through here.
-     * See ADR-0099.
+     * Removes [info]'s records and wakes every waiter its active affinity preference held back, so their runs fall back
+     * at once, not at the `waitSec` deadline (ADR-0099). Deregister (drain) and the heartbeat sweep both leave here.
      */
     suspend fun unregisterConsumer(info: ClaimConsumerInfo) {
         mutex.withLock {
@@ -92,10 +87,8 @@ class RunnerClaimQueue(
                 if (affinity.preferredInstance != departed || !affinity.isActive(request.enqueuedAtMs, now)) {
                     return@flatMap emptyList()
                 }
-                // preferenceBlocks() cannot be reused here: deregister flips `draining` before it
-                // calls unregisterConsumer, so the departing instance no longer counts as blocking
-                // and the scan would wake nobody on the drain path. The waiters it held back are
-                // woken by identity instead; a spurious wake only rescans and re-parks.
+                // Not preferenceBlocks(): deregister sets `draining` first, so the departing instance blocks no one there.
+                // Waking by identity is safe: a spurious wake only rescans and re-parks.
                 waiters.filter { it.consumer.matches(request.filter) && it.consumer.affinityInstance != departed }
             }
     }
@@ -138,10 +131,8 @@ class RunnerClaimQueue(
                 val (reason, publicReason) = claimExpiryReasons(consumers.toList(), filter, request.affinity, timeout)
                 throw RunnerClaimTimeoutException(timeout, filter, reason, publicReason)
             }
-            // Claimed before the deadline but the consumer is still opening the session (a
-            // pod start, an ssh connect). The TTL bounds the wait for a claim, not the open;
-            // this second wait only backstops a consumer that never calls complete()/fail(),
-            // so the run cannot hang forever. Documented in SERVER.md "Runner claim queue".
+            // Claimed, but the session is still opening: the TTL bounds the claim, not the open, and this second wait
+            // only backstops a consumer that never calls complete()/fail() (ADR-0066).
             val late = withTimeoutOrNull(timeout) { request.deferred.await() }
             if (late != null) return late
             // Make a late complete() return false so the consumer closes what it opened; if a value
@@ -159,11 +150,8 @@ class RunnerClaimQueue(
             request.tryFinish(ClaimRequest.State.CANCELLED)
             remove(request)
             request.deferred.cancel()
-            // Two interleavings once the run stops waiting: either cancel() above ran before
-            // the consumer's complete(), so the consumer sees complete() == false and closes
-            // the session itself; or complete() already delivered a value and this coroutine
-            // was cancelled while still suspended in await() (prompt-cancellation guarantee
-            // drops that value) — in that case nobody else owns the session, so close it here.
+            // Either cancel() beat complete(), and the consumer closes its own session, or prompt cancellation dropped
+            // a value complete() already delivered, which nobody else owns.
             closeIfDelivered(request)
             throw e
         }
@@ -178,11 +166,8 @@ class RunnerClaimQueue(
     }
 
     /**
-     * Take the oldest pending request [consumer] matches, suspending until one exists. On an
-     * empty/non-matching queue it parks until a request arrives — or, when a pending request only
-     * an affinity preference holds back, until that preference's deadline, so the request becomes
-     * claimable here the moment `waitSec` passes. A parked call is woken for a request reserved for
-     * it, and passes that reservation on if it leaves without claiming. See ADR-0096, ADR-0099.
+     * Takes the oldest pending request [consumer] matches, parking until one arrives or until an affinity deadline opens
+     * a held-back one (ADR-0099). A call woken for a reserved request hands it on if it leaves unclaimed (ADR-0096).
      */
     suspend fun take(consumer: ClaimConsumerInfo): ClaimRequest {
         // The waiter this call last parked; null once it has claimed. Its reservation survives a
@@ -210,11 +195,8 @@ class RunnerClaimQueue(
     }
 
     /**
-     * Claims the request [consumer] should take next, under [mutex]: a request that prefers this
-     * consumer comes before older ones it also matches, unless this consumer has already jumped
-     * [MAX_JUMPS] requests in a row — the cap keeps an unpreferred older request from starving.
-     * tryClaim() is folded into the scan so a match that loses its CAS to a concurrent
-     * expiry/cancellation (which runs outside the mutex) is skipped for the next.
+     * Claims the request [consumer] takes next, under [mutex]: one preferring it goes before older matches, up to
+     * [MAX_JUMPS] in a row (ADR-0099). A match that loses its CAS to an expiry or cancellation is skipped for the next.
      */
     private fun claimMatch(
         consumer: ClaimConsumerInfo,
@@ -237,9 +219,8 @@ class RunnerClaimQueue(
         reservedBy.remove(match)
         lastClaim.computeIfPresent(consumer) { _, _ -> ++claimSeq }
         jumps.computeIfPresent(consumer) { _, count -> if (jump && match in preferred) count + 1 else 0 }
-        // The claim is what records the instance for the key: the next run of this flow and group
-        // then prefers the instance that just served this one. A consumer with no stable identity
-        // (a nameless external instance) records nothing, so affinity never names it.
+        // The claim records the instance for the flow's key; a consumer with no identity (a nameless external
+        // instance) records nothing, so affinity never names it (ADR-0099).
         match.affinity?.let { affinity ->
             consumer.affinityInstance?.let { affinityMemory.record(affinity.rootProcessId, affinity.group, it) }
         }
@@ -319,10 +300,8 @@ class RunnerClaimQueue(
     }
 
     /**
-     * Wakes at most one parked waiter for [request]: the matching one the request prefers, else the
-     * one that claimed least recently. A waiter an affinity preference holds back is not woken — it
-     * could not claim the request, and waking it would only hand the reservation around. Returns
-     * whether a waiter was woken.
+     * Wakes at most one parked waiter for [request] and returns whether it did: the one it prefers, else the least
+     * recently claimed (ADR-0096). A waiter a preference holds back is not woken, as it could not claim the request.
      */
     private fun dispatch(request: ClaimRequest): Boolean {
         if (!request.isPending || request in reservedBy) return false
@@ -342,10 +321,8 @@ class RunnerClaimQueue(
     }
 
     /**
-     * Wakes every parked waiter [request]'s preference holds back, so each re-parks knowing the
-     * deadline: nothing else would wake them when `waitSec` passes and the request opens to them.
-     * Only ever called for a request no waiter could be woken for, and a woken waiter re-parks
-     * rather than claiming, so it cannot loop.
+     * Wakes every parked waiter [request]'s preference holds back, so each re-parks with the deadline that opens it.
+     * Called only when no waiter could be woken, and a woken waiter re-parks rather than claims, so it cannot loop.
      */
     private fun armHeldBackWaiters(request: ClaimRequest) {
         val now = clock()
@@ -387,10 +364,8 @@ class RunnerClaimQueue(
         }
 
     /**
-     * The affinity [request] carries: the flow root is read from the run's own Homer-stamped
-     * params (never from agent output or a caller), the preferred instance from the memory at
-     * submit time, and the wait is the agent's `waitSec` clamped to the claim TTL. Null when the
-     * agent declares no affinity or the run has no flow root. See ADR-0099.
+     * The affinity a request carries (ADR-0099): the flow root from the run's own Homer-stamped params, the instance
+     * from memory at submit, and `waitSec` clamped to the claim TTL. Null without a declared affinity or a flow root.
      */
     private fun claimAffinity(
         params: RunnerSessionParams,
