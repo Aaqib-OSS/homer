@@ -149,9 +149,8 @@ describe('useProcessStatusStream', () => {
 
     unmount();
 
-    // The flush the burst scheduled is cancelled by its own id, and the SSE
-    // subscription is torn down — a hidden tab would otherwise keep a frame
-    // callback alive against a closed stream.
+    // The scheduled flush is cancelled by its own id and the subscription torn
+    // down, so a hidden tab keeps no frame callback against a closed stream.
     expect(cancelAnimationFrameMock).toHaveBeenCalledWith(pendingId);
     expect(frames.size).toBe(0);
     expect(close).toHaveBeenCalledTimes(1);
@@ -269,9 +268,8 @@ describe('useProcessStatusStream', () => {
     nextFrame();
     expect(count(queryKeys.process(1))).toBe(1);
 
-    // An event with no numeric processId still flushes — the list is refreshed —
-    // but the ids the previous frame collected are spent, so nothing is refetched
-    // a second time for them.
+    // An event with no numeric processId still refreshes the list, but the ids the
+    // previous frame collected are spent and not refetched.
     emit('process.status', { status: 'WORKING' });
     nextFrame();
 
@@ -294,9 +292,8 @@ describe('useProcessStatusStream', () => {
   it('a null payload (data: null) is taken without throwing by every frame class', () => {
     const { emit, keys, count } = mountWithSpy();
 
-    // sse.ts delivers `null` whenever a frame's `data:` is the literal `null`
-    // (JSON.parse succeeds), so the `?.` guards must hold for null too, not
-    // just for a frame that merely omits the field.
+    // sse.ts delivers `null` for a literal `null` data frame, so the `?.` guards
+    // must hold for null too.
     emit('process.status', null);
     nextFrame();
     // The blanket flush still runs, but no process id rides it — the list only.

@@ -68,19 +68,14 @@ export interface ContinuationFilters {
   agentName?: string;
 }
 
-// A process that will not change status again — its view needs no further poll.
-// Undefined (no data yet) is not terminal, so polling starts immediately.
-// Reads cached state: the KILLED status useKillProcess writes optimistically
-// also stops the timer, until its onSettled invalidation refetches the server
-// state.
+// Terminal status ends polling; no data yet is not terminal. Reads cached state,
+// so useKillProcess's optimistic KILLED also stops it.
 function isTerminalStatus(status?: ProcessStatus): boolean {
   return status === 'FINISHED' || status === 'FAILED' || status === 'KILLED' || status === 'UNKNOWN';
 }
 
-// Stops once the page holds rows and every one is terminal — a page left
-// open on finished runs has nothing left to poll. An empty page is not
-// settled: it must keep polling so a run appearing while SSE was down
-// makes it into the view.
+// Stops once the page holds rows and all are terminal; an empty page keeps
+// polling so a run that appeared while SSE was down still shows up.
 function processListRefetchInterval(query: { state: { data?: ProcessListResponse } }): number | false {
   const rows = query.state.data?.processes;
   return rows && rows.length > 0 && rows.every((p) => isTerminalStatus(p.status)) ? false : 30_000;
@@ -97,10 +92,9 @@ export function useProcesses(filters?: ProcessFilters, enabled = true) {
 }
 
 /**
- * A list row's flow summary: the runs under one root. Keyed outside `['processes']` —
- * see console/CLAUDE.md, "A per-row query stays outside the blanket SSE invalidation".
- * The 30 s poll never stops: a continuation can add a child to a flow whose runs have
- * all finished, and no event the stream matches announces it.
+ * A list row's flow summary: the runs under one root, keyed outside `['processes']`
+ * (console/CLAUDE.md, "A per-row query stays outside the blanket SSE invalidation").
+ * Its 30 s poll never stops: a continuation can add a child to a finished flow unannounced.
  */
 export function useFlowSummary(rootProcessId: number, limit: number) {
   return useQuery({
@@ -294,10 +288,8 @@ export function useHeartbeat() {
   });
 }
 
-// Health Query (runner summary + last startup sweep + maintenance mode)
-// Polls every 15 s: the maintenance banner has to appear and clear on its own,
-// without a reload, and the sweep banner rides the same read. The backend serves
-// it from in-memory state, so a tick costs no database work.
+// Polls every 15 s so the maintenance and sweep banners appear and clear
+// without a reload; the backend serves it from memory.
 export function useHealth() {
   return useQuery({
     queryKey: queryKeys.health(),
@@ -308,9 +300,8 @@ export function useHealth() {
   });
 }
 
-// Costs Query — rolling-window Claude spend snapshot
-// Auto-refetch every 5 s so the page reflects new spend without
-// requiring a hard reload. Backend returns a cheap indexed SQL aggregate.
+// Refetches every 5 s so the page shows new spend without a reload; the backend
+// answers from a cheap indexed aggregate.
 export function useCosts() {
   return useQuery({
     queryKey: queryKeys.costs(),
@@ -379,9 +370,8 @@ export function useAgentFiles(agentName: string, enabled = true) {
     queryKey: queryKeys.agentFiles(agentName),
     queryFn: () => homerApi.listAgentFiles(agentName),
     enabled: enabled && !!agentName,
-    // Agent file listings change only on save/delete (which invalidate this
-    // key), so cache them like the agents list instead of refetching on every
-    // mount / route switch.
+    // Listings change only on save/delete, which invalidate this key, so cache
+    // them like the agents list.
     staleTime: appConfig.polling.agentsCacheTime,
   });
 }
@@ -480,9 +470,8 @@ export function useAgentSchema() {
   });
 }
 
-// Questions Query (operator view). SSE invalidation via question.* events is
-// the fast path; the 30 s refetch is the safety-net fallback — a dropped
-// event or dead stream must not leave a blocking question invisible.
+// SSE question.* events are the fast path; the 30 s refetch keeps a dropped
+// event or dead stream from hiding a blocking question.
 export function useQuestions(filters?: QuestionFilters, enabled = true) {
   return useQuery({
     queryKey: queryKeys.questions(filters),
@@ -574,9 +563,8 @@ export function useContinuations(filters?: ContinuationFilters, enabled = true) 
   });
 }
 
-// Pending-continuation count for the nav badge. `total` counts every matching
-// row, so the badge stays correct past the 100-row page cap. There is no
-// continuation SSE event, so the 30 s refetch is the only refresh path.
+// `total` counts every matching row, so the badge stays right past the 100-row
+// page cap; no SSE event exists, so the 30 s refetch is the only refresh.
 export function usePendingContinuationsCount() {
   return useQuery({
     queryKey: queryKeys.continuationsPendingCount(),

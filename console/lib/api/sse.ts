@@ -10,10 +10,8 @@ export interface SseHandlers {
   onOpen?: () => void;
 }
 
-// Audit P0 #7. The previous implementation returned nothing from
-// onerror, which fetch-event-source treats as "use library default
-// retry" — that retries forever with no cap and silently absorbs 401
-// after token rotation, so the UI stays stuck on the last snapshot.
+// Retries back off up to MAX_ATTEMPTS, then give up: the library default retries
+// forever and absorbs a 401 after token rotation, leaving a stale snapshot.
 const BASE_DELAY_MS = 1000;
 const MAX_DELAY_MS = 30_000;
 const MAX_ATTEMPTS = 10;
@@ -64,10 +62,8 @@ export function openStream(path: string, handlers: SseHandlers): () => void {
       handlers.onEvent(name, parsed, msg.id || undefined);
     },
     onerror(err) {
-      // A FatalSseError from onopen (401) must stop retries before
-      // surfacing to caller-supplied onError, which would otherwise
-      // see the internal FatalSseError signal instead of treating
-      // 401 as a logout event via the auth-expired bus.
+      // A FatalSseError from onopen (401) must stop retries before reaching the
+      // caller's onError, which would see the internal signal instead of a logout.
       if (err instanceof FatalSseError) throw err;
       handlers.onError?.(err);
       attempt += 1;

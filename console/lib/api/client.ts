@@ -51,9 +51,8 @@ import { extractFilename } from '@/lib/utils/download';
  */
 export const CSRF_HEADER = 'X-Homer-CSRF';
 
-// 401 from the auth probe / login means "anon" / "bad credentials",
-// not "session expired" — firing the bus there loops the expiry
-// recovery (see use-auth-expired-handler.ts latch comment).
+// 401 from the auth probe or login means anon or bad credentials, not an expired
+// session; firing the bus there loops the expiry recovery.
 const AUTH_BUS_EXEMPT = ['/api/v1/auth/me', '/api/v1/auth/login'];
 
 export interface ExecuteAgentOptions {
@@ -148,10 +147,8 @@ class HomerApiClient {
   }
 
   /**
-   * Returns `credentials: 'include'` in cookie mode so the browser attaches
-   * the active instance's session cookie cross-origin (console and API on
-   * different origins). Bearer mode doesn't need it — the credential rides in
-   * the header.
+   * `credentials: 'include'` in cookie mode, so the browser sends the active
+   * instance's session cookie cross-origin; bearer mode sends the header instead.
    */
   private credentials(): RequestCredentials | undefined {
     return activeMode() === 'cookie' ? 'include' : undefined;
@@ -203,13 +200,9 @@ class HomerApiClient {
   }
 
   /**
-   * The transport under {@link request} and {@link requestBlob}: fetches
-   * `endpoint` on the active instance with the CSRF and auth headers, the
-   * instance's credentials mode and the client timeout, then hands the
-   * response to `read`. The timeout covers the fetch only, not `read`; any
-   * failure (network, abort, or one `read` throws) surfaces as a
-   * {@link HomerApiError}. `defaults` go first, so the caller's headers can
-   * override them and the auth header overrides everything.
+   * Fetches `endpoint` on the active instance with the CSRF and auth headers and
+   * the client timeout (fetch only, not `read`), then passes the response to
+   * `read`; any failure surfaces as a {@link HomerApiError}.
    */
   private async send<T>(
     endpoint: string,
