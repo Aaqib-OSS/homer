@@ -302,22 +302,30 @@ claims a guarantee it does not give, and both branches look the mode view up the
 ## Amendment (2026-11-20): the bounded identity read keeps a link-swap residual
 
 `LocalFileOperations.readTextBounded` reads a LangGraph run's agent-written `langgraph.json`
-for the status endpoint. `LangGraphRunStatusService.identity` first refuses an artifacts
-directory that is a symlink, because a run can replace the directory it is handed at any time and
-`NOFOLLOW_LINKS` binds only the final component. `readTextBounded` then refuses a symlink, a
+for `LangGraphRunStatusService.identity`, whose two callers are `GET /processes/{id}/langgraph`,
+which reports the thread, and `POST /processes/{id}/resume`, which continues it in a new run.
+`identity` first refuses an artifacts directory that is a symlink, because a run can replace the
+directory it is handed at any time and `NOFOLLOW_LINKS` binds only the final component. `readTextBounded` then refuses a symlink, a
 hard-linked or a non-regular file, opens the file by name with `NOFOLLOW_LINKS` on the bounded,
 timed open pool, and reads at most `MAX_IDENTITY_BYTES`. A final-component symlink swapped in
-after the check fails the open.
+after the check fails the open. A FIFO swapped in bounds only the caller's wait: the blocked open
+keeps one of the pool's 8 threads, and once all 8 are held every file read through the pool fails
+at once for every caller.
 
 Three cases remain. Two are races: a hard link renamed into place between the link check and the
 open, because `NOFOLLOW_LINKS` ignores the link count, and a symlink swapped in for the artifacts
 directory between its check and the open. The third needs no race: a symlink at the run root or a
 directory above it is followed. Each makes Homer read a different regular file of at most 64 KiB
-and report its identity fields when it parses as one (CWE-59/CWE-367).
+and, when it parses as an identity, report its fields and let a resume continue its thread
+(CWE-59/CWE-367).
 
 **Accepted, not fixed**, like the tar walks above. Each case needs a local writer holding Homer's
 own UID, and that writer can already read any file the swap could lead to and write its content
-into `langgraph.json` directly, so the swap crosses no principal and gains nothing. Closing the
+into `langgraph.json` directly, so the swap crosses no principal and gains nothing. Rule 2
+already treats the file's content as attacker-chosen; a swap only changes where it comes from.
+Homer does act on the read, which this ADR counts as an escalation even for readable data, but
+both callers keep the thread id inside the run owner's checkpoint store, so neither the report
+nor the resumed run reaches another principal's checkpoints (ADR-0046). Closing the
 races needs an `fstat` on the opened handle and an `openat`-style walk, which `java.nio` does not
 expose portably. Checking the run root and above needs the configured workspace root, which an
 operator may reach through a symlink (`/tmp` on macOS), so a stored artifacts path cannot be
