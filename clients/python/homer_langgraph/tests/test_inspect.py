@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from homer_langgraph import __main__, introspection, runner
+from homer_langgraph import __main__, introspection
 
 
 def test_inspect_mermaid_contains_graph_structure():
@@ -31,7 +31,7 @@ def test_inspect_mermaid_accepts_compiled_graph(monkeypatch):
 
 
 def test_inspect_mermaid_bad_attr_raises():
-    with pytest.raises(Exception):
+    with pytest.raises(AttributeError, match="does_not_exist"):
         introspection.inspect_mermaid(
             "homer_langgraph.tests.graph_fixtures:does_not_exist"
         )

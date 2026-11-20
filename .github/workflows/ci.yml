@@ -239,10 +239,11 @@ jobs:
         with:
           python-version: '3.12'
       # The dependencies exactly as the image installs them (requirements.lock, ADR-0114), so a
-      # dependency missing from the lock fails the tests; requirements-test.lock adds pytest and
+      # dependency missing from the lock fails the tests; requirements-test.lock adds pytest, ruff and
       # setuptools, which never ship. One install, so a pin the two locks disagree on fails it.
       - run: pip install --require-hashes --no-deps -r requirements.lock -r requirements-test.lock
       - run: pip install --no-deps --no-build-isolation -e .
+      - run: ruff check
       - run: python -m pytest --junitxml=report.xml
       # Known advisories in requirements.lock, the tree the image ships; the test extra is not
       # audited. pip-audit itself installs from hash-pinned requirements into a venv of its own.

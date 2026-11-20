@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from homer_langgraph import __main__, runner
+from homer_langgraph import __main__, homer_cli, runner
 from homer_langgraph.tests import graph_fixtures
 
 HUMAN = "homer_langgraph.tests.graph_fixtures:human_graph"
@@ -102,7 +102,7 @@ def captured_calls(monkeypatch):
     (passed via input=...) can be asserted, not just the argv."""
     calls = []
     monkeypatch.setattr(
-        runner.subprocess, "run", lambda argv, **kw: calls.append((argv, kw)) or None
+        homer_cli.subprocess, "run", lambda argv, **kw: calls.append((argv, kw)) or None
     )
     return calls
 

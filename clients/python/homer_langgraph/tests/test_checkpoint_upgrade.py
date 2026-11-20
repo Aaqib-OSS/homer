@@ -157,6 +157,7 @@ def test_generate_refuses_a_line_other_than_the_old_one(tmp_path):
         [sys.executable, "-m", "homer_langgraph.tests.test_checkpoint_upgrade", str(out)],
         capture_output=True,
         text=True,
+        check=False,
     )
     assert result.returncode != 0
     assert "refusing to generate" in result.stderr

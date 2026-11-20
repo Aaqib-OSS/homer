@@ -150,7 +150,7 @@ def _draw_mermaid_or_none(drawn: Any) -> str | None:
     """The drawn graph's Mermaid source, or ``None`` when drawing fails."""
     try:
         return drawn.draw_mermaid()
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - null when drawing fails is the documented contract
         return None
 
 
@@ -296,7 +296,7 @@ def thread_state(module: str, thread_id: str) -> dict[str, Any]:
         mermaid = _draw_mermaid_or_none(drawn)
         try:
             topology: dict[str, Any] | None = graph_topology(drawn)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - null topology is the documented contract, see the README
             topology = None
         # Like `mermaid` and `topology`: a failure must not cost the rest.
         try:
@@ -315,7 +315,7 @@ def thread_state(module: str, thread_id: str) -> dict[str, Any]:
                     ),
                 )
             )
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - null traversed is the documented contract, ADR-0075
             traversed = None
         return {
             "threadId": thread_id,

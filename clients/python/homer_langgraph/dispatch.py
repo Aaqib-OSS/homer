@@ -8,8 +8,9 @@ process id immediately.
 
 from __future__ import annotations
 
-import subprocess
 from typing import Any
+
+from .homer_cli import run_homer_cli
 
 
 def homer_dispatch(agent: str, params: dict[str, Any] | None = None) -> int:
@@ -32,11 +33,11 @@ def homer_dispatch(agent: str, params: dict[str, Any] | None = None) -> int:
     Returns:
         The new sub-process id.
     """
-    argv = ["homer-dispatch", "--agent", agent]
+    args = ["--agent", agent]
     for key, value in (params or {}).items():
-        argv += ["--param", f"{key}={value}"]
+        args += ["--param", f"{key}={value}"]
 
-    completed = subprocess.run(argv, check=True, capture_output=True, text=True)
+    completed = run_homer_cli("homer-dispatch", args, capture=True)
     stdout = completed.stdout.strip()
     try:
         return int(stdout)

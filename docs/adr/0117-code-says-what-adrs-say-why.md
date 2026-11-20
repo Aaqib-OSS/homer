@@ -3,6 +3,7 @@ status: accepted
 date: 2026-11-19
 deciders: Lukáš Vlk
 consulted: ADR-0047, ADR-0082
+amended: 2026-11-20
 ---
 
 # ADR-0117: Code says what, ADRs say why
@@ -185,3 +186,7 @@ replaces them.
 - [ADR-0047](0047-security-by-design-and-threat-model.md): rule 4 (bound every resource) and the
   accepted-risk index in `SECURITY.md`.
 - [`docs/quality-checks.md`](../quality-checks.md): the `comment-policy` row and what it reads.
+
+## Amendment (2026-11-20): ruff enforces Python lint
+
+Ruff, with its defaults plus the `B`, `BLE` and `S` rule sets, runs over `clients/python` as a required step of `homer-python-tests`. The Python lint rule above is enforced by it, not by a later PR.

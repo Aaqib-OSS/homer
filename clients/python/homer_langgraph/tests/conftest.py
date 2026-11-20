@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from langgraph.checkpoint.memory import MemorySaver
 
-from homer_langgraph import introspection, runner
+from homer_langgraph import homer_cli, introspection, runner
 
 
 @pytest.fixture
@@ -49,6 +49,6 @@ def shared_saver(monkeypatch):
 def captured_runs(monkeypatch):
     runs = []
     monkeypatch.setattr(
-        runner.subprocess, "run", lambda argv, **kw: runs.append(argv) or None
+        homer_cli.subprocess, "run", lambda argv, **kw: runs.append(argv) or None
     )
     return runs

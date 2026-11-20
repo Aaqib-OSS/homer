@@ -12,6 +12,8 @@ import os
 import subprocess
 from typing import Any
 
+from .homer_cli import run_homer_cli
+
 
 def homer_fetch_result(ref: dict[str, Any]) -> str:
     """Fetch the full result behind a ``resultRef`` capability token.
@@ -29,12 +31,11 @@ def homer_fetch_result(ref: dict[str, Any]) -> str:
         The (transformed) result body fetched by reference.
     """
     try:
-        completed = subprocess.run(
-            ["homer-result"],
+        completed = run_homer_cli(
+            "homer-result",
+            [],
             env={**os.environ, "HMR_RESULT_TOKEN": ref["token"]},
-            check=True,
-            capture_output=True,
-            text=True,
+            capture=True,
         )
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(

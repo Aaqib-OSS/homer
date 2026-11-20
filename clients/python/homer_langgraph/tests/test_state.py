@@ -8,7 +8,6 @@ import sqlite3
 from types import SimpleNamespace
 
 import pytest
-
 from langgraph.types import Send
 
 from homer_langgraph import __main__, introspection, runner

@@ -18,7 +18,6 @@ import importlib
 import json
 import os
 import sqlite3
-import subprocess
 import sys
 import uuid
 from pathlib import Path
@@ -27,6 +26,8 @@ from typing import Any
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph.state import CompiledStateGraph, StateGraph
 from langgraph.types import Command
+
+from .homer_cli import run_homer_cli
 
 # Env contract (see EnvConstants.kt on the Homer side).
 ENV_THREAD = "HMR_LG_THREAD"
@@ -333,7 +334,7 @@ def run(module: str, input_env: str = ENV_INPUT) -> int:
             group_name = min(eligible, key=lambda g: min(i.id for i in eligible[g]))
             members = eligible[group_name]
             body = _join_body(members, thread_id, agent_name)
-            subprocess.run(["homer-join"], input=json.dumps(body), text=True, check=True)
+            run_homer_cli("homer-join", [], input=json.dumps(body))
             # Status line goes to stderr: on the parked path stdout must stay clean
             # so a result-env/resultJsonPath mapping over this segment sees no prose.
             print(
@@ -353,7 +354,7 @@ def run(module: str, input_env: str = ENV_INPUT) -> int:
         payload = chosen.value
 
         argv = _resume_payload(payload, thread_id, agent_name, chosen.id)
-        subprocess.run(argv, check=True)
+        run_homer_cli(argv[0], argv[1:])
         # Status line goes to stderr: on the parked path stdout must stay clean
         # so a result-env/resultJsonPath mapping over this segment sees no prose.
         print(

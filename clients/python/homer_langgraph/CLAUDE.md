@@ -56,7 +56,7 @@ commit, from `clients/python`, with the command its header records:
 uv pip compile pyproject.toml --universal --generate-hashes --python-version=3.12 --no-emit-package=sqlite-vec --output-file=requirements.lock
 ```
 
-`requirements-test.lock` pins the tools the tests need (pytest, and setuptools
+`requirements-test.lock` pins the test tools (pytest, ruff, setuptools
 for the editable install) from `requirements-test.in`, with the runtime lock as a
 constraint; regenerate it after the runtime lock, with its header's command:
 
