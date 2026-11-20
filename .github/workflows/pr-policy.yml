@@ -1,9 +1,10 @@
 # Fails a pull request that links no accepted issue of this repository (CONTRIBUTING.md
 # § Submitting changes), which tools/pr-policy/check.sh decides, or that adds a dependency with a
 # known high or critical advisory, or whose commits hold a secret. The ruleset on main makes it
-# a required check. Dependabot's pull requests are exempt: they link no issue, and a skipped job counts as
-# passed. The exemption compares the login with `dependabot[bot]`, the App's account: GitHub
-# reserves the `[bot]` suffix for Apps, so no user account can hold that login. Labelling an
+# a required check. Dependabot's and Renovate's pull requests are exempt: they link no issue, and a
+# skipped job counts as passed. The exemption compares the login with `dependabot[bot]` and
+# `renovate[bot]`, the Apps' accounts: GitHub reserves the `[bot]` suffix for Apps, so no user
+# account can hold either login. Labelling an
 # issue fires no pull request event, so the check is not re-run then; re-run it by hand.
 # Decision record: docs/adr/0090-accepted-issue-pull-request-gate.md.
 name: PR policy
@@ -76,7 +77,7 @@ jobs:
     needs: pr-policy-tests
     # Runs whatever pr-policy-tests concluded: a skipped required check counts as passed, so a
     # pull request that breaks the tests must not skip the gate with them (CWE-285, ADR-0090).
-    if: ${{ !cancelled() && github.event.pull_request.user.login != 'dependabot[bot]' }}
+    if: ${{ !cancelled() && github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.user.login != 'renovate[bot]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

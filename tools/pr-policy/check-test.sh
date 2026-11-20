@@ -87,6 +87,16 @@ release fail "a rename onto the changelog" Bot "$app" livesport/homer "$rel" 're
 release fail "a new changelog" Bot "$app" livesport/homer "$rel" 'added CHANGELOG.md'
 release fail "no file list" Bot "$app" livesport/homer "$rel" ''
 
+# The dependency bots' exemption lives in the workflow's `if`, not in check.sh: it must name
+# exactly the two Apps' accounts, and no other login.
+workflow=$(cd "$(dirname "$0")/../.." && pwd)/.github/workflows/pr-policy.yml
+gate=$(grep -F "user.login !=" "$workflow" || true)
+exempt=$(printf '%s\n' "$gate" | grep -o "user.login != '[^']*'" | sort | tr '\n' ' ')
+if [ "$(printf '%s\n' "$gate" | grep -c .)" -ne 1 ] || [ "$exempt" != "user.login != 'dependabot[bot]' user.login != 'renovate[bot]' " ]; then
+  echo "FAIL: the workflow must exempt exactly dependabot[bot] and renovate[bot] from the accepted-issue gate"
+  failures=$((failures + 1))
+fi
+
 if [ "$failures" -gt 0 ]; then
   echo "$failures PR policy test(s) failed."
   exit 1

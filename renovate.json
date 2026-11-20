@@ -1,6 +1,27 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
+  "schedule": ["before 6am on monday"],
+  "timezone": "Europe/Prague",
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "automerge": false,
+  "labels": ["dependencies"],
+  "enabledManagers": [
+    "gradle",
+    "npm",
+    "pip-compile",
+    "dockerfile",
+    "docker-compose",
+    "github-actions"
+  ],
+  "gradle": {
+    "managerFilePatterns": [
+      "/^app/gradle/libs\\.versions\\.toml$/",
+      "/^app/buildSrc/.+\\.kts$/",
+      "/^app/buildSrc/gradle/.+\\.toml$/"
+    ]
+  },
   "pip-compile": {
     "managerFilePatterns": ["/^clients/python/requirements(-test)?\\.lock$/"]
   },
@@ -9,6 +30,56 @@
       "description": "Keep Docker base images pinned to a tag + digest and open PRs when the digest (security patches) or tag changes.",
       "matchDatasources": ["docker"],
       "pinDigests": true
+    },
+    {
+      "description": "One weekly pull request per ecosystem.",
+      "matchManagers": ["gradle"],
+      "groupName": "Gradle dependencies"
+    },
+    {
+      "matchManagers": ["npm"],
+      "matchFileNames": ["console/**"],
+      "groupName": "console npm dependencies"
+    },
+    {
+      "matchManagers": ["npm"],
+      "matchFileNames": ["site/**"],
+      "groupName": "site npm dependencies"
+    },
+    {
+      "matchManagers": ["npm"],
+      "matchFileNames": ["tools/quality/**"],
+      "groupName": "quality tooling npm dependencies"
+    },
+    {
+      "matchManagers": ["pip-compile"],
+      "groupName": "Python dependencies"
+    },
+    {
+      "matchManagers": ["dockerfile", "docker-compose"],
+      "groupName": "Docker images"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "Dependencies held by a docs/workarounds.md row: a pull request of their own, labelled so the row is re-checked in it.",
+      "matchPackageNames": [
+        "io.ktor:**",
+        "io.modelcontextprotocol:**",
+        "com.squareup.okhttp3:**",
+        "com.squareup.okio:**",
+        "com.langfuse:**",
+        "com.networknt:**",
+        "io.kubernetes:**",
+        "org.jetbrains.exposed:**",
+        "dev.detekt:**",
+        "dev.detekt"
+      ],
+      "groupName": null,
+      "addLabels": ["workaround-pin"],
+      "automerge": false
     }
   ]
 }
