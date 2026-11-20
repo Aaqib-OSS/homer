@@ -106,7 +106,7 @@ amendment of 2026-11-19).
 
 - **Finite limits.** A config value named `max*`, `*Limit*`, `*Timeout*`, `*Ttl*` or `concurrency`
   is non-nullable, with a finite default. A missing bound is a shortcut too (ADR-0047 rule 4). A
-  test walks the config and agent models. Its exemption list only shrinks. PR C adds it.
+  test walks the config and agent models. Its exemption list only shrinks (`FiniteLimitsContractTest`).
 - **No skipped tests.** CI allows zero skipped JUnit or Vitest tests. A skipped test is a shortcut
   nobody reads. PR C adds this.
 - **Python lint.** Ruff runs over `clients/python` as a `required` check. PR D adds it.
@@ -117,7 +117,8 @@ amendment of 2026-11-19).
 | --- | --- |
 | Comment length, citations, shortcut words, `TODO`, past narration, suppression reasons and budget, `removeIn` | `comment-policy` (`tools/quality/comment-policy.mjs`), `required` |
 | `W-NNN` entries and watched versions; `AR-NN` ids; every `W-NNN` and `AR-NN` a comment cites resolves | `decision-records` (`tools/quality/decision-records.mjs`), `required` |
-| Finite limits; zero skipped tests | tests in PR C |
+| Finite limits | `FiniteLimitsContractTest` |
+| Zero skipped tests | a check in PR C |
 | Python lint | `ruff`, `required` (PR D) |
 | Narration of the next lines, deviations, a test asserting one outcome under a name that says what it proves | the review rubric in the root `CLAUDE.md` §9 |
 
