@@ -167,8 +167,8 @@ data class OpResult(
     val timedOut: Boolean = false,
     /**
      * How many chunks a `cmd` handed to the `output` route for this stream — one past the
-     * last `seq` it posted, a chunk whose post it gave up on included. Null when the
-     * instance reports no count (an older runner), which leaves the check inert.
+     * last `seq` it posted, a chunk whose post it gave up on included. Required on a `cmd`
+     * result; null on every other op.
      */
     val stdoutChunks: Long? = null,
     /** The same for `stderr`. */

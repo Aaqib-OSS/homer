@@ -195,7 +195,7 @@ class ExternalRunnerSessionTest {
             sink.append("stdout", 0, "keep 1\ndrop me\nke".toByteArray())
             sink.append("stdout", 1, "ep 2\n".toByteArray())
             sink.append("stderr", 0, "warn\n".toByteArray())
-            s.mailbox.complete(OpResult(op.opId, exitCode = 3))
+            s.mailbox.complete(OpResult(op.opId, exitCode = 3, stdoutChunks = 2, stderrChunks = 1))
 
             assertEquals(3, result.await().exitCode)
             assertEquals("keep 1\nkeep 2\n", out.readText())
@@ -276,7 +276,7 @@ class ExternalRunnerSessionTest {
             assertThrows<RunnerOutputSequenceException> { sink.append("stdout", 1, "late".toByteArray()) }
             sink.append("stdout", 0, "first".toByteArray())
             assertThrows<RunnerOutputSequenceException> { sink.append("stdout", 0, "again".toByteArray()) }
-            s.mailbox.complete(OpResult(op.opId, exitCode = 0))
+            s.mailbox.complete(OpResult(op.opId, exitCode = 0, stdoutChunks = 1, stderrChunks = 0))
             assertEquals(0, result.await().getOrThrow().exitCode)
         }
 
@@ -363,7 +363,7 @@ class ExternalRunnerSessionTest {
             // (deferred before capTripped) must not let a truncated result look clean.
             sink.append("stdout", 0, "partial".toByteArray())
             sink.append("stdout", 1, ByteArray(65))
-            s.mailbox.complete(OpResult(op.opId, exitCode = 0))
+            s.mailbox.complete(OpResult(op.opId, exitCode = 0, stdoutChunks = 2, stderrChunks = 0))
             runCurrent()
 
             assertTrue(result.await().exceptionOrNull() is OutputCapExceededException)
@@ -414,7 +414,7 @@ class ExternalRunnerSessionTest {
             val op = s.mailbox.next(1.seconds)!!
             val sink = assertNotNull(s.sink(op.opId))
             sink.append("stdout", 0, "tail".toByteArray())
-            s.mailbox.complete(OpResult(op.opId, exitCode = 0))
+            s.mailbox.complete(OpResult(op.opId, exitCode = 0, stdoutChunks = 1, stderrChunks = 0))
 
             assertEquals(0, result.await().exitCode)
             assertNull(s.sink(op.opId), "the sink is released with the op")
@@ -431,7 +431,7 @@ class ExternalRunnerSessionTest {
             val sink = s.sink(op.opId)!!
             assertThrows<IllegalArgumentException> { sink.append("stdout", 0, ByteArray(RunnerProtocol.MAX_OUTPUT_CHUNK_BYTES + 1)) }
             sink.append("stdout", 0, "ok".toByteArray())
-            s.mailbox.complete(OpResult(op.opId, exitCode = 0))
+            s.mailbox.complete(OpResult(op.opId, exitCode = 0, stdoutChunks = 1, stderrChunks = 0))
             assertEquals(0, result.await().getOrThrow().exitCode)
         }
 
@@ -502,6 +502,26 @@ class ExternalRunnerSessionTest {
         }
 
     @Test
+    fun `a cmd result without chunk counts fails the step naming the runner version`() =
+        runTest {
+            val s = openSession()
+            val result =
+                async {
+                    runCatching {
+                        s.shell.cmd(listOf("sh", "-c", "x"), tmp.resolve("o"), tmp.resolve("e"), timeout = 30.seconds)
+                    }
+                }
+            runCurrent()
+            val op = s.mailbox.next(1.seconds)!!
+            s.mailbox.complete(OpResult(op.opId, exitCode = 0))
+            runCurrent()
+
+            assertTrue(result.isCompleted, "a missing count is refused without waiting")
+            val message = assertNotNull(result.await().exceptionOrNull()).message!!
+            assertTrue("older than 1.37.1" in message && "output chunk counts" in message, message)
+        }
+
+    @Test
     fun `a count that cannot be real fails at once and cannot extend the wait`() =
         runTest {
             val s = openSession(domain())
@@ -513,7 +533,7 @@ class ExternalRunnerSessionTest {
                 }
             runCurrent()
             val op = s.mailbox.next(1.seconds)!!
-            s.mailbox.complete(OpResult(op.opId, exitCode = 0, stdoutChunks = -1))
+            s.mailbox.complete(OpResult(op.opId, exitCode = 0, stdoutChunks = -1, stderrChunks = 0))
             runCurrent()
 
             assertTrue(result.isCompleted, "a negative count is refused without waiting")
@@ -535,7 +555,7 @@ class ExternalRunnerSessionTest {
                 }
             runCurrent()
             val op = s.mailbox.next(1.seconds)!!
-            s.mailbox.complete(OpResult(op.opId, exitCode = 0, stdoutChunks = 65))
+            s.mailbox.complete(OpResult(op.opId, exitCode = 0, stdoutChunks = 65, stderrChunks = 0))
             runCurrent()
             assertFalse(result.isCompleted, "a positive count is never refused without the wait")
 
@@ -606,7 +626,7 @@ class ExternalRunnerSessionTest {
                 }
             runCurrent()
             val op = s.mailbox.next(1.seconds)!!
-            s.mailbox.complete(OpResult(op.opId, exitCode = 0))
+            s.mailbox.complete(OpResult(op.opId, exitCode = 0, stdoutChunks = 0, stderrChunks = 0))
             runCurrent()
 
             assertEquals(0, result.await().getOrThrow().exitCode)

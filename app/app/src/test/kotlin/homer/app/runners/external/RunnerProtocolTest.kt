@@ -84,12 +84,12 @@ class RunnerProtocolTest {
     }
 
     @Test
-    fun `a cmd result with counts stays wire-compatible with an older binary`() {
-        // An older runner reports no counts: both fields default, so this Homer reads the result.
-        val older = apiJson.decodeFromString(OpResult.serializer(), """{"opId":"op-3","exitCode":0}""")
-        assertEquals(OpResult(opId = "op-3", exitCode = 0), older)
-        assertNull(older.stdoutChunks)
-        assertNull(older.stderrChunks)
+    fun `a cmd result reads with or without counts on the wire`() {
+        // Every other op omits the counts: both fields default, so this Homer reads the result.
+        val bare = apiJson.decodeFromString(OpResult.serializer(), """{"opId":"op-3","exitCode":0}""")
+        assertEquals(OpResult(opId = "op-3", exitCode = 0), bare)
+        assertNull(bare.stdoutChunks)
+        assertNull(bare.stderrChunks)
 
         // A newer runner's counts ride the same shape through the `next` body Homer decodes.
         val counted = OpResult("op-3", exitCode = 0, stdoutChunks = 2, stderrChunks = 1)

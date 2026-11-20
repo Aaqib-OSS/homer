@@ -239,7 +239,7 @@ class ExternalShellExecutor(
         sink: OutputSink,
         kill: KillCause,
     ) {
-        val reported = reportedCounts(result) ?: return
+        val reported = reportedCounts(result)
         requirePossibleCounts(reported)
         if (missingChunks(reported, sink).isEmpty()) {
             // A cap trip can land between the caller's check and here with no wait in
@@ -258,14 +258,17 @@ class ExternalShellExecutor(
         )
     }
 
-    /** The counts the instance reported, per stream; null when it reported none (an older runner). */
-    private fun reportedCounts(result: OpResult): Map<String, Long>? {
-        val counts =
-            buildMap {
-                result.stdoutChunks?.let { put(RunnerProtocol.STREAM_STDOUT, it) }
-                result.stderrChunks?.let { put(RunnerProtocol.STREAM_STDERR, it) }
-            }
-        return counts.ifEmpty { null }
+    /** The counts the instance reported, per stream; a `cmd` result without both is refused. */
+    private fun reportedCounts(result: OpResult): Map<String, Long> {
+        val stdout = result.stdoutChunks
+        val stderr = result.stderrChunks
+        if (stdout == null || stderr == null) {
+            throw ExternalRunnerException(
+                "runner instance '${session.instance.name}' does not report output chunk counts: " +
+                    "its runner is older than 1.37.1 and must be upgraded",
+            )
+        }
+        return mapOf(RunnerProtocol.STREAM_STDOUT to stdout, RunnerProtocol.STREAM_STDERR to stderr)
     }
 
     /**

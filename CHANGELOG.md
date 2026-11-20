@@ -9,6 +9,7 @@
 - **Fixed: LangGraph run status reads a bounded identity file** — An oversized, linked or non-regular `langgraph.json` in a run's artifacts is ignored instead of read whole on every status poll.
 - **BREAKING: `maxQueuedRuns` defaults to 10 × `maxParallelRuns`** — Runs waiting for a parallel-run slot or, under `WAIT`, a lock share a cap that is bounded by default; a surplus run fails fast, and `null` (unbounded) is no longer accepted.
 - **BREAKING: runner limits are finite by default** — `concurrency` defaults to 100 on `server.localRunner` and 10 on `ssh` and `kubernetes` runners, and no longer accepts `null`, `kubernetes.maxRunSeconds` defaults to 86400 and no longer accepts `null`, and `ssh.sftpTransferTimeoutSeconds` no longer accepts `null`. See [ADR-0066](docs/adr/0066-external-pull-runners-and-unified-claim-queue.md).
+- **BREAKING: external runners must report output chunk counts** — A `cmd` result without them, from a runner older than 1.37.1, now fails the step instead of skipping the completeness check. See [ADR-0066](docs/adr/0066-external-pull-runners-and-unified-claim-queue.md).
 - **Fixed: opencode run cost** — A run that resumes an opencode session is charged only its own steps, and steps past the 4 096th in one session are no longer dropped.
 
 ## [1.43.2] - 2026-11-18

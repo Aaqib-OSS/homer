@@ -1216,7 +1216,7 @@ class RunnerProtocolRoutesTest {
                 assertEquals(HttpStatusCode.Accepted, first.await().status)
                 assertEquals(HttpStatusCode.Accepted, chunk("stdout", 1, "two\n".toByteArray()).status)
 
-                complete(sid, OpResult(op.opId, exitCode = 0))
+                complete(sid, OpResult(op.opId, exitCode = 0, stdoutChunks = 0, stderrChunks = 0))
                 assertEquals(0, cmd.await().exitCode)
                 assertEquals("one\ntwo\n", out.readText())
                 assertEquals("warn\n", err.readText())
@@ -1271,7 +1271,7 @@ class RunnerProtocolRoutesTest {
                         }.status,
                 )
 
-                complete(sid, OpResult(op.opId, exitCode = 0))
+                complete(sid, OpResult(op.opId, exitCode = 0, stdoutChunks = 2, stderrChunks = 1))
                 assertEquals(0, cmd.await().exitCode)
                 assertEquals("one\ntwo\n", out.readText())
                 assertEquals("warn\n", err.readText())
@@ -1421,7 +1421,7 @@ class RunnerProtocolRoutesTest {
                     }
                 assertEquals(HttpStatusCode.Accepted, chunk.status)
                 assertEquals(now, session.instance.lastSeenAt, "posting a chunk heartbeats the instance")
-                complete(sid, OpResult(op.opId, exitCode = 0))
+                complete(sid, OpResult(op.opId, exitCode = 0, stdoutChunks = 1, stderrChunks = 0))
                 assertEquals(0, cmd.await().exitCode)
             }
             session.close()
