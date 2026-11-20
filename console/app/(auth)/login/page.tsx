@@ -44,11 +44,9 @@ function initialMode(
   return allowBearer ? (normalizeMode(raw) ?? saved ?? 'bearer') : 'cookie';
 }
 
-// Client-side courtesy cooldown after a 429 from the login limiter. Matches the
-// server's default `loginRateLimit.refillPeriod` (60s); it only gates the button
-// so a frustrated user can't keep hammering login and draining the refilling
-// bucket. If the server's window differs, a premature retry just re-arms it.
-const RATE_LIMIT_COOLDOWN_SECONDS = 60;
+// The backend's default `server.loginRateLimit.refillPeriod` (ADR-0011); a cross-origin 429's
+// Retry-After is not readable, so a server with another period re-arms on a premature retry.
+const LOGIN_REFILL_PERIOD_SECONDS = 60;
 
 // Username (cookie mode only) and password, or the bearer token in its place.
 function CredentialFields({
@@ -362,7 +360,7 @@ function LoginForm() {
     { endpoint: endpointField.endpoint, blocked: endpointField.blocked, mode, username, password },
     nextParam,
     endpointField.reveal,
-    () => setCooldown(RATE_LIMIT_COOLDOWN_SECONDS),
+    () => setCooldown(LOGIN_REFILL_PERIOD_SECONDS),
   );
   const bearerMode = mode === 'bearer';
 

@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -171,6 +173,24 @@ describe('LoginPage', () => {
     const submit = screen.getByRole('button', { name: /try again in/i });
     expect(submit).toBeDisabled();
     expect(push).not.toHaveBeenCalled();
+  });
+
+  it("counts the cooldown down from the backend's default login refill period", async () => {
+    const serverConfig = fs.readFileSync(
+      path.join(__dirname, '../../../../app/app/src/main/kotlin/homer/app/models/ServerConfig.kt'),
+      'utf8',
+    );
+    const refill = /loginRateLimit: RateLimitConfig = RateLimitConfig\(limit = \d+, refillPeriod = (\d+)\)/.exec(serverConfig)?.[1];
+    expect(refill).toBeDefined();
+    login.mockResolvedValue('rate-limited');
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(screen.getByLabelText(/username/i), 'alice');
+    await user.type(screen.getByLabelText(/^password$/i), 'pw');
+    await user.click(screen.getByRole('button', { name: /^login$/i }));
+
+    expect(await screen.findByRole('button', { name: `Try again in ${refill}s` })).toBeDisabled();
   });
 
   it('surfaces a server-unreachable message on a non-auth error', async () => {
