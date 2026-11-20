@@ -237,7 +237,7 @@ class DatabaseService(
         private val IDENTITY_CONNECTION_WRAPPER: (Connection) -> Connection = { it }
 
         // One attempt, never a retry: a block here may have landed its data before throwing, and
-        // the blocks are not idempotent. See ADR-0020 and SQLite rule 5 in `app/CLAUDE.md`.
+        // the blocks are not idempotent. See ADR-0020.
         val WRITER_DATABASE_CONFIG: DatabaseConfig = DatabaseConfig { defaultMaxAttempts = 1 }
 
         // Ends the driver's post-commit re-`BEGIN IMMEDIATE` so the write lock ends with the

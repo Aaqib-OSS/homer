@@ -2,9 +2,8 @@ package homer.app.services.persistence
 
 import java.sql.Statement
 
-// In-place schema upgrades [DatabaseService.migrate] runs after `SchemaUtils.create`, one function
-// per span of versions. `SchemaUtils.create` never ALTERs an existing table, so each step adds its
-// columns/indexes by hand, guarded on the version it upgrades from.
+// The in-place upgrades [DatabaseService.migrate] runs after `SchemaUtils.create`, which never ALTERs an
+// existing table: each step adds its columns and indexes by hand, guarded on the version it upgrades from.
 
 internal fun upgradeSchema(
     st: Statement,
@@ -70,15 +69,13 @@ private fun migrateToV10(
         addColumnIfMissing(st, "continuations", "kind", "TEXT NOT NULL DEFAULT 'SINGLE'")
     }
     if (current in 3 until 7) {
-        // v6→v7 adds result_tokens.consumer_agent (audience binding, ADR-0025); create never ALTERs,
-        // so add it by hand. The empty default makes a pre-existing token match no agent — it fails
-        // closed until swept; v33 rebuilds the table without it.
+        // v6→v7 adds result_tokens.consumer_agent (ADR-0025). The empty default fails closed: an older
+        // token matches no agent until swept. v33 rebuilds the table without it.
         addColumnIfMissing(st, "result_tokens", "consumer_agent", "TEXT NOT NULL DEFAULT ''")
     }
     if (current in 1 until 8) {
-        // v7→v8 adds process/dispatch/continuation owner columns (ADR-0038). Lower bound is 1, not
-        // 3: processes has existed since v1, so a DB frozen at v1/v2 already has a processes table
-        // SchemaUtils.create won't ALTER.
+        // v7→v8 adds the owner columns (ADR-0038). Lower bound 1: a v1/v2 database already has a
+        // processes table, which create will not ALTER.
         for (t in listOf("processes", "dispatches", "continuations")) {
             addColumnIfMissing(st, t, "owner", "TEXT")
         }
@@ -131,9 +128,8 @@ private fun migrateToV15(
         }
     }
     if (current in 1 until 15) {
-        // v14→v15 adds processes.secret_input_keys, the redaction metadata captured at run time.
-        // Existing rows keep NULL and fall back to the current agent definition, not a blanket
-        // redaction of every retained record.
+        // v14→v15 adds processes.secret_input_keys (ADR-0052). Existing rows keep NULL and fall back to
+        // the current agent definition, not a blanket redaction.
         addColumnIfMissing(st, "processes", "secret_input_keys", "TEXT")
     }
 }
@@ -143,25 +139,22 @@ private fun migrateToV20(
     current: Int,
 ) {
     if (current in 3 until 16) {
-        // v15→v16 adds secret_input_keys to dispatches and continuations — the target agent's secret
-        // flags captured at registration, so a definition edited before the row fires cannot expose a
-        // stored value. Lower bound 3: both tables arrive complete from create for anything older.
+        // v15→v16 adds the target's secret flags captured at registration (ADR-0052). Lower bound 3:
+        // for anything older, create makes both tables complete.
         for (t in listOf("dispatches", "continuations")) {
             addColumnIfMissing(st, t, "secret_input_keys", "TEXT")
         }
     }
     if (current in 3 until 17) {
-        // v16→v17 adds secret_param_names to dispatches and continuations — the target agent's secret
-        // paramNames captured at registration. `params` are keyed by paramName, so envName-keyed
-        // secret_input_keys alone cannot survive the input being re-pointed since registration (ADR-0052).
+        // v16→v17 adds the target's secret paramNames captured at registration: `params` are keyed by
+        // paramName, which envName-keyed secret_input_keys cannot follow once re-pointed (ADR-0052).
         for (t in listOf("dispatches", "continuations")) {
             addColumnIfMissing(st, t, "secret_param_names", "TEXT")
         }
     }
     if (current in 1 until 18) {
-        // v17→v18 adds the retain-block columns (ADR-0053): the globs captured at terminal status,
-        // the workspace-sweep marker for retained rows, and the cap-truncation flag. Existing rows
-        // keep NULL = nothing retained.
+        // v17→v18 adds the retained globs, the workspace-sweep marker and the cap-truncation flag
+        // (ADR-0053). Existing rows keep NULL = nothing retained.
         addColumnIfMissing(st, "processes", "retain_artifacts", "TEXT")
         addColumnIfMissing(st, "processes", "workspace_purged_at", "INTEGER")
         addColumnIfMissing(st, "processes", "retained_truncated", "INTEGER")
@@ -226,13 +219,11 @@ private fun migrateToV27(
     current: Int,
 ) {
     if (current in 1 until 25) {
-        // v24→v25 moves write-once input_params into the process_inputs side table (created above),
-        // guarded on the column so a database that already migrated must not attempt a second
-        // backfill or DROP. See ADR-0020.
+        // v24→v25 moves write-once input_params into process_inputs (ADR-0020), guarded on the column
+        // so an already-migrated database never backfills or drops twice.
         if ("input_params" in columnNames(st, "processes")) {
-            // Copied before the drop, in this same transaction, so no committed state ever has the
-            // column gone and the value nowhere. COALESCE guards a hand-edited or pre-v1 NULL row:
-            // the side table's column is NOT NULL.
+            // Copied before the drop in one transaction, so no committed state loses the value. COALESCE:
+            // the side table's column is NOT NULL, and a hand-edited row may hold NULL.
             st.execute(
                 "INSERT INTO process_inputs (process_id, input_params) " +
                     "SELECT id, COALESCE(input_params, '{}') FROM processes",

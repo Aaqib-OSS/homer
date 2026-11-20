@@ -134,7 +134,7 @@ internal object Processes : Table("processes") {
         index("processes_owner", false, owner)
         // v24: the shared-workspace check before a purge or eviction deletes a directory.
         index("processes_artifacts_dir", false, artifactsDir)
-        // v24: the two purge sweeps. The partial index holds only rows still waiting; the legacy index covers pre-v12 rows.
+        // v24: the two purge sweeps. The partial index holds only rows still waiting; the last covers pre-v12 rows.
         index("processes_workspace_purge", false, status, purgeAt, filterCondition = {
             artifactsDir.isNotNull() and workspacePurgedAt.isNull()
         })

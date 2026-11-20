@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-11
 deciders: Lukáš Vlk
-amended: 2026-09-28
+amended: 2026-09-28, 2026-11-20
 ---
 # ADR-0038: Per-process ownership and the union visibility rule
 
@@ -248,3 +248,14 @@ of the two single-process streams. The pre-stream `canSee` 404 now applies to
 `GET /stream/processes/{id}/llm-events`, which resolves the same check before
 the connection opens and also returns `404` for a `cmd` that is not an LLM
 harness command.
+
+## Amendment (2026-11-20): `GET /questions` filters in SQL before the limit
+
+The 2026-10-09 note above says `GET /questions` still filters in Kotlin; it no longer does.
+`QuestionsRepository.page` applies the union rule in SQL before the limit, so neither the page nor
+its `total` carries a question the caller cannot see. A question matches when the caller owns its
+asking process or may read the question's own `agent_name`. The agent arm reads the question's
+column, not the process row's, so a dispatch-bound question, which outlives its asking process
+([ADR-0021](0021-ask-and-dispatch.md)), stays visible to a reader of that agent once the process
+row is gone. Each arm is its own `SELECT rowid`, the arms `UNION`ed under `rowid IN (…)`, so each
+seeks its own index (`questions_agent_name`, schema v28, for the agent arm).

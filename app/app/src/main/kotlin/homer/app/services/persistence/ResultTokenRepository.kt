@@ -12,12 +12,9 @@ import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 
 /**
- * A persisted capability token scoping a read-by-reference result fetch to one watched process's
- * artifact. The token authorizes streaming [path] from the watched process's artifacts dir,
- * optionally transformed by [resultTransformer] at fetch time, and is reusable within its TTL
- * ([expiresAt]); independent of the continuation row that minted it. [consumerAgent] is the agent
- * it is minted for (the continuation's target): the fetch endpoint redeems it only for a caller
- * running that agent, so a leaked token is useless to any other agent. See ADR-0025.
+ * A capability token for streaming [path] from one watched process's artifacts dir, through [resultTransformer]
+ * when set, reusable until [expiresAt] and independent of the continuation that minted it. It is redeemed only
+ * for a caller running [consumerAgent], so a leaked token is useless to any other agent. See ADR-0025.
  */
 data class ResultTokenRecord(
     val token: String,
