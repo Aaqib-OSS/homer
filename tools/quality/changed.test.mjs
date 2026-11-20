@@ -40,6 +40,7 @@ const CHECKS = [
   'infra-lint',
   'comment-policy',
   'decision-records',
+  'skipped-tests',
 ].map((name) => ({ name, mode: 'required' }));
 const ALL = [...CHECKS, { name: 'mutation-console', mode: 'warn' }, { name: 'mutation-backend', mode: 'warn' }];
 const SRC = 'app/app/src/main/kotlin/homer/app';
@@ -112,6 +113,13 @@ test('--only narrows the selection and alone selects a warn-mode check', () => {
   // PIT mutates :app only.
   assert.equal(selectChecks(['app/homer-runner/src/main/kotlin/R.kt', `${TEST}/ATest.kt`], ALL, ['mutation-backend']).size, 0);
   assert.throws(() => selectChecks([], ALL, ['nope']), /unknown check nope/);
+});
+
+test('skipped-tests is CI-only: no change selects it, and --only naming it is refused', () => {
+  const everything = [`${SRC}/A.kt`, `${TEST}/ATest.kt`, 'console/lib/a.ts', 'clients/python/homer_langgraph/gates.py', '.github/workflows/ci.yml', 'tools/quality/skipped-tests.mjs'];
+  assert.ok(!selectChecks(everything, ALL).has('skipped-tests'));
+  assert.throws(() => selectChecks(everything, ALL, ['skipped-tests']), /skipped-tests reads CI's reports only/);
+  assert.throws(() => selectChecks(everything, ALL, ['crap', 'skipped-tests']), /skipped-tests reads CI's reports only/);
 });
 
 test('kotlinFile splits a Kotlin source path', () => {
