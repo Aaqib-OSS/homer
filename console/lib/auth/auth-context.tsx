@@ -52,10 +52,6 @@ interface AuthContextType {
   user?: AuthUser;
   /** True when an older server named no principal for the bearer token: `user.username` is a placeholder. */
   principalUnreported: boolean;
-  /** Legacy boolean shim — true while `status === 'authed'`. */
-  isAuthenticated: boolean;
-  /** Legacy boolean shim — true while `status === 'loading'`. */
-  isLoading: boolean;
   /**
    * In `cookie` mode: posts username + password to `/api/v1/auth/login` and
    * waits for the resulting `homer_session` cookie + `/me` refetch before
@@ -308,8 +304,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         status,
         user,
         principalUnreported: probed?.unreported === true,
-        isAuthenticated: status === 'authed',
-        isLoading: status === 'loading',
         login,
         logout,
         switchInstance,

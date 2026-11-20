@@ -321,9 +321,9 @@ nonce its own scripts.
   neutral "Sign in to continue" prompt instead: a 401 on the global SSE streams
   (`sse.ts` is not `AUTH_BUS_EXEMPT`) is not an expiry.
 - Dashboard layout redirects to `/login` when
-  `appConfig.auth.enabled && !isAuthenticated`.
-- `appConfig.auth.enabled === false` bypasses everything and sets
-  `isAuthenticated = true` — matches the backend's `unsecured` mode
+  `appConfig.auth.enabled && status === 'anon'`.
+- `appConfig.auth.enabled === false` bypasses everything and pins
+  `status` to `'authed'` — matches the backend's `unsecured` mode
   for local dev.
 
 ## Theming
