@@ -55,23 +55,7 @@ type YamlHandle = Awaited<
 >;
 
 function applyJsonSchema(monaco: MonacoModule, schema: object): void {
-  const jsonLang = (
-    monaco.languages as unknown as {
-      json: {
-        jsonDefaults: {
-          setDiagnosticsOptions: (opts: {
-            validate: boolean;
-            schemas: Array<{
-              uri: string;
-              fileMatch: string[];
-              schema: object;
-            }>;
-          }) => void;
-        };
-      };
-    }
-  ).json;
-  jsonLang.jsonDefaults.setDiagnosticsOptions({
+  monaco.json.jsonDefaults.setDiagnosticsOptions({
     validate: true,
     schemas: [
       {

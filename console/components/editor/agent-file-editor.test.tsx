@@ -21,7 +21,7 @@ const yamlHandle = vi.hoisted(() => ({
 }));
 const configureMonacoYaml = vi.hoisted(() => vi.fn(() => yamlHandle));
 const fakeMonaco = vi.hoisted(() => ({
-  languages: { json: { jsonDefaults: { setDiagnosticsOptions } } },
+  json: { jsonDefaults: { setDiagnosticsOptions } },
 }));
 
 // monaco-editor cannot run under jsdom: stand in for the dynamically loaded
