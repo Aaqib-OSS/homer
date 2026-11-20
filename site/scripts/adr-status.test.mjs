@@ -151,10 +151,12 @@ function unmarkedAmendments(docs) {
   return found
 }
 
-// An italic `*(Amended …)*`, `*Amended (date):*` or `*Superseded …*` note is none of the README forms:
-// an amendment is a `## Amendment (date)` section or a `> **Amendment (date)` blockquote.
-const ITALIC_AMENDMENT = /(?:^|[^*])\*\(?(?:Amended|Superseded)\b/m
-const italicAmendments = (docs) => [...docs].filter(([, { text }]) => ITALIC_AMENDMENT.test(text)).map(([number]) => `${number}: an italic amendment note`)
+// An italic amendment note (`*(Amended …)*`, `*(Obsolete …)*`, `*Superseded …*`, …) is none of the README forms;
+// code fences and spans are blanked first, so a quoted example is not a note.
+const ITALIC_AMENDMENT = /(?:^|[^*])\*(?:\((?:amended|superseded|obsolete|closed)\b|(?:amended|superseded|switched back)\b)/im
+const withoutCode = (text) => text.replace(/^```[\s\S]*?^```/gm, '').replace(/`[^`\n]*`/g, '')
+const italicAmendments = (docs) =>
+  [...docs].filter(([, { text }]) => ITALIC_AMENDMENT.test(withoutCode(text))).map(([number]) => `${number}: an italic amendment note`)
 
 const withFrontMatter = (frontMatter, body) => `---\n${frontMatter}\n---\n${body}`
 
@@ -258,10 +260,10 @@ test('an amendment must be dated and a supersession must name an ADR file', () =
 
 test('an italic amendment note is rejected, the README forms are not', () => {
   const italic = (note) => ['9980', { name: '9980-italic.md', text: withFrontMatter('status: accepted', `# ADR-9980: Italic\n\nA decision. ${note}\n`) }]
-  for (const note of ['*(Amended 2026-01-02: x)*', '*(Superseded by ADR-0001: x)*', '*Amended (2026-01-02):* x', '*Amended 2026-01-02: x*', '*Superseded by ADR-0001*']) {
+  for (const note of ['*(Amended 2026-01-02: x)*', '*(Superseded by ADR-0001: x)*', '*Amended (2026-01-02):* x', '*Amended 2026-01-02: x*', '*Superseded by ADR-0001*', '*(amended 2026-01-02: x)*', '*(Obsolete since ADR-0001: x)*', '*(Closed by ADR-0001.)*', '*Switched back on 2026-01-02:* x']) {
     assert.deepEqual(italicAmendments(new Map([italic(note)])), ['9980: an italic amendment note'], note)
   }
-  const forms = '## Amendment (2026-01-02): x\n\n> **Amendment (2026-01-02) —** x\n\n**Amended (2026-01-02):** bold is not italic\n'
+  const forms = '## Amendment (2026-01-02): x\n\n> **Amendment (2026-01-02) —** x\n\n**Amended (2026-01-02):** bold is not italic\n\nA *closed* system, *obsolete* code and `*(Amended x)*` stay prose.\n'
   assert.deepEqual(italicAmendments(new Map([['9981', { name: '9981-forms.md', text: withFrontMatter('status: accepted', forms) }]])), [])
 })
 
