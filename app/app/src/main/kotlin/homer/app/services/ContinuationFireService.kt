@@ -8,10 +8,12 @@ import homer.app.exceptions.MaxQueuedRunsExceededException
 import homer.app.exceptions.ProcessManagerAtCapacityException
 import homer.app.exceptions.ServerDrainingException
 import homer.app.infra.AgentInputResolver
+import homer.app.infra.FileOperations
+import homer.app.infra.LocalFileOperations
+import homer.app.infra.PathSafety
 import homer.app.infra.ResultToEnvMapper
 import homer.app.infra.reservedControlParams
 import homer.app.models.Agent
-import homer.app.models.CommandResult
 import homer.app.models.ExecutionInfo
 import homer.app.models.ProcessStatus
 import homer.app.models.ResultEnvParam
@@ -26,8 +28,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.encodeToJsonElement
 import org.slf4j.Logger
+import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.io.path.fileSize
 import kotlin.math.min
 
 /**
@@ -44,6 +46,7 @@ internal class ContinuationFireService(
     private val processManager: ProcessManager,
     private val resultTokenService: ResultTokenService,
     private val logger: Logger,
+    private val fileOperations: FileOperations = LocalFileOperations(),
     private val nowSec: () -> Long,
 ) {
     /** Fires a single-watch [continuation] whose watched process ended with [status]. */
@@ -201,17 +204,18 @@ internal class ContinuationFireService(
         val none = ExtractedResult(null, null)
         if (transformer == null) return none
         val (execution, artifactsDir) = lastExecution(watchedProcessId) ?: return none
-        // stdOut and stdErr are relative to the artifacts dir, as LogTailService resolves them; the
-        // fetch endpoint resolves the same relative stdOut path.
+        // The persisted stdOut is attacker-written: only a link-free regular child of an unlinked artifacts
+        // dir is read, so a FIFO cannot pin the fire (CWE-22/CWE-59, ADR-0070); the swap races are AR-12.
+        if (Files.isSymbolicLink(artifactsDir)) return none
         val stdOutRel = execution.stdOut ?: return none
-        val stdErrRel = execution.stdErr ?: return none
-        val stdOut = artifactsDir.resolve(stdOutRel)
-        val stdErr = artifactsDir.resolve(stdErrRel)
-        val size = runCatching { stdOut.fileSize() }.getOrNull() ?: return none
+        val stdOut = artifactsDir.resolve(stdOutRel).normalize()
+        if (stdOut.parent != artifactsDir || PathSafety.isLinkedOrSpecial(stdOut)) return none
+        val size = runCatching { fileOperations.fileSize(stdOut) }.getOrNull() ?: return none
         if (size > MAX_RESULT_BYTES) return oversizedResult(watchedProcessId, stdOutRel, transformer, size, consumerAgent)
+        val text = fileOperations.readTextBounded(stdOut, MAX_RESULT_BYTES) ?: return none
         val result =
             runCatching {
-                ResultToEnvMapper(CommandResult(execution.resultCode, stdOut, stdErr))
+                ResultToEnvMapper(execution.resultCode, readStdOut = { text }, readStdErr = { "" })
                     .mapToEnv(listOf(transformer))[transformer.envName]
             }.getOrNull()
         return ExtractedResult(result, null)

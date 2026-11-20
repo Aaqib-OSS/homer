@@ -9,6 +9,8 @@ import homer.app.exceptions.QuestionsClosedForProcessException
 import homer.app.exceptions.TooManyPendingContinuationsException
 import homer.app.exceptions.ValidationException
 import homer.app.infra.AgentInputResolver
+import homer.app.infra.FileOperations
+import homer.app.infra.LocalFileOperations
 import homer.app.infra.coRunCatching
 import homer.app.infra.validatePayloadParam
 import homer.app.models.CreateJoinRequest
@@ -98,6 +100,7 @@ internal class ContinuationService(
     resultTokenService: ResultTokenService,
     private val logger: Logger,
     private val config: DispatchConfig = DispatchConfig(),
+    fileOperations: FileOperations = LocalFileOperations(),
     private val nowSec: () -> Long = { Clock.System.now().epochSeconds },
 ) {
     private val fires =
@@ -110,6 +113,7 @@ internal class ContinuationService(
             processManager,
             resultTokenService,
             logger,
+            fileOperations,
             nowSec,
         )
 

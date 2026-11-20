@@ -312,20 +312,27 @@ after the check fails the open. A FIFO swapped in bounds only the caller's wait:
 keeps one of the pool's 8 threads, and once all 8 are held every file read through the pool fails
 at once for every caller.
 
+`ContinuationFireService.extractResult` reads a watched run's stdout into a continuation's resume
+payload the same way. It refuses a symlinked artifacts directory and a recorded stdout path that is
+not a direct child of it, then reads at most the 64 KiB inline-result cap through
+`readTextBounded`, so a FIFO planted at `cmd_N.out` can no longer block the fire.
+
 Three cases remain. Two are races: a hard link renamed into place between the link check and the
 open, because `NOFOLLOW_LINKS` ignores the link count, and a symlink swapped in for the artifacts
 directory between its check and the open. The third needs no race: a symlink at the run root or a
 directory above it is followed. Each makes Homer read a different regular file of at most 64 KiB
-and, when it parses as an identity, report its fields and let a resume continue its thread
-(CWE-59/CWE-367).
+and, when it parses as an identity, report its fields and let a resume continue its thread, or
+deliver it as a continuation's result (CWE-59/CWE-367).
 
 **Accepted, not fixed**, like the tar walks above. Each case needs a local writer holding Homer's
 own UID, and that writer can already read any file the swap could lead to and write its content
-into `langgraph.json` directly, so the swap crosses no principal and gains nothing. Rule 2
-already treats the file's content as attacker-chosen; a swap only changes where it comes from.
+into `langgraph.json` or its stdout directly, so the swap crosses no principal and gains nothing.
+Rule 2 already treats both files' content as attacker-chosen; a swap only changes where it comes
+from.
 Homer does act on the read, which this ADR counts as an escalation even for readable data, but
 both callers keep the thread id inside the run owner's checkpoint store, so neither the report
-nor the resumed run reaches another principal's checkpoints (ADR-0046). Closing the
+nor the resumed run reaches another principal's checkpoints (ADR-0046). A continuation's result
+is the watched run's own output, which that run could have written anyway. Closing the
 races needs an `fstat` on the opened handle and an `openat`-style walk, which `java.nio` does not
 expose portably. Checking the run root and above needs the configured workspace root, which an
 operator may reach through a symlink (`/tmp` on macOS), so a stored artifacts path cannot be

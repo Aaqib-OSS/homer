@@ -10,6 +10,7 @@ import homer.app.exceptions.ProcessManagerAtCapacityException
 import homer.app.exceptions.QuestionsClosedForProcessException
 import homer.app.exceptions.TooManyPendingContinuationsException
 import homer.app.exceptions.ValidationException
+import homer.app.fixtures.TestFixtures
 import homer.app.infra.AgentInputResolver
 import homer.app.models.Agent
 import homer.app.models.AgentContinuationConfig
@@ -43,9 +44,12 @@ import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import org.slf4j.LoggerFactory
+import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.writeText
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -1103,6 +1107,92 @@ class ContinuationServiceTest {
 
         coVerify(exactly = 0) { resultTokenService.mint(any(), any(), any(), any(), any()) }
         val payload = Json.parseToJsonElement(captured.captured["HMR_LG_RESUME"]!!).jsonObject
+        assertEquals(setOf("status", "processId", "result"), payload.keys)
+        assertTrue(payload["result"] is kotlinx.serialization.json.JsonNull)
+    }
+
+    @Test
+    fun `onProcessTerminal mints a ref and no marker for a result of exactly the transform cap`(
+        @TempDir dir: Path,
+    ) = runTest {
+        val size = RESULT_TRANSFORM_MAX_BYTES
+        dir.resolve("cmd_0.out").writeText("x".repeat(size.toInt()))
+        val transformer = ResultEnvParam(SrcType.STD_OUT, "RESULT", ResultTransformer.Pass)
+        coEvery { resultTokenService.mint(42, "cmd_0.out", transformer, size, "h") } returns "tok-cap"
+
+        val payload = firedPayload(dir, Path.of("cmd_0.out"), transformer)
+
+        coVerify { resultTokenService.mint(42, "cmd_0.out", transformer, size, "h") }
+        assertEquals("tok-cap", payload["resultRef"]!!.jsonObject["token"]!!.jsonPrimitive.content)
+        assertNull(payload["resultTooLarge"])
+    }
+
+    @Test
+    fun `onProcessTerminal reads no result through a symlinked artifacts dir`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val real = Files.createDirectory(tmp.resolve("real"))
+        real.resolve("cmd_0.out").writeText(ANSWER_YES)
+        val linked = Files.createSymbolicLink(tmp.resolve("linked"), real)
+
+        assertResumedWithoutResult(firedPayload(linked, Path.of("cmd_0.out"), answerTransformer))
+    }
+
+    @Test
+    fun `onProcessTerminal reads no result from a stdout path outside the artifacts dir`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val dir = Files.createDirectory(tmp.resolve("artifacts"))
+        Files.createDirectory(tmp.resolve("other")).resolve("cmd_0.out").writeText(ANSWER_YES)
+
+        assertResumedWithoutResult(firedPayload(dir, Path.of("../other/cmd_0.out"), answerTransformer))
+    }
+
+    @Test
+    fun `onProcessTerminal reads no result through a symlink at the stdout file`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val dir = Files.createDirectory(tmp.resolve("artifacts"))
+        val outside = tmp.resolve("outside.json").also { it.writeText(ANSWER_YES) }
+        Files.createSymbolicLink(dir.resolve("cmd_0.out"), outside)
+
+        assertResumedWithoutResult(firedPayload(dir, Path.of("cmd_0.out"), answerTransformer))
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    fun `onProcessTerminal reads no result from a FIFO at the stdout file and still fires`(
+        @TempDir dir: Path,
+    ) = runTest {
+        TestFixtures.mkfifoOrSkip(dir.resolve("cmd_0.out"))
+
+        assertResumedWithoutResult(firedPayload(dir, Path.of("cmd_0.out"), answerTransformer))
+    }
+
+    private val answerTransformer = ResultEnvParam(SrcType.STD_OUT, "RESULT", ResultTransformer.JsonPath("$.answer"))
+
+    /** The resume payload a fire of watched process 42 delivers, its stdout at [stdOut] under [artifacts]. */
+    private suspend fun firedPayload(
+        artifacts: Path,
+        stdOut: Path,
+        transformer: ResultEnvParam,
+    ): kotlinx.serialization.json.JsonObject {
+        stubFireable(pending(transformer = transformer))
+        coEvery { processManager.getProcessExecutions(42) } returns
+            listOf(ExecutionInfo("cmd", 0, 1, 0, stdOut, Path.of("cmd_0.err"), null))
+        coEvery { processManager.getProcessInfo(42) } returns mockk(relaxed = true) { every { artifactsDir } returns artifacts }
+        val resolve = slot<RunStartRequest>()
+        coEvery { runStarter.start(capture(resolve), any(), any(), any()) } returns 99
+        val captured = slot<Map<String, String>>()
+        every { inputResolver.resolveFromParams(capture(captured), any(), any(), any()) } returns emptyMap()
+
+        service().onProcessTerminal(42, ProcessStatus.FINISHED)
+        resolve.captured.resolveInputs.invoke()
+        return Json.parseToJsonElement(captured.captured["HMR_LG_RESUME"]!!).jsonObject
+    }
+
+    private fun assertResumedWithoutResult(payload: kotlinx.serialization.json.JsonObject) {
+        coVerify(exactly = 0) { resultTokenService.mint(any(), any(), any(), any(), any()) }
         assertEquals(setOf("status", "processId", "result"), payload.keys)
         assertTrue(payload["result"] is kotlinx.serialization.json.JsonNull)
     }
@@ -2279,4 +2369,8 @@ class ContinuationServiceTest {
             coVerify(exactly = 1) { repo.createJoin(any(), any(), any()) }
             coVerify(exactly = 0) { processManager.killProcess(any(), any()) }
         }
+
+    private companion object {
+        const val ANSWER_YES = """{"answer":"yes"}"""
+    }
 }
