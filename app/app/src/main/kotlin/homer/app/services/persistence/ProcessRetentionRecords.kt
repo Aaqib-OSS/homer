@@ -6,10 +6,9 @@ import homer.app.services.ProcessManager
 import java.nio.file.Path
 
 /**
- * The retention part of [ProcessManager]'s API: the purge times a finished run is stamped with,
- * the due-row reads and markers of the `WorkspacePurgeService` sweeps, and the shared-workspace
- * checks guarding every directory delete. [ProcessManager] exposes it by delegation to
- * [DefaultProcessRetentionRecords]. See ADR-0048 and ADR-0053.
+ * The retention part of [ProcessManager]'s API, delegated to [DefaultProcessRetentionRecords]: purge times,
+ * the `WorkspacePurgeService` sweeps' due-row reads and markers, and the shared-workspace checks guarding
+ * every directory delete. See ADR-0048 and ADR-0053.
  */
 interface ProcessRetentionRecords {
     suspend fun setPurgeAt(

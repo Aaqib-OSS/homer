@@ -204,6 +204,7 @@ internal val servicesModule =
                 resultTokenService = get(),
                 logger = get { parametersOf("homer.app.services.ContinuationService") },
                 config = get<AppConfig>().server.dispatch,
+                fileOperations = get(),
             )
         }
 

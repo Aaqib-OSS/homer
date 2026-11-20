@@ -3,7 +3,7 @@ status: accepted
 date: 2026-08-24
 deciders: Lukáš Vlk
 consulted: SAST (MR !6)
-amended: 2026-09-26
+amended: 2026-09-26, 2026-11-20
 ---
 # ADR-0051: The cooldown is enforced in the process-INSERT transaction, on recorded timestamps
 
@@ -181,6 +181,19 @@ failed debug run therefore also backs off the production cron. That is left as i
 — it is the correct reading of "this agent just failed" — and can be revisited
 separately if a debugging run is ever expected to leave the agent's schedule
 alone.
+
+## Amendment (2026-11-20): only a run that failed while executing arms `afterFailure`
+
+The `afterFailure` lookup counted every `FAILED` row of the agent, so a run refused before it
+started (a `SKIP_CURRENT` lock skip, an `onMaxParallelRuns: REJECT`, a full queue, a claim timeout)
+armed the window, and dropping a duplicate trigger backed every later start off with a `429`. The
+lookup now also requires `failure_reason IS NULL`. That column is written only for a run that ended
+`FAILED` with no recorded execution and no current command
+([ADR-0098](0098-pre-start-failure-reason-is-a-fixed-vocabulary.md)), so a run that failed while
+executing a command still arms the window, and so do rows from before schema v30. A read that lands
+before the reason write commits still sees `NULL` and arms the window: the gap fails closed. Both
+the pre-flight `CooldownGate` and the check inside `obtainProcessId`'s transaction read the same
+filtered rows, and `CooldownDecision` is unchanged.
 
 ## More Information
 

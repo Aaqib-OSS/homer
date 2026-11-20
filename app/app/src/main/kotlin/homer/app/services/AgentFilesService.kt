@@ -15,12 +15,8 @@ import kotlin.io.path.relativeTo
 import kotlin.io.path.walk
 
 /**
- * File-system access for editing the contents of an agent's directory from the API.
- *
- * Path containment is enforced by resolving every requested path against the agent
- * directory's real path and checking the result is still inside it (rejecting `..`,
- * absolute paths, and symlink escapes). All write operations are also gated on the
- * agent directory being writable on disk.
+ * The file API over an agent's directory. Every path is contained by [AgentFilePathResolver], and
+ * every mutation needs the directory writable on disk. See ADR-0004.
  */
 open class AgentFilesService(
     private val agentsService: AgentsService,
@@ -68,11 +64,8 @@ open class AgentFilesService(
         val dir = agentsService.getAgentDir(agentName) ?: return FileOpResult.NotFound("Agent '$agentName' not found")
         if (!dir.exists() || !dir.isDirectory()) return FileOpResult.NotFound("Agent directory missing")
         val real = dir.toRealPath()
-        // A nested agent is a different agent, not this one's contents (ADR-0047): a
-        // parent's listing stops at a nested agent's directory, so the listing can
-        // never surface — or hand a path to read/write/delete for — another agent's
-        // files. Checked per entry, O(depth) stats, so a listing never walks subtrees
-        // it is about to drop.
+        // The listing stops at a nested agent's directory, so it never surfaces another agent's
+        // files; checked per entry, so a dropped subtree is never walked. See ADR-0068.
         val entries =
             real
                 .walk()
@@ -83,10 +76,8 @@ open class AgentFilesService(
                     // Cap recursion depth — `relative.nameCount` is the number of segments
                     if (relative.nameCount > LIST_MAX_DEPTH) return@mapNotNull null
                     if (AgentDirs.isBelowNestedAgentDir(real, relative)) return@mapNotNull null
-                    // CWE-59, same gate as resolveSafe: a symlink inside the parent whose
-                    // TARGET is a nested agent's file stats as its own name — a lexical
-                    // check misses it, and a listing that surfaced it would hand the
-                    // child's file name to an `edit` holder of the parent only (§12 rule 3).
+                    // A link to a nested agent's file stats as its own name: gate its target like
+                    // resolveSafe does (CWE-59, ADR-0047 rule 3).
                     val realTarget =
                         runCatching { p.toRealPath() }.getOrNull()
                             ?: return@mapNotNull null
@@ -156,11 +147,7 @@ open class AgentFilesService(
                 ?: return FileOpResult.NotFound("Agent '$agentName' not found")
         if (!agent.writable) return FileOpResult.Forbidden("Agent directory is read-only")
 
-        // Cap incoming payload before we touch disk OR hand it to the
-        // YAML/JSON parser. Without this an authenticated caller could
-        // PUT a 1 GB agent.yaml body — the write would land on disk,
-        // and the subsequent agentsService.reload() would readText()
-        // the lot. Audit P1 #14.
+        // Capped before the write lands, so an oversized body never reaches disk (CWE-400, ADR-0047 rule 4).
         val sizeBytes = content.toByteArray(Charsets.UTF_8).size.toLong()
         if (sizeBytes > maxConfigFileBytes) {
             return FileOpResult.BadRequest(
@@ -174,20 +161,12 @@ open class AgentFilesService(
 
         if (target.isDirectory()) return FileOpResult.BadRequest("Refusing to overwrite a directory: $relPath")
 
-        // Every definition-file check keys on where the write LANDS, never on the
-        // name the request used: a symlink alias inside the agent dir
-        // (`notes.txt -> agent.yaml`) would otherwise write a definition past the
-        // grant and schema checks. CWE-59.
+        // Definition checks key on where the write lands, so an alias like `notes.txt -> agent.yaml`
+        // is the definition (CWE-59, ADR-0068).
         definitionGate.denial(resolved.landingRel, relPath, content, authorizeCreateAgent)?.let { return it }
 
-        // A dangling symlink at the target is denied in resolveSafe: the landing
-        // path was already computed there, gated against the agent dir like any
-        // other path, and is what this write goes through.
-
-        // A permission change between the `writable` probe above and the syscall
-        // makes either call fail with AccessDeniedException; fail fast as 403, not
-        // an unhandled 500 (ADR-0004). Fixed message — never the OS message or the
-        // path (§12 rule 7). A denied write must not reload.
+        // Writes through the gated landing, never a dangling-link `target`; a permission change since the
+        // probe is a fixed 403 with no OS message or path, and no reload (ADR-0004, ADR-0047 rule 7).
         if (!writeCreatingParents(resolved.landing, content.toByteArray(Charsets.UTF_8))) {
             return FileOpResult.Forbidden("Agent directory is read-only")
         }
@@ -200,9 +179,8 @@ open class AgentFilesService(
         landing: Path,
         bytes: ByteArray,
     ): Boolean {
-        // Directories `createDirectories` is about to build, recorded so a denied
-        // write below can take the empty chain back — a leftover directory is one
-        // every later discovery walk pays for and the file API cannot remove.
+        // The directories `createDirectories` will build, so a denied write removes the empty
+        // chain it left. See ADR-0004.
         val made =
             landing.parent
                 ?.let { parent -> generateSequence(parent) { it.parent }.takeWhile { !it.exists() }.toList() }
@@ -271,10 +249,8 @@ open class AgentFilesService(
         try {
             createDirectoriesAndTemplate(dir, name)
         } catch (_: AccessDeniedException) {
-            // Undo this call's own work: a definition-less directory wedges the name —
-            // every retry hits the 409 on `dir.exists()` above, and the file API refuses
-            // to delete directories. Best effort: a raced-in file makes the delete fail
-            // and the directory stays, which the 409 then reports truthfully.
+            // Remove the definition-less directory, which would wedge the name behind a 409; a
+            // raced-in file keeps it, and the 409 then reports it truthfully. See ADR-0004.
             if (Files.notExists(dir.resolve("agent.yaml"))) runCatching { Files.deleteIfExists(dir) }
             return FileOpResult.Forbidden("Agents search path is not writable")
         }
@@ -294,10 +270,8 @@ open class AgentFilesService(
     }
 
     /**
-     * The two calls `create()` treats as one atomic step. Extracted so the denied
-     * -template-write race can be tested: once `createDirectories` has run, the new
-     * directory is owner-writable, so no POSIX bit combination denies the write that
-     * follows it.
+     * `create()`'s directory and template write as one step: the test seam for a denied template
+     * write, which no POSIX bit combination produces once `createDirectories` has run.
      */
     internal open fun createDirectoriesAndTemplate(
         dir: Path,
@@ -308,10 +282,8 @@ open class AgentFilesService(
     }
 
     /**
-     * The two calls `write()` treats as one atomic step. Extracted so the denied
-     * -write race can be tested: once `createDirectories` has run, the built chain
-     * is owner-writable, so no POSIX bit combination denies the write that follows
-     * it.
+     * `write()`'s parent creation and write as one step: the test seam for a denied write, which
+     * no POSIX bit combination produces once `createDirectories` has run.
      */
     internal open fun createDirectoriesAndWrite(
         landing: Path,

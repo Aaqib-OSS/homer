@@ -927,12 +927,12 @@ class LocalShellExecutorTest {
         @TempDir tmp: Path,
     ) = runTest {
         // stdout points into a directory that does not exist, so the pump cannot open
-        // its target; the child writes far more than a pipe buffer holds.
+        // its target; the child never stops writing, so it outgrows any pipe size.
         val missingDir = tmp.resolve("no-such-dir")
         val started = System.currentTimeMillis()
         val result =
             LocalShellExecutor(tmp).cmd(
-                command = listOf("bash", "-c", "head -c 1000000 /dev/zero"),
+                command = listOf("bash", "-c", "cat /dev/zero"),
                 stdOut = missingDir.resolve("cmd_0.out"),
                 stdErr = tmp.resolve("cmd_0.err"),
                 stdIn = null,

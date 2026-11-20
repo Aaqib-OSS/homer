@@ -65,6 +65,36 @@ class ContinuationTest : E2eTestBase() {
         }
 
     @Test
+    fun `a transformed result over the transform cap resumes the target with resultTooLarge`() =
+        runBlocking {
+            val originId = HomerApi.startRun("big-result-continuer")
+            assertEquals("FINISHED", Awaits.awaitTerminal(originId).status, "the origin returns right after registering")
+
+            val continuation =
+                Awaits.awaitNotNull("continuation registered by process $originId") {
+                    HomerApi.continuations().continuations.firstOrNull { it.originProcessId == originId }
+                }
+            val sub = Awaits.awaitTerminal(continuation.watchedProcessId)
+            assertEquals("big-result-emitter", sub.agentName)
+            assertEquals("FINISHED", sub.status)
+
+            val fired =
+                Awaits.awaitNotNull("continuation ${continuation.id} to fire after the sub finished") {
+                    HomerApi
+                        .continuations()
+                        .continuations
+                        .firstOrNull { it.id == continuation.id && it.status == "DISPATCHED" && it.firedProcessId != null }
+                }
+            val target = Awaits.awaitTerminal(fired.firedProcessId!!)
+            assertEquals("FINISHED", target.status)
+
+            val stdout = HomerApi.artifact(target.id, "cmd_0.out").bodyAsText()
+            assertTrue(stdout.contains("\"resultTooLarge\":true"), "the payload must mark the dropped result: $stdout")
+            assertTrue(stdout.contains("\"result\":null"), "the over-cap result must not be inlined: $stdout")
+            assertFalse(stdout.contains("resultRef"), "no unredeemable ref may be minted: $stdout")
+        }
+
+    @Test
     fun `a continuation fired back to its own agent inherits the origin run's inputs`() =
         runBlocking {
             // `continuation-inherit` resumes itself with `continuation.inheritInputs: true`,

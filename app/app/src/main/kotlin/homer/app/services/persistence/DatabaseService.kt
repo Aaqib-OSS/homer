@@ -179,11 +179,13 @@ class DatabaseService(
         }
     }
 
+    private val bounceWriterToAutoCommit = BounceWriterToAutoCommit(logger)
+
     /** Runs [block] inside one write-locked transaction on [ioDispatcher] (blocking JDBC). */
     suspend fun <T> query(block: JdbcTransaction.() -> T): T =
         withContext(ioDispatcher) {
             transaction(database) {
-                registerInterceptor(BounceWriterToAutoCommit)
+                registerInterceptor(bounceWriterToAutoCommit)
                 block()
             }
         }
@@ -228,22 +230,27 @@ class DatabaseService(
     }
 
     companion object {
-        const val SCHEMA_VERSION = 33
+        const val SCHEMA_VERSION = 34
         const val OPTIMIZE_INTERVAL_MS = 60 * 60 * 1000L
         private const val BUSY_TIMEOUT_MS = 5000
 
         private val IDENTITY_CONNECTION_WRAPPER: (Connection) -> Connection = { it }
 
         // One attempt, never a retry: a block here may have landed its data before throwing, and
-        // the blocks are not idempotent. See ADR-0020 and SQLite rule 5 in `app/CLAUDE.md`.
+        // the blocks are not idempotent. See ADR-0020.
         val WRITER_DATABASE_CONFIG: DatabaseConfig = DatabaseConfig { defaultMaxAttempts = 1 }
 
         // Ends the driver's post-commit re-`BEGIN IMMEDIATE` so the write lock ends with the
-        // transaction, not with Exposed's connection teardown; stateless. See ADR-0020.
-        private object BounceWriterToAutoCommit : StatementInterceptor {
+        // transaction, not with Exposed's connection teardown; holds no per-transaction state. See ADR-0020.
+        private class BounceWriterToAutoCommit(
+            private val logger: Logger,
+        ) : StatementInterceptor {
             override fun afterCommit(transaction: Transaction) {
                 val raw = (transaction as JdbcTransaction).connection.connection as java.sql.Connection
-                runCatching { raw.autoCommit = true }
+                // The commit has landed: a failure only keeps the lock until teardown, so it must not fail the write (ADR-0020).
+                runCatching { raw.autoCommit = true }.onFailure {
+                    logger.warn("Writer connection stayed in a transaction after a commit; the write landed: {}", it.message)
+                }
             }
         }
 

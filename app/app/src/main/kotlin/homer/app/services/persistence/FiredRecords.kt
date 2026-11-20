@@ -37,12 +37,9 @@ internal interface FiredRecordTable {
 }
 
 /**
- * The statements [DispatchRepository] and [ContinuationRepository] run alike on their [table]:
- * the PENDING cap, the claim CAS, the expiry predicate, the list page and the settled-row prune.
- * Each is the statement either repository ran on its own table, served by the same index. A
- * `…Tx` function runs inside its caller's transaction; every other one opens its own, and each
- * state change stays one write transaction. [statuses] are the table's status names, which share
- * `PENDING` and `DISPATCHING`; every other one is settled.
+ * The statements the fired-record repositories run alike on their [table]: the PENDING cap, the claim
+ * CAS, the expiry predicate, the list page and the settled-row prune. A `…Tx` function runs in its
+ * caller's transaction, any other opens its own. Of [statuses], all but PENDING and DISPATCHING are settled.
  */
 internal class FiredRecords<T>(
     private val db: DatabaseService,
@@ -94,12 +91,9 @@ internal class FiredRecords<T>(
         }
 
     /**
-     * One page of rows, newest first, mapped by [toRecords] inside the read, plus the count of all
-     * matching rows. Visibility runs in SQL before the limit, so neither the page nor
-     * [RecordPage.total] carries a row the caller cannot see (ADR-0039); [visibleAgents] null means
-     * an admin. Every filtered shape is `id IN (<one SELECT id per visibility arm, UNIONed>)`: each
-     * arm seeks its own index and the outer read walks the id set in primary-key order, so the page
-     * needs no sort. DatabaseMigrationTest pins every shape. See ADR-0021 (2026-09-30 amendment).
+     * One page of rows, newest first, mapped by [toRecords] inside the read, and the count of all matching rows.
+     * Visibility applies in SQL before the limit, so neither shows a row the caller cannot see ([visibleAgents] null =
+     * admin); each filtered shape is an index-driven `id IN (… UNION …)` (ADR-0039; ADR-0021, 2026-09-30 amendment).
      */
     suspend fun <R> page(
         status: String?,
@@ -151,12 +145,9 @@ internal class FiredRecords<T>(
     }
 
     /**
-     * Deletes settled rows created before [cutoff] in write transactions of at most [batchSize]
-     * rows, so one sweep never holds the write lock long, behind an [anyDue] pre-check. Each batch
-     * reads `id` plus [dependentColumns], and [deleteDependents] deletes the batch's dependent rows
-     * before the rows themselves, in the same transaction. `created_at` is the anchor because a
-     * failed or cancelled row carries no settle time, and no row settles before it is created; the
-     * pre-check and each batch are served by `<table>_status_created`. Returns the number deleted.
+     * Deletes settled rows created before [cutoff], behind an [anyDue] pre-check, in write transactions of
+     * at most [batchSize]; [deleteDependents] first deletes each batch's dependents, read through
+     * [dependentColumns]. Served by `<table>_status_created`. Returns the number deleted. ADR-0021.
      */
     suspend fun pruneSettled(
         cutoff: Long,

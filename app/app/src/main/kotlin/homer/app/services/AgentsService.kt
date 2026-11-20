@@ -4,7 +4,6 @@ import homer.app.infra.AgentDefinitionValidator
 import homer.app.infra.AgentInputChecks
 import homer.app.infra.AgentInputResolver
 import homer.app.infra.AgentReloadDiff
-import homer.app.infra.AgentScan
 import homer.app.infra.AgentScanner
 import homer.app.infra.InputSchemaValidator
 import homer.app.infra.ParamValidator
@@ -17,10 +16,8 @@ import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Loads agent definitions from [agentsSearchPath] and publishes them as one atomic
- * snapshot. Scanning ([AgentScanner], validating through [AgentDefinitionValidator])
- * and the reload diff ([AgentReloadDiff]) are collaborators built from the
- * constructor's parameters, so the DI wiring sees one service.
+ * Loads agent definitions from [agentsSearchPath] and publishes them as one atomic snapshot. The
+ * [AgentScanner] and the [AgentReloadDiff] are built from the constructor's parameters. See ADR-0068.
  */
 class AgentsService(
     private val agentsSearchPath: String,
@@ -72,20 +69,15 @@ class AgentsService(
     }
 
     /**
-     * Rescan agent definitions on disk and atomically swap in the new state.
-     * Disk I/O (`scanner.scan()`) runs outside any lock so concurrent callers can scan in
-     * parallel; the new state is published via `compareAndSet` against the snapshot the scan
-     * was based on. On a lost race we rescan and retry — both the scan AND the diff must be
-     * recomputed against the now-current state, or a stale scan attributes "removed" to
-     * directories the winning writer just legitimately added.
+     * Rescans the agents outside any lock and publishes by compare-and-set on the snapshot the scan
+     * began from; a lost race rescans and re-diffs, up to [MAX_RELOAD_CAS_ATTEMPTS]. See ADR-0068.
      */
     fun reload(): AgentReloadResult {
         var attempt = 0
         while (true) {
-            // Rescan and recompute the diff against the now-current state every
-            // attempt (see KDoc): a stale scan would misattribute "removed".
-            val scan = scanner.scan()
+            // Read before the scan: a reload that publishes while this one scans must fail its CAS.
             val currentState = stateRef.get()
+            val scan = scanner.scan()
             val computation = AgentReloadDiff.compute(scan, currentState)
 
             if (stateRef.compareAndSet(currentState, computation.newState)) {
@@ -94,7 +86,7 @@ class AgentsService(
 
             attempt++
             if (attempt >= MAX_RELOAD_CAS_ATTEMPTS) {
-                return giveUpAfterContention(scan, attempt)
+                return giveUpAfterContention(attempt)
             }
         }
     }
@@ -123,22 +115,20 @@ class AgentsService(
     }
 
     /**
-     * Stale-scan fallback: after losing the CAS race [MAX_RELOAD_CAS_ATTEMPTS] times we stop
-     * retrying and publish nothing. The winning writer already swapped in a coherent snapshot,
-     * so we return the diff of our (possibly slightly stale) scan against the latest published
-     * state — an accurate report of what this reload would have done relative to it.
+     * After [MAX_RELOAD_CAS_ATTEMPTS] lost races this reload published nothing and emits no event, so it
+     * reports no agent change, only the failure in `errors`; the winning reloads reported theirs.
      */
-    private fun giveUpAfterContention(
-        scan: AgentScan,
-        attempt: Int,
-    ): AgentReloadResult {
+    private fun giveUpAfterContention(attempt: Int): AgentReloadResult {
         logger.warn(
             "AgentsService.reload() lost CAS race {} times; another writer is reloading concurrently. Giving up.",
             attempt,
         )
-        val current = stateRef.get()
-        val giveUpRemoved = AgentReloadDiff.removedAgentNames(current.agents, current.sourceDirs, scan)
-        return AgentReloadDiff.result(current.agents, scan, giveUpRemoved)
+        return AgentReloadResult(
+            added = emptyList(),
+            updated = emptyList(),
+            removed = emptyList(),
+            errors = listOf("Reload published nothing: $attempt concurrent reloads changed the agents during its scans; retry it"),
+        )
     }
 
     private companion object {

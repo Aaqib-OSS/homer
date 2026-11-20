@@ -5,7 +5,6 @@ import homer.app.executors.CommandArtifactPaths
 import homer.app.executors.RunKiller
 import homer.app.executors.RunRecords
 import homer.app.executors.RunWorkRecords
-import homer.app.infra.PathSafety
 import homer.app.infra.ProcessJobRegistry
 import homer.app.models.ExecutionInfo
 import homer.app.models.LlmAccounting
@@ -38,12 +37,9 @@ import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
 /**
- * Process lifecycle FSM (`CREATED → WORKING → FINISHED/FAILED/KILLED`, plus `UNKNOWN` for runs
- * interrupted by a restart). Durable state lives in SQLite via [ProcessRepository], authoritative with
- * no in-memory cache; read-modify-write atomicity comes from the repository's `BEGIN IMMEDIATE`
- * transactions (`DatabaseService`). The only runtime-only piece is the live coroutine [Job] in
- * [ProcessJobRegistry], rebuilt empty on boot. This class owns the transitions and their events;
- * the record reads, retention bookkeeping and run annotations are the repository's, exposed by delegation. See ADR-0020.
+ * Process lifecycle FSM (`CREATED → WORKING → FINISHED/FAILED/KILLED`, plus `UNKNOWN` after a restart) over SQLite via
+ * [ProcessRepository], with no in-memory cache; only the live [Job] in [ProcessJobRegistry] is runtime-only. Owns the
+ * transitions and their events; record reads, retention and run annotations are the repository's, by delegation. See ADR-0020.
  */
 class ProcessManager(
     private val repository: ProcessRepository,
@@ -51,22 +47,17 @@ class ProcessManager(
     private val logger: Logger,
     private val broadcaster: ProcessEventBroadcaster = ProcessEventBroadcaster(),
     private val maxProcesses: Int = DEFAULT_MAX_PROCESSES,
-    // Configured workspace root (`workspaceRootPath`). Eviction's workspace delete
-    // is asserted to stay inside it before running, so a poisoned persisted path
-    // cannot steer the recursive delete outside the workspace tree.
-    private val workspaceRoot: Path = Path.of("."),
+    // Configured `workspaceRootPath`: eviction's recursive delete is asserted to stay inside it,
+    // so a poisoned persisted path cannot steer it outside the workspace tree (CWE-22).
+    workspaceRoot: Path = Path.of("."),
     // Capacity eviction skips the WorkspacePurgeService path, so per-process
     // state held elsewhere (question registrations) must be released here.
     private val onProcessEvicted: suspend (Int) -> Unit = {},
-    // The agent-level hooks a status transition records, and the cap on pending rows. Resolved
-    // per transition from the current agent catalog, so a reload between a run's start and its
-    // transition is honoured; the lookup reads no database, so it is safe inside the write
-    // transaction. Null = record none. See ADR-0107.
+    // The hooks a transition records and the pending cap, resolved per transition from the current catalog
+    // with no database read, so it is safe inside the write transaction; null records none. See ADR-0107.
     private val hookRecording: () -> HookRecording? = { null },
-    // Fires the hook rows a transition just recorded, and logs the entries the pending cap shed.
-    // Called after the write's commit, never inside it: a fire starts a run, whose own row write
-    // must not nest in this transaction, and a log line inside it would be file IO under the
-    // write lock (SQLite rule 3).
+    // Fires the hook rows a transition recorded and logs the entries the pending cap shed. Called after
+    // the write commits, never inside it: a fire starts a run, whose row write must not nest (ADR-0107).
     private val onHooksRecorded: suspend (RecordedHooks) -> Unit = {},
 ) : ProcessRecordReads by DefaultProcessRecordReads(repository),
     ProcessRetentionRecords by DefaultProcessRetentionRecords(repository),
@@ -82,22 +73,15 @@ class ProcessManager(
             .epochSeconds
             .toString()
 
-    // In-memory only, keyed by (processId, cmdIndex) — the actual artifact paths an executor
-    // wrote to, for a per-attempt `artifactNameTemplate` (see ArtifactNameResolver / AGENT.md).
-    // Deliberately NOT part of the serializable ExecutionInfo/ProcessInfo API: it exists purely
-    // to let LogTailService's live console tail follow a command's real file, and it is not
-    // durable — a restart loses it exactly like ProcessJobRegistry, fine since nothing is left
-    // running to tail. Entries live for the process's lifetime (a finished command's post-hoc
-    // tail must still resolve), so they are cleared only in removeProcess, not when a command
-    // or process reaches a terminal status.
+    // In memory only: the paths an executor wrote, by (processId, cmdIndex). Cleared only when the row goes, never at a
+    // terminal status, so a finished command's log tail and LLM-event stream still resolve.
     private val commandArtifacts = ConcurrentHashMap<Int, ConcurrentHashMap<Int, CommandArtifactPaths>>()
 
-    // Settled accountings whose step is not recorded yet, keyed by the pending accounting the
-    // step will carry (ADR-0089). No mutex: both sides are single transactions plus one atomic
-    // map step, so the write lock is never held across a `query { }` (app/CLAUDE.md SQLite rule
-    // 3); a settlement landing between a step's map read and its row write can buffer unapplied
-    // — accepted and recorded in ADR-0089. Cleared with the process.
+    // Settled accountings whose step is not recorded yet, keyed by the pending accounting the step will carry.
+    // No mutex, so a settlement can buffer unapplied, as ADR-0089 accepts. Cleared with the process.
     private val unappliedSettlements = ConcurrentHashMap<Int, MutableMap<LlmAccounting, LlmAccounting>>()
+
+    private val evictedWorkspaceCleanup = EvictedWorkspaceCleanup(workspaceRoot, logger, ::isArtifactsDirShared)
 
     override suspend fun setCommandArtifacts(
         processId: Int,
@@ -113,11 +97,8 @@ class ProcessManager(
     ): CommandArtifactPaths? = commandArtifacts[processId]?.get(cmdIndex)
 
     /**
-     * The tracked entry with the highest cmdIndex for [processId] — commands run in
-     * increasing index order, so the highest registered index is the one currently
-     * running (including a debug run restricted to a single, possibly non-zero,
-     * `commandIndices` entry, which records nothing for the indices it skips). Null
-     * when nothing is tracked for this process.
+     * The tracked entry with the highest cmdIndex for [processId], which is the running command since commands run in
+     * index order (a debug run's single `commandIndices` entry included). Null when nothing is tracked.
      */
     fun latestCommandArtifacts(processId: Int): Pair<Int, CommandArtifactPaths>? =
         commandArtifacts[processId]?.maxByOrNull { it.key }?.toPair()
@@ -157,11 +138,9 @@ class ProcessManager(
                 evicted.agentName,
                 evicted.status,
             )
-            deleteEvictedWorkspace(evicted)
-            // Capacity eviction deletes the row directly in the repository, bypassing
-            // removeProcess — without this, an evicted process's tracked artifact paths
-            // would leak in memory for the rest of the server's uptime (root CLAUDE.md
-            // §12 rule 4).
+            evicted.artifactsDir?.let { evictedWorkspaceCleanup.delete(evicted.id, it) }
+            // Eviction deletes the row in the repository, bypassing removeProcess, so its
+            // in-memory entries are dropped here or leak for the uptime (ADR-0047 rule 4).
             commandArtifacts.remove(evicted.id)
             unappliedSettlements.remove(evicted.id)
             onProcessEvicted(evicted.id)
@@ -172,31 +151,8 @@ class ProcessManager(
         return result.processId
     }
 
-    /**
-     * Deletes an evicted run's workspace directory. Capacity eviction bypasses
-     * [WorkspacePurgeService], so without this the process row is dropped while its
-     * on-disk workspace orphans and accumulates until the disk fills. Best-effort:
-     * the row is already gone, so a failed delete cannot be retried — it is logged,
-     * not thrown. Skipped when another process still references the directory (shared
-     * fixed-path workspaces), mirroring the purge sweep's guard.
-     */
-    private suspend fun deleteEvictedWorkspace(evicted: ProcessRepository.EvictedProcess) {
-        val artifactsDir = evicted.artifactsDir ?: return
-        if (isArtifactsDirShared(artifactsDir, evicted.id)) {
-            logger.info(
-                "Skipping workspace deletion for evicted process {}: {} is still referenced by another process",
-                evicted.id,
-                artifactsDir.parent,
-            )
-            return
-        }
-        val workspaceDir = artifactsDir.parent ?: return
-        // Assert containment before deleting: artifactsDir is read back from the DB,
-        // not the freshly-validated workspace config, so a poisoned/crafted path must
-        // not be able to steer this recursive delete outside the workspace root.
-        runCatching { PathSafety.deleteContainedRecursively(workspaceRoot, workspaceDir) }
-            .onFailure { logger.warn("Failed to delete workspace for evicted process {}: {}", evicted.id, it.message) }
-    }
+    /** Retries the evicted workspaces whose delete failed; the workspace purge sweep calls it every tick. */
+    suspend fun retryEvictedWorkspaceDeletes() = evictedWorkspaceCleanup.retryPending()
 
     suspend fun setProcessStatus(
         processId: Int,
@@ -210,9 +166,8 @@ class ProcessManager(
         expected: Set<ProcessStatus>,
         new: ProcessStatus,
     ): Boolean =
-        // Guards terminal transitions: a concurrent killProcess() can move the record to KILLED
-        // between process.execute() finishing and the FINISHED write; returning false here
-        // preserves KILLED (app/CLAUDE.md "Status precedence rules" rule 1).
+        // Guards terminal transitions: a concurrent killProcess() can land KILLED before the
+        // FINISHED write, and returning false here keeps KILLED (ADR-0020).
         transitionStatus(processId, new, guard = expected)
 
     @OptIn(ExperimentalTime::class)
@@ -260,12 +215,9 @@ class ProcessManager(
     }
 
     /**
-     * Commits a step boundary — appends [executionInfo] and sets [nextLabel] as the current command (or
-     * clears it when null) — in ONE repository write transaction, emitting at most one
-     * [ProcessEvent.CurrentCommandChanged] for the boundary. When the row is gone (concurrent kill or
-     * eviction) nothing is written and no event is emitted; when it exists but has reached a terminal
-     * status the execution is still recorded but the current command is left cleared, also with no event,
-     * so a boundary landing after a concurrent kill cannot resurrect a running command. See ADR-0020 and app/CLAUDE.md SQLite rule 3.
+     * Appends [executionInfo] and sets [nextLabel] as the current command (null clears it) in one write transaction, emitting
+     * at most one [ProcessEvent.CurrentCommandChanged]. A gone row writes nothing; a terminal row records the execution but keeps
+     * the command cleared, with no event, so a boundary after a kill cannot resurrect a running command. See ADR-0020.
      */
     override suspend fun completeStep(
         processId: Int,
@@ -289,9 +241,8 @@ class ProcessManager(
         pending: LlmAccounting,
         settled: LlmAccounting,
     ) {
-        // A row that is gone is not buffered: removeProcess/eviction already ran the only
-        // unappliedSettlements removal that would ever clear it, so buffering there would leak
-        // the entry for the server's uptime (ADR-0089).
+        // A gone row is not buffered: removeProcess or eviction already ran the only removal
+        // that would ever clear the entry, so it would leak for the uptime (ADR-0089).
         when (repository.settleAccounting(processId, pending, settled)) {
             is SettlementSwap.Settled -> Unit
             is SettlementSwap.RowGone -> Unit
@@ -309,11 +260,8 @@ class ProcessManager(
     }
 
     /**
-     * Sets a step's current command at step start and emits [ProcessEvent.CurrentCommandChanged].
-     * The write is guarded on the row still being live: a kill landing between the run's
-     * WORKING transition and this write leaves the command cleared and emits no event, the
-     * same invariant [completeStep] enforces — a terminal run must never be handed back a
-     * running command.
+     * Sets a step's current command at step start and emits [ProcessEvent.CurrentCommandChanged], only while the row is
+     * live: after a kill the command stays cleared with no event, as in [completeStep].
      */
     override suspend fun setCurrentCommand(
         processId: Int,

@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-16
 deciders: Lukáš Vlk
-amended: 2026-08-11, 2026-11-15
+amended: 2026-08-11, 2026-11-15, 2026-11-20
 ---
 # ADR-0025: Capability-token read-by-reference for large continuation results
 
@@ -135,3 +135,34 @@ fetch time.
 Correction to the amendment above: the audience binding was not unreleased. It
 shipped in 1.13.0, after read-by-reference shipped in 1.6.0, so production
 databases created in between carried the default until v33.
+
+## Amendment (2026-11-20): a transformed result over 4 MiB is marked, not dropped silently
+
+Decision #5 caps a server-side transform at 4 MiB, so a token minted for a
+larger transformed result could only ever be answered `413`. Since 1.21.0 the
+fire mints none, and the parent resumed with `result: null` and no `resultRef`:
+the same payload as a transform that matched nothing. A parent could not tell
+the two apart, and an operator looking at the resumed run saw no reason. The
+typical case is a sub that failed on a Claude step, whose last stdout is the
+whole NDJSON event stream.
+
+A transformed result is capped at 4 MiB end to end. Over that cap the parent
+still resumes without a reference, and the payload carries a
+`resultTooLarge: true` sibling of `result`:
+
+```json
+{ "status": "FAILED", "processId": 99, "result": null, "resultTooLarge": true }
+```
+
+The field is absent in every other case, so payloads within the cap stay byte
+for byte as before. A JOIN marks only the entry of the sub that was over the
+cap. Homer's server log keeps its warning with the size, and `homer_fanout`
+reports the marker on stderr, so the line lands in the resumed parent run's own
+log, the place an operator reads.
+
+A payload field was chosen over a `<param>_*` sibling environment variable: the
+whole payload already rides in one variable (`resumeParam`), a JOIN would need a
+variable per entry, and `homer_fanout` reads the payload, not the environment.
+Resuming the parent `FAILED`, or minting a raw-only reference, was rejected: the
+parent's own status check already decides what a missing result means, and a
+raw reference would hand a graph megabytes it asked to have transformed.

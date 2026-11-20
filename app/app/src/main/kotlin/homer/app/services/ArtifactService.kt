@@ -6,6 +6,7 @@ import homer.app.models.ArtifactEntry
 import homer.app.models.ArtifactListingResponse
 import org.slf4j.Logger
 import java.io.OutputStream
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.invariantSeparatorsPathString
 
@@ -17,12 +18,8 @@ class ArtifactService(
     private val maxListEntries: Int = MAX_ARTIFACT_LIST_ENTRIES,
 ) {
     /**
-     * Pre-flight size check for [path]. Returns success with the file size
-     * when it is within [maxArtifactBytes]; failure with an
-     * [ArtifactTooLargeException] otherwise. Used by the artifact route to
-     * answer with `413 Payload Too Large` before opening the stream, so a
-     * caller-induced multi-GB download cannot turn into a sustained
-     * bandwidth/time DoS. Audit P1 #18.
+     * The size of [path], or an [ArtifactTooLargeException] over [maxArtifactBytes]; the artifact route
+     * answers `413` with it before opening the stream (CWE-400, ADR-0047 rule 4).
      */
     fun checkArtifactSize(path: Path): Result<Long> {
         val size = fileOperations.fileSize(path)
@@ -77,6 +74,9 @@ class ArtifactService(
         val artifactsDir =
             processInfo.artifactsDir
                 ?: return Result.failure(IllegalArgumentException("Process has no artifacts directory"))
+        // A run can swap its artifacts directory for a symlink, which assertContained follows (CWE-59).
+        // Checked once here, so a swap before the file is opened is followed (AR-12).
+        if (Files.isSymbolicLink(artifactsDir)) return Result.failure(IllegalArgumentException("Artifact not found"))
 
         val fullPath = artifactsDir.resolve(relativePath)
         val contained =
@@ -87,13 +87,8 @@ class ArtifactService(
                 // the distinction lets an attacker probe filesystem layout.
                 return Result.failure(IllegalArgumentException("Artifact not found"))
             }
-        // Reject an existing non-regular file (FIFO/device/directory/symlink) and a
-        // hard-linked regular file (its other name may be another run's artifact —
-        // the same cross-principal read LogTailService/LlmEventStreamService refuse
-        // for stdout, CWE-59). Files.size reports 0 for a FIFO so the size pre-flight
-        // passes, then the blocking read would pin the request thread forever. A
-        // not-yet-existing path still succeeds — streamed/tailed artifacts resolve
-        // before they are written.
+        // Refuse a non-regular or hard-linked file: a FIFO would pin the request thread, a hard link
+        // may name another run's artifact. A missing path passes (CWE-59, ADR-0070).
         if (PathSafety.isLinkedOrSpecial(contained)) {
             return Result.failure(IllegalArgumentException("Artifact not found"))
         }
@@ -101,12 +96,9 @@ class ArtifactService(
     }
 
     /**
-     * Lists regular files under the process's artifacts directory (recursive). Paths are
-     * relative to the artifacts directory, use forward slashes, and are sorted ascending.
-     * The listing is capped at [maxListEntries] entries — more files yield exactly that many
-     * with `truncated = true`, so an agent writing an enormous number of artifacts cannot
-     * exhaust memory here. Returns failure if the process is unknown, has no artifacts dir,
-     * or the directory does not exist on disk.
+     * The regular files under the process's artifacts directory, relative, `/`-separated and sorted, capped
+     * at [maxListEntries] with `truncated = true` (CWE-400). Fails for an unknown process and for a missing
+     * or symlinked artifacts directory.
      */
     suspend fun listArtifacts(processId: Int): Result<ArtifactListingResponse> {
         val processInfo =
@@ -117,7 +109,7 @@ class ArtifactService(
             processInfo.artifactsDir
                 ?: return Result.failure(IllegalArgumentException("Process has no artifacts directory"))
 
-        if (!fileOperations.dirExists(artifactsDir)) {
+        if (Files.isSymbolicLink(artifactsDir) || !fileOperations.dirExists(artifactsDir)) {
             return Result.failure(IllegalArgumentException("Artifacts directory does not exist"))
         }
 
@@ -146,9 +138,8 @@ class ArtifactService(
     }
 
     /**
-     * Streams an artifact file to the output stream
-     * For active files (still being written), uses tail-like incremental streaming
-     * For complete files, streams the entire file at once
+     * Copies [artifactPath] to [output] once, up to its end at read time. A file its process still
+     * writes is not followed; the route marks it `X-File-Complete: false`.
      */
     suspend fun streamArtifact(
         artifactPath: Path,

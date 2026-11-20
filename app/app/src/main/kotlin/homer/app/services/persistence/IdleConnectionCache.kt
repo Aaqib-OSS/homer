@@ -9,11 +9,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Keeps up to [maxIdle] read connections open between transactions instead of opening one
- * per transaction. It is a cache, not a bound: with none idle a new connection
- * opens, so no caller ever waits here. A connection comes back with no transaction open,
- * so an idle one pins no WAL snapshot. Readers only: a writer connection kept open holds
- * the write lock after every commit. See ADR-0020.
+ * Keeps up to [maxIdle] read connections open between transactions: a cache, not a bound, so with none idle
+ * a new one opens and no caller waits. An idle connection holds no transaction, so it pins no WAL snapshot.
+ * Readers only: a kept writer holds the write lock after every commit. See ADR-0020.
  */
 internal class IdleConnectionCache(
     private val maxIdle: Int,

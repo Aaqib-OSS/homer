@@ -5,16 +5,24 @@
 ### Homer
 
 - **Added: `GET /api/v1/auth/me` answers a bearer token** — A request carrying a bearer token gets that token's name, role and grants, and the route is mounted whenever a `bearer` or `password` scheme is configured.
+- **Security: LangGraph inspect and state run with a minimal environment** — The server-side `homer_langgraph inspect` and `state` subprocesses get only `PATH`, `HOME`, `LANG`, the standard `LC_` locale categories, `TMPDIR`, `VIRTUAL_ENV` and `PYTHONHOME` from the server environment, plus the agent's `env`, so a graph module that reads any other server variable at import time must now declare it in the agent's `env`. See [ADR-0027](docs/adr/0027-langgraph-graph-introspection.md).
 - **Security: exec no longer logs the raw remote command** — The ssh exec channel and session no longer log the remote command at any log level, and a failed Kubernetes exec is logged and reported without its exec URL, raw cause or stack trace.
 - **Fixed: workspace helpers keep tokens off the command line** — `homer-ask`, `homer-dispatch`, `homer-inbox`, `homer-join`, `homer-result` and `homer-tag` pass the callback token, the result token and request bodies to curl outside argv, where other users on the host could read them.
 - **Deprecated: `homer-result --token`** — Pass the result token in `HMR_RESULT_TOKEN` instead; the flag is removed in 1.45.0.
-- **Fixed: LangGraph run status reads a bounded identity file** — An oversized, linked or non-regular `langgraph.json` in a run's artifacts is ignored instead of read whole on every status poll.
+- **Fixed: LangGraph run status reads a bounded identity file** — An oversized, linked or non-regular `langgraph.json`, or one behind a symlinked artifacts directory, is ignored instead of read whole on every status poll.
+- **Security: artifacts behind a symlinked artifacts directory are not served** — Artifact downloads and listings, the log tail and the LLM-event stream treat a run's files as not found, and a continuation resumes without the watched run's result, when the run replaced its artifacts directory with a symlink before the read began.
+- **Fixed: a continuation result file that is a FIFO, a link or outside the artifacts directory** — The fire no longer blocks on a FIFO and resumes with no result instead of reading such a file.
+- **Fixed: a failed capacity-eviction workspace delete is retried by the purge sweeps** — The directory is no longer left on disk for good; at most 256 deletes wait for a retry.
 - **BREAKING: `maxQueuedRuns` defaults to 10 × `maxParallelRuns`** — Runs waiting for a parallel-run slot or, under `WAIT`, a lock share a cap that is bounded by default; a surplus run fails fast, and `null` (unbounded) is no longer accepted.
 - **BREAKING: runner limits are finite by default** — `concurrency` (default 100 on `server.localRunner`, 10 on `ssh` and `kubernetes`), `kubernetes.maxRunSeconds` (default 86400) and `ssh.sftpTransferTimeoutSeconds` no longer accept `null`. See [ADR-0066](docs/adr/0066-external-pull-runners-and-unified-claim-queue.md).
 - **BREAKING: external runners must report output chunk counts** — A `cmd` result without them, from a runner older than 1.37.1, now fails the step instead of skipping the completeness check. See [ADR-0066](docs/adr/0066-external-pull-runners-and-unified-claim-queue.md).
 - **Fixed: opencode run cost** — A run that resumes an opencode session is charged only its own steps, and steps past the 4 096th in one session are no longer dropped.
 - **Fixed: Claude raw options next to variadic flags** — A raw `options` list that starts with a bare value is no longer taken as a `--file`, `--add-dir` or `--mcp-config` value.
 - **Fixed: a Kubernetes exec channel closed without a status fails as lost** — Such a step now fails with `ExecChannelLost` and kills its leftover command, instead of reporting exit code -1. See [ADR-0103](docs/adr/0103-a-lost-exec-channel-kills-and-fails-without-reattach.md).
+- **Fixed: a question answer is bounded by `server.questions.maxTextLength`** — `POST /api/v1/questions/{id}/answer` now answers `400` for an answer longer than the cap that already bounded the question.
+- **Fixed: agent reloads racing each other** — A reload that another reload overtakes during its scan rescans instead of publishing its older view, and one overtaken 8 times reports that in `errors` with no agent changes, so it kills no queued runs.
+- **Fixed: the log tail after a restart follows the run's recorded output file** — `GET /api/v1/stream/processes/{processId}/logs` serves the stdout/stderr path the step recorded instead of guessing `cmd_N`, and answers `404` when the step recorded no file or a path that is not a file directly inside the run's artifacts.
+- **Changed: a continuation marks a transformed result too large to deliver** — A resume payload whose result is over the 4 MiB transform cap now carries `resultTooLarge: true`, and `homer_fanout` reports it on stderr. See [ADR-0025](docs/adr/0025-capability-token-result-read.md).
 
 ### Console
 

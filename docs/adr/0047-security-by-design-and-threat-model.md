@@ -299,6 +299,54 @@ still refuses a link. Closing it needs an `fchmod` on the descriptor the write u
 overwritten file's kept mode defeat. The ineffective option is removed, so the code no longer
 claims a guarantee it does not give, and both branches look the mode view up the same way.
 
+## Amendment (2026-11-20): reads of a run's own files keep a link-swap residual
+
+`LocalFileOperations.readTextBounded` reads a LangGraph run's agent-written `langgraph.json`
+for `LangGraphRunStatusService.identity`, whose two callers are `GET /processes/{id}/langgraph`,
+which reports the thread, and `POST /processes/{id}/resume`, which continues it in a new run.
+`identity` first refuses an artifacts directory that is a symlink, because a run can replace the
+directory it is handed at any time and `NOFOLLOW_LINKS` binds only the final component.
+`readTextBounded` then refuses a symlink, a hard-linked or a non-regular file, opens the file by
+name with `NOFOLLOW_LINKS` on the bounded, timed open pool, and reads at most
+`MAX_IDENTITY_BYTES`. A final-component symlink swapped in after the check fails the open. A FIFO
+swapped in bounds only the caller's wait: the blocked open keeps one of the pool's 8 threads, and
+once all 8 are held every file read through the pool fails at once for every caller.
+
+`ContinuationFireService.extractResult` reads a watched run's stdout into a continuation's resume
+payload the same way. It refuses a symlinked artifacts directory and a recorded stdout path that is
+not a direct child of it, then reads at most the 64 KiB inline-result cap through
+`readTextBounded`, so a FIFO planted at `cmd_N.out` can no longer block the fire.
+
+The artifact download (`ArtifactService.resolveArtifactPath`, then `streamFile`), the log tail
+(`LogTailService.resolve`, then `tail`) and the LLM-event stream (`LlmEventStreamService.resolve`,
+then `followFile`) refuse a symlinked artifacts directory too, but check it only once, when they
+resolve the path. The download opens the file afterwards; each stream opens it at the first poll
+that finds it, which can be as late as the stream's end.
+
+Four cases remain. Three are races: a hard link renamed into place between the link check and the
+open, because `NOFOLLOW_LINKS` ignores the link count; a symlink swapped in for the artifacts
+directory between its check and the open; and, for the two streams, the same swap at any time
+between `resolve` and the poll that opens the file. The fourth needs no race: a symlink
+at the run root or a directory above it is followed by every one of these reads. Each makes Homer
+read a different regular file: for an identity, at most 64 KiB whose fields it reports and whose
+thread a resume continues; for a continuation, at most 64 KiB it delivers as the watched run's
+result; for a download or stream, a file it serves to the caller (CWE-59/CWE-367).
+
+**Accepted, not fixed**, like the tar walks above. Each case needs a local writer holding Homer's
+own UID, and that writer can already read any file the swap could lead to and copy its content
+into the run's own files directly, so the swap crosses no principal and gains nothing. Rule 2
+already treats those files' content as attacker-chosen; a swap only changes where it comes from.
+Homer does act on the read, which this ADR counts as an escalation even for readable data, but
+both identity callers keep the thread id inside the run owner's checkpoint store, so neither the
+report nor the resumed run reaches another principal's checkpoints (ADR-0046). A continuation's
+result is the watched run's own output, which that run could have written anyway, and a download
+or stream answers only a caller who may already see the run. Closing the races needs an `fstat`
+on the opened handle and an `openat`-style walk, which `java.nio` does not expose portably;
+re-checking the directory at each poll would only narrow the streams' window. Checking the run
+root and above needs the configured workspace root, which an operator may reach through a symlink
+(`/tmp` on macOS), so a stored artifacts path cannot be compared with it lexically. `SECURITY.md`
+carries the row as AR-12.
+
 ## Amendment (2026-11-20): the console's post-sign-in return path is path-only
 
 The `next` parameter of `/login` is attacker-craftable and the console navigates

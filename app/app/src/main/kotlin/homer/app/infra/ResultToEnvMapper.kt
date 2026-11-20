@@ -12,13 +12,17 @@ import kotlinx.serialization.json.JsonArray
 import org.slf4j.LoggerFactory
 import kotlin.io.path.readText
 
-class ResultToEnvMapper(
-    private val result: CommandResult,
+class ResultToEnvMapper internal constructor(
+    private val exitCode: Int,
+    readStdOut: () -> String,
+    readStdErr: () -> String,
 ) {
+    constructor(result: CommandResult) : this(result.exitCode, { result.stdOut.readText() }, { result.stdErr.readText() })
+
     // LazyThreadSafetyMode.NONE: one mapper per CommandResult, mapToEnv called once
     // from a single coroutine. Don't share a mapper across threads.
-    private val stdOutContent by lazy(mode = LazyThreadSafetyMode.NONE) { result.stdOut.readText() }
-    private val stdErrContent by lazy(mode = LazyThreadSafetyMode.NONE) { result.stdErr.readText() }
+    private val stdOutContent by lazy(mode = LazyThreadSafetyMode.NONE) { readStdOut() }
+    private val stdErrContent by lazy(mode = LazyThreadSafetyMode.NONE) { readStdErr() }
     private val stdOutJsonPath by lazy(mode = LazyThreadSafetyMode.NONE) { parseJsonPathDocument(stdOutContent) }
     private val stdErrJsonPath by lazy(mode = LazyThreadSafetyMode.NONE) { parseJsonPathDocument(stdErrContent) }
 
@@ -54,7 +58,7 @@ class ResultToEnvMapper(
         when (param.src) {
             SrcType.STD_OUT -> stdOutContent
             SrcType.STD_ERR -> stdErrContent
-            SrcType.RESULT_CODE -> result.exitCode.toString()
+            SrcType.RESULT_CODE -> exitCode.toString()
         } ?: ""
 
     private fun jsonPathValue(

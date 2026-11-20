@@ -31,7 +31,7 @@ data class NewPendingHook(
 /**
  * Hook rows one status write shed because the PENDING cap was reached: [count] entries of
  * [agentName]'s run were not queued for [status]. The caller logs it after the write commits —
- * a log line inside the transaction would be file IO under the write lock (SQLite rule 3).
+ * a log line inside the transaction would be file IO under the write lock.
  */
 data class ShedHooks(
     val count: Int,
@@ -40,10 +40,8 @@ data class ShedHooks(
 )
 
 /**
- * What one status write recorded: the hook [rows] to fire once it commits, and the entries
- * the PENDING cap [shed] instead of queueing. Both empty for a write that matched no entry.
- * The rows come out of the insert that wrote them, so the delivery path never re-reads what
- * it just wrote (SQLite rule 4).
+ * What one status write recorded: the hook [rows] to fire once it commits, as its insert wrote them,
+ * and the entries the PENDING cap [shed] instead of queueing. Both empty for a write that matched no entry.
  */
 data class RecordedHooks(
     val rows: List<PendingHook> = emptyList(),
@@ -57,10 +55,9 @@ data class InterruptedResult(
 )
 
 /**
- * The agent-level hooks a status transition must record, and the cap on pending rows.
- * [hooksFor] resolves the current agent catalog snapshot at call time, so a reload between a
- * run's start and its transition is honoured; it reads no database, so it is safe to call
- * inside the transition's transaction. See ADR-0107.
+ * The agent-level hooks a status transition must record, and the cap on pending rows. [hooksFor] reads
+ * the agent catalog current at call time and no database, so it is safe inside the transition's
+ * transaction. See ADR-0107.
  */
 class HookRecording(
     val hooksFor: (agentName: String, status: ProcessStatus) -> List<AgentHook>,
@@ -89,12 +86,9 @@ internal fun HookRecording?.record(
 }
 
 /**
- * INSERTs one row per entry of [hooks] **inside the caller's transaction**, stopping at the
- * global PENDING cap [maxPending] and returning the ids it wrote plus the entries it shed. A
- * hook over the cap is dropped, never queued: the status transition it rides must not fail.
- * The caller logs each shed entry after the commit, from [RecordedHooks.shed]. §12 rule 4. A
- * free function, not a [HookRepository] member: `ProcessRepository` records hook rows inside
- * its own status-transition transactions and must not gain a second database handle to do it.
+ * INSERTs one row per [hooks] entry **inside the caller's transaction** up to the global PENDING cap [maxPending], and
+ * returns the rows written plus the entries shed: one over the cap is dropped, never queued, so the transition it
+ * rides still commits (ADR-0047 rule 4, ADR-0107). Free, so `ProcessRepository` needs no second database handle.
  */
 internal fun insertPendingHooksTx(
     hooks: List<NewPendingHook>,
@@ -111,9 +105,8 @@ internal fun insertPendingHooksTx(
             .toInt()
     val room = (maxPending - pending).coerceAtLeast(0)
     val accepted = hooks.take(room)
-    // The rows come back as they were written — the fire after the commit reads these, not a
-    // second SELECT per row (SQLite rule 4). batchInsert returns one generated id per row, in
-    // submission order.
+    // batchInsert returns one generated id per row in submission order, so the fire after the
+    // commit reads the rows as written, never a SELECT per row.
     val rows =
         if (accepted.isEmpty()) {
             emptyList()
@@ -157,11 +150,9 @@ internal fun insertPendingHooksTx(
 }
 
 /**
- * Durable access to pending agent-level status hooks. A row is written in the same
- * transaction as the status write that caused it, claimed (PENDING→DISPATCHING) before the
- * hook run starts, and settled once. The claim CAS, the global PENDING cap, the boot
- * recovery of a row left mid-dispatch and the settled-row prune are [FiredRecords]', shared
- * with dispatches and continuations. See ADR-0107.
+ * Durable pending agent-level status hooks (ADR-0107): a row is written in its status write's transaction,
+ * claimed (PENDING→DISPATCHING) before the hook run starts, and settled once. The claim CAS, the PENDING
+ * cap and the settled-row prune are [FiredRecords]'.
  */
 class HookRepository(
     private val db: DatabaseService,

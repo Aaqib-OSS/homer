@@ -22,9 +22,8 @@ internal class StartupReconciliation(
 ) {
     suspend fun reconcile() {
         val now = clock()
-        // The hooks an UNKNOWN transition records are the same per-transition lookup
-        // ProcessManager runs, so a hook declared for UNKNOWN fires for a restart-interrupted
-        // run too. See ADR-0107.
+        // UNKNOWN records hooks through ProcessManager's per-transition lookup, so a hook
+        // declared for UNKNOWN fires for a restart-interrupted run too. See ADR-0107.
         val interrupted = processRepository.markInterruptedAsUnknown(now, hookService.recording())
         if (interrupted.processIds.isNotEmpty()) {
             logger.info(
@@ -53,9 +52,8 @@ internal class StartupReconciliation(
         // watched process reached a terminal state before this boot (the live hook never ran).
         continuationService.failOrphanedDispatching()
         continuationService.refirePendingTerminal()
-        // Same again for hooks: fail any left mid-fire, fire the rows the UNKNOWN writes recorded,
-        // then replay what is still PENDING — a server that stopped between a transition's commit
-        // and its fire. The claim CAS stops a replay double-firing a live row. See ADR-0107.
+        // Same for hooks: fail any left mid-fire, fire the rows the UNKNOWN writes recorded, then replay
+        // what is still PENDING; the claim CAS stops a replay double-firing a live row. See ADR-0107.
         hookService.failOrphanedDispatching()
         hookService.onRowsRecorded(interrupted.hooks)
         hookService.refirePending()

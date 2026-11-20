@@ -1,0 +1,10 @@
+name: big-result-continuer
+description: Starts `big-result-emitter` via homer-dispatch with a transformed-result continuation back to `continued`
+commands:
+  - !<script>
+    label: dispatch-sub
+    content: |
+      pid=$(homer-dispatch --agent big-result-emitter \
+        --continue-agent continued --continue-thread thread-big \
+        --result-jsonpath '$.answer')
+      echo "sub=$pid"

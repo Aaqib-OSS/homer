@@ -12,12 +12,9 @@ import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 
 /**
- * A persisted capability token scoping a read-by-reference result fetch to one watched process's
- * artifact. The token authorizes streaming [path] from the watched process's artifacts dir,
- * optionally transformed by [resultTransformer] at fetch time, and is reusable within its TTL
- * ([expiresAt]); independent of the continuation row that minted it. [consumerAgent] is the agent
- * it is minted for (the continuation's target): the fetch endpoint redeems it only for a caller
- * running that agent, so a leaked token is useless to any other agent. See ADR-0025.
+ * A capability token for streaming [path] from one watched process's artifacts dir, through [resultTransformer]
+ * when set, reusable until [expiresAt] and independent of the continuation that minted it. It is redeemed only
+ * for a caller running [consumerAgent], so a leaked token is useless to any other agent. See ADR-0025.
  */
 data class ResultTokenRecord(
     val token: String,
@@ -62,12 +59,8 @@ class ResultTokenRepository(
         }
 
     /**
-     * Deletes tokens whose TTL has lapsed at or before [now]. Returns the row count removed.
-     * Deliberate exception to the "sweep through an index" rule: there is no `expires_at`
-     * index, so the `db.read` pre-check scans `result_tokens`. The table holds only the
-     * tokens of oversized continuation results whose TTL has not lapsed, not a row per run,
-     * so it stays far below `maxProcesses` and an index would cost every insert more than
-     * this scan costs. The scan runs in `read {}` with no write lock; an idle tick takes none.
+     * Deletes tokens whose TTL has lapsed at or before [now] and returns how many. Both the `read { }` pre-check
+     * and the delete seek `result_tokens_expires_at`; a tick with nothing due takes no write lock.
      */
     suspend fun deleteExpired(now: Long): Int {
         val due =

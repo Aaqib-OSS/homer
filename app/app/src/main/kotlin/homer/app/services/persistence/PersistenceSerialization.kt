@@ -14,11 +14,8 @@ import java.nio.file.Path
 import kotlin.io.path.Path
 
 /**
- * Single [Json] instance used to (de)serialize the JSON-text columns of the
- * persistence layer (process history/executions/runner state/input params,
- * question options). `encodeDefaults` so optional fields round-trip; lenient
- * unknown-key handling so an older row written before a field was added still
- * loads after an upgrade.
+ * The one [Json] for the persistence layer's JSON-text columns. `encodeDefaults` so optional fields
+ * round-trip; `ignoreUnknownKeys` so a row holding a field the model does not declare still loads.
  */
 internal val columnJson =
     Json {

@@ -1,6 +1,7 @@
 package homer.app.services
 
 import homer.app.infra.PathSafety
+import homer.app.models.ExecutionInfo
 import homer.app.models.ProcessStatus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -33,6 +34,10 @@ class LogTailService(
             ProcessStatus.UNKNOWN,
         )
 
+    /**
+     * [cmdIndex]'s file: the path tracked while the server runs, else its execution row's, else `cmd_N`. Null for an
+     * unknown process, a row naming no file, or a path that is not a link-free child of the artifacts dir (ADR-0070).
+     */
     suspend fun resolve(
         processId: Int,
         cmdIndex: Int,
@@ -40,27 +45,51 @@ class LogTailService(
     ): Path? {
         val info = processManager.getProcessInfo(processId) ?: return null
         val artifactsDir = info.artifactsDir ?: return null
-        val suffix = if (stream == Stream.OUT) "out" else "err"
-        // Prefer the actual path an executor wrote to (per-attempt artifactNameTemplate
-        // can differ from today's cmd_N naming); fall back for processes predating this
-        // tracking or restarted since (ProcessManager.commandArtifacts is in-memory only).
-        val tracked = processManager.getCommandArtifacts(processId, cmdIndex)
-        val trackedPath = if (stream == Stream.OUT) tracked?.stdOut else tracked?.stdErr
-        // Containment guard at the point of use (§12): a tracked path is a map value
-        // keyed by (processId, cmdIndex), populated from an agent-influenced
-        // artifactNameTemplate rendering elsewhere — only trust it here if it still
-        // resolves directly inside this process's artifacts dir.
-        val safeTrackedPath = trackedPath?.takeIf { it.parent == artifactsDir }
-        val path = safeTrackedPath ?: artifactsDir.resolve("cmd_$cmdIndex.$suffix")
-        return try {
-            // CWE-22/CWE-59 (ADR-0070): no symlink at the artifact name or on the way to it.
-            PathSafety.assertContained(artifactsDir, path)
-            PathSafety.assertNoSymlinkComponentsBelow(artifactsDir, path)
-            path
-        } catch (_: SecurityException) {
-            null
-        }
+        // A run can swap its artifacts directory for a symlink, which assertContained follows (CWE-59).
+        // Checked once here: a swap before the tail opens the file, at any later poll, is followed (AR-12).
+        if (Files.isSymbolicLink(artifactsDir)) return null
+        val candidate =
+            trackedPath(processId, cmdIndex, stream, artifactsDir)
+                ?: persistedOrDefaultPath(info.executions.getOrNull(cmdIndex), cmdIndex, stream, artifactsDir)
+        return candidate?.takeIf { isLinkFreeChild(artifactsDir, it) }
     }
+
+    // A tracked path comes from an agent-influenced artifactNameTemplate: one outside the dir is ignored (ADR-0047).
+    private suspend fun trackedPath(
+        processId: Int,
+        cmdIndex: Int,
+        stream: Stream,
+        artifactsDir: Path,
+    ): Path? {
+        val tracked = processManager.getCommandArtifacts(processId, cmdIndex) ?: return null
+        return (if (stream == Stream.OUT) tracked.stdOut else tracked.stdErr).takeIf { it.parent == artifactsDir }
+    }
+
+    /** The path [row] persisted, normalized, or `cmd_N` when the command has no row; null when the row names no file. */
+    private fun persistedOrDefaultPath(
+        row: ExecutionInfo?,
+        cmdIndex: Int,
+        stream: Stream,
+        artifactsDir: Path,
+    ): Path? {
+        if (row == null) return artifactsDir.resolve("cmd_$cmdIndex.${if (stream == Stream.OUT) "out" else "err"}")
+        val persisted = (if (stream == Stream.OUT) row.stdOut else row.stdErr) ?: return null
+        return artifactsDir.resolve(persisted).normalize()
+    }
+
+    // CWE-22/CWE-59 (ADR-0070): a persisted path is attacker-written data, so no symlink at the name or on the way.
+    private fun isLinkFreeChild(
+        artifactsDir: Path,
+        path: Path,
+    ): Boolean =
+        path.parent == artifactsDir &&
+            try {
+                PathSafety.assertContained(artifactsDir, path)
+                PathSafety.assertNoSymlinkComponentsBelow(artifactsDir, path)
+                true
+            } catch (_: SecurityException) {
+                false
+            }
 
     fun tail(
         processId: Int,
@@ -125,7 +154,7 @@ class LogTailService(
     }
 
     /**
-     * Emits the bytes of [file] past [offset] as chunks of at most [MAX_READ_BYTES] (§12 rule 4,
+     * Emits the bytes of [file] past [offset] as chunks of at most [MAX_READ_BYTES] (ADR-0047 rule 4,
      * CWE-400) and returns the offset after the last emitted byte. A chunk ends on a whole UTF-8
      * character; the incomplete tail is re-read next time, except at the file's end when [atEnd].
      */

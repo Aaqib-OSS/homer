@@ -5,9 +5,8 @@ import homer.app.infra.DefaultTextCompiler
 import homer.app.infra.TextCompiler
 import homer.app.models.Agent
 
-// Rendered once at start from the run's env and resolved inputs, and stored on the process row
-// inside the INSERT's transaction: re-deriving it later could read a changed definition or a
-// HMR_PROCESS_ID that did not exist yet. See ADR-0051, ADR-0106.
+// Rendered once at start and stored on the process row inside the INSERT's transaction, never
+// re-derived later. See ADR-0051, ADR-0106.
 internal object CooldownKeyRenderer {
     // Local fixed bound, not a database constraint: the refusal must reach the caller as a 400.
     const val MAX_KEY_LENGTH = 128
@@ -27,9 +26,8 @@ internal object CooldownKeyRenderer {
     ): String? {
         val cooldown = agent.cooldown ?: return null
         val template = cooldown.key ?: return null
-        // A placeholder naming a secret must never render: the key is stored in plain text on the
-        // row and in its index. Checked against the template's own placeholder names, never the
-        // rendered text, so a refusal cannot echo a value. §12 rule 7.
+        // A placeholder naming a secret never renders, since the key is stored in plain text; checked on the
+        // template's names, so a refusal echoes no value (ADR-0106, ADR-0047 rule 7).
         cooldown.keyRefs.firstOrNull { it in agent.secretEnvNames || it in extraSecretInputKeys }?.let { name ->
             throw CooldownKeyInvalidException(agent.name, "placeholder {{$name}} names a secret input")
         }

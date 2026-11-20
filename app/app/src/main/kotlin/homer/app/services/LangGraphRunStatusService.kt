@@ -22,6 +22,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.nio.file.Files
 import java.util.Collections
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -113,6 +114,9 @@ class LangGraphRunStatusService(
     /** The run's LangGraph identity, or null when this is not a LangGraph run. */
     fun identity(processInfo: ProcessInfo): LangGraphRunIdentity? {
         val dir = processInfo.artifactsDir ?: return null
+        // A run can replace its artifacts dir with a symlink (CWE-59); the swaps this check and
+        // readTextBounded's still miss are AR-12 (ADR-0047).
+        if (Files.isSymbolicLink(dir)) return null
         val text = fileOperations.readTextBounded(dir.resolve(ARTIFACT_FILENAME), MAX_IDENTITY_BYTES) ?: return null
         return runCatching { json.decodeFromString<LangGraphRunIdentity>(text) }.getOrNull()
     }
@@ -164,7 +168,7 @@ class LangGraphRunStatusService(
     }
 
     // [runtimeTraversed] kept only where each pair is a real edge of [topology]: its source is
-    // agent-writable checkpoint data, so Homer re-checks it (§12 rule 2). See ADR-0075.
+    // agent-writable checkpoint data, so Homer re-checks it (ADR-0047 rule 2). See ADR-0075.
     private fun traversed(
         runtimeTraversed: List<LangGraphEdgeRef>?,
         topology: LangGraphTopology?,

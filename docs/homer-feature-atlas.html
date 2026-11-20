@@ -1927,7 +1927,7 @@ homer-inbox</code></pre>
 
       <figure class="diagram">
         <svg viewBox="0 0 1160 548" role="img"
-             aria-label="Who starts what, and when. A running command can start another agent three ways: the agent command starts a child immediately on the same invocation chain with depth and cycle guards; homer-dispatch starts one immediately on a fresh invocation chain but records the caller as its parent; ask-and-dispatch registers a question and starts the target only once an operator answers. All three converge on the same outcome — an independent run with its own workspace, callback token and inherited owner; the two dispatch paths, join subs and continuation targets also require the target to have opted in with dispatch.enabled. Separately, a sub dispatched with a continuation causes a follow-up run when it reaches any terminal status: its result — extracted only when a result JsonPath is set — is packaged inline under 64 kilobytes or as a resultRef capability token up to 4 megabytes, larger results resuming with a null result and no token, and the continuation fires the follow-up agent carrying that payload. A join starts N subs at once and fires one continuation after the last of them ends.">
+             aria-label="Who starts what, and when. A running command can start another agent three ways: the agent command starts a child immediately on the same invocation chain with depth and cycle guards; homer-dispatch starts one immediately on a fresh invocation chain but records the caller as its parent; ask-and-dispatch registers a question and starts the target only once an operator answers. All three converge on the same outcome — an independent run with its own workspace, callback token and inherited owner; the two dispatch paths, join subs and continuation targets also require the target to have opted in with dispatch.enabled. Separately, a sub dispatched with a continuation causes a follow-up run when it reaches any terminal status: its result — extracted only when a result JsonPath is set — is packaged inline under 64 kilobytes or as a resultRef capability token up to 4 megabytes, larger results resuming with a null result, no token and a resultTooLarge marker, and the continuation fires the follow-up agent carrying that payload. A join starts N subs at once and fires one continuation after the last of them ends.">
           <defs>
             <marker id="dc-arrow" viewBox="0 0 10 10" refX="9" refY="5"
                     markerWidth="6" markerHeight="6" orient="auto-start-reverse">
@@ -2010,7 +2010,7 @@ homer-inbox</code></pre>
           <text class="d-row" x="274" y="491">64 KiB–4 MiB → resultRef</text>
           <text class="d-cap" x="486" y="484">fetch with homer-result — reusable</text>
           <text class="d-cap" x="486" y="500">within its TTL, bound to the agent</text>
-          <text class="d-cap" x="260" y="526">no --result-jsonpath, or over 4 MiB: result null, no ref</text>
+          <text class="d-cap" x="260" y="526">no --result-jsonpath: result null · over 4 MiB: resultTooLarge</text>
 
           <!-- states -->
           <rect class="d-panel" x="20" y="428" width="212" height="76" rx="4" />
@@ -2112,8 +2112,9 @@ JSON</code></pre>
         <article class="f">
           <h3>Large results by reference <span class="where">shell</span></h3>
           <p>With <code>--result-jsonpath</code> set, a result over the 64 KiB inline cap (up to 4 MiB of stdout)
-            arrives as a <code>resultRef</code> capability token instead; with no JsonPath, or over 4 MiB, the payload
-            carries <code>result: null</code> and no ref. Fetch the full, server-side transformed value with
+            arrives as a <code>resultRef</code> capability token instead, and one over 4 MiB as <code>result: null</code>
+            with <code>resultTooLarge: true</code>; with no JsonPath the payload carries <code>result: null</code>, no ref
+            and no marker. Fetch the full, server-side transformed value with
             <code>homer-result</code>. The token is audience-bound: only the continuation's target agent can redeem
             it, any other gets <code>403</code>.</p>
           <pre><code>HMR_RESULT_TOKEN="$TOKEN" homer-result --out result.txt</code></pre>

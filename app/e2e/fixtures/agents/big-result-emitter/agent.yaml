@@ -1,0 +1,9 @@
+name: big-result-emitter
+description: Dispatch-enabled sub whose stdout is just over the 4 MiB result-transform cap
+dispatch:
+  enabled: true
+commands:
+  - !<script>
+    label: emit
+    content: |
+      head -c 4194400 /dev/zero | tr '\0' x

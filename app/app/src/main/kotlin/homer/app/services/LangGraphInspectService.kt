@@ -41,12 +41,9 @@ private data class InspectOutput(
 )
 
 /**
- * Produces each `Command.LangGraph`'s topology (and deprecated Mermaid source) via
- * `homer_langgraph inspect --json`, the read-only introspection mode. A per-command failure
- * surfaces as [LangGraphGraphInfo.error]; the caller still gets one entry per command.
- * The agent's declared `env` is passed to each inspect subprocess so the agent's `PYTHONPATH`
- * makes its module importable, exactly as a real run does (a run gets that env via the
- * workspace config; introspection has no workspace).
+ * Each `Command.LangGraph`'s topology (and the deprecated Mermaid source, ADR-0073) from a read-only
+ * `homer_langgraph inspect --json` subprocess given the agent's `env` on an allowlisted base. A failed
+ * command surfaces as [LangGraphGraphInfo.error]; every command gets an entry. See ADR-0027.
  */
 class LangGraphInspectService(
     private val runner: GraphInspectRunner,
@@ -54,26 +51,16 @@ class LangGraphInspectService(
     maxConcurrentInspects: Int = 4,
     private val maxQueueWait: Duration = 5.seconds,
 ) {
-    // One request already serializes its own commands, but concurrent requests were
-    // not bounded at all: each `inspect` is a Python interpreter with langgraph
-    // imported (~75 MiB RSS) whose exit is awaited by blocking a Dispatchers.IO
-    // thread, the same pool SQLite runs on. Callers past the limit wait for a slot,
-    // but only for [maxQueueWait] — an unbounded wait just moves the pile-up from
-    // interpreters to suspended callers holding connections. Budget is separate from
-    // LangGraphRunStatusService's, so the host's worst case is the sum of the two.
+    // Bounds the interpreters across requests, with a bounded wait; independent of
+    // LangGraphRunStatusService's budget. See ADR-0027, ADR-0047 rules 4–5.
     private val inspectSlots = Semaphore(maxConcurrentInspects)
     private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun inspect(agent: Agent): List<LangGraphGraphInfo> {
         val commands = agent.commands.filterIsInstance<Command.LangGraph>()
         if (commands.isEmpty()) return emptyList()
-        // One permit for the whole request, not one per command: an agent with N
-        // graphs would otherwise queue N times and could wait N * maxQueueWait.
-        // Interpreter count is unaffected — a request's commands run in sequence.
-        // `acquired` is set inside the timeout block immediately after acquire()
-        // returns, with no suspension point between the two: withTimeoutOrNull can
-        // report null even when the permit WAS taken (it cancels at the boundary),
-        // and trusting its return value alone would leak that permit permanently.
+        // One permit per request (ADR-0027). Set `acquired` right after acquire(), with no suspension
+        // between: withTimeoutOrNull can return null with the permit taken, and trusting it leaks one.
         var acquired = false
         withTimeoutOrNull(maxQueueWait) {
             inspectSlots.acquire()

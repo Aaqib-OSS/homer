@@ -270,6 +270,47 @@ class DatabaseServiceTest {
         assertEquals(1L, countRows(path, "cost_entries"), "exactly one row may land")
     }
 
+    /** Wraps a writer connection so the first `setAutoCommit(true)` after a commit throws instead of running. */
+    private fun failingAutoCommitBounce(connection: java.sql.Connection): java.sql.Connection {
+        var committed = false
+        var failed = false
+        return java.lang.reflect.Proxy.newProxyInstance(
+            javaClass.classLoader,
+            arrayOf(java.sql.Connection::class.java),
+        ) { _, method, args ->
+            if (method.name == "setAutoCommit" && args?.single() == true && committed && !failed) {
+                failed = true
+                throw SQLException("injected autocommit failure")
+            }
+            delegate(connection, method, args).also { if (method.name == "commit") committed = true }
+        } as java.sql.Connection
+    }
+
+    @Test
+    fun `a failed autocommit bounce after a commit is logged and the write still succeeds`(
+        @TempDir dir: Path,
+    ) = runTest {
+        val path = dir.resolve("homer.db").toString()
+        DatabaseService(path, logger).migrate()
+        val (logbackLogger, appender) = attachListAppender()
+        try {
+            val svc = DatabaseService(path, logbackLogger, wrapWriterConnection = ::failingAutoCommitBounce)
+            val attempts = mutableListOf<Int>()
+
+            svc.query(appendCost(attempts))
+
+            assertEquals(1L, countRows(path, "cost_entries"), "the committed write landed")
+            val warnings = appender.list.filter { it.formattedMessage.contains("stayed in a transaction after a commit") }
+            assertEquals(1, warnings.size, "expected one warning, got: ${appender.list.map { it.formattedMessage }}")
+            assertTrue(warnings.single().formattedMessage.contains("injected autocommit failure"))
+            // Teardown closed the connection, so the lock it kept is free again for the next writer.
+            svc.query(appendCost(attempts))
+            assertEquals(2L, countRows(path, "cost_entries"))
+        } finally {
+            logbackLogger.detachAppender(appender)
+        }
+    }
+
     @Test
     fun `the writer handle is built single-attempt`(
         @TempDir dir: Path,
@@ -552,5 +593,33 @@ class DatabaseServiceTest {
         } finally {
             logbackLogger.detachAppender(appender)
         }
+    }
+
+    @Test
+    fun `a database stamped by a newer release runs no upgrade step and keeps its stamp`(
+        @TempDir dir: Path,
+    ) = runTest {
+        val path = dir.resolve("homer.db").toString()
+        DatabaseService(path, logger).migrate()
+        val newer = DatabaseService.SCHEMA_VERSION + 1
+        DriverManager.getConnection("jdbc:sqlite:$path").use { c -> c.createStatement().use { it.execute("PRAGMA user_version = $newer") } }
+        val recorded = RecordingWriterConnection()
+
+        DatabaseService(path, logger, wrapWriterConnection = recorded.wrap).also {
+            it.migrate()
+            it.close()
+        }
+
+        assertEquals(emptyList(), recorded.matching("CREATE INDEX") + recorded.matching("ALTER TABLE"), "ran: ${recorded.statements}")
+        val stamp =
+            DriverManager.getConnection("jdbc:sqlite:$path").use { c ->
+                c.createStatement().use { st ->
+                    st.executeQuery("PRAGMA user_version").use {
+                        it.next()
+                        it.getInt(1)
+                    }
+                }
+            }
+        assertEquals(newer, stamp)
     }
 }

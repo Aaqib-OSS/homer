@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-24
 deciders: Lukáš Vlk
-amended: 2026-10-01, 2026-10-06, 2026-10-09, 2026-10-14
+amended: 2026-10-01, 2026-10-06, 2026-10-09, 2026-10-14, 2026-11-20
 superseded-by: ADR-0053
 ---
 # ADR-0048: A run's record outlives its workspace
@@ -244,3 +244,25 @@ TOCTOU residual are unchanged.
 Out of scope: a cleanup concurrency semaphore (each cleanup already holds its
 own run's slot, so concurrency is bounded by `maxParallelRuns`) and the ssh
 runner's remote sweep (already bounded by ADR-0067).
+
+## Amendment (2026-11-20): a failed eviction delete is retried by the sweep
+
+Capacity eviction deletes the victim's row inside the new run's INSERT
+transaction, then deletes its workspace after the commit. That delete was tried
+once: on a failure the row was already gone, so nothing pointed at the directory
+and it stayed on disk for good. Keeping the row until the delete succeeds would
+defeat the eviction, which exists to free that row, and deleting inside the
+transaction would hold the write lock across file IO.
+
+A delete that fails with an IO error is now held in memory, keyed by the evicted
+run's id, and every workspace purge sweep retries it before its own two sweeps,
+until it succeeds or another row references the directory again, which drops it
+without deleting. At most 256 deletes are held. A delete past that bound is
+logged at ERROR and left on disk. A containment failure is never held: a stored
+path outside the workspace root fails the same way on every attempt.
+
+**Residual, accepted:** the held deletes are not durable. A delete still failing
+when the server stops is left on disk, as every failed eviction delete was
+before this amendment. A durable record of a pending delete would need a table of
+its own, with its own retention path, for a failure that needs the filesystem to
+refuse the same delete for the whole uptime.

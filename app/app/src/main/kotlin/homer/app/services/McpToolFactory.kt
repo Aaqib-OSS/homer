@@ -42,10 +42,8 @@ import kotlinx.serialization.json.put
 import org.slf4j.Logger
 
 /**
- * Builds the per-request MCP [Server] for the `/mcp` endpoint: one tool per
- * opted-in agent (`agent.mcp.enabled`) plus the four run-management tools.
- * A fresh Server is built per POST so the tool list always reflects agent
- * reloads. See ADR-0018.
+ * Builds the `/mcp` endpoint's MCP [Server] afresh per POST, so the tool list follows agent reloads:
+ * one tool per opted-in agent (`agent.mcp.enabled`) plus the four run tools. See ADR-0018.
  */
 internal class McpToolFactory(
     private val agentsService: AgentsService,
@@ -62,10 +60,8 @@ internal class McpToolFactory(
     internal val runTools = McpRunTools(processManager, artifactService, authorizer, mcpConfig)
 
     /**
-     * Builds a fresh MCP Server for one POST. Agent tools are filtered to
-     * those [principal] holds a RUN grant for (ADR-0037); the management
-     * tools (get_run_info/list_artifacts/get_artifact/cancel_run) are always
-     * registered, but each gates on the target run's visibility internally.
+     * Builds the Server for one POST: agent tools only for agents [principal] holds a RUN grant on
+     * (ADR-0037), and the run tools always, each gating on the target run itself.
      */
     fun buildServer(principal: String?): Server {
         val server =
@@ -133,10 +129,8 @@ internal class McpToolFactory(
             }
 
     /**
-     * Tool input schema for an agent: QUERY + BODY params become top-level
-     * arguments, `inputSchema` properties/required are merged in, and the
-     * reserved `_wait` argument is injected. HEADER params are excluded —
-     * headers carry auth material an LLM client must not be asked to supply.
+     * Tool input schema for an agent: QUERY and BODY params plus the `inputSchema` properties, and the
+     * reserved `_wait` argument. HEADER params are excluded: they carry auth material. See ADR-0018.
      */
     internal fun toolSchemaFor(agent: Agent): ToolSchema {
         val params = agent.effectiveInputs.orEmpty().filter { it.src != ParamSource.HEADER }
@@ -343,11 +337,9 @@ internal class McpToolFactory(
     )
 
     /**
-     * Routes each tool-call argument to where the agent declared it: QUERY
-     * params become query [Parameters], everything else becomes body fields.
-     * The reserved [WAIT_ARG] is dropped — it controls the tool, not the run.
-     * The body is null unless there are body fields or the agent has an
-     * `inputSchema` (which expects a body object even when empty).
+     * Routes each tool-call argument to where the agent declared it: QUERY params to query [Parameters],
+     * the rest to body fields; [WAIT_ARG] is dropped. The body is null unless it has fields or the agent
+     * has an `inputSchema`, which expects a body object even when empty.
      */
     internal fun classifyToolArgs(
         agent: Agent,
@@ -380,11 +372,8 @@ internal class McpToolFactory(
     }
 
     /**
-     * Waits up to [waitSec] seconds for the run to reach a terminal status.
-     * Listens for terminal StatusChanged events on the broadcaster, merged
-     * with a 2 s poll fallback that covers both the subscribe race (the run
-     * may finish before the collector attaches) and DROP_OLDEST event loss.
-     * Returns true when terminal, false on timeout.
+     * True once the run is terminal within [waitSec] seconds, false on timeout. Status events are merged
+     * with a 2 s poll, which covers the subscribe race and `DROP_OLDEST` loss. See ADR-0018.
      */
     private suspend fun awaitTerminalStatus(
         processId: Int,
@@ -404,9 +393,8 @@ internal class McpToolFactory(
                     }
                 },
             )
-                // The initial check must run INSIDE this collection, after the
-                // broadcaster subscription above is live — checking before
-                // subscribing would miss an event landing in between.
+                // The initial check runs inside this collection, after the subscription is live:
+                // checking before subscribing would miss an event landing in between.
                 .onStart { emit(Unit) }
                 .map { processManager.getProcessStatus(processId) }
                 .first { it in TERMINAL_STATUSES }

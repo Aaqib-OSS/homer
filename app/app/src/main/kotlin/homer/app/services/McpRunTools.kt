@@ -17,11 +17,9 @@ import kotlinx.serialization.json.put
 import java.nio.file.Files
 
 /**
- * The run-management tools of the `/mcp` endpoint [McpToolFactory] builds:
- * `get_run_info`, `list_artifacts`, `get_artifact` and `cancel_run`. They are
- * registered for every principal, so each one gates on the target run itself —
- * a run the principal cannot see (or, for `cancel_run`, control) reads exactly
- * like a missing one (ADR-0039).
+ * The `/mcp` run tools `get_run_info`, `list_artifacts`, `get_artifact` and `cancel_run`. Registered for
+ * every principal, each gates on the target run: one the principal cannot see (or, for `cancel_run`,
+ * control) reads like a missing one (ADR-0039, ADR-0047 rule 3).
  */
 internal class McpRunTools(
     private val processManager: ProcessManager,
@@ -195,9 +193,8 @@ internal class McpRunTools(
                     put("path", relativePath)
                     put("totalSize", totalSize)
                     put("truncated", truncated)
-                    // Clients that prefer structuredContent over the text block
-                    // (per MCP spec, structured results are the data) must get
-                    // the artifact body here too, not just metadata.
+                    // A client reading structuredContent instead of the text block (MCP treats it as the
+                    // data) must get the artifact body here too, not just metadata.
                     put("content", content)
                 }
             val header =

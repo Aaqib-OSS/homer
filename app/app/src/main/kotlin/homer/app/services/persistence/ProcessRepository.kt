@@ -35,22 +35,16 @@ internal const val MAX_TAG_SCREENED_ROWS = 10_000
 internal const val SQLITE_PARAM_CHUNK = 512
 
 /**
- * All durable access to process state. SQLite is authoritative — every read and write is a
- * transaction (no in-memory cache). The live coroutine [job] is the one piece of [ProcessInfo]
- * that cannot be persisted; it is sourced from [jobRegistry] when mapping rows. See ADR-0020.
- * Read-modify-write operations (history append, executions append, runner-state merge) run
- * inside a single `BEGIN IMMEDIATE` transaction (see [DatabaseService]), so concurrent writers
- * serialize through the write lock rather than losing updates.
+ * All durable access to process state; SQLite is authoritative and every read-modify-write is one
+ * `BEGIN IMMEDIATE` transaction. A row's live [ProcessInfo.job] comes from [jobRegistry]. See ADR-0020.
  */
 class ProcessRepository(
     private val db: DatabaseService,
     internal val jobRegistry: ProcessJobRegistry,
 ) {
     /**
-     * Runs [block] in one write transaction on the writer handle. The extension functions of this
-     * package — `ProcessQueries.kt`, `ProcessRetention.kt`, `ProcessStepRecords.kt`,
-     * `ProcessRunTags.kt` — reach the database only through this and [read]: [db] is private to the
-     * class, so the handle cannot be opened outside it. See ADR-0020.
+     * Runs [block] in one write transaction on the writer handle. With [read], the only way this
+     * package's extension functions reach the database: [db] is private to the class. See ADR-0020.
      */
     internal suspend fun <T> query(block: JdbcTransaction.() -> T): T = db.query(block)
 
@@ -80,11 +74,9 @@ class ProcessRepository(
     )
 
     /**
-     * Outcome of a run-time tag write: whether the tag is now present ([written]),
-     * and the run's runtime-tag count after the attempt. [written] is false only when
-     * the per-run ceiling was already reached; an exact-duplicate write is [written]
-     * with the count unchanged. [count] excludes `fromInputs` tags — the ceiling bounds
-     * runtime-declared tags only. See ADR-0060.
+     * A run-time tag write's outcome: [written] is false only when the per-run ceiling was already
+     * reached (an exact duplicate is [written], count unchanged), and [count] is the run's runtime-tag
+     * count after the attempt, `fromInputs` tags excluded. See ADR-0060.
      */
     data class RuntimeTagResult(
         val written: Boolean,
@@ -92,12 +84,9 @@ class ProcessRepository(
     )
 
     /**
-     * Inserts a new CREATED row and returns its id, enforcing capacity and — when
-     * [NewRunRecord.cooldown] is set — the agent's frequency bound, both inside the same
-     * `BEGIN IMMEDIATE` transaction as the INSERT. The cooldown check belongs *here*, not only
-     * in the caller: a check before the transaction lets two concurrent starts observe the same
-     * previous run and both insert, so the windows must be evaluated against rows read inside it.
-     * Replay-unsafe (a re-run takes a fresh id); the writer handle is single-attempt (ADR-0051, ADR-0020).
+     * Inserts a new CREATED row and returns its id, enforcing capacity and [NewRunRecord.cooldown] in the
+     * INSERT's own `BEGIN IMMEDIATE` transaction, so concurrent starts cannot both pass (ADR-0051).
+     * Replay-unsafe (a re-run takes a fresh id); the writer handle is single-attempt (ADR-0020).
      */
     suspend fun obtainProcessId(
         record: NewRunRecord,
@@ -117,33 +106,26 @@ class ProcessRepository(
                     it[costUsd] = 0.0
                     it[costSource] = CostSource.CLI.wire
                     it[Processes.owner] = record.owner
-                    // Same transaction as the INSERT: this is the timestamp the cooldown
-                    // reads, and `history` does not get its first entry until the launched
-                    // coroutine writes one. See ADR-0051.
+                    // The cooldown's timestamp, set in the INSERT's transaction: `history` gets
+                    // its first entry only later, from the launched coroutine. See ADR-0051.
                     it[createdAt] = nowSec
-                    // Rendered by the caller before this transaction opened, and written here
-                    // so it is valid the instant the row is — the cooldown reads below and
-                    // every later read of this row see the same subject. Never re-derived:
-                    // the agent definition (and `HMR_PROCESS_ID`) may differ by then. ADR-0106.
+                    // Rendered before this transaction and written with the row, so every read sees
+                    // one subject; never re-derived from the agent definition. See ADR-0106.
                     it[Processes.cooldownKey] = record.cooldownKey
-                    // Captured now, not looked up later: the agent's `secret` flags can
-                    // change while this record is retained. Null when the caller did not
-                    // capture a snapshot, which reads back as "ask the current definition"
-                    // — an empty set means "nothing was secret". See ADR-0052.
+                    // Captured now, never looked up later (ADR-0052). Null = no snapshot ("ask the
+                    // current definition"); an empty set = nothing was secret.
                     it[Processes.secretInputKeys] = record.secretInputKeys?.let { keys -> encodeKeys(keys) }
                     it[Processes.parentProcessId] = record.parentProcessId
                     it[Processes.rootProcessId] = record.rootProcessId
                 }[Processes.id]
-            // Write-once inputs live in their own table so the per-step UPDATEs below
-            // never rewrite them. Same transaction as the INSERT, so a run is never
-            // readable with its inputs missing. See ADR-0020.
+            // Write-once inputs in their own table, which per-step UPDATEs never rewrite, written in
+            // the INSERT's transaction so no run is readable without them. See ADR-0020.
             ProcessInputs.insert {
                 it[ProcessInputs.processId] = newId
                 it[ProcessInputs.inputParams] = encodeParams(record.inputParams)
             }
-            // fromInputs tags written in the INSERT's own transaction, so the run is
-            // findable by `?tag=` the instant its row exists. De-duplicated: the tag set
-            // is a set, and (process_id, tag) is the PK. See ADR-0051 and ADR-0060.
+            // fromInputs tags in the INSERT's transaction, so `?tag=` finds the run as soon as it
+            // exists; de-duplicated for the (process_id, tag) primary key. See ADR-0060.
             ProcessTags.batchInsert(record.tags.distinct(), shouldReturnGeneratedValues = false) { tag ->
                 this[ProcessTags.processId] = newId
                 this[ProcessTags.tag] = tag
@@ -154,11 +136,9 @@ class ProcessRepository(
         }
 
     /**
-     * Throws the [CooldownDecision] refusal when [cooldown] bars a start of [agentName] at
-     * [nowSec], evaluated against rows read in the caller's transaction. Each window's lookup
-     * runs only when that window is configured. [cooldownKey] scopes both lookups to the
-     * subject of the start being inserted; null counts the agent's rows whatever key they
-     * carry. See ADR-0051, ADR-0106.
+     * Throws the [CooldownDecision] refusal when [cooldown] bars a start of [agentName] at [nowSec], judged
+     * on rows read in the caller's transaction; a window's lookup runs only when it is configured.
+     * [cooldownKey] scopes both lookups to one subject, null counts every key. See ADR-0051, ADR-0106.
      */
     private fun enforceCooldownTx(
         agentName: String,
@@ -228,10 +208,8 @@ class ProcessRepository(
     }
 
     /**
-     * Appends [newStatus] to history and writes it when the row exists and
-     * [guard] accepts its current status (null guard = unconditional). The
-     * status read, guard check, and write are one atomic transaction, which is
-     * what enforces the KILLED-precedence invariant at the DB level.
+     * Appends [newStatus] to history and writes it when the row exists and [guard] accepts its current
+     * status (null = unconditional). Read, check and write are one transaction: the KILLED-precedence CAS.
      */
     suspend fun transitionStatus(
         processId: Int,
@@ -259,12 +237,9 @@ class ProcessRepository(
         }
 
     /**
-     * Insert time of the most recent run of [agentName], or null when it has never run — or when
-     * every past run has been purged, which resets the cooldown. Ordered by id (AUTOINCREMENT ids
-     * are monotonic and never reused). Reads `created_at`, **not** the first `history` entry: the
-     * newest row's history is written by the launched coroutine, so between the INSERT and that
-     * first write this query would read it empty and skip the whole `minInterval` check, while `created_at`
-     * is written in the INSERT's own transaction. [cooldownKey] scopes the subject, null counts every row. See ADR-0051, ADR-0106.
+     * `created_at` of [agentName]'s newest run by id, never its first `history` entry, which is written
+     * later (ADR-0051); null when no run is left, so a purge resets the cooldown. [cooldownKey] scopes
+     * the subject, null counts every row (ADR-0106).
      */
     suspend fun latestRunStartedAt(
         agentName: String,
@@ -272,12 +247,9 @@ class ProcessRepository(
     ): Long? = db.read { latestRunStartedAtTx(agentName, cooldownKey) }
 
     /**
-     * Terminal time (last history entry) of the most recent FAILED run of [agentName] that
-     * actually ran, or null. A run refused before it started carries a `failure_reason` and
-     * is not a failure of the agent's work, so it does not arm the window. See ADR-0098.
-     *
-     * [cooldownKey] narrows the read to one subject, exactly as [latestRunStartedAt] does.
-     * See ADR-0106.
+     * `ended_at` of [agentName]'s most recent FAILED run that failed while executing, or null; a run
+     * refused before it started carries a `failure_reason` and does not arm the window (ADR-0051).
+     * [cooldownKey] narrows the read to one subject, as in [latestRunStartedAt] (ADR-0106).
      */
     suspend fun latestFailureEndedAt(
         agentName: String,
@@ -322,10 +294,8 @@ class ProcessRepository(
         }
 
     /**
-     * The (owner, agentName) pair a visibility gate reads, by primary key, or null when the row
-     * is gone. Projected, not [getProcessInfo]: a gate runs on polled paths, and decoding the row's
-     * `history`/`executions` blobs plus the side queries to read two columns is the cost
-     * SQLite rule 4 forbids there.
+     * The (owner, agentName) pair a visibility gate reads, by primary key, or null when the row is gone.
+     * Projected, not [getProcessInfo]: a gate runs on polled paths, where decoding the blobs is pure cost.
      */
     suspend fun getProcessVisibility(processId: Int): Pair<String?, String>? =
         db.read {
@@ -360,10 +330,8 @@ class ProcessRepository(
                     .where { Processes.status inList ACTIVE_STATUS_NAMES }
                     .map { Triple(it[Processes.id], it[Processes.agentName], it[Processes.owner]) }
             if (rows.isNotEmpty()) {
-                // One bulk UPDATE regardless of row count: SQLite's json_insert
-                // appends the (nowSec, UNKNOWN) entry to each row's history array
-                // (`$[#]` = append). The element is encoded by the same serializer
-                // decodeHistory reads, so it round-trips. Avoids an UPDATE per row.
+                // One bulk UPDATE, never one per row: `json_insert(.., '$[#]', ..)` appends the entry,
+                // encoded by the serializer decodeHistory reads, so it round-trips.
                 val element = encodeHistoryElement(nowSec to ProcessStatus.UNKNOWN)
                 exec(
                     "UPDATE processes SET status = 'UNKNOWN', " +
@@ -381,12 +349,9 @@ class ProcessRepository(
         }
 
     /**
-     * Stamps `purge_at` / `record_purge_at` / `retain_artifacts` on every UNKNOWN row that has
-     * none, counted from [nowSec], and returns how many it stamped. Both purge sweeps skip a null
-     * `purge_at`, so without this a run a restart left UNKNOWN keeps its directory and record until
-     * capacity eviction. Rows already stamped are left alone, so a repeat boot is a no-op. Startup
-     * only: one read on `processes_status`, one UPDATE per id chunk on the primary key. See ADR-0048
-     * (2026-10-01 amendment).
+     * Stamps purge times and `retain_artifacts`, counted from [nowSec], on every UNKNOWN row with no `purge_at`
+     * (both sweeps skip one) and returns how many; a repeat boot is a no-op. Startup only, on `processes_status`
+     * and the primary key. See ADR-0048 (2026-10-01 amendment).
      */
     suspend fun stampUnknownPurgeTimes(
         nowSec: Long,

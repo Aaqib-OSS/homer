@@ -48,17 +48,18 @@ internal sealed interface GraphSubprocessOutcome {
     ) : GraphSubprocessOutcome
 }
 
-/** Runs `<python> -m homer_langgraph [args]` with both streams piped and drained, holding at most [MAX_GRAPH_STDOUT_BYTES] + [MAX_GRAPH_STDERR_BYTES] (+1 each) in memory and writing nothing to disk. Stdout past the cap kills the process group at once; stderr past its cap is drained and discarded. CWE-770. See ADR-0073. */
+/** Runs `<python> -m homer_langgraph [args]` with [graphSubprocessEnv] of [serverEnv] and the agent's [env], both streams piped and drained, holding at most [MAX_GRAPH_STDOUT_BYTES] + [MAX_GRAPH_STDERR_BYTES] (+1 each) in memory and writing nothing to disk. Stdout past the cap kills the process group at once; stderr past its cap is drained and discarded. CWE-770. See ADR-0073. */
 @Suppress("SuspendFunSwallowedCancellation") // reaps the child (NonCancellable) and rethrows
 internal suspend fun runBoundedGraphSubprocess(
     python: String,
     args: List<String>,
     env: Map<String, String>,
     timeout: Duration,
+    serverEnv: Map<String, String> = System.getenv(),
     startProcess: (ProcessBuilder) -> java.lang.Process = { it.start() },
 ): GraphSubprocessOutcome =
     withContext(Dispatchers.IO) {
-        val builder = graphProcessBuilder(python, args, env)
+        val builder = graphProcessBuilder(python, args, graphSubprocessEnv(serverEnv, env))
         val process =
             try {
                 startProcess(builder)
@@ -91,18 +92,53 @@ internal suspend fun runBoundedGraphSubprocess(
         }
     }
 
-/** `<python> -m homer_langgraph [args]` with the agent's [env] overlaid onto the inherited server env. */
+/** Server env names a `homer_langgraph` subprocess keeps, matched exactly; every other server variable is dropped. See the ADR-0027 amendment of 2026-11-20. */
+internal val GRAPH_SERVER_ENV_ALLOWLIST: Set<String> =
+    setOf(
+        "PATH",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "LC_NUMERIC",
+        "LC_TIME",
+        "LC_COLLATE",
+        "LC_MONETARY",
+        "LC_MESSAGES",
+        "LC_PAPER",
+        "LC_NAME",
+        "LC_ADDRESS",
+        "LC_TELEPHONE",
+        "LC_MEASUREMENT",
+        "LC_IDENTIFICATION",
+        "TMPDIR",
+        "VIRTUAL_ENV",
+        "PYTHONHOME",
+    )
+
+/** The [GRAPH_SERVER_ENV_ALLOWLIST] entries of [serverEnv], overlaid by the agent's [agentEnv]; `PYTHONWARNINGS` defaults to `ignore`. */
+internal fun graphSubprocessEnv(
+    serverEnv: Map<String, String>,
+    agentEnv: Map<String, String>,
+): Map<String, String> =
+    buildMap {
+        putAll(serverEnv.filterKeys { it in GRAPH_SERVER_ENV_ALLOWLIST })
+        putAll(agentEnv)
+        // Keep import-time deprecation warnings (e.g. LangChain's) out of the error
+        // we surface to the console; warnings are non-fatal here.
+        putIfAbsent("PYTHONWARNINGS", "ignore")
+    }
+
+/** `<python> -m homer_langgraph [args]` with exactly [childEnv]: the JDK's copy of the server env is cleared first. */
 private fun graphProcessBuilder(
     python: String,
     args: List<String>,
-    env: Map<String, String>,
+    childEnv: Map<String, String>,
 ): ProcessBuilder {
     val builder =
         ProcessBuilder(ProcessGroupSupport.launchArgv(listOf(python, "-m", "homer_langgraph") + args))
-    builder.environment().putAll(env)
-    // Keep import-time deprecation warnings (e.g. LangChain's) out of the error
-    // we surface to the console; warnings are non-fatal here.
-    builder.environment().putIfAbsent("PYTHONWARNINGS", "ignore")
+    builder.environment().clear()
+    builder.environment().putAll(childEnv)
     return builder
 }
 
