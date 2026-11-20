@@ -2,7 +2,12 @@ package homer.app.services
 
 import homer.app.fixtures.TestFixtures
 import homer.app.infra.PathSafety
+import io.mockk.verify
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.IOException
@@ -38,11 +43,13 @@ class EvictedWorkspaceCleanupTest {
             Files.writeString(it.resolve("cmd_0.out"), "x")
         }
 
+    private val logger = TestFixtures.mockLogger()
+
     private fun cleanup(
         root: Path,
         delete: FlakyDelete,
         shared: suspend (Path, Int) -> Boolean = { _, _ -> false },
-    ) = EvictedWorkspaceCleanup(root, TestFixtures.mockLogger(), shared, delete::delete)
+    ) = EvictedWorkspaceCleanup(root, logger, shared, delete::delete)
 
     @Test
     fun `a failed delete is held and the next sweep deletes the directory`(
@@ -78,6 +85,8 @@ class EvictedWorkspaceCleanupTest {
         assertEquals(1, cleanup.pendingCount)
         cleanup.retryPending()
         assertFalse(Files.exists(root.resolve("run1")))
+        verify(exactly = 1) { logger.warn(match<String> { "retrying on every sweep" in it }, 1, "busy") }
+        verify(exactly = 1) { logger.debug(match<String> { "failed again" in it }, 1, "busy") }
     }
 
     @Test
@@ -117,6 +126,23 @@ class EvictedWorkspaceCleanupTest {
         val cleanup = cleanup(root, FlakyDelete(failures = Int.MAX_VALUE))
 
         repeat(EvictedWorkspaceCleanup.MAX_PENDING + 1) { cleanup.delete(it, root.resolve("run$it/artifacts")) }
+
+        assertEquals(EvictedWorkspaceCleanup.MAX_PENDING, cleanup.pendingCount)
+        val shed = EvictedWorkspaceCleanup.MAX_PENDING
+        verify(exactly = 1) { logger.error(match<String> { "left on disk" in it }, shed, EvictedWorkspaceCleanup.MAX_PENDING) }
+    }
+
+    @Test
+    fun `concurrent failed deletes never hold more than the bound`(
+        @TempDir root: Path,
+    ) = runTest {
+        val cleanup = cleanup(root, FlakyDelete(failures = Int.MAX_VALUE))
+
+        withContext(Dispatchers.Default) {
+            (0 until EvictedWorkspaceCleanup.MAX_PENDING * 4)
+                .map { id -> async { cleanup.delete(id, root.resolve("run$id/artifacts")) } }
+                .awaitAll()
+        }
 
         assertEquals(EvictedWorkspaceCleanup.MAX_PENDING, cleanup.pendingCount)
     }

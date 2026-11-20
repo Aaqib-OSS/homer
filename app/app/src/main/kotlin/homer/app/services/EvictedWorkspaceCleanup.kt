@@ -24,9 +24,9 @@ internal class EvictedWorkspaceCleanup(
         evictedId: Int,
         artifactsDir: Path,
     ) {
-        if (tryDelete(evictedId, artifactsDir)) return
-        if (pending.size < MAX_PENDING) {
-            pending[evictedId] = artifactsDir
+        val failure = deleteFailure(evictedId, artifactsDir) ?: return
+        if (hold(evictedId, artifactsDir)) {
+            logger.warn("Failed to delete workspace of evicted process {}, retrying on every sweep: {}", evictedId, failure.message)
         } else {
             logger.error("Workspace of evicted process {} is left on disk: {} deletes already await a retry", evictedId, MAX_PENDING)
         }
@@ -35,32 +35,45 @@ internal class EvictedWorkspaceCleanup(
     /** Retries every held delete once; one that succeeds, or no longer applies, is dropped. */
     suspend fun retryPending() {
         for ((evictedId, artifactsDir) in pending) {
-            if (tryDelete(evictedId, artifactsDir)) pending.remove(evictedId)
+            val failure = deleteFailure(evictedId, artifactsDir)
+            if (failure == null) {
+                pending.remove(evictedId)
+            } else {
+                logger.debug("Retried delete of evicted process {}'s workspace failed again: {}", evictedId, failure.message)
+            }
         }
     }
 
-    /** True when nothing is left to retry: deleted, still shared, or refused by the containment check. */
-    private suspend fun tryDelete(
+    // The size check and the put are one step, so concurrent evictions cannot hold more than MAX_PENDING.
+    private fun hold(
         evictedId: Int,
         artifactsDir: Path,
-    ): Boolean {
-        val workspaceDir = artifactsDir.parent ?: return true
+    ): Boolean =
+        synchronized(pending) {
+            (pending.size < MAX_PENDING).also { room -> if (room) pending[evictedId] = artifactsDir }
+        }
+
+    /** Why the delete must be retried, or null when nothing is left to retry: deleted, still shared, or refused by containment. */
+    private suspend fun deleteFailure(
+        evictedId: Int,
+        artifactsDir: Path,
+    ): Throwable? {
+        val workspaceDir = artifactsDir.parent ?: return null
         if (isArtifactsDirShared(artifactsDir, evictedId)) {
             logger.info(
                 "Skipping workspace deletion for evicted process {}: {} is still referenced by another process",
                 evictedId,
                 workspaceDir,
             )
-            return true
+            return null
         }
-        val failure = runCatching { deleteContained(workspaceRoot, workspaceDir) }.exceptionOrNull() ?: return true
+        val failure = runCatching { deleteContained(workspaceRoot, workspaceDir) }.exceptionOrNull() ?: return null
         // A stored path outside the workspace root fails the same way on every attempt (CWE-22).
         if (failure is SecurityException) {
             logger.warn("Refused to delete workspace of evicted process {}: {}", evictedId, failure.message)
-            return true
+            return null
         }
-        logger.warn("Failed to delete workspace of evicted process {}, retrying on the next sweep: {}", evictedId, failure.message)
-        return false
+        return failure
     }
 
     companion object {
