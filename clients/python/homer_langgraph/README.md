@@ -288,18 +288,16 @@ A per-thread file cache was tried and removed; see [ADR-0044](../../../docs/adr/
 
 ## Install
 
-Requires Python ≥ 3.10. The backend Docker image already bundles the
+Requires Python ≥ 3.12. The backend Docker image already bundles the
 runtime (`app/Dockerfile`); elsewhere, from the repo root, install the
-hash-pinned dependencies the image ships (the lock covers Python ≥ 3.12, the
-image's version), then the package:
+hash-pinned dependencies the image ships, then the package:
 
 ```sh
 pip install --require-hashes --no-deps -r clients/python/requirements.lock
 pip install --no-deps ./clients/python
 ```
 
-A plain `pip install ./clients/python` resolves the dependencies itself: the
-way to install on Python 3.10 or 3.11, which the lock does not cover. On a musl
+A plain `pip install ./clients/python` resolves the dependencies itself. On a musl
 system such as Alpine it ends on older langgraph releases with known advisories
 ([ADR-0114](../../../docs/adr/0114-python-runtime-installs-from-a-hash-pinned-lock.md)).
 
