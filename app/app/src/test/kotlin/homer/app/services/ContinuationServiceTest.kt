@@ -1918,14 +1918,21 @@ class ContinuationServiceTest {
     ) = runTest {
         dir.resolve("big.out").writeText("x".repeat(RESULT_TRANSFORM_MAX_BYTES.toInt() + 1))
         dir.resolve("big.err").writeText("")
+        dir.resolve("small.out").writeText("""{"answer":"b"}""")
         val tf = ResultEnvParam(SrcType.STD_OUT, "OUT", ResultTransformer.JsonPath("$.answer"))
-        val join = joinPending(watches = listOf(JoinWatch(10, "int-a", resultTransformer = tf), JoinWatch(11, "int-b")))
+        val join =
+            joinPending(
+                watches = listOf(JoinWatch(10, "int-a", resultTransformer = tf), JoinWatch(11, "int-b", resultTransformer = tf)),
+            )
         stubJoinFireable(join)
         coEvery { processManager.getProcessStatus(10) } returns ProcessStatus.FAILED
         coEvery { processManager.getProcessStatus(11) } returns ProcessStatus.FINISHED
         coEvery { processManager.getProcessExecutions(10) } returns
             listOf(ExecutionInfo("c", 0, 1, -1, Path.of("big.out"), Path.of("big.err"), null))
+        coEvery { processManager.getProcessExecutions(11) } returns
+            listOf(ExecutionInfo("c", 0, 1, 0, Path.of("small.out"), Path.of("big.err"), null))
         coEvery { processManager.getProcessInfo(10) } returns mockk(relaxed = true) { every { artifactsDir } returns dir }
+        coEvery { processManager.getProcessInfo(11) } returns mockk(relaxed = true) { every { artifactsDir } returns dir }
         val resolve = slot<RunStartRequest>()
         coEvery { runStarter.start(capture(resolve), any(), any(), any()) } returns 99
         val captured = slot<Map<String, String>>()
@@ -1940,6 +1947,7 @@ class ContinuationServiceTest {
         assertTrue(big["resultTooLarge"]!!.jsonPrimitive.boolean)
         assertEquals(null, big["resultRef"])
         val other = Json.parseToJsonElement(outer["int-b"]!!.jsonPrimitive.content).jsonObject
+        assertEquals("b", other["result"]!!.jsonPrimitive.content)
         assertEquals(null, other["resultTooLarge"], "only the over-cap sub carries the marker")
     }
 

@@ -21,7 +21,7 @@ import java.sql.DriverManager
 object QueryPlanReport {
     /** The tables SQLite rule 1 in `app/CLAUDE.md` names as growing with use; a scan of one is a finding. */
     val GROWING_TABLES =
-        setOf("processes", "process_inputs", "process_tags", "cost_entries", "questions", "dispatches", "continuations")
+        setOf("processes", "process_inputs", "process_tags", "cost_entries", "questions", "dispatches", "continuations", "result_tokens")
 
     private val SCAN = Regex("""^SCAN (\w+)""")
     private val json = Json { prettyPrint = true }

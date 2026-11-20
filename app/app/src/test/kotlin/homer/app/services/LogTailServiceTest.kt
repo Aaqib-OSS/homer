@@ -83,6 +83,24 @@ class LogTailServiceTest {
     }
 
     @Test
+    fun `resolve is null when the execution row recorded no output file`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        // A cmd_0 file exists, so a null proves the row's missing path is not replaced by the default name.
+        tmp.resolve("cmd_0.out").writeText("not this step's output")
+        tmp.resolve("cmd_0.err").writeText("not this step's output")
+        val processManager = processManagerWithoutJob()
+        coEvery { processManager.getProcessInfo(1) } returns
+            processInfo(id = 1, artifactsDir = tmp, executions = listOf(execution(null, null)))
+        coEvery { processManager.getCommandArtifacts(1, 0) } returns null
+
+        val service = LogTailService(processManager, TestFixtures.mockLogger())
+
+        assertNull(service.resolve(1, 0, LogTailService.Stream.OUT))
+        assertNull(service.resolve(1, 0, LogTailService.Stream.ERR))
+    }
+
+    @Test
     fun `resolve refuses a persisted execution path outside the artifacts dir`(
         @TempDir tmp: Path,
     ) = runTest {
