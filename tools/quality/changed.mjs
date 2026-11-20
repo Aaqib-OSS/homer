@@ -356,6 +356,15 @@ function consoleBuild({ root, changed, report }) {
   const files = [...changed.keys()].filter((f) => /^console\/.+\.(?:[cm]?js|tsx?)$/.test(f)).map((f) => f.slice('console/'.length));
   if (files.length === 0) return;
   progress(`eslint (errors) and tsc --noEmit (logs: ${OUT}/eslint.log, ${OUT}/tsc.log)`);
+  // next-env.d.ts is generated and gitignored; without it tsc fails the repo's static image imports
+  // (TS2307), which reads as a code finding on a fresh checkout. `next typegen` writes it in seconds.
+  if (!fs.existsSync(path.join(consoleDir, 'next-env.d.ts'))) {
+    const typegen = tool(consoleDir, 'next', ['typegen']);
+    if (typegen.status !== 0 || !fs.existsSync(path.join(consoleDir, 'next-env.d.ts'))) {
+      report('build', [], `next typegen failed to write console/next-env.d.ts; see ${OUT}/next.log`);
+      return;
+    }
+  }
   const eslint = tool(consoleDir, 'eslint', ['--quiet', '--format', 'json', ...asPaths(files)]);
   const tsc = tool(consoleDir, 'tsc', ['--noEmit', '-p', '.']);
   const findings = consoleErrors(eslint.stdout, tsc.stdout, consoleDir);
