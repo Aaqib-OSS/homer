@@ -263,3 +263,13 @@ time through the same `window.__HOMER_CONFIG__` path as `CONSOLE_THEMES`.
 - The missing-stylesheet probe runs on the window `load` event, not at mount: a healthy sheet may still
   be in flight and absent from `document.styleSheets` at mount, so probing earlier logs a false error
   on every slow network.
+- `CONSOLE_THEMES` and `CONSOLE_THEME_MODES` are split with the grammar-free `splitCommaList` and
+  validated by their own parsers, not the plugins': the `name:<path>`, `<mode>:<name>` and plugin
+  `@requirement` grammars only coincide today, and a change to one must not change which entries of
+  another survive. A `//host/a.css` path is protocol-relative: it reads as local but resolves to a
+  foreign origin, which would let a third party restyle the console and read the operator's referrer.
+- A `CONSOLE_THEME_MODES` value is all-or-nothing: any malformed segment yields no pair and one logged
+  reason, so a typo cannot hide some of the built-ins; a blank value configures nothing and logs nothing.
+- The missing-stylesheet probe matches each entry's path as a resolved URL against the loaded sheets,
+  not by suffix: a suffix would let an unrelated sheet ending in the same path hide a real 404 and would
+  merge two names sharing one file into one report.

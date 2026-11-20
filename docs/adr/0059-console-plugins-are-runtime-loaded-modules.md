@@ -226,6 +226,17 @@ directly, and by `'strict-dynamic'` as a non-parser-inserted load when the bundl
 navigation; either way the policy checks no origin, so `checkPluginEntry`'s same-origin rule alone keeps
 plugin code local.
 
+## Amendment (2026-11-20): the provider starts in `loading`
+
+`PluginsProvider` starts in `loading` even when no plugin is configured: the
+server renders with no `window.__HOMER_CONFIG__`, so it always sees zero
+entries, and deriving the initial value from the entry count would render a
+different tree on server and client and break hydration. The plugin route waits
+on `loading` before it renders not-found, so a hard refresh on a plugin URL does
+not flash "not found" while the module is in flight. If the loader rejects
+unexpectedly, the provider settles with no plugins so the dashboard is never
+left loading.
+
 ## Pros and Cons of the Options
 
 ### Remote runtime modules

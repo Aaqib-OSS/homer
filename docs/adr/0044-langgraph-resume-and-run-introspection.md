@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-19
 deciders: Lukáš Vlk
-amended: 2026-08-20, 2026-09-30
+amended: 2026-08-20, 2026-09-30, 2026-11-20
 ---
 # ADR-0044: LangGraph resume and run introspection
 
@@ -284,6 +284,15 @@ only continuations whose `owner` equals the run's, and an unowned run only
 unowned rows. No served case crosses owners — continuations copy their
 origin run's owner down the chain (ADR-0038), and a retry or resume by another
 principal is owned by that principal and reads its own checkpoint store.
+
+## Amendment (2026-11-20): the console polls by what is open, not by process state
+
+The console's 5 s status poll runs while an execution item or the live-command
+workflow is open, whether or not that process is still active: a parked segment
+is FINISHED while its thread keeps advancing in later segments, so the
+thread-scoped statuses still change. The artifact-only probe that drives the
+Resume button is separate and cheap (no Python on the backend); it also runs
+while a command runs, because the artifact is written before the graph starts.
 
 ## More Information
 

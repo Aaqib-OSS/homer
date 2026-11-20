@@ -9,10 +9,9 @@ export interface ErrorBoundaryProps {
 }
 
 /**
- * Logs the error an error boundary caught (once per error, not per render) and
- * returns the text the boundary shows for it: the message, plus the digest when
- * Next.js attached one, so a server-side error can be correlated with its log.
- * Holds no styling, so `global-error.tsx` can use it without the root layout.
+ * Logs the caught error once per error and returns the text to show: the
+ * message, plus the digest when Next.js attached one. Holds no styling, so
+ * `global-error.tsx` can use it without the root layout.
  */
 export function useBoundaryError(error: ErrorBoundaryProps['error']): string {
   useEffect(() => {
