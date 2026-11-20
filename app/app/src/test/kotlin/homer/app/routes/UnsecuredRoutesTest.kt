@@ -187,8 +187,8 @@ class UnsecuredRoutesTest {
         }
 
     /** A client holding bob's session cookie on a combined server. */
-    private suspend fun ApplicationTestBuilder.signedInAsBob(): HttpClient {
-        mount(bearer, password)
+    private suspend fun ApplicationTestBuilder.signedInAsBob(vararg schemes: AuthConfig = arrayOf(bearer, password)): HttpClient {
+        mount(*schemes)
         val cookieClient = createClient { install(HttpCookies) }
         val login =
             cookieClient.post("/api/v1/auth/login") {
@@ -212,6 +212,26 @@ class UnsecuredRoutesTest {
         testApplication {
             val withStaleToken = signedInAsBob().get("/api/v1/auth/me") { header(HttpHeaders.Authorization, "Bearer not-a-token") }
             assertEquals(HttpStatusCode.Unauthorized, withStaleToken.status)
+        }
+
+    @Test
+    fun `on a password-only server a bearer header is ignored and the session cookie answers`() =
+        testApplication {
+            val withHeader = signedInAsBob(password).get("/api/v1/auth/me") { header(HttpHeaders.Authorization, "Bearer $ADMIN_TOKEN") }
+            assertEquals(HttpStatusCode.OK, withHeader.status)
+            assertEquals("bob", withHeader.me().username)
+        }
+
+    @Test
+    fun `on a password-only server a bearer header without a session is the no-session 401`() =
+        testApplication {
+            mount(password)
+            val response = me(ADMIN_TOKEN)
+            assertEquals(HttpStatusCode.Unauthorized, response.status)
+            assertEquals(
+                apiJson.encodeToString(ErrorResponse.serializer(), ErrorResponse(msg = "Not authenticated")),
+                response.bodyAsText(),
+            )
         }
 
     private companion object {
