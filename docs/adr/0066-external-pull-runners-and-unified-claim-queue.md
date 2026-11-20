@@ -183,8 +183,9 @@ the deepest chain.
 
 A disabled `server.localRunner` refuses `tags` and a `concurrency` other than the default. It compares
 against the default value, because a defaulted field cannot report whether it was set. Raising the
-default therefore moves three things together: `DEFAULT_LOCAL_CONCURRENCY`, the schema's default and
-the `const` in its disabled branch (with the plugin copy synced).
+default therefore moves these together: `DEFAULT_LOCAL_CONCURRENCY`, the schema's default and the
+`const` in its disabled branch (with the plugin copy synced), and the `app/SERVER.md` field row and
+prose that name the number.
 
 ## Amendment (2026-11-20): a `cmd` result must carry its output chunk counts
 
