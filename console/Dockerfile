@@ -33,9 +33,8 @@ ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# Copy the standalone output with all its node_modules. --chown sets ownership
-# inline: a separate `RUN chown -R /app` would duplicate every app file into a
-# new layer (~86 MB) just to rewrite metadata.
+# The standalone output with its node_modules; --chown inline, since a separate
+# `RUN chown -R /app` would duplicate every app file into a new layer (~86 MB).
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 # Copy static files
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static

@@ -21,7 +21,7 @@ export default defineConfig({
   base,
   lang: 'en',
   lastUpdated: false,
-  // The docs show how to reach a local stack (http://localhost:3000); those are not site links.
+  // The docs show how to reach a local stack (localhost:3000); those are not site links.
   ignoreDeadLinks: 'localhostLinks',
   head: [['meta', { name: 'homer-docs-version', content: version }]],
   markdown: { anchor, config: tableWidths },
