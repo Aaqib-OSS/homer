@@ -1,6 +1,8 @@
 package homer.app.runners.ssh
 
 import homer.app.exceptions.OutputCapExceededException
+import homer.app.exceptions.SshConnectionLostException
+import homer.app.exceptions.SshExecRefusedException
 import homer.app.fixtures.waitUnfinished
 import homer.app.infra.OutputLineFilter
 import io.mockk.every
@@ -18,6 +20,8 @@ import org.apache.sshd.client.channel.ChannelExec
 import org.apache.sshd.client.channel.ClientChannelEvent
 import org.apache.sshd.client.future.OpenFuture
 import org.apache.sshd.client.session.ClientSession
+import org.apache.sshd.client.session.ClientSessionImpl
+import org.apache.sshd.common.channel.exception.SshChannelOpenException
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.BeforeEach
@@ -354,5 +358,104 @@ class SshShellExecutorTest {
             }
         }
         assertFalse(marker.exists(), "without a grace the group is SIGKILLed and the trap never runs")
+    }
+
+    @Test
+    fun `a refused exec request fails the step naming the refusal and quoting no env value`(
+        @TempDir local: Path,
+    ) = runTest {
+        val refusing = EmbeddedSshServer(refuseExec = true).also { it.start() }
+        try {
+            val secret = "SECRET-MARK-3f9a1c"
+            val (exception, events) =
+                captureAllEvents {
+                    assertThrows<SshExecRefusedException> {
+                        SshShellExecutor(refusing.newClientSession(client), refusing.rootDir.toString())
+                            .cmd(
+                                listOf("echo", "hello"),
+                                local.resolve("o"),
+                                local.resolve("e"),
+                                null,
+                                mapOf("SECRET_MARK" to secret),
+                                10.seconds,
+                            )
+                    }
+                }
+            val message = exception.message.orEmpty()
+            assertContains(message, "refused the exec request")
+            assertFalse(message.contains(secret), "the step error must quote no env value")
+            // The fixture's sshd logs in this JVM; the remote one whose log reaches app.log does not.
+            val leaking =
+                events
+                    .filterNot { it.loggerName.startsWith("org.apache.sshd.server") }
+                    .filter { "${it.formattedMessage} ${it.throwableProxy?.message}".contains(secret) }
+            assertTrue(leaking.isEmpty(), "log events quoting the env value: ${leaking.map { it.loggerName }}")
+        } finally {
+            refusing.close()
+        }
+    }
+
+    @Test
+    fun `a failed channel open fails the step with the refusal message and no server text`(
+        @TempDir local: Path,
+    ) = runTest {
+        val secret = "SECRET-MARK-3f9a1c"
+        val channel = mockk<ChannelExec>(relaxed = true)
+        val openFuture = mockk<OpenFuture>()
+        every { openFuture.verify(any<Long>()) } throws SshChannelOpenException(1L, 1, "no more channels: $secret")
+        every { channel.open() } returns openFuture
+        val session = mockk<ClientSession>(relaxed = true)
+        every { session.createExecChannel(any()) } returns channel
+
+        val exception =
+            assertThrows<SshExecRefusedException> {
+                SshShellExecutor(session, workdir.toString())
+                    .cmd(listOf("echo", "hello"), local.resolve("o"), local.resolve("e"), null, emptyMap(), 10.seconds)
+            }
+        assertContains(exception.message.orEmpty(), "refused the exec request")
+        assertFalse(exception.message.orEmpty().contains(secret), "the server's own text must not be quoted")
+        val chain = generateSequence(exception as Throwable?) { it.cause }.toList()
+        assertTrue(
+            chain.none { it is SshChannelOpenException || it.message.orEmpty().contains(secret) },
+            "the MINA text quotes the command, so it must reach neither the message nor the cause chain",
+        )
+    }
+
+    @Test
+    fun `a channel closed without an exit status on a dead session is still a lost connection`(
+        @TempDir local: Path,
+    ) = runTest {
+        val channel = mockk<ChannelExec>(relaxed = true)
+        val openFuture = mockk<OpenFuture>()
+        every { openFuture.verify(any<Long>()) } returns openFuture
+        every { channel.open() } returns openFuture
+        every { channel.waitFor(any<Collection<ClientChannelEvent>>(), any<Long>()) } returns setOf(ClientChannelEvent.CLOSED)
+        every { channel.exitStatus } returns null
+        val session = mockk<ClientSession>(relaxed = true)
+        every { session.createExecChannel(any()) } returns channel
+        every { session.isOpen } returns false
+        every { session.isClosing } returns true
+
+        val exception =
+            assertThrows<SshConnectionLostException> {
+                SshShellExecutor(session, workdir.toString())
+                    .cmd(listOf("echo", "hello"), local.resolve("o"), local.resolve("e"), null, emptyMap(), 10.seconds)
+            }
+        assertContains(exception.message.orEmpty(), "SSH channel closed without an exit status")
+    }
+
+    @Test
+    fun `the real session and exec channel are the classes the pinned loggers name`() {
+        val session = server.newClientSession(client)
+        val channel = session.createExecChannel("true")
+        try {
+            // logback.xml pins these two logger names to keep the remote command out of app.log; a
+            // MINA upgrade that returned a subclass would escape the pin and log the command again.
+            assertEquals(ClientSessionImpl::class.java.name, session.javaClass.name)
+            assertEquals(ChannelExec::class.java.name, channel.javaClass.name)
+        } finally {
+            channel.close(true)
+            session.close(true)
+        }
     }
 }

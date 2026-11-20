@@ -2,6 +2,8 @@ package homer.app.runners.ssh
 
 import org.apache.sshd.client.SshClient
 import org.apache.sshd.client.session.ClientSession
+import org.apache.sshd.server.Environment
+import org.apache.sshd.server.ExitCallback
 import org.apache.sshd.server.SshServer
 import org.apache.sshd.server.auth.password.PasswordAuthenticator
 import org.apache.sshd.server.channel.ChannelSession
@@ -14,6 +16,8 @@ import org.apache.sshd.sftp.server.SftpFileSystemAccessor
 import org.apache.sshd.sftp.server.SftpSubsystemFactory
 import org.apache.sshd.sftp.server.SftpSubsystemProxy
 import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.channels.SeekableByteChannel
 import java.nio.file.Files
@@ -36,7 +40,9 @@ import java.util.concurrent.TimeUnit
  * Runner code (`RemoteCommandBuilder`) relies on that real-world shell
  * semantics (`cd ... && exec env ... argv`), so the fixture must match it.
  */
-class EmbeddedSshServer : AutoCloseable {
+class EmbeddedSshServer(
+    private val refuseExec: Boolean = false,
+) : AutoCloseable {
     val host = "127.0.0.1"
     lateinit var rootDir: Path
         private set
@@ -54,7 +60,7 @@ class EmbeddedSshServer : AutoCloseable {
                     listOf(
                         SftpSubsystemFactory().apply { fileSystemAccessor = StallingSftpAccessor },
                     )
-                commandFactory = ShellCommandFactory
+                commandFactory = if (refuseExec) RefusingCommandFactory else ShellCommandFactory
             }
         server.start()
         return server.port
@@ -70,6 +76,38 @@ class EmbeddedSshServer : AutoCloseable {
     override fun close() {
         if (::server.isInitialized) server.stop()
     }
+}
+
+/**
+ * Refuses every exec request: the channel closes without the command running and without an exit
+ * status, the shape a refusing `ForceCommand` or restricted shell leaves the client.
+ */
+private object RefusingCommandFactory : CommandFactory {
+    override fun createCommand(
+        channel: ChannelSession,
+        command: String,
+    ): Command = RefusingCommand
+}
+
+private object RefusingCommand : Command {
+    override fun setInputStream(input: InputStream) = Unit
+
+    override fun setOutputStream(output: OutputStream) = Unit
+
+    override fun setErrorStream(error: OutputStream) = Unit
+
+    override fun setExitCallback(callback: ExitCallback) = Unit
+
+    override fun start(
+        channel: ChannelSession,
+        env: Environment,
+    ) {
+        // Graceful, not immediate: MINA skips the SSH_MSG_CHANNEL_CLOSE packet on an immediate
+        // close, so the client would never see the refusal.
+        channel.close(false)
+    }
+
+    override fun destroy(channel: ChannelSession) = Unit
 }
 
 /** See the shell-wrapping rationale in [EmbeddedSshServer]'s class doc. */

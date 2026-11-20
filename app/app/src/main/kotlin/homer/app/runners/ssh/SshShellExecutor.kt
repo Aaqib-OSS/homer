@@ -2,6 +2,7 @@ package homer.app.runners.ssh
 
 import homer.app.exceptions.OutputCapExceededException
 import homer.app.exceptions.SshConnectionLostException
+import homer.app.exceptions.SshExecRefusedException
 import homer.app.infra.KillCause
 import homer.app.infra.LineFilteringOutputStream
 import homer.app.infra.OutputLineFilter
@@ -19,6 +20,7 @@ import org.apache.sshd.client.channel.ChannelExec
 import org.apache.sshd.client.channel.ClientChannelEvent
 import org.apache.sshd.client.session.ClientSession
 import java.io.ByteArrayInputStream
+import java.io.IOException
 import java.io.OutputStream
 import java.nio.file.Path
 import java.util.EnumSet
@@ -70,9 +72,7 @@ class SshShellExecutor(
                         if (stdIn != null) {
                             channel.setIn(ByteArrayInputStream(stdIn.toByteArray(Charsets.UTF_8)))
                         }
-                        // OPEN_TIMEOUT_MS bounds the channel-open handshake only, a phase
-                        // distinct from command execution, which is bounded by the caller's `timeout`.
-                        channel.open().verify(OPEN_TIMEOUT_MS)
+                        openChannel(channel)
 
                         val kill = KillCause()
                         try {
@@ -106,7 +106,7 @@ class SshShellExecutor(
             RemoteCommandBuilder.build(remoteWorkdir, env, command)
         }
 
-    /** The channel's exit status as the result; a channel closed without one is a lost connection. */
+    /** The channel's exit status as the result; a channel closed without one fails the step ([noExitStatus]). */
     private fun commandResult(
         channel: ChannelExec,
         stdOut: Path,
@@ -114,9 +114,34 @@ class SshShellExecutor(
     ): CommandResult {
         val exit =
             channel.exitStatus
-                ?: throw SshConnectionLostException("SSH channel closed without an exit status")
+                ?: throw noExitStatus()
         return CommandResult(exitCode = exit, stdOut = stdOut, stdErr = stdErr)
     }
+
+    /**
+     * Opens [channel], bounded by [OPEN_TIMEOUT_MS] for the handshake phase alone, distinct from the
+     * command's own `timeout`; a server that refuses the request answers with its own text, which
+     * quotes the command, so only the fixed refusal is reported (W-021).
+     */
+    private fun openChannel(channel: ChannelExec) {
+        try {
+            channel.open().verify(OPEN_TIMEOUT_MS)
+        } catch (_: IOException) {
+            throw SshExecRefusedException()
+        }
+    }
+
+    /**
+     * A channel that yields no exit status on a session still open was refused by the server — MINA
+     * closes it without a state of its own, leaving the session as the only signal (W-021) — while a
+     * session that is gone or closing is a lost connection.
+     */
+    private fun noExitStatus(): RuntimeException =
+        if (session.isOpen && !session.isClosing) {
+            SshExecRefusedException()
+        } else {
+            SshConnectionLostException("SSH channel closed without an exit status")
+        }
 
     /**
      * Interrupts then kills the remote group the command self-reported, when it has one and reaping
