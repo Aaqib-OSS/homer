@@ -16,6 +16,15 @@ amended: 2026-10-09, 2026-11-20
 > workflow's `LGPL gate` step, which scans each platform's image before the push.
 > `console/Dockerfile` can prune `sharp` and `@img/*` because `next.config.js` sets
 > `images.unoptimized`, so Next never loads them at run time.
+>
+> The gate scans before the push because pushing an image conveys its binaries to everyone who
+> pulls it: a hit must stop the push, so a failed or incomplete scan refuses it.
+
+> **Amendment (2026-11-20) — the license report's explicit array types.** Each module's
+> `licenseReport { }` block types its `filters` and `renderers` arrays explicitly. The plugin's
+> `checkLicense` appends a JSON renderer to the configured array, which throws a
+> `ClassCastException` when Kotlin's `arrayOf(...)` narrows the runtime array type to the single
+> renderer class instead of `ReportRenderer[]`.
 
 ## Context and Problem Statement
 

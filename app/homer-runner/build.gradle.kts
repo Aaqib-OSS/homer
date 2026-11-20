@@ -13,9 +13,8 @@ plugins {
 }
 
 dependencies {
-    // The protocol DTOs, TarStreams and ProcessGroupSupport come from :app. Logback
-    // (its logging backend) is excluded so slf4j-simple stays the sole SLF4J
-    // binding, as in :agentdebug.
+    // The protocol DTOs, TarStreams and ProcessGroupSupport come from :app; logback is excluded so
+    // slf4j-simple stays the sole SLF4J binding.
     implementation(project(":app")) {
         exclude(group = "ch.qos.logback")
     }
@@ -26,7 +25,7 @@ dependencies {
     implementation(libs.bundles.ktorClient)
 
     testImplementation(libs.bundles.testing)
-    // Property-based tests for the version validators (root §6) run kotest-property inside a
+    // Property-based tests for the version validators run kotest-property inside a
     // plain JUnit test, as in :app.
     testImplementation(libs.kotestProperty)
     // Tests assert on log events through logback's ListAppender, so the test runtime needs a
@@ -38,12 +37,8 @@ configurations.named("testRuntimeClasspath") {
     exclude(group = "org.slf4j", module = "slf4j-simple")
 }
 
-// The release this runner binary is built from: `-PhomerVersion`, else the HOMER_VERSION
-// environment the release build already passes for the images (ADR-0093), else `dev`. This is
-// the single source for the version the runner reports, the shadow jar's name and the generated
-// resource below — no second literal. A value that could not safely be reported to Homer or put
-// in a file name fails the build instead of reaching either.
-// The pattern is RunnerTagValidation.PATTERN, which a build script cannot read; RunnerVersionTest pins the copy.
+// The release this runner is built from: -PhomerVersion, else HOMER_VERSION (ADR-0093), else `dev`; an unsafe value fails the build.
+// A copy of RunnerTagValidation.PATTERN, which a build script cannot read; RunnerVersionTest pins it.
 val runnerVersionPattern = Regex("^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$")
 val runnerVersion: String =
     providers
@@ -74,14 +69,12 @@ tasks.check {
     dependsOn("checkLicense")
 }
 
-// The runner's dumpability hardening makes an FFM downcall to prctl; the JDK
-// warns on the restricted method without this, as the runtime image does not.
+// The dumpability hardening makes an FFM downcall to prctl; without this the JDK warns on the restricted method.
 tasks.test {
     jvmArgs("--enable-native-access=ALL-UNNAMED")
     inputs.file("build.gradle.kts").withPropertyName("buildScript")
-    // Dumpability.harden() is process-wide, so a class that calls it in the shared
-    // test JVM would make every later class' same-uid /proc read fail with EPERM
-    // (and could let a status read see the wrong process). One class per JVM.
+    // Dumpability.harden() is process-wide: a class calling it would make every later class's same-uid
+    // /proc read fail with EPERM, so one class per JVM.
     forkEvery = 1
 }
 
@@ -97,9 +90,8 @@ tasks.shadowJar {
     }
 }
 
-// The compiled-in version: a classpath resource the runner reads at startup, so the jar reports
-// the release it was built from without any run-time configuration. The declared input rebuilds
-// it when the version changes.
+// The compiled-in version, a resource read at startup so the jar reports its release without
+// run-time configuration; the declared input rebuilds it when the version changes.
 val generateRunnerVersion =
     tasks.register("generateRunnerVersion") {
         val stamped = runnerVersion

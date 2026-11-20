@@ -67,9 +67,8 @@ tasks.withType<dev.detekt.gradle.Detekt>().configureEach {
     }
 }
 
-// Only the type-resolved `detektMain` runs, on its own (CI job homer-app-detekt): the plugin's
-// untyped `detekt` task would analyse the same sources again, and inside `check` the Analysis API
-// pushes the build past the CI runner's memory.
+// Only the type-resolved `detektMain` runs, in CI job homer-app-detekt (ADR-0082): the untyped `detekt` task
+// would analyse the sources twice, and inside `check` the Analysis API exhausts the runner's memory.
 tasks.named("detekt") { enabled = false }
 
 // CRAP score report (ADR-0081): complexity from the main sources, coverage from Kover's XML report.

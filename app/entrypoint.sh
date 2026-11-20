@@ -4,17 +4,12 @@ set -e
 # Fix workspace ownership at runtime (volume is mounted after build-time chown)
 mkdir -p /app/workspace
 
-# -XX:-UseBASE64Intrinsics: CVE-2026-114938 (Java4Shell) stopgap until the base JRE carries the fix.
-# It precedes JAVA_OPTS, so an operator's JAVA_OPTS keeps it and can still override it.
+# -XX:-UseBASE64Intrinsics is the Java4Shell mitigation (DOCKER.md); it precedes JAVA_OPTS, so an
+# operator's JAVA_OPTS keeps it and can still override it.
 
 if [ "$(id -u)" = "0" ]; then
-    # Running as root (Docker bind-mount case): the mounted workspace may be owned
-    # by an arbitrary host UID, so ownership must be fixed before dropping to homer.
-    # Only chown when the top-level dir is NOT already homer-owned: a normal restart
-    # (tree already homer-owned, since homer created it) then skips the recursive
-    # chown entirely, collapsing the root window to this ownership check plus the
-    # su-exec drop — no attacker-influenceable recursive op runs as root (root
-    # CLAUDE.md §12 rule 2: the workspace tree is agent-writable).
+    # A bind-mounted workspace may be owned by any host UID, so fix it before dropping to homer, but only when
+    # the top dir is not homer-owned: no recursive chown over the agent-writable tree on a restart (ADR-0047 rule 2).
     if [ "$(stat -c '%U' /app/workspace 2>/dev/null)" != "homer" ]; then
         chown -R homer:homer /app/workspace 2>/dev/null || true
     fi
