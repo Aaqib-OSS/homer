@@ -140,6 +140,33 @@ class SchemaValidationTest {
     }
 
     @Test
+    fun `homer-agent schema bounds the Claude exit-code options`() {
+        // Pins the 1..255 bound the model's init mirrors (CWE-394): 0 would signal success on a failure.
+        val schema = loadSchema("homer-agent.schema.json")
+
+        fun agent(option: String): String =
+            """
+            {
+              "name": "exit-code-probe",
+              "commands": [
+                { "type": "claude", "prompt": { "prompt": "hi" }, "options": { $option } }
+              ]
+            }
+            """.trimIndent()
+
+        for (valid in listOf(1, 255)) {
+            validate(schema, agent(""""isErrorExitCode": $valid"""), "an agent with isErrorExitCode=$valid")
+            validate(schema, agent(""""maxTurnsExitCode": $valid"""), "an agent with maxTurnsExitCode=$valid")
+        }
+        for (bad in listOf("0", "256", "\"x\"")) {
+            assertTrue(
+                schema.validate(agent(""""isErrorExitCode": $bad"""), InputFormat.JSON).isNotEmpty(),
+                "schema accepted isErrorExitCode=$bad",
+            )
+        }
+    }
+
+    @Test
     fun `no example agent opts into dangerouslySkipPermissions`() {
         // Acceptance criterion (GH-7): a bundled example must not skip Claude's
         // permission gate without a comment saying why. JSON has no comments at

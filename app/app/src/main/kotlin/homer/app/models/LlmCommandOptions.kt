@@ -23,7 +23,7 @@ sealed interface LlmPrompt {
 /**
  * Retry configuration for the `claude` command. Wraps the whole CLI invocation (stdin, env and
  * stdout validation): a non-zero exit retries — except the terminal stop the command opted into
- * (`maxTurnsExitCode`), never retried — as does stdout failing the JSON-event-stream validation
+ * (`maxTurnsExitCode` or `isErrorExitCode`), never retried — as does stdout failing the JSON-event-stream validation
  * (`MalformedLlmOutputException`); other exceptions (timeouts, cancellation) propagate. Backoff is
  * exponential with full jitter between attempts — `min(maxDelayMs, baseDelayMs * 2^attemptIndex +
  * random(0, baseDelayMs))` — so concurrent retriers do not reconverge. Default `attempts = 1`: no retry.
@@ -78,6 +78,9 @@ data class ClaudeCmdOptions(
     // deterministic ship step) can decide what to do with the partial work. Unset keeps
     // the fail-closed behaviour.
     val maxTurnsExitCode: Int? = null,
+    // Opt-in: when the result event is a `success` subtype carrying `is_error`, return this exit
+    // code instead of failing the run as malformed output. Unset keeps the fail-closed behaviour.
+    val isErrorExitCode: Int? = null,
     val maxMcpOutputTokens: Int? = null,
     val model: String? = null,
     val fallbackModel: String? = null,
@@ -123,6 +126,13 @@ data class ClaudeCmdOptions(
         maxTurnsExitCode?.let {
             require(it in 1..255) {
                 "maxTurnsExitCode must be in 1..255 (got $it); 0 would signal success on a max-turns failure"
+            }
+        }
+        // CWE-394: the same bound for isErrorExitCode; a value of 0
+        // would signal success on an is_error failure.
+        isErrorExitCode?.let {
+            require(it in 1..255) {
+                "isErrorExitCode must be in 1..255 (got $it); 0 would signal success on an is_error failure"
             }
         }
     }

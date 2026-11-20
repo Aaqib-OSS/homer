@@ -79,7 +79,7 @@ internal class LlmAttemptOutput<C>(
         return cappedStop(result, accounting, terminal, stream, span)
     }
 
-    /** The terminal cap both exit paths share: the configured exit code, its stream, never retried. */
+    /** The terminal stop both exit paths share: the configured exit code, its stream, never retried. */
     private fun cappedStop(
         result: CommandResult,
         accounting: LlmAccounting,
@@ -89,7 +89,7 @@ internal class LlmAttemptOutput<C>(
     ): RetryOutcome.CappedStop {
         // Not retried — a fresh attempt would spend the same budget the same way.
         logger.warn("{} stopped at a terminal cap; returning exit code {}", harness.id, inspection.exitCode)
-        span.setAttribute("claude.max_turns_stop", true)
+        span.setAttribute(inspection.stopAttribute, true)
         return RetryOutcome.CappedStop(result.copy(exitCode = inspection.exitCode, llmAccounting = accounting), stream)
     }
 

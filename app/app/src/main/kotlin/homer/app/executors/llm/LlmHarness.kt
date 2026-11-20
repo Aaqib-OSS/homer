@@ -34,7 +34,7 @@ interface LlmHarness<C> where C : Command, C : Command.LlmCommand {
 
     fun stdOutFilter(command: C): LlmStdOutFilter? = null
 
-    /** True only for a harness that opted into a terminal stop; only then does the executor inspect a non-zero exit's stdout, and only [Inspection.Terminal] is honoured. See ADR-0070. */
+    /** True only for a harness that opted into any terminal stop; only then does the executor inspect a non-zero exit's stdout, and only [Inspection.Terminal] is honoured. See ADR-0070. */
     fun terminalStopConfigured(command: C): Boolean = false
 
     /** [command] as one escalation tier runs it: its model, and its raw CLI options when the tier sets them. See ADR-0079. */
@@ -67,9 +67,13 @@ sealed interface Inspection {
         val reason: String,
     ) : Inspection
 
-    /** A terminal, recoverable stop the agent opted into; returned with this exit code, never retried. */
+    /**
+     * A terminal, recoverable stop the agent opted into; returned with this exit code, never retried. [stopAttribute] is
+     * the span attribute the stop sets, so a trace tells which opt-in produced it.
+     */
     data class Terminal(
         val exitCode: Int,
+        val stopAttribute: String = "claude.max_turns_stop",
     ) : Inspection
 }
 

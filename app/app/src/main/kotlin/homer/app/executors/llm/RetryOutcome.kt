@@ -47,7 +47,7 @@ internal sealed interface RetryOutcome {
         override val stream: TranslatedStream? = null,
     ) : Returned
 
-    /** The harness reported a terminal stop the agent opted into (Claude `maxTurnsExitCode`); not retried. */
+    /** The harness reported a terminal stop the agent opted into (Claude `maxTurnsExitCode` or `isErrorExitCode`); not retried. */
     data class CappedStop(
         override val result: CommandResult,
         override val stream: TranslatedStream,

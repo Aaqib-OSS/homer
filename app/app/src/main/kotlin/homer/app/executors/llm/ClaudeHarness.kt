@@ -58,7 +58,8 @@ class ClaudeHarness(
     override fun stdOutFilter(command: Command.Claude): LlmStdOutFilter? =
         dropSystemSubtypes.takeIf { it.isNotEmpty() }?.let { ClaudeSystemEventFilter(it) }
 
-    override fun terminalStopConfigured(command: Command.Claude): Boolean = command.options.maxTurnsExitCode != null
+    override fun terminalStopConfigured(command: Command.Claude): Boolean =
+        command.options.maxTurnsExitCode != null || command.options.isErrorExitCode != null
 
     override fun translator(): (JsonObject) -> Translation = ::translate
 
@@ -111,11 +112,26 @@ class ClaudeHarness(
                 }
 
                 is TurnStatus.Failed -> {
-                    Inspection.Malformed(notSuccess(s.reason))
+                    isErrorStopCode(command, raw)?.let { Inspection.Terminal(it, IS_ERROR_STOP_ATTRIBUTE) }
+                        ?: Inspection.Malformed(notSuccess(s.reason))
                 }
             }
         if (verdict is Inspection.Success) checkVersionPin(raw)
         return verdict
+    }
+
+    /**
+     * The opt-in exit code for a result event the CLI wrote as a `success` subtype carrying `is_error`; null leaves the
+     * failure malformed. The pair is read strictly from the raw line, never from the reason text. See ADR-0070.
+     */
+    private fun isErrorStopCode(
+        command: Command.Claude,
+        raw: List<JsonObject>,
+    ): Int? {
+        val code = command.options.isErrorExitCode ?: return null
+        val result = raw.firstOrNull { it.nonBlankString("type") == "result" } ?: return null
+        if (result.nonBlankString("subtype") != "success") return null
+        return code.takeIf { (result[IS_ERROR] as? JsonPrimitive)?.contentOrNull == "true" }
     }
 
     /**
@@ -257,5 +273,6 @@ class ClaudeHarness(
     private companion object {
         const val COST_FIELD = "total_cost_usd"
         const val IS_ERROR = "is_error"
+        const val IS_ERROR_STOP_ATTRIBUTE = "claude.is_error_stop"
     }
 }
