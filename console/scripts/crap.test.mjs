@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   analyzeFile,
+  assertParsed,
   attributeStatements,
   codeQuality,
   collectScoredFiles,
@@ -101,6 +102,16 @@ describe('findUnits complexity', () => {
 
   it('throws on a syntax error', () => {
     expect(() => findUnits('bad.ts', 'function f( {')).toThrow(/bad\.ts: cannot parse/);
+  });
+});
+
+describe('assertParsed', () => {
+  it('passes a source file with no parse diagnostics', () => {
+    expect(() => assertParsed('ok.ts', { parseDiagnostics: [] })).not.toThrow();
+  });
+
+  it('fails closed when the compiler exposes no parse diagnostics to check', () => {
+    expect(() => assertParsed('ok.ts', {})).toThrow(/ok\.ts: cannot check for syntax errors/);
   });
 });
 

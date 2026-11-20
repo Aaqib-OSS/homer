@@ -152,17 +152,26 @@ function hasCode(unit) {
 }
 
 /**
+ * Throws on a syntax error in `sourceFile`, and when the compiler no longer exposes its internal
+ * `parseDiagnostics` (the only syntax-error signal short of a Program): a file never scores unchecked.
+ */
+export function assertParsed(fileName, sourceFile) {
+  const diagnostics = sourceFile.parseDiagnostics;
+  if (!Array.isArray(diagnostics)) throw new Error(`${fileName}: cannot check for syntax errors: typescript exposes no parseDiagnostics`);
+  const [syntaxError] = diagnostics;
+  if (syntaxError) {
+    throw new Error(`${fileName}: cannot parse: ${ts.flattenDiagnosticMessageText(syntaxError.messageText, '\n')}`);
+  }
+}
+
+/**
  * Every unit (function body) in a TS/TSX source: display name, 1-based first and last line, source span, cyclomatic
  * complexity (excluding nested units) and whether it holds any code. Throws on a syntax error.
  */
 export function findUnits(fileName, sourceText) {
   const kind = fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
   const sourceFile = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, kind);
-  // parseDiagnostics is internal but the only syntax-error signal short of building a Program.
-  const [syntaxError] = sourceFile.parseDiagnostics ?? [];
-  if (syntaxError) {
-    throw new Error(`${fileName}: cannot parse: ${ts.flattenDiagnosticMessageText(syntaxError.messageText, '\n')}`);
-  }
+  assertParsed(fileName, sourceFile);
   const units = [];
   const visit = (node, chain) => {
     let childChain = chain;
