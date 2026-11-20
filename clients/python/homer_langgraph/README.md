@@ -212,7 +212,7 @@ if result["status"] != "FINISHED":
 
 ## Helper reference
 
-Exported from `homer_langgraph`.
+Exported from `homer_langgraph`. Parameter contracts live here, not in docstrings ([ADR-0024](../../../docs/adr/0024-langgraph-command-type.md)); a new exported helper extends this table.
 
 | Helper | Parameters (default) | Returns / raises |
 | --- | --- | --- |

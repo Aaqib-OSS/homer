@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-16
 deciders: Lukáš Vlk
-amended: 2026-08-20, 2026-10-09
+amended: 2026-08-20, 2026-10-09, 2026-11-20
 ---
 # ADR-0024: `!<langgraph>` command type — thin Kotlin launcher for a Python runtime
 
@@ -69,6 +69,13 @@ Two conventions are enforced/established:
   author (mitigated by the `HMR_LG_THREAD` guard convention).
 
 > **Amendment (2026-08-20) —** Amended by ADR-0046: one directory per owner under that root.
+
+## Amendment (2026-11-20): exported helpers' parameter contracts live in the README
+
+An exported `homer_langgraph` helper keeps a docstring contract of at most three lines. Its
+parameters, defaults, return value and raises live in the Helper reference table of
+[`clients/python/homer_langgraph/README.md`](../../clients/python/homer_langgraph/README.md), and a
+new exported helper must extend that table in the same commit.
 
 ## More Information
 
