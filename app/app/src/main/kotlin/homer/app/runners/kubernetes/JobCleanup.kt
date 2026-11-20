@@ -30,7 +30,7 @@ object JobCleanup {
         namespace: String,
         jobName: String,
     ) {
-        // Untyped: the server can answer the Job itself, which the client's V1Status model rejects.
+        // Untyped: the server can answer the Job itself, which the client's V1Status model rejects (W-018).
         val call = batchApi.deleteNamespacedJob(jobName, namespace).propagationPolicy("Background").buildCall(null)
         batchApi.apiClient.execute<Any>(call)
     }
@@ -43,8 +43,8 @@ object JobCleanup {
     ) {
         val patch = "[${PodLabels.KEPT_LABEL_OP}]"
         try {
-            // PatchUtils sets the json-patch content type (see PodCleanup); Any, not V1Job, so a Job
-            // carrying fields this client does not know still parses.
+            // PatchUtils sends the json-patch content type (W-017); Any, not V1Job, so a Job carrying
+            // fields this client does not know still parses (W-019).
             PatchUtils.patch(
                 Any::class.java,
                 { batchApi.patchNamespacedJob(jobName, namespace, V1Patch(patch)).buildCall(null) },

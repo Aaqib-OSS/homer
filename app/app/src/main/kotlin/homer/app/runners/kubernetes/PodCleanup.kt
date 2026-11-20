@@ -55,9 +55,7 @@ object PodCleanup {
                 "[\n$label\n]"
             }
         return try {
-            // Must go through PatchUtils: the generated CoreV1Api declares no patch media
-            // types, so execute() sends the body as application/json and the apiserver
-            // rejects the PATCH with 415. PatchUtils re-wraps it as json-patch+json.
+            // Only PatchUtils sends json-patch+json; the generated call's application/json gets a 415 (W-017).
             PatchUtils.patch(
                 V1Pod::class.java,
                 { api.patchNamespacedPod(podName, namespace, V1Patch(patch)).buildCall(null) },
