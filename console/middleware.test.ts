@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import fc from 'fast-check';
 import { NextRequest } from 'next/server';
 import { config, middleware } from './middleware';
 import { buildCsp } from '@/lib/security/csp';
@@ -51,7 +52,7 @@ describe('middleware', () => {
       expect(fwd.get(CSP)).toBe(csp);
       expect(csp).toContain(`'nonce-${nonce}'`);
       expect(csp).toBe(
-        buildCsp({ pathname: '/processes', nonce, allowedApiOrigins: [] }),
+        buildCsp({ nonce, allowedApiOrigins: [] }),
       );
       expect(response.headers.get('x-middleware-next')).toBe('1');
     });
@@ -74,10 +75,31 @@ describe('middleware', () => {
       expect(middleware(req()).headers.get('x-nonce')).toBeNull();
     });
 
-    it('builds the policy for the request path: only the editor route gets unsafe-eval', () => {
+    it.each(['/processes', '/agents/a', '/agents/a/edit', '/agents/a/edit/', '/login'])(
+      'gives %s the strict nonce policy',
+      (path) => {
+        production();
+        const response = middleware(req(path));
+        const nonce = forwarded(response).get('x-nonce')!;
+        expect(response.headers.get(CSP)).toBe(buildCsp({ nonce, allowedApiOrigins: [] }));
+      },
+    );
+
+    it('CWE-79 relaxes script-src on no path, the Monaco editor route included', async () => {
       production();
-      expect(middleware(req('/agents/a/edit')).headers.get(CSP)).toContain("'unsafe-eval'");
-      expect(middleware(req('/agents')).headers.get(CSP)).not.toContain("'unsafe-eval'");
+      const segment = fc.oneof(fc.constantFrom('agents', 'edit', 'a', '..', '%2F', ''), fc.webSegment());
+      const paths = fc.oneof(
+        fc.stringMatching(/^[a-z0-9_-]{1,20}$/).map((name) => `/agents/${name}/edit`),
+        fc.array(segment, { maxLength: 5 }).map((s) => `/${s.join('/')}`),
+      );
+      await fc.assert(
+        fc.property(paths, (path) => {
+          const csp = middleware(req(path)).headers.get(CSP)!;
+          const scriptSrc = csp.split('; ').find((d) => d.startsWith('script-src '))!;
+          expect(scriptSrc).toMatch(/^script-src 'self' 'nonce-[A-Za-z0-9+/]{22}==' 'strict-dynamic'$/);
+          expect(csp).not.toMatch(/unsafe-eval|blob:/);
+        }),
+      );
     });
 
     it('pins connect-src to the configured API origins', () => {

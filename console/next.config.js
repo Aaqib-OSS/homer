@@ -1,9 +1,7 @@
 /** @type {import('next').NextConfig} */
 
-// Static response-hardening headers applied to every route (including static
-// assets). The Content-Security-Policy is emitted per-request by middleware.ts
-// instead — it needs a per-request nonce and a per-route script-src (strict
-// everywhere except the Monaco editor route). See lib/security/csp.ts.
+// Static hardening headers for every route and asset; the CSP needs a per-request
+// nonce, so middleware.ts emits it (lib/security/csp.ts).
 const securityHeaders = [
   { key: 'X-Frame-Options', value: 'DENY' },
   { key: 'X-Content-Type-Options', value: 'nosniff' },

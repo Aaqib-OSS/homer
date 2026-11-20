@@ -21,7 +21,6 @@ export function middleware(request: NextRequest): NextResponse {
   const nonce = btoa(String.fromCharCode(...arr));
 
   const csp = buildCsp({
-    pathname: request.nextUrl.pathname,
     nonce,
     allowedApiOrigins: parseAllowedApiOrigins(process.env.CONSOLE_ALLOWED_API_ORIGINS),
   });

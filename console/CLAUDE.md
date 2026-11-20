@@ -266,12 +266,12 @@ before changing any of this.
 
 ## Content-Security-Policy (`middleware.ts` + `lib/security/csp.ts`)
 
-`middleware.ts` mints a per-request nonce and emits a per-route CSP (policy
-built in `lib/security/csp.ts`, unit-tested there). The policy is **strict**
-(`script-src 'self' 'nonce-… ' 'strict-dynamic'`, no `unsafe-eval`/`unsafe-inline`)
-on every route **except** the Monaco editor route `/agents/*/edit`, which is
-relaxed to `script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:` (no nonce,
-no `'strict-dynamic'`) + `blob:` workers. The nonce reaches the inline
+`middleware.ts` mints a per-request nonce and emits the CSP (policy built in
+`lib/security/csp.ts`, unit-tested there). The policy is **strict** and the same
+on every route (`script-src 'self' 'nonce-… ' 'strict-dynamic'`, `worker-src 'self'`,
+no `unsafe-eval`/`unsafe-inline` scripts), the Monaco editor included: Monaco is
+bundled (`lib/monaco/setup.ts`), its workers are same-origin chunks, and it needs
+no `eval`. The nonce reaches the inline
 runtime-config `<script>` via the `x-nonce` request header, read in
 `layout.tsx` with `await headers()`; Next.js reads it from the CSP header to
 nonce its own scripts.
@@ -280,8 +280,8 @@ nonce its own scripts.
   applies under `NODE_ENV=production`.
 - `connect-src` is pinned to `CONSOLE_ALLOWED_API_ORIGINS` when set, else left
   open (multi-instance login can target any backend).
-- Adding a component that needs `eval`/inline scripts elsewhere means either
-  making it CSP-clean or extending `isEditorPath` — don't loosen the global policy.
+- A component that needs `eval`, inline scripts or `blob:` workers must be made
+  CSP-clean; don't loosen the policy (CWE-79).
 
 ## Authentication
 
