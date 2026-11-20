@@ -203,7 +203,7 @@ it has no stored history to honour and needs no snapshot.
 
 ## Amendment (2026-11-20): the snapshot also masks spans and the live log
 
-The snapshot is a third consumer on a replay path. The run's workspace secret names, which mask
+The snapshot has a third consumer on a replay path. The run's workspace secret names, which mask
 values in span input and output and in the live log stream, are built from `secretInputKeys` (the
 snapshot plus `extraSecretInputKeys`), never from a fresh read of the agent's current flags.
 Recomputing them there let a historically secret value reach those sinks unmasked.

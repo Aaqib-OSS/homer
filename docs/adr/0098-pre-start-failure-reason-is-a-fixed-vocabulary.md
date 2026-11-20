@@ -129,6 +129,7 @@ field.
 ## Amendment (2026-11-20): the redactor is built with the run
 
 The redactor that screens the stored reason is built when the `Process` is constructed, from the
-agent's env and the run's inputs, not in the failure path. The workspace config is created inside
-`Process.execute`, which a pre-start failure may never reach, and building one in the failure path
-would repeat the runner lookup that may itself be what timed out.
+agent's env and the run's inputs, not in the failure path. `ProcessExecutor`'s failure path has no
+workspace config: the config is local to `Process.execute`. Rebuilding it there is no way out
+either, because the one mapped cause raised while the config is built, an unresolved lock-key
+placeholder, would throw again.
