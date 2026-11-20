@@ -526,7 +526,7 @@ server:
 | `hooks` | `HookConfig` | No | `{maxPending=200, maxChainDepth=8, settledRetentionSec=604800}` | Bounds on agent-declared status hooks — see [Status hooks](#status-hooks). |
 | `langGraph` | `LangGraphConfig` | No | `{stateDir=null}` | LangGraph runtime settings (durable checkpoint root) — see [LangGraph](#langgraph). |
 | `agentGrants` | `Map<String, List<Grant>>` | No | `{}` | Per-agent delegation: which target agents an agent's own nested dispatches may reach, keyed by the dispatching agent's name — see [Grants and roles](#grants-and-roles). |
-| `localRunner` | `LocalRunnerConfig` | No | `{enabled=true, tags=[], concurrency=10}` | The built-in `local` runner: `enabled` (`false` registers none, so no run executes in the server's container), the `tags` it serves for `runnerTags` agents and `concurrency` (runs at once, `>= 1`, default `10`). A non-empty `tags` or a `concurrency` other than `10` is refused while `enabled` is `false`. See [Runner claim queue](#runner-claim-queue). |
+| `localRunner` | `LocalRunnerConfig` | No | `{enabled=true, tags=[], concurrency=100}` | The built-in `local` runner: `enabled` (`false` registers none, so no run executes in the server's container), the `tags` it serves for `runnerTags` agents and `concurrency` (runs at once, `>= 1`, default `100`). A non-empty `tags` or a `concurrency` other than `100` is refused while `enabled` is `false`. See [Runner claim queue](#runner-claim-queue). |
 | `runnerClaimTimeoutSec` | `Int` | No | `300` | Seconds a run waits in the claim queue for a runner with a free permit before it fails; agents override with `runnerClaimTimeoutSec`. See [Runner claim queue](#runner-claim-queue). |
 | `maxPendingRunnerClaims` | `Int` | No | `1000` | Bound on runs waiting in the claim queue; a run arriving at the bound fails immediately. See [Runner claim queue](#runner-claim-queue). |
 | `maintenance` | `MaintenanceConfig` | No | `{maxQueuedStarts=500, maxQueuedStartsPerPrincipal=50, queueWaitSec=600, releaseConcurrency=4}` | Bounds of the admin maintenance-mode queue: how many starts may wait, how much of it one caller may hold, how long a start may wait, and how many are released at a time. See [Maintenance mode](#maintenance-mode). |
@@ -3656,7 +3656,7 @@ and is taken by the first runner that matches it and has a free permit
    the tag set from `runnerTags:`, and its claim TTL starts.
 2. A runner takes the run only if it matches the filter **and** has a free
    permit. A runner with `concurrency: 2` and two runs in flight leaves a third
-   waiting. `concurrency` defaults to `10` on every runner.
+   waiting. `concurrency` defaults to `100` on the local runner and `10` on `ssh` and `kubernetes` runners.
 3. One claim TTL (`server.runnerClaimTimeoutSec`, or the agent's
    `runnerClaimTimeoutSec`) covers the whole wait. At expiry the run fails and
    the failure names what was observed, for example
@@ -3675,7 +3675,7 @@ server:
   maxPendingRunnerClaims: 1000    # runs waiting in the claim queue, all agents together
   localRunner:
     tags: [linux]                 # the built-in local runner serves these runnerTags
-    concurrency: 2                # runs at once on the local runner; default 10
+    concurrency: 2                # runs at once on the local runner; default 100
 runners:
   build-host: !<ssh>
     host: build.internal
@@ -3732,7 +3732,7 @@ by `local` may not receive the allowlisted host env), and the serving runner's
 values such as `HMR_API_URL` take precedence over the runner's `env`.
 
 A runner without `tags` is reachable by alias only, and one without `concurrency`
-serves ten runs at once.
+serves ten runs at once (the local runner a hundred).
 
 **Turning the local runner off.** `server.localRunner.enabled: false` registers
 no local runner, so no run executes in the server's own container. A run routed

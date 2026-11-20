@@ -102,7 +102,7 @@ $extra""",
     @Test
     fun `LocalRunnerConfig validates its own tags and concurrency`() {
         assertEquals(emptyList(), LocalRunnerConfig().tags)
-        assertEquals(10, LocalRunnerConfig().concurrency)
+        assertEquals(100, LocalRunnerConfig().concurrency)
         val ex = assertThrows<IllegalArgumentException> { LocalRunnerConfig(concurrency = 0) }
         assertTrue(ex.message!!.contains("server.localRunner"), ex.message)
         assertThrows<IllegalArgumentException> { LocalRunnerConfig(tags = listOf("no spaces")) }

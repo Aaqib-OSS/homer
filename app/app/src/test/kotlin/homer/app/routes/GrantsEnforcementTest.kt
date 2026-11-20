@@ -591,7 +591,7 @@ class GrantsEnforcementTest {
                 apiJson.encodeToString(
                     RunnersStatusResponse(
                         listOf(
-                            RunnerStatus(alias = "local", kind = "local", tags = emptyList(), concurrency = 10, inUse = 0),
+                            RunnerStatus(alias = "local", kind = "local", tags = emptyList(), concurrency = 100, inUse = 0),
                             RunnerStatus(alias = "gpu-box", kind = "ssh", tags = listOf("gpu"), concurrency = 2, inUse = 0),
                             RunnerStatus(
                                 alias = "workers",

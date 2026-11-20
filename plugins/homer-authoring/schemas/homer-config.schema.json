@@ -754,10 +754,10 @@
           "maxItems": 32,
           "uniqueItems": true
         },
-        "concurrency": { "type": "integer", "minimum": 1, "default": 10, "description": "Runs the local runner serves at once. See ADR-0066." }
+        "concurrency": { "type": "integer", "minimum": 1, "default": 100, "description": "Runs the local runner serves at once. See ADR-0066." }
       },
       "if": { "properties": { "enabled": { "const": false } }, "required": ["enabled"] },
-      "then": { "properties": { "tags": { "maxItems": 0 }, "concurrency": { "const": 10 } } }
+      "then": { "properties": { "tags": { "maxItems": 0 }, "concurrency": { "const": 100 } } }
     },
     "KubernetesRunner": {
       "type": "object",

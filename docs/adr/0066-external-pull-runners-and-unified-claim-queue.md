@@ -167,13 +167,16 @@ Chosen option: **A**.
 
 ## Amendment (2026-11-20): runner limits are finite by default
 
-A runner's `concurrency` (`server.localRunner`, `ssh`, `kubernetes`) defaults to 10, the same as an
-agent's default `maxParallelRuns`, and no longer accepts `null`. The "no `concurrency` = unbounded"
-rule above no longer holds: a runner serves at most ten runs at once unless configured otherwise, and
-a surplus run waits in the claim queue and fails at the claim TTL as before. A Kubernetes run pod's
-`maxRunSeconds` likewise defaults to 86400 s (24 h), so every pod carries an `activeDeadlineSeconds`.
-Pull-mode instances were already bounded by their announced `concurrency`.
+A runner's `concurrency` no longer accepts `null`. It defaults to 10 on `ssh` and `kubernetes` runners,
+the same as an agent's default `maxParallelRuns`, and to 100 on `server.localRunner`, where parent and
+child runs (`RunAgent`, dispatch with `homer-join`) most often share a runner. The "no `concurrency` =
+unbounded" rule above no longer holds; a surplus run still waits in the claim queue and fails at the
+claim TTL. A Kubernetes run pod's `maxRunSeconds` likewise defaults to 86400 s (24 h), so every pod
+carries an `activeDeadlineSeconds`. Pull-mode instances were already bounded by their announced
+`concurrency`.
+
 The "run holds its permit for its whole duration" consequence above is now reachable under default
-settings on every runner, `local` included: a `RunAgent` child, a dispatched child or a `runnerCmd`
-step that targets its parent's runner can wait for a permit that never frees once ten parents hold
-them all. Operators with such chains raise `concurrency` to cover the deepest chain.
+settings on `ssh` and `kubernetes` runners, and on `local` only past 100 waiting parents: a `RunAgent`
+child, a dispatched child or a `runnerCmd` step that targets its parent's runner can wait for a permit
+that never frees once the parents hold them all. Operators with such chains raise `concurrency` to cover
+the deepest chain.

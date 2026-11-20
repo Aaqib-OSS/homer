@@ -2355,7 +2355,7 @@ commands: [ !&lt;langgraph&gt; { module: g.flow, inputEnv: GRAPH_INPUT } ]</code
           after.</p>
         <p>Every run waits in one claim queue until a runner with a free permit takes it. An agent picks a runner by
           alias (<code>runner:</code>) or by tags (<code>runnerTags:</code>); a runner declares the <code>tags</code> it
-          serves and a <code>concurrency</code> (default 10). One claim TTL (<code>server.runnerClaimTimeoutSec</code>,
+          serves and a <code>concurrency</code> (default 10, 100 for the local runner). One claim TTL (<code>server.runnerClaimTimeoutSec</code>,
           or the agent's own <code>runnerClaimTimeoutSec</code>) bounds the wait, and the failure names why nobody claimed the run.</p>
       </div>
 

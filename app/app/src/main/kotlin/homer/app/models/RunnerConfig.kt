@@ -264,6 +264,9 @@ internal fun assertSafeRemoteRoot(
 /** Default claim-queue permits per runner, the same as an agent's default `maxParallelRuns`. See ADR-0066. */
 const val DEFAULT_RUNNER_CONCURRENCY = 10
 
+/** Default permits of the local runner, where parent and child runs most often share a runner. See ADR-0066. */
+const val DEFAULT_LOCAL_CONCURRENCY = 100
+
 /** Default hard deadline of a Kubernetes run pod: 24 hours. See ADR-0066. */
 const val DEFAULT_MAX_RUN_SECONDS = 86_400L
 
@@ -277,11 +280,11 @@ const val DEFAULT_MAX_RUN_SECONDS = 86_400L
 data class LocalRunnerConfig(
     val enabled: Boolean = true,
     val tags: List<String> = emptyList(),
-    val concurrency: Int = DEFAULT_RUNNER_CONCURRENCY,
+    val concurrency: Int = DEFAULT_LOCAL_CONCURRENCY,
 ) {
     init {
         validateRunnerQueueFacets("server.localRunner", tags, concurrency)
-        require(enabled || (tags.isEmpty() && concurrency == DEFAULT_RUNNER_CONCURRENCY)) {
+        require(enabled || (tags.isEmpty() && concurrency == DEFAULT_LOCAL_CONCURRENCY)) {
             "server.localRunner.tags and .concurrency have no effect while server.localRunner.enabled is false; remove them"
         }
     }
