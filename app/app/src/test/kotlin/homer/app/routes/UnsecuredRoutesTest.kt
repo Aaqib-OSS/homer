@@ -15,6 +15,7 @@ import homer.app.models.PasswordUserConfig
 import homer.app.models.Server
 import homer.app.models.TokenConfig
 import homer.app.services.Authorizer
+import io.ktor.client.HttpClient
 import io.ktor.client.plugins.cookies.HttpCookies
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -124,7 +125,9 @@ class UnsecuredRoutesTest {
     fun `the answer never carries the token itself`() =
         testApplication {
             mount(bearer)
-            val body = me(CI_TOKEN).bodyAsText()
+            val response = me(CI_TOKEN)
+            assertEquals(HttpStatusCode.OK, response.status, "the token must be answered for the absence to mean anything")
+            val body = response.bodyAsText()
             assertFalse(CI_TOKEN in body, body)
             assertFalse(ADMIN_TOKEN in body, body)
         }
@@ -181,25 +184,31 @@ class UnsecuredRoutesTest {
             )
         }
 
+    /** A client holding bob's session cookie on a combined server. */
+    private suspend fun ApplicationTestBuilder.signedInAsBob(): HttpClient {
+        mount(bearer, password)
+        val cookieClient = createClient { install(HttpCookies) }
+        val login =
+            cookieClient.post("/api/v1/auth/login") {
+                contentType(ContentType.Application.Json)
+                setBody("""{"username":"bob","password":"pw"}""")
+            }
+        check(login.status == HttpStatusCode.OK) { "bob's login must succeed, got ${login.status}" }
+        return cookieClient
+    }
+
     @Test
     fun `on a combined server a bearer token answers for the token, not for the session cookie`() =
         testApplication {
-            mount(bearer, password)
-            val cookieClient = createClient { install(HttpCookies) }
-            val login =
-                cookieClient.post("/api/v1/auth/login") {
-                    contentType(ContentType.Application.Json)
-                    setBody("""{"username":"bob","password":"pw"}""")
-                }
-            assertEquals(HttpStatusCode.OK, login.status)
-            assertEquals(
-                "bob",
-                apiJson.decodeFromString(MeResponse.serializer(), cookieClient.get("/api/v1/auth/me").bodyAsText()).username,
-            )
-            val withToken = cookieClient.get("/api/v1/auth/me") { header(HttpHeaders.Authorization, "Bearer $ADMIN_TOKEN") }
+            val withToken = signedInAsBob().get("/api/v1/auth/me") { header(HttpHeaders.Authorization, "Bearer $ADMIN_TOKEN") }
             assertEquals("ops", withToken.me().username)
-            val withBadToken = cookieClient.get("/api/v1/auth/me") { header(HttpHeaders.Authorization, "Bearer not-a-token") }
-            assertEquals(HttpStatusCode.Unauthorized, withBadToken.status)
+        }
+
+    @Test
+    fun `on a combined server a stale bearer token is refused, with no fallback to the session cookie`() =
+        testApplication {
+            val withStaleToken = signedInAsBob().get("/api/v1/auth/me") { header(HttpHeaders.Authorization, "Bearer not-a-token") }
+            assertEquals(HttpStatusCode.Unauthorized, withStaleToken.status)
         }
 
     private companion object {

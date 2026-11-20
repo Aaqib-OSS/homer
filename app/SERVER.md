@@ -1393,7 +1393,7 @@ the cookie — so neither is answered as the other's principal under a
 combined deployment. A user with only a narrow `read` grant can still
 call `/auth/me` to discover their own identity and capabilities —
 that's intentional, and it's the console's capability source. See
-ADR-0011 invariant 7.
+ADR-0011 invariant 7 and its 2026-11-20 amendment.
 
 **Generating a hash:**
 

@@ -48,7 +48,7 @@ internal fun Route.apiV1UnsecuredRoutes(deps: ApiDeps) {
     //  • /me reads its one credential itself — a bearer token when the request
     //    carries one, else the session cookie — and never FirstSuccessful, which
     //    would answer one credential's request as the other's principal.
-    // Audit P0 #6 (long-term) / ADR-0011, ADR-0059.
+    // Audit P0 #6 (long-term) / ADR-0011 (amended 2026-11-20), ADR-0059.
     val passwordScheme = deps.passwordScheme
     if (passwordScheme != null) {
         sessionAuthRoutes(deps.unsecuredDeps(), passwordScheme)

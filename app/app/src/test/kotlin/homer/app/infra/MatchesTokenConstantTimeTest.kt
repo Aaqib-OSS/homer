@@ -3,6 +3,7 @@ package homer.app.infra
 import org.junit.jupiter.api.Test
 import java.nio.file.Files
 import java.nio.file.Paths
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -92,5 +93,29 @@ class MatchesTokenConstantTimeTest {
             Files.readString(authWiringKt).contains("scheme.principalFor(tokenCredential)"),
             "the auth-bearer provider must resolve its token through principalFor",
         )
+        assertTrue(
+            Files.readString(Paths.get("src/main/kotlin/homer/app/routes/UnsecuredRoutes.kt")).contains("scheme.principalFor(credential)"),
+            "GET /auth/me must resolve its bearer token through principalFor",
+        )
+    }
+
+    @Test
+    fun `no production source compares a token with plain equality`() {
+        val equality = Regex("""\.token\s*[!=]=|[!=]=\s*[\w.]*\.token\b|\.token\.equals\(""")
+        val offenders =
+            Files.walk(Paths.get("src/main/kotlin")).use { paths ->
+                paths
+                    .filter { it.toString().endsWith(".kt") }
+                    .toList()
+                    .flatMap { file ->
+                        Files.readAllLines(file).mapIndexedNotNull {
+                            i,
+                            line,
+                            ->
+                            "$file:${i + 1}: ${line.trim()}".takeIf { equality.containsMatchIn(line) }
+                        }
+                    }
+            }
+        assertEquals(emptyList(), offenders, "compare tokens with matchesTokenConstantTime, not ==/!=/equals")
     }
 }
