@@ -297,8 +297,7 @@ pip install --require-hashes --no-deps -r clients/python/requirements.lock
 pip install --no-deps ./clients/python
 ```
 
-A plain `pip install ./clients/python` resolves the dependencies itself. On a musl
-system such as Alpine it ends on older langgraph releases with known advisories
+The lock install above is the supported path. A plain `pip install ./clients/python` resolves the dependencies itself; on a musl system such as Alpine it ends on older langgraph releases with known advisories
 ([ADR-0114](../../../docs/adr/0114-python-runtime-installs-from-a-hash-pinned-lock.md)).
 
 ## Tests
