@@ -3,6 +3,7 @@ status: accepted
 date: 2026-10-07
 deciders: Lukáš Vlk
 consulted: ADR-0037, ADR-0038, ADR-0047, ADR-0051
+amended: 2026-10-09
 ---
 
 # ADR-0080: The manual cron-fire endpoint is admin-only, body-less and silent about refusals
@@ -26,11 +27,6 @@ says when the fire starts no run.
 - `fireAgent` swallows every preflight refusal by design (tick semantics): a
   fire over the cost cap, inside the cooldown, lock- or slot-refused, or one
   whose required inputs cannot be resolved, logs and starts nothing.
-  *(Amended 2026-10-09: lock and parallel-run limits are applied inside the
-  launched run, not before it — a `SKIP_CURRENT` collision, a `REJECT` cap or a
-  full `maxQueuedRuns` queue creates a process that ends `FAILED`, exactly as on
-  a tick. Only cost-cap, cooldown, input-resolution and process-capacity
-  refusals start nothing.)*
 
 ## Considered Options
 
@@ -41,6 +37,8 @@ says when the fire starts no run.
 - Return the new process id in the body, and rethrow preflight refusals so the
   caller learns a fire did nothing — makes the endpoint a different fire path
   from a tick, diverging the two behaviors this feature exists to unify.
+
+> **Amendment (2026-10-09) —** Lock and parallel-run limits are applied inside the launched run, not before it — a `SKIP_CURRENT` collision, a `REJECT` cap or a full `maxQueuedRuns` queue creates a process that ends `FAILED`, exactly as on a tick. Only cost-cap, cooldown, input-resolution and process-capacity refusals start nothing.
 
 ## Decision Outcome
 

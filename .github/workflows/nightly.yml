@@ -1,10 +1,5 @@
-# Daily: dependency-check and the image scan. Weekly (Sunday): the full mutation runs, every backend
-# mutant sharded per package, one job per package to stay under the 6-hour job limit
-# (tools/quality/pit-full.mjs), and every console mutant. By hand with workflow_dispatch:
-# dependency-check and the image scan, plus each full mutation run whose input is set. The schedules
-# skip everything in a private copy of the repository, whose Actions minutes go to per-commit CI.
-# Each mutation report writes its score and undetected (survived or uncovered) mutants to the run's
-# job summary (tools/quality/step-summary.mjs).
+# Daily: dependency-check and the image scan. Weekly (Sunday): the full mutation runs, the backend sharded
+# per package (ADR-0082). Schedules skip a private copy, whose Actions minutes go to per-commit CI.
 name: Nightly
 
 on:
@@ -29,7 +24,7 @@ jobs:
   # Fails on a CVE at or above the configured CVSS threshold (app/app/build.gradle.kts).
   dependency-check:
     if: github.event_name == 'workflow_dispatch' || (github.event.schedule == '17 2 * * *' && !github.event.repository.private)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -50,10 +45,8 @@ jobs:
       - name: Dependency check
         id: check
         run: cd app && ./gradlew :app:dependencyCheckAnalyze :homer-runner:dependencyCheckAnalyze --no-configuration-cache --continue
-      # Saved whenever both analyses finished, which their reports prove: the plugin writes each after
-      # the update and the scan, before failing on a CVE. actions/cache would save only on success, so
-      # every run after a finding would start cold. A run that failed or timed out during the NVD
-      # update has no report and may hold a partial database, so it is not saved.
+      # Saved when both reports exist (the plugin writes each before failing on a CVE); actions/cache would
+      # save only on success. A run that died in the NVD update may hold a partial database and is not saved.
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: always() && (steps.check.outcome == 'success' || steps.check.outcome == 'failure') && hashFiles('app/app/build/reports/dependency-check/dependency-check-report.html') != '' && hashFiles('app/homer-runner/build/reports/dependency-check/dependency-check-report.html') != ''
         with:
@@ -72,7 +65,7 @@ jobs:
   # and rollout in ADR-0113.
   image-scan:
     if: github.event_name == 'workflow_dispatch' || (github.event.schedule == '17 2 * * *' && !github.event.repository.private)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     # Report-first until the three images are clean (ADR-0113): a failure warns, and
     # image-scan-alert files it as an issue.
@@ -142,7 +135,7 @@ jobs:
   image-scan-alert:
     needs: image-scan
     if: ${{ !cancelled() && needs.image-scan.outputs.failed == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -165,7 +158,7 @@ jobs:
     if: >-
       (github.event.schedule == '41 1 * * 0' && !github.event.repository.private)
       || (github.event_name == 'workflow_dispatch' && inputs.full-backend-mutation)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       shards: ${{ steps.shards.outputs.shards }}
@@ -175,7 +168,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version: '24.22.3'
       - id: shards
         run: |
           shards=$(node tools/quality/pit-full.mjs shards)
@@ -185,7 +178,7 @@ jobs:
   # shard leaves the merged report partial.
   backend-mutation:
     needs: backend-mutation-shards
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 360
     continue-on-error: true
     strategy:
@@ -203,7 +196,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version: '24.22.3'
       - env:
           SHARD: ${{ matrix.shard }}
         run: node tools/quality/pit-full.mjs run "$SHARD"
@@ -218,7 +211,7 @@ jobs:
   backend-mutation-report:
     needs: [backend-mutation-shards, backend-mutation]
     if: always() && needs.backend-mutation-shards.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     continue-on-error: true
     steps:
@@ -227,7 +220,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version: '24.22.3'
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: backend-mutation-*
@@ -251,7 +244,7 @@ jobs:
     if: >-
       (github.event.schedule == '41 1 * * 0' && !github.event.repository.private)
       || (github.event_name == 'workflow_dispatch' && inputs.full-console-mutation)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 360
     continue-on-error: true
     steps:
@@ -260,7 +253,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version: '24.22.3'
           cache: npm
           cache-dependency-path: console/package-lock.json
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

@@ -1,9 +1,5 @@
-// Fails the site build on a link whose #fragment names no heading or element id on the page it
-// points at. VitePress's own check covers the page, not the fragment, so a deep link that misses
-// opens at the top of the page instead of failing.
-//
-// Usage: node scripts/check-anchors.mjs [DIST]   (default: site/.vitepress/dist)
-// Env: DOCS_BASE, the path the build is served under (as in the VitePress config).
+// Fails the site build on a link whose #fragment names no id on its target page (ADR-0087).
+// Usage: node scripts/check-anchors.mjs [DIST]; env DOCS_BASE is the path served under.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, posix, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'

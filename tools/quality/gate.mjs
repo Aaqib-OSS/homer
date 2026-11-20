@@ -1,10 +1,7 @@
 /**
- * quality-gate (ADR-0082): reads every check's summary listed in checks.json, prints a table and
- * the top findings, and merges the Code Quality files into one report (a job uploads only one).
- * Usage (repository root): node tools/quality/gate.mjs [merged code-quality file]
- *
- * Exit codes: 0 no findings; 3 findings only in "warn" checks (the CI job allows exit code 3, so it
- * shows as a warning); 1 findings in a "required" check, or a summary that is missing or unreadable.
+ * quality-gate (ADR-0082): prints every checks.json check's summary and top findings, and merges the Code Quality files
+ * into one (a job uploads one). Usage (repository root): node tools/quality/gate.mjs [merged code-quality file]
+ * Exit codes: 0 clean; 3 "warn" findings only (CI allows 3: a warning); 1 a "required" finding or a missing summary.
  */
 import fs from 'node:fs';
 import path from 'node:path';

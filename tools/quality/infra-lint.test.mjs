@@ -141,7 +141,10 @@ test('a missing tool, an error exit or unreadable output fails the check instead
   assert.throws(() => lint('zizmor', [], [0], parseZizmor, () => ({ status: 14, stdout: '[]', stderr: '' })), /zizmor exited 14/);
 });
 
-/** A temporary repository: tracked a.sh, a workflow and a Dockerfile; gone.sh tracked but deleted; new.sh untracked; build/ ignored. */
+/**
+ * A scratch repository: tracked a.sh, a workflow and a Dockerfile; gone.sh tracked but deleted; new.sh untracked;
+ * build/ ignored.
+ */
 function repository() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'infra-lint-'));
   const git = (...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: root, encoding: 'utf8' });

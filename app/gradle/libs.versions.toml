@@ -1,6 +1,4 @@
-# Version catalog is a central place for you to declare and version dependencies
-# https://docs.gradle.org/current/userguide/platforms.html#sub:version-catalog
-# https://docs.gradle.org/current/userguide/platforms.html#sub::toml-dependencies-format
+# The version catalog: every dependency and plugin version is declared here.
 
 [versions]
 kotlin = "2.4.21"

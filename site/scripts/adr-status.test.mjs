@@ -1,7 +1,5 @@
-// An ADR that code or a CLAUDE.md cites is a decision in force, so it must not read `proposed`; the
-// index in docs/adr/README.md must show the same status as each ADR's front matter, link an existing
-// file and cover every file; a heading must carry its filename's number, the numbering must have no
-// hole; and an ADR amended in place must date that amendment in its front matter.
+// ADR status guard (docs/quality-checks.md, Documentation site): status, index, heading numbers
+// and amendment dates.
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { readdirSync, readFileSync } from 'node:fs'
@@ -151,6 +149,13 @@ function unmarkedAmendments(docs) {
   return found
 }
 
+// An italic amendment note (`*(Amended …)*`, `*(Obsolete …)*`, `*Superseded …*`, …) is none of the README forms;
+// code fences and spans are blanked first, so a quoted example is not a note.
+const ITALIC_AMENDMENT = /(?:^|[^*])\*(?:\((?:amended|superseded|obsolete|closed)\b|(?:amended|superseded|switched back)\b)/im
+const withoutCode = (text) => text.replace(/^```[\s\S]*?^```/gm, '').replace(/`[^`\n]*`/g, '')
+const italicAmendments = (docs) =>
+  [...docs].filter(([, { text }]) => ITALIC_AMENDMENT.test(withoutCode(text))).map(([number]) => `${number}: an italic amendment note`)
+
 const withFrontMatter = (frontMatter, body) => `---\n${frontMatter}\n---\n${body}`
 
 test('both reference forms are recognised', () => {
@@ -229,10 +234,8 @@ test('an amendment must be dated and a supersession must name an ADR file', () =
     ['9991', { name: '9991-partial.md', text: withFrontMatter('status: accepted\namended: 2026-01-02', '# ADR-9991: Partial\n\n> **Amendment — no date of its own.**\n\n## Amendment 2026-01-02 — one\n\n### Amendment 2026-03-04 — two\n') }],
     ['9989', { name: '9989-list.md', text: withFrontMatter('status: accepted\namended: 2026-02-01', '# ADR-9989: List\n\n## Amendments\n\n- 2026-02-01: one\n- 2026-02-03: two\n') }],
     ['9988', { name: '9988-scoped.md', text: withFrontMatter('status: accepted\namended: 2026-02-01', '# ADR-9988: Scoped\n\n## Amendments\n\n- 2026-02-01: one\n\n## Notes\n\n- 2026-02-03: not an amendment, the section ended above\n') }],
-    // A plural `## Amendments` section ends only at a heading of its own level or above: a `### Sub`
-    // inside a `##` one (9987) and a `####` inside a `###` one (9986) leave it open, while the `##`
-    // heading in 9986 closes it; a bullet without the trailing colon is no amendment at all (9985).
-    // Each `amended:` deliberately omits the later date, so the finding proves the bullet was read.
+    // `## Amendments` ends at a heading of its own level or above (9987, 9986); a bullet
+    // without the colon is no amendment (9985). `amended:` omits the later date on purpose.
     ['9987', { name: '9987-nested.md', text: withFrontMatter('status: accepted\namended: 2026-02-01', '# ADR-9987: Nested\n\n## Amendments\n\n- 2026-02-01: one\n\n### Sub\n\n- 2026-02-03: two\n') }],
     ['9986', { name: '9986-deeper.md', text: withFrontMatter('status: accepted\namended: 2026-02-01', '# ADR-9986: Deeper\n\n### Amendments\n\n- 2026-02-01: one\n\n#### Deeper still\n\n- 2026-02-05: two\n\n## Notes\n\n- 2026-02-07: not an amendment, the section ended above\n') }],
     ['9985', { name: '9985-unterminated.md', text: withFrontMatter('status: accepted\namended: 2026-02-01', '# ADR-9985: Unterminated\n\n## Amendments\n\n- 2026-02-03 x\n') }],
@@ -249,6 +252,19 @@ test('an amendment must be dated and a supersession must name an ADR file', () =
     '9987: `amended: 2026-02-01` does not list 2026-02-03',
     '9986: `amended: 2026-02-01` does not list 2026-02-05',
   ])
+})
+
+test('an italic amendment note is rejected, the README forms are not', () => {
+  const italic = (note) => ['9980', { name: '9980-italic.md', text: withFrontMatter('status: accepted', `# ADR-9980: Italic\n\nA decision. ${note}\n`) }]
+  for (const note of ['*(Amended 2026-01-02: x)*', '*(Superseded by ADR-0001: x)*', '*Amended (2026-01-02):* x', '*Amended 2026-01-02: x*', '*Superseded by ADR-0001*', '*(amended 2026-01-02: x)*', '*(Obsolete since ADR-0001: x)*', '*(Closed by ADR-0001.)*', '*Switched back on 2026-01-02:* x']) {
+    assert.deepEqual(italicAmendments(new Map([italic(note)])), ['9980: an italic amendment note'], note)
+  }
+  const forms = '## Amendment (2026-01-02): x\n\n> **Amendment (2026-01-02) —** x\n\n**Amended (2026-01-02):** bold is not italic\n\nA *closed* system, *obsolete* code and `*(Amended x)*` stay prose.\n'
+  assert.deepEqual(italicAmendments(new Map([['9981', { name: '9981-forms.md', text: withFrontMatter('status: accepted', forms) }]])), [])
+})
+
+test('no ADR carries an italic amendment note', () => {
+  assert.deepEqual(italicAmendments(adrDocs()), [])
 })
 
 test('every ADR status is one the ADR README defines', () => {

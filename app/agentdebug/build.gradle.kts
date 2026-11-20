@@ -39,10 +39,7 @@ application {
 // Runtime-dependency license gate; policy and rationale: see ADR-0056.
 licenseReport {
     configurations = arrayOf("runtimeClasspath")
-    // Explicit type parameters matter: the plugin's checkLicense internals do
-    // `renderers += [new JsonReportRenderer(...)]` on the configured array, which
-    // throws a ClassCastException if Kotlin's `arrayOf(...)` narrowed the runtime
-    // array type to the single renderer class instead of the declared ReportRenderer[].
+    // Explicit type parameters keep the runtime arrays widened (ADR-0056).
     filters = arrayOf<DependencyFilter>(LicenseBundleNormalizer())
     renderers = arrayOf<ReportRenderer>(TextReportRenderer("THIRD-PARTY-NOTICES.txt"))
     allowedLicensesFile = rootProject.layout.projectDirectory.file("config/allowed-licenses.json")

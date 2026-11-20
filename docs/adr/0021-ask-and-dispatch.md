@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-15
 deciders: Lukáš Vlk
-amended: 2026-09-30, 2026-10-09, 2026-11-20
+amended: 2026-06-24, 2026-09-30, 2026-10-09, 2026-11-20
 ---
 # ADR-0021: ask-and-dispatch — deferred dispatch from a question answer
 
@@ -104,10 +104,9 @@ that lands between the two steps.
 analog of `agent.cronAuthToken`) as the callback token for the dispatched
 run. The asker's `HMR_CALLBACK_TOKEN` is never forwarded. The asker is
 recorded as `origin_process_id` / `origin_agent_name` on the dispatch row
-for traceability, but the dispatched run is fully isolated. *(Amended
-2026-10-09: `server.dispatch.authToken` and `agent.cronAuthToken` were removed
-([ADR-0030](0030-runagent-in-process-dispatch.md) follow-up); the dispatched
-run gets its own per-process callback token like any other run.)*
+for traceability, but the dispatched run is fully isolated.
+
+> **Amendment (2026-10-09) —** `server.dispatch.authToken` and `agent.cronAuthToken` were removed ([ADR-0030](0030-runagent-in-process-dispatch.md) follow-up); the dispatched run gets its own per-process callback token like any other run.
 
 **Bounding.** An optional per-dispatch `ttlSec` sets `expires_at`; a
 periodic TTL sweep (`DispatchService.startTtlSweep`,
@@ -118,8 +117,9 @@ count of PENDING dispatches meets the cap, the creation fails with `429`.
 
 **Config block.** `server.dispatch` (optional; all fields have defaults):
 `authToken` (nullable, `@SYSENV:`-resolvable), `maxPending` (default 100),
-`defaultTtlSec` (nullable), `sweepIntervalSec` (default 60). *(Amended
-2026-10-09: `authToken` was removed, see ADR-0030.)*
+`defaultTtlSec` (nullable), `sweepIntervalSec` (default 60).
+
+> **Amendment (2026-10-09) —** `authToken` was removed, see ADR-0030.
 
 **Entry points.** A running command registers a dispatch via:
 - `homer-ask ask-and-dispatch` (CLI helper, uses `HMR_CALLBACK_TOKEN`).
@@ -164,8 +164,9 @@ dispatch-bound rows show the target agent and a link to the dispatched run
   the answer first and treating fire as a separate step.
 - Bad: `server.dispatch.authToken` must be configured (or left null,
   making dispatched callbacks unauthenticated) — operators need to be
-  aware of this token analogously to `agent.cronAuthToken`. *(Obsolete
-  since ADR-0030: both tokens were removed.)*
+  aware of this token analogously to `agent.cronAuthToken`.
+
+> **Amendment (2026-06-24) —** Obsolete since ADR-0030: both tokens were removed.
 
 ## More Information
 

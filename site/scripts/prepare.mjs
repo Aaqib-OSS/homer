@@ -1,9 +1,5 @@
-// Generates the site's source tree (<site>/src) from the repository: the hand-written pages in
-// <site>/pages, the published Markdown files (sources.mjs) and the copied assets. Fails on a link
-// to a file the repository does not hold.
-//
-// Usage: node scripts/prepare.mjs [REPO_DIR SITE_DIR]   (default: this repository and site/)
-// Env: DOCS_REF (the tag or branch built, default main), DOCS_REPO_URL.
+// Generates the site's source tree (<site>/src); fails on a link to a file the repository lacks.
+// Usage: node scripts/prepare.mjs [REPO_DIR SITE_DIR]; env DOCS_REF (default main), DOCS_REPO_URL.
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -25,10 +21,8 @@ export function prepare({ repo, site, ref = 'main', repoUrl = 'https://github.co
       .map((name) => ({ from: `${from.adrDir}/${name}`, to: `adr/${name}` })),
   ]
   const siteOf = new Map(published.map((p) => [p.from, p.to]))
-  // CWE-59 and CWE-22: a file the site publishes must be a regular file inside the repository,
-  // reached without a link. A link at it or in a parent directory, or a path that leaves the
-  // repository, could otherwise pull any file the build can read (~/.npmrc, ~/.ssh) into the
-  // published site.
+  // CWE-59, CWE-22: a published file must be a regular file inside the repository, reached
+  // without a link, or the build could publish any file it can read.
   const realRepo = realpathSync(repo)
   const regular = (repoPath) => {
     const full = join(repo, repoPath)
@@ -43,9 +37,8 @@ export function prepare({ repo, site, ref = 'main', repoUrl = 'https://github.co
     return statSync(full).isDirectory() ? 'dir' : 'file'
   }
 
-  // CWE-59: the copy keeps a symlink, and the page, image and asset
-  // writes below follow one, so site/pages as a link, or a link in it (`_repo`, `public`), would
-  // let them write outside src. lstat, because readdirSync follows the root it is given.
+  // CWE-59: the copy keeps symlinks and the writes below follow them, so a link at or in
+  // site/pages could write outside src; lstat, since readdirSync follows its root.
   const pages = join(site, 'pages')
   if (lstatSync(pages).isSymbolicLink()) throw new Error('site/pages may not be a symlink')
   const linked = readdirSync(pages, { recursive: true, withFileTypes: true }).filter((e) => e.isSymbolicLink())

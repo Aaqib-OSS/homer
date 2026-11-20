@@ -1,7 +1,6 @@
 #!/bin/sh
-# Files a failed nightly image scan (ADR-0113 amendment): comments on the open issue with this exact
-# title, or opens it. Needs GH_TOKEN, GH_REPO and RUN_URL; the body names no package (an npm scope
-# would mention a GitHub account).
+# Reports a failed nightly image scan (ADR-0113 amendment) on the open issue of this exact title, or opens it.
+# Needs GH_TOKEN, GH_REPO and RUN_URL; the body names no package, as an npm scope would mention a GitHub account.
 set -eu
 
 title='Nightly image scan is failing'

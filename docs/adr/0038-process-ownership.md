@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-11
 deciders: Lukáš Vlk
-amended: 2026-09-28, 2026-10-09, 2026-11-20
+amended: 2026-08-12, 2026-09-28, 2026-10-09, 2026-11-20
 ---
 # ADR-0038: Per-process ownership and the union visibility rule
 
@@ -135,8 +135,6 @@ List routes filter to visible rows instead of denying the whole request:
   Kotlin after fetch, calling `canSee` per row using the owner/agentName
   already available (a dispatch's/continuation's own copied owner — see
   below — or, for questions, the asking process's owner/agentName).
-  *(Amended 2026-10-09: `GET /dispatches` and `GET /continuations` now filter
-  in SQL before the limit, see [ADR-0021's 2026-09-30 amendment](0021-ask-and-dispatch.md#amendment-2026-09-30-settled-records-are-pruned-after-a-retention-window); `GET /questions` still filters in Kotlin.)*
 
 `GET /stream/processes` filters each SSE event through `canSee`, memoized
 per connection (`processId → (owner, agentName)`) so repeat events for the
@@ -148,6 +146,8 @@ pre-stream 404 — resolved once against `ProcessManager` before
 `respondBytesWriter` ever opens the connection, so a denied caller never
 receives a byte of the tail/subscription. `GET /stream/agents` carries no
 process-specific data and is unfiltered.
+
+> **Amendment (2026-10-09) —** `GET /dispatches` and `GET /continuations` now filter in SQL before the limit, see [ADR-0021's 2026-09-30 amendment](0021-ask-and-dispatch.md#amendment-2026-09-30-settled-records-are-pruned-after-a-retention-window); `GET /questions` still filters in Kotlin.
 
 ### Registration-time owner copy
 
@@ -177,9 +177,9 @@ caller's principal, same as the REST path.
 `canSee`/`canControl` — any authenticated MCP caller who knows or guesses
 a `runId` can currently read its status/artifacts or cancel it, regardless
 of ownership or grants. This is a real, currently-shipped gap, tracked as
-follow-up work, not fixed by this ADR. *(Amended 2026-10-09: closed — all
-four tools now call `canSee`/`canControl`, per
-[ADR-0039](0039-nested-dispatch-authority.md).)*
+follow-up work, not fixed by this ADR.
+
+> **Amendment (2026-10-09) —** Closed — all four tools now call `canSee`/`canControl`, per [ADR-0039](0039-nested-dispatch-authority.md).
 
 ### Deferred to Plan 3
 
@@ -190,8 +190,9 @@ stamps owner down the chain for *visibility* (so the resulting run is
 attributable and see-able by the right principal) but does not gate the
 hop itself. [ADR-0030](0030-runagent-in-process-dispatch.md) stays
 `accepted`, unaffected: `RunAgent` continues to dispatch any agent
-unconditionally pending that follow-up. *(Amended 2026-10-09: hop gating
-is implemented by ADR-0039.)*
+unconditionally pending that follow-up.
+
+> **Amendment (2026-10-09) —** Hop gating is implemented by ADR-0039.
 
 ### Consequences
 
@@ -207,15 +208,17 @@ is implemented by ADR-0039.)*
   degrade safely — visible only to admin and `read`-grant holders, never
   accidentally "owned" by a null-principal caller.
 - Bad: **MCP management tools remain visibility-ungated** — a real,
-  documented gap until a follow-up closes it. *(Closed by ADR-0039.)*
+  documented gap until a follow-up closes it.
 - Bad: **nested-dispatch authority remains unenforced** — `RunAgent`
   still dispatches any agent unconditionally; only its owner-stamping
-  changed, not its gating. *(Closed by ADR-0039.)*
+  changed, not its gating.
 - Neutral: `dispatches`/`continuations` visibility is a Kotlin post-filter,
   not a SQL `WHERE` clause like `processes` — acceptable given list sizes,
   but not the same performance profile if either table grows large.
-  *(Amended 2026-10-09: both now filter in SQL, see ADR-0021's 2026-09-30
-  amendment.)*
+
+> **Amendment (2026-08-12) —** The two gaps above, MCP management tools and nested-dispatch authority, are closed by ADR-0039.
+
+> **Amendment (2026-10-09) —** `dispatches` and `continuations` visibility now filters in SQL, see ADR-0021's 2026-09-30 amendment.
 
 ## More Information
 

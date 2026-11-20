@@ -3,7 +3,7 @@ status: accepted
 date: 2026-10-15
 deciders: Lukáš Vlk
 consulted: ADR-0084, ADR-0085
-amended: 2026-10-24, 2026-10-25
+amended: 2026-10-24, 2026-10-25, 2026-11-20
 ---
 
 # ADR-0086: Sign release images with cosign and attest their SBOM and provenance
@@ -158,3 +158,14 @@ Consequences:
 - arm64 standard runners are free for public repositories. In a private repository, a private
   fork for instance, they count against the plan's minutes and have two vCPUs instead of four, so
   the arm64 builds are slower there.
+
+## Amendment (2026-11-20): the amd64 runner is pinned to `ubuntu-24.04`
+
+The `linux/amd64` images build on `ubuntu-24.04`, not `ubuntu-latest`. The moving label would
+change the build host under a release without any change in this repository, so every job in
+`.github/workflows/` now names its runner image, as the arm64 entry already did. A runner image
+upgrade is a deliberate change to the workflows, which Renovate proposes: its github-actions
+manager reads the `runs-on:` labels, and a regex manager in `renovate.json` reads the image
+matrix's two `runner:` values, which the github-actions manager skips. Both land in the one
+"GitHub Actions" pull request. `ReleaseWorkflowGateTest` requires the amd64 runner to equal the
+`runs-on:` label of release.yml's other jobs and the arm64 runner to be that label plus `-arm`.

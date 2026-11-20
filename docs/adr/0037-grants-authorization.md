@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-08-11
 deciders: Lukáš Vlk
+amended: 2026-10-09
 ---
 # ADR-0037: Grants-based authorization replaces path allowlists
 
@@ -96,9 +97,7 @@ settled with the operator on 2026-08-11:
    [ADR-0038](0038-process-ownership.md). `RunAgent` continues to
    dispatch any agent unconditionally in the meantime (see
    Consequences) — that gap is about *authority*, not visibility; the
-   resulting run is still correctly owner-attributed. *(Amended 2026-10-09:
-   implemented by [ADR-0039](0039-nested-dispatch-authority.md); every
-   `RunAgent`/dispatch/continuation hop is now gated.)*
+   resulting run is still correctly owner-attributed.
 10. This ADR **supersedes the "no-gate" clause of
     [ADR-0030](0030-runagent-in-process-dispatch.md)**: ADR-0030 stated
     "`RunAgent` keeps invoking any agent — there is no `dispatch.enabled`
@@ -106,8 +105,11 @@ settled with the operator on 2026-08-11:
     to be gated by threaded authority) but not yet in implementation — the
     actual gating (decision 9) is Plan 2 work. ADR-0030's `RunAgent`-is-
     in-process architecture and the `dispatch.enabled` gate's scope
-    (specific to `DispatchService`) are otherwise unaffected. *(Amended
-    2026-10-09: the gating is implemented, see ADR-0039.)*
+    (specific to `DispatchService`) are otherwise unaffected.
+
+> **Amendment (2026-10-09) —** The gating is implemented, see ADR-0039.
+
+> **Amendment (2026-10-09) —** Implemented by [ADR-0039](0039-nested-dispatch-authority.md); every `RunAgent`/dispatch/continuation hop is now gated.
 
 ### Consequences
 
@@ -126,8 +128,7 @@ settled with the operator on 2026-08-11:
   `agentGrants` don't permit the target) is designed but not yet
   enforced — `RunAgent` still dispatches any agent unconditionally,
   pending Plan 3. This is a deliberate scope cut, not a regression: that
-  surface was equally ungated before this ADR. *(Amended 2026-10-09:
-  closed by ADR-0039.)*
+  surface was equally ungated before this ADR.
   Per-process owner visibility, by contrast, **shipped in Plan 2** — see
   [ADR-0038](0038-process-ownership.md): process-scoped routes (status,
   kill, retry, artifacts, questions, dispatches, continuations, the
@@ -136,6 +137,8 @@ settled with the operator on 2026-08-11:
 - Neutral: `role`/`grants` on bearer tokens, HMAC keys, and password users
   follow one shared validation path (`Principaled`), so all three principal
   kinds gained the same authorization surface in one change.
+
+> **Amendment (2026-10-09) —** Closed by ADR-0039.
 
 ## More Information
 

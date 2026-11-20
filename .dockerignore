@@ -10,9 +10,8 @@
 *.class
 *.jar
 *.war
-# Gradle outputs at any depth (app/app/build, app/buildSrc/.gradle, …): `*/build/`
-# matches only depth 2, so a stale local homer-*-all.jar could reach the image.
-# Not `**/*.jar` — app/gradle/wrapper/gradle-wrapper.jar must stay in the context.
+# Any depth, so no stale local homer-*-all.jar reaches the image; not `**/*.jar`,
+# since app/gradle/wrapper/gradle-wrapper.jar must stay in the context.
 **/build/
 **/.gradle/
 
@@ -40,7 +39,7 @@ docker/.env
 *.log
 logs/
 
-# Temporary files
+# Editor and scratch files
 *.tmp
 *.temp
 *.swp

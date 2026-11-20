@@ -19,13 +19,8 @@ ENV NEXT_PUBLIC_CONSOLE_VERSION=$CONSOLE_VERSION
 # Build the application
 RUN npm run build
 
-# Image optimization is disabled (next.config.js images.unoptimized), so the
-# sharp binaries Next bundles into the standalone output are never loaded at
-# runtime. Prune them here, before the runner COPYs the standalone tree, so the
-# ~33 MB never enters an image layer.
-# Load-bearing beyond size: those binaries are LGPL-3.0-or-later, and keeping
-# them out of the image is what keeps Homer from conveying LGPL code. The
-# build-homer-console license gate fails the push if this stops working.
+# Keeps sharp's LGPL-3.0 binaries out of every layer (ADR-0056); the Release
+# workflow's LGPL gate refuses the push if any remain.
 RUN rm -rf .next/standalone/node_modules/@img .next/standalone/node_modules/sharp
 
 # Production stage
@@ -38,9 +33,8 @@ ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# Copy the standalone output with all its node_modules. --chown sets ownership
-# inline: a separate `RUN chown -R /app` would duplicate every app file into a
-# new layer (~86 MB) just to rewrite metadata.
+# The standalone output with its node_modules; --chown inline, since a separate
+# `RUN chown -R /app` would duplicate every app file into a new layer (~86 MB).
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 # Copy static files
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static

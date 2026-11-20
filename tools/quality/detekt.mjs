@@ -1,9 +1,7 @@
 /**
- * detekt: the findings of each module's type-resolved `detektMain` SARIF report (ADR-0082).
+ * detekt: each module's type-resolved `detektMain` SARIF findings (ADR-0082); rule sets: app/config/detekt/detekt.yml.
  * Usage (repository root): node tools/quality/detekt.mjs [out dir]
- *
- * The rule sets come from app/config/detekt/detekt.yml. Coroutine and potential-bug findings are
- * major, as they point at a defect; exception-handling findings are minor.
+ * Coroutine and potential-bug findings are major, as they point at a defect; exception-handling findings are minor.
  */
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';

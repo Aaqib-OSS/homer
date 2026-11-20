@@ -42,9 +42,8 @@ expect fail "an accepted issue in another repository" "someone/homer:4:accepted"
 expect pass "an accepted issue" "livesport/homer:5:bug,accepted"
 expect pass "one accepted issue among several" "livesport/homer:6:" "someone/homer:7:accepted" "livesport/homer:8:accepted"
 
-# The AIF factory's release pull request (ADR-0090, 2026-10-24 amendment): exempt only as a
-# whole — the App's bot account, a release branch of this repository, the changelog and the
-# pinned version only.
+# The factory's release pull request, exempt only as a whole (ADR-0090, 2026-10-24 amendment): its bot account,
+# an own-repository release branch, release files only.
 release() {
   want=$1 name=$2 type=$3 id=$4 repo=$5 ref=$6 files=$7 list=${8:-$scratch/files.txt}
   answer >"$scratch/answer.json"
@@ -86,6 +85,19 @@ release fail "another file than the changelog" Bot "$app" livesport/homer "$rel"
 release fail "a rename onto the changelog" Bot "$app" livesport/homer "$rel" 'renamed CHANGELOG.md'
 release fail "a new changelog" Bot "$app" livesport/homer "$rel" 'added CHANGELOG.md'
 release fail "no file list" Bot "$app" livesport/homer "$rel" ''
+
+# The dependency bots' exemption lives in the workflow's `if`, not in check.sh: it must name
+# exactly the two Apps' accounts, and no other login.
+workflow=$(cd "$(dirname "$0")/../.." && pwd)/.github/workflows/pr-policy.yml
+gate=$(grep -F "user.login !=" "$workflow" || true)
+exempt=$(printf '%s\n' "$gate" | grep -o "user.login != '[^']*'" | sort | tr '\n' ' ')
+joined=$(printf '%s' "$gate" | grep -c "!cancelled() && github.event.pull_request.user.login != 'dependabot\[bot\]' && github.event.pull_request.user.login != 'renovate\[bot\]' }}\$" || true)
+gated=$(awk '/^  [a-z-]+:/ {job=$1} /user.login !=/ {print job}' "$workflow")
+if [ "$(printf '%s\n' "$gate" | grep -c .)" -ne 1 ] || [ "$exempt" != "user.login != 'dependabot[bot]' user.login != 'renovate[bot]' " ] \
+    || [ "$joined" -ne 1 ] || [ "$gated" != "accepted-issue:" ]; then
+  echo "FAIL: the workflow must exempt exactly dependabot[bot] and renovate[bot] from the accepted-issue gate"
+  failures=$((failures + 1))
+fi
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures PR policy test(s) failed."

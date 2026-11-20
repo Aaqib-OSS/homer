@@ -210,6 +210,17 @@ if result["status"] != "FINISHED":
   a `homer_interrupt` gate is not a failure, and no server-side flag is involved
   (Homer's resume path is unchanged).
 
+## Helper reference
+
+Exported from `homer_langgraph`. Parameter contracts live here, not in docstrings ([ADR-0024](../../../docs/adr/0024-langgraph-command-type.md)); a new exported helper extends this table.
+
+| Helper | Parameters (default) | Returns / raises |
+| --- | --- | --- |
+| `homer_interrupt(text, *, options, ttl)` | `text`: Markdown question; `options`: suggested answers (`None`); `ttl`: question expiry in seconds (`None`) | The operator's answer string |
+| `homer_fanout(agent, *, params, result_jsonpath, ttl, group, retries, infra_retries)` | `agent`: sub-agent name; `params`: `key=value` query params (`None`); `result_jsonpath`: JsonPath over the sub's stdout, its value becomes `result` (`None`); `ttl`: continuation expiry in seconds (`None`); `group`, `retries`, `infra_retries`: see above (`None`, `0`, `0`) | The decoded `{status, processId, result}` dict; an over-cap result is fetched by reference and spliced into `result`. `ValueError` for a retry budget that is not an int in 0..5 (a `bool` is rejected) or an undecodable payload once `infra_retries` is spent |
+| `homer_dispatch(agent, params)` | `agent`: sub-agent name; `params`: `key=value` query params (`None`) | The new sub-process id as an `int`; `ValueError` when the wrapper prints anything else |
+| `homer_fetch_result(ref)` | `ref`: the resume payload's `resultRef` dict (`{processId, path, token, sizeBytes}`) | The result body as a string; `RuntimeError` naming the process and path when `homer-result` fails |
+
 ## Module spec
 
 `--module` accepts `pkg.mod:attr` or `pkg.mod` (default attr `graph`). The
@@ -289,19 +300,16 @@ A per-thread file cache was tried and removed; see [ADR-0044](../../../docs/adr/
 
 ## Install
 
-Requires Python ≥ 3.10. The backend Docker image already bundles the
+Requires Python ≥ 3.12. The backend Docker image already bundles the
 runtime (`app/Dockerfile`); elsewhere, from the repo root, install the
-hash-pinned dependencies the image ships (the lock covers Python ≥ 3.12, the
-image's version), then the package:
+hash-pinned dependencies the image ships, then the package:
 
 ```sh
 pip install --require-hashes --no-deps -r clients/python/requirements.lock
 pip install --no-deps ./clients/python
 ```
 
-A plain `pip install ./clients/python` resolves the dependencies itself: the
-way to install on Python 3.10 or 3.11, which the lock does not cover. On a musl
-system such as Alpine it ends on older langgraph releases with known advisories
+The lock install above is the supported path. A plain `pip install ./clients/python` resolves the dependencies itself; on a musl system such as Alpine it ends on older langgraph releases with known advisories
 ([ADR-0114](../../../docs/adr/0114-python-runtime-installs-from-a-hash-pinned-lock.md)).
 
 ## Tests

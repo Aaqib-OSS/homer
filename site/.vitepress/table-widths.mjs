@@ -1,6 +1,4 @@
-// Gives a table's prose columns a minimum width, so a column of sentences is not squeezed to a
-// few words per line beside columns of long code names; a table that then outgrows the page
-// scrolls sideways instead (the theme's tables already do).
+// Gives a table's prose columns a minimum width; a table that outgrows the page scrolls sideways.
 
 /** Average characters per cell from which a column counts as prose. */
 const PROSE = 80

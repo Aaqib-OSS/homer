@@ -1,20 +1,6 @@
-"""A thread parked under the image's former LangGraph line resumes under the locked one.
+"""A thread parked under the image's former LangGraph line resumes under the locked one (ADR-0114).
 
-``fixtures/checkpoints-lg1.1.10.sqlite`` was written by the runtime under
-langgraph 1.1.10, langgraph-checkpoint 2.1.2 and langgraph-checkpoint-sqlite
-2.0.7, the versions the image shipped before ``requirements.lock`` (ADR-0114).
-Its threads, one per park shape the runner resumes:
-
-- ``human``: ``two_human_graph``, one gate answered, one pending;
-- ``pair``: ``two_human_graph``, both gates parked at once;
-- ``fanout``: ``fanout_graph``, one ungrouped fan-out (``homer-dispatch``);
-- ``join``: ``three_parallel_fanout_graph``, parked on one grouped join;
-- ``recover``: ``flaky_graph``, its ``flaky`` task failed.
-
-Regenerate it by running this module as a script under those versions:
-``python -m homer_langgraph.tests.test_checkpoint_upgrade <out.sqlite>``. The
-script refuses any other versions and records the ones it ran under in the
-store's ``fixture_meta`` table, which every test checks.
+Regenerate the fixture: ``python -m homer_langgraph.tests.test_checkpoint_upgrade <out.sqlite>``.
 """
 
 from __future__ import annotations
@@ -75,8 +61,7 @@ def test_human_thread_reads_and_resumes(env, tmp_path, monkeypatch, captured_run
 
 def test_human_thread_resumes_with_a_scalar_value(env, tmp_path, monkeypatch, captured_runs, capsys):
     _store(tmp_path)
-    # The back-compat resume without HMR_LG_INTERRUPT. LangGraph refuses it while two
-    # interrupts are pending, on the old line as on the new, so it runs on one pending.
+    # Scalar resume without HMR_LG_INTERRUPT: LangGraph refuses it with two pending.
     _pending_human(introspection.thread_state(TWO_HUMAN, "human"))
     monkeypatch.setenv(runner.ENV_THREAD, "human")
     monkeypatch.setenv(runner.ENV_RESUME, "ans2")

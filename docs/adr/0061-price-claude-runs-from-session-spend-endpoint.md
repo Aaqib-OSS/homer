@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-09-10
 deciders: Lukáš Vlk
-amended: 2026-09-11, 2026-09-16, 2026-10-06
+amended: 2026-09-11, 2026-09-16, 2026-10-06, 2026-10-09
 ---
 # ADR-0061: Price Claude runs from an external session-spend endpoint, CLI figure as marked fallback
 
@@ -125,9 +125,7 @@ Two implementation decisions not spelled out in the design and worth recording:
   to the example.
 - Bad: Codex is not wired to this resolver — the Codex CLI reports tokens, not
   USD, and correlating a proxy's spend rows to Codex's `thread_id` is unverified.
-  Left as a follow-up; the resolver is executor-agnostic. *(Amended 2026-10-09: since
-  [ADR-0070](0070-llm-harness-adapter-boundary.md) every harness, Codex included, is
-  priced through this resolver.)*
+  Left as a follow-up; the resolver is executor-agnostic.
 - Bad (known limitation): when an agent pins `Command.Claude.options.sessionId`
   **and** sets `retry.attempts > 1` with `llmPrice.sessionSpend` configured, every
   attempt shares the same CLI session, so each attempt's lookup returns that
@@ -145,6 +143,8 @@ Two implementation decisions not spelled out in the design and worth recording:
   accounting stay lenient and unconditional while success gating stays strict and
   exit-0-only; merging them would couple two concerns this design deliberately
   keeps apart.
+
+> **Amendment (2026-10-09) —** Since [ADR-0070](0070-llm-harness-adapter-boundary.md) every harness, Codex included, is priced through this resolver.
 
 ### Amendment 2026-09-11 — re-poll a lagging endpoint
 

@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-10-12
 deciders: Lukáš Vlk
+amended: 2026-10-12, 2026-10-13
 ---
 
 # ADR-0081: A CRAP score report for the backend and the console, gated as a warning first
@@ -73,19 +74,23 @@ violates even at 100% coverage — that is intended: it has to be split.
   failure) fails them. Code Quality fingerprints leave out line numbers, so a
   finding keeps its identity when the code around it moves.
 
-**The gate.** *Superseded by [ADR-0082](0082-quality-reports-report-first.md): CRAP is the `crap` check of `quality-gate`, and the flip is its `mode` in `tools/quality/checks.json`.* CI job `crap-gate` sums `violations=` over every module's
+**The gate.** CI job `crap-gate` sums `violations=` over every module's
 `crap-summary.txt` and fails when the total is above zero, or when a summary is
 missing. It also merges the per-module Code Quality files into the pipeline's
 single Code Quality report (a job can upload only one). It starts with `allow_failure: true`: violations show as "passed with
 warnings" and in the merge request's Code Quality widget, but do not block.
 When the backlog is at zero, setting `allow_failure: false` makes the gate
-required. *Amended:* the threshold lives in one place, `crap.threshold` in
+required.
+
+> **Amendment (2026-10-13) —** The threshold lives in one place, `crap.threshold` in
 `tools/quality/checks.json`, read by both reports; the gate rejects a report
 written for another value. It starts at 30 and is lowered in steps
 (30 → 25 → 20 → 15 → 10 → 9 → 8, the target), each step only once
 nothing scores over the next value; it reached 10 on 2026-10-12, and 9 and then 8 on
 2026-10-13. A local run can still override it (`-Pcrap.threshold=` /
 `CRAP_THRESHOLD=`); CI never does.
+
+> **Amendment (2026-10-12) —** Superseded by [ADR-0082](0082-quality-reports-report-first.md): CRAP is the `crap` check of `quality-gate`, and the flip is its `mode` in `tools/quality/checks.json`.
 
 ### Consequences
 

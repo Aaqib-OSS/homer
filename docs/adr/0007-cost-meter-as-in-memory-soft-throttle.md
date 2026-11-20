@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-05-06
 deciders: Lukáš Vlk
-amended: 2026-10-09
+amended: 2026-07-28, 2026-10-09
 superseded-by: ADR-0035
 ---
 # ADR-0007: `CostMeter` as an in-memory soft throttle, enforced at the HTTP boundary
@@ -87,8 +87,9 @@ Two rationales beat the alternatives:
    (`ProcessManager`, `LockManager`, `ParallelRunsManager` are all
    in-memory). Adding a persistent store for cost specifically would
    create a new operational surface for a soft throttle whose worst
-   failure mode is "alarm fires a few seconds later". *(Superseded by
-   ADR-0035: cost state is persisted.)*
+   failure mode is "alarm fires a few seconds later".
+
+> **Amendment (2026-07-28) —** Superseded by ADR-0035: cost state is persisted.
 
 The check is `current >= cap` (not `current + estimate >= cap`)
 because the per-run cost is unknown until Claude responds; checking
@@ -104,7 +105,7 @@ KDoc as soft-throttle semantics.
   starts, so clients get clean backpressure they can rate-limit
   against.
 - Good: zero new persistence — restart resets the meter, matching the
-  rest of Homer's runtime state. *(Superseded by ADR-0035: caps survive restart.)*
+  rest of Homer's runtime state.
 - Good: `GET /api/v1/costs` snapshot is a cheap mutex-guarded read of
   the same windows the check uses, so the console UI shows the same
   numbers the throttle sees.
@@ -118,10 +119,11 @@ KDoc as soft-throttle semantics.
 - Bad: state is lost on restart. A cron agent that runs at minute 0
   and exhausts the daily cap will get a fresh budget on a server
   restart. We accept this in exchange for not running a database.
-  *(Superseded by ADR-0035: caps survive restart.)*
 - Bad: cross-node deployments (which Homer does not support today)
   would each have their own meter. Documented in CHANGELOG and
   `SERVER.md` as "single-node soft throttle by design".
+
+> **Amendment (2026-07-28) —** Superseded by ADR-0035: caps survive restart.
 
 ## Pros and Cons of the Options
 

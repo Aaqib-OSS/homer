@@ -15,9 +15,8 @@ services:
 
   frontend:
     command: sh -c "npm install && npm run dev"
-    # The base compose hardens the console with a read-only root FS; npm and
-    # the Next.js dev server need to write, so dev lifts it. npm's cache goes
-    # to tmpfs /tmp — the nextjs user's home is not writable in the image.
+    # Dev lifts the base file's read-only root FS: npm and the Next.js dev server write, and npm's cache goes
+    # to tmpfs /tmp as the nextjs user's home is not writable in the image.
     read_only: false
     volumes:
       - ./console:/app

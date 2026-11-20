@@ -1,17 +1,7 @@
 /**
- * dto-contract: drift between the backend DTOs and their hand-written TS mirrors in
- * console/types/homer.ts (ADR-0082). Compares the backend export (`DtoContractTest`, written by
- * `:app:test`) with the console extract (`console/scripts/dto-types.mjs`, run by
- * `npm run quality:report`).
+ * dto-contract (ADR-0082): drift between backend DTOs (`DtoContractTest`) and console/types/homer.ts (`dto-types.mjs`):
+ * a TS type matches a Kotlin class by name or RENAMES or has a CONSOLE_ONLY reason; every Kotlin class has a mirror.
  * Usage (repository root): node tools/quality/dto-contract.mjs [backend json] [console json] [out dir]
- *
- * A TS declaration is matched to the Kotlin class of the same simple name, or of its RENAMES entry.
- * Every TS declaration needs a Kotlin counterpart or a CONSOLE_ONLY reason, and every exported Kotlin
- * class must be mirrored somewhere, so neither side drops out of the comparison silently.
- *
- * The backend encodes with `encodeDefaults` and explicit nulls, so a response carries every field:
- * there only a Kotlin-nullable field the TS type does not allow `null` for matters. A request is the
- * other way round: TS must not leave out, or send `null` for, a field Kotlin requires.
  */
 import fs from 'node:fs';
 import { runMain, writeCheck } from './lib.mjs';

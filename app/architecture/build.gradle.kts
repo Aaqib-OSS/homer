@@ -9,16 +9,14 @@ dependencies {
     testImplementation(libs.junitJupiter)
 }
 
-// A rule tagged report-only (ReportOnly.kt) still has findings: it runs in architectureReportOnly, which
-// never fails the build, and is reported by the warn-mode check architecture-backend-pending, listed only
-// while a rule carries the tag (ADR-0082).
+// A rule tagged report-only still has findings: it runs in architectureReportOnly, which never fails
+// the build, and the warn-mode check architecture-backend-pending lists it (ADR-0082).
 val reportOnlyTag = "report-only"
 
 tasks.withType<Test>().configureEach {
     val repoRoot = rootDir.parentFile
     systemProperty("homer.repoRoot", repoRoot.absolutePath)
-    // Konsist parses every main and test source of the backend modules into one JVM. Gradle's 512m
-    // default left no headroom: the rules ran out of heap ("Java heap space") in CI.
+    // Konsist parses every backend source into one JVM; Gradle's 512m default ran out of heap in CI.
     maxHeapSize = "1g"
     // The rules read other modules' sources; undeclared, editing them would replay a cached result.
     inputs

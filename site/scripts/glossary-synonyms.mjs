@@ -1,7 +1,5 @@
-// Forbidden-synonyms lint (GH-314): docs/glossary.md lists words that name a glossary term's
-// concept under another name; this module parses that list and finds them in prose and in code
-// identifiers, so one name stays one concept and an exact search finds all of it.
-// glossary-synonyms.test.mjs runs it over the repository.
+// Forbidden-synonyms lint: parses docs/glossary.md's synonym list and finds each word in prose
+// and code identifiers (docs/quality-checks.md, Documentation site).
 
 const SECTION = /^## Forbidden synonyms\s*$/
 const ANY_H2 = /^## /
@@ -45,10 +43,8 @@ export function tokens(text) {
     id.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Za-z])([0-9])/g, '$1 $2').replace(/([0-9])([A-Za-z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2').split(' ').map((t) => t.toLowerCase()))
 }
 
-// Comments and string literals are not identifiers: Kotlin and TypeScript alike, in one pass so
-// a `//` inside a string or a quote inside a comment is not misread. Newlines are kept. A backtick
-// is a template literal in TypeScript, but in Kotlin it quotes an identifier, so Kotlin keeps it.
-// A TypeScript regex literal is not recognized: a quote inside one can mask the rest of its line.
+// Comments and strings are stripped in one pass, newlines kept; a backtick quotes an identifier
+// in Kotlin but opens a template in TypeScript. A TypeScript regex literal is not recognized.
 const NOT_KOTLIN = /\/\*[\s\S]*?\*\/|\/\/[^\n]*|"""[\s\S]*?"""|"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/g
 const NOT_TS = new RegExp(`${NOT_KOTLIN.source}|\`(?:[^\`\\\\]|\\\\.)*\``, 'g')
 const blank = (m) => m.replace(/[^\n]/g, ' ')
@@ -67,11 +63,9 @@ const clean = { kotlin: (t) => stripNonCode(t, 'kotlin'), ts: (t) => stripNonCod
 
 const matches = (lineTokens, word) => lineTokens.some((t) => t === word || t === `${word}s`)
 
-/**
- * Every line of `text` that holds a forbidden synonym and is not an allowed context.
+/** Every line of `file` that holds a forbidden synonym outside an allowed context; `used` collects the excusing ones.
  * @param {{path: string, text: string, kind: 'prose'|'html'|'kotlin'|'ts'}} file
  * @param {{forbidden: {word: string, use: string}[], allowed: {word: string, file: string, text: string}[]}} rules
- * @param {Set<object>} [used] receives each allowed context that excused a hit
  */
 export function findHits(file, rules, used = new Set()) {
   let cleaned

@@ -321,10 +321,6 @@ Build images without Compose:
 `clients/python` runtime — run from the repo root with `-f app/Dockerfile`):
 ```bash
 docker build --target runner -t homer-backend -f app/Dockerfile .
-# Add --secret id=artifactory_url,env=ARTIFACTORY_URL --secret
-# id=artifactory_user,env=ARTIFACTORY_USER --secret
-# id=artifactory_token,env=ARTIFACTORY_TOKEN to resolve through Artifactory
-# when the three are exported (see § Artifactory build secrets).
 docker run -p 127.0.0.1:8080:8080 \
   -v $(pwd)/example/config:/app/config:ro \
   -v $(pwd)/example/agents:/app/agents:ro \
@@ -360,7 +356,7 @@ docker run -p 3000:3000 \
 | `BACKEND_PORT` | 8080 | Host port for the backend (published on `127.0.0.1` only) |
 | `HOMER_ADMIN_TOKEN` | _(required)_ | Admin API bearer token; resolved by `@SYSENV` in the example config. Startup fails if empty or unset. |
 | `FRONTEND_PORT` | 3000 | Compose passes the console's port to the backend too: the example configs allow the console origin `http://localhost:<FRONTEND_PORT>` (and `127.0.0.1`) via `@SYSENV:FRONTEND_PORT`. Startup fails if unset |
-| `JAVA_OPTS` | `-Xmx512m -Xms256m` | JVM options. The image puts `-XX:-UseBASE64Intrinsics` (CVE-2026-114938 stopgap) before them, so setting `JAVA_OPTS` keeps it |
+| `JAVA_OPTS` | `-Xmx512m -Xms256m` | JVM options. The image puts `-XX:-UseBASE64Intrinsics` (CVE-2026-114938, Java4Shell; W-020 in [`docs/workarounds.md`](docs/workarounds.md)) before them, so setting `JAVA_OPTS` keeps it |
 | `CONFIG_PATH` | `config/config.json` | Path to config file in container |
 
 ### Build Arguments
@@ -374,63 +370,6 @@ Build arguments are set at **image build time** (not runtime). They must be pass
 | `CLAUDE_CODE_VERSION` | `2.1.318` | Claude Code CLI version to install. Pinned by default, for the same reason as the two below; it must match `server.requireClaudeCodeVersion`, which fails a `!<claude>` run whose CLI reports another version. |
 | `CODEX_VERSION` | `0.166.0` | Codex CLI version to install. Pinned by default: the CLI runs agent prompts with the workspace's secrets in its environment, so a build ships a version someone chose, not whatever npm had. |
 | `OPENCODE_VERSION` | `1.19.5` | opencode CLI version to install. Pinned by default, for the same reason. |
-
-### Artifactory build secrets (optional)
-
-The backend and E2E images run Gradle inside the build. When
-`ARTIFACTORY_URL` (the proxy's bare `https://` origin; another scheme, a path
-or embedded credentials fail the build) and the `ARTIFACTORY_USER` / `ARTIFACTORY_TOKEN` credentials
-are available, pass them as **BuildKit secrets** so that resolution goes
-through the Artifactory proxy instead of Maven Central (which rate-limits
-shared CI egress IPs with `429 Too Many Requests`):
-
-```bash
-docker build --target runner -f app/Dockerfile \
-  --secret id=artifactory_url,env=ARTIFACTORY_URL \
-  --secret id=artifactory_user,env=ARTIFACTORY_USER \
-  --secret id=artifactory_token,env=ARTIFACTORY_TOKEN .
-
-# docker-compose.e2e.yml declares all three under `build.secrets`, sourced from
-# the environment — exporting the three variables is enough.
-docker compose -f docker-compose.e2e.yml build
-```
-
-They are **secrets, not build arguments**: a `--build-arg` value stays readable
-in `docker history` of the pushed image and an `ENV` is baked into its
-metadata, while a secret mount leaves nothing in any layer.
-
-Each Gradle `RUN` exports the three afresh from its own mounts (two per
-Dockerfile), never for the build as a whole. The suppliers are the
-`--secret id=…,env=…` flags on a `docker build` that sets them (GitHub CI sets
-none and builds against Maven Central, ADR-0084) and `build.secrets` in
-`docker-compose.e2e.yml`. `ArtifactorySecretExposureTest`
-fails if either Dockerfile gains an `ARG`/`ENV` Artifactory credential or a
-`./gradlew` build step without the mounts.
-
-The E2E runner also receives the three as ordinary run-time `environment`
-pass-throughs, because its `ENTRYPOINT` runs Gradle again inside the container:
-the repository set has to match the one the image was built with, or Gradle
-re-resolves everything against Maven Central and the 429 moves from build time
-to `:e2e:test`. Unset on the host stays unset in the container, so both phases
-fall back together.
-
-That pass-through is an accepted risk (listed in
-[`SECURITY.md`](SECURITY.md)): the credential pair (`ARTIFACTORY_USER` /
-`ARTIFACTORY_TOKEN`) is visible to `docker inspect` and to
-the test JVM's children for the life of the container, where a build secret
-lives for one `RUN`. It crosses no principal — the CI job already holds the pair
-and starts the container itself — and the container runs this repo's own test
-suite, not agent code. A compose *runtime* secret would not improve it: the
-Gradle gate reads `providers.environmentVariable`, so a `/run/secrets/...` file
-needs an entrypoint shim that exports it back into Gradle's environment, which
-its test workers inherit. That hides the pair from `docker inspect` only, and
-reading that already needs root-equivalent daemon access. Revisit if the runner
-ever executes untrusted code.
-
-All three are optional. Without them the Gradle gate in
-`app/gradle/artifactory.settings.gradle.kts` stays off — at build time and run
-time alike — and everything resolves from Maven Central exactly as before. No
-extra flags are needed for a local build.
 
 ### Pinning the Claude CLI
 

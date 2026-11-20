@@ -39,9 +39,8 @@ class ComposeImageSourceTest {
         listOf("README.md", "DOCKER.md", "console/DEPLOYMENT.md", "docs/homer-feature-atlas.html")
             .map { File(repoRoot, it) }
 
-    /** Every file this class guards: the compose files, the quick-start docs, the rebuild script and `.env.example`. */
-    private fun guardedFiles(): List<File> =
-        composeFiles() + quickStartDocs() + listOf("rebuild-docker.sh", ".env.example").map { File(repoRoot, it) }
+    /** Every file this class guards: the compose files, the quick-start docs and `.env.example`. */
+    private fun guardedFiles(): List<File> = composeFiles() + quickStartDocs() + File(repoRoot, ".env.example")
 
     private fun indentOf(line: String) = line.takeWhile { it == ' ' }.length
 
@@ -302,8 +301,7 @@ class ComposeImageSourceTest {
         // docker-compose.dev.yml sets build arguments and no context, so stacked on the base file
         // alone it merges build args into a service with no `build:` section and `docker compose up`
         // fails the merge — every command that adds the dev overlay needs the build overlay under it.
-        val scanned =
-            quickStartDocs() + listOf("rebuild-docker.sh", "docker-compose.build.yml").map { File(repoRoot, it) }
+        val scanned = quickStartDocs() + File(repoRoot, "docker-compose.build.yml")
         for (file in scanned) {
             assertTrue(file.isFile, "${file.name} is missing; move this guard with the dev-overlay docs rather than deleting it.")
             val logical = mutableListOf<String>()

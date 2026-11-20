@@ -10,9 +10,8 @@
   }
 }
 
-/* A code name in a table cell keeps its natural width and is never broken mid-word; a table that
-   then outgrows the page scrolls sideways (prose columns get a minimum width at build time,
-   table-widths.mjs). */
+/* A code name in a table cell keeps its natural width, never broken mid-word; an outgrown table
+   scrolls sideways (table-widths.mjs gives prose columns a minimum width at build time). */
 .vp-doc td code {
   overflow-wrap: normal;
   word-break: normal;

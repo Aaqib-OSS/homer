@@ -1,7 +1,5 @@
 #!/bin/sh
-# Tests for notes.sh: a release's notes are its changelog section, and its images section is
-# replaced, never duplicated, when the release job runs again.
-#
+# Tests notes.sh: a release's notes are its changelog section; a rerun replaces the images section, never duplicates it.
 # Usage: tools/release/notes-test.sh   (from anywhere)
 set -eu
 

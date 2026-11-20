@@ -4,6 +4,9 @@
 
 ### Homer
 
+- **BREAKING: the LangGraph runtime needs Python 3.12** — A runner host that runs `!<langgraph>` commands needs Python 3.12 or newer to install `homer_langgraph`.
+- **BREAKING: the optional Artifactory build path is removed** — Gradle builds and the backend and E2E image builds no longer read `ARTIFACTORY_URL`, `ARTIFACTORY_USER` or `ARTIFACTORY_TOKEN` and resolve from Maven Central and the Gradle Plugin Portal, so an operator whose network reaches dependencies only through Artifactory must provide another route to them.
+- **Security: the host launch scripts start the JVM with Base64 intrinsics off** — `homer-runner.sh` and `agentdebug.sh` pass `-XX:-UseBASE64Intrinsics`, as the images do, mitigating Java4Shell (CVE-2026-114938).
 - **Security: LangGraph inspect and state run with a minimal environment** — The server-side `homer_langgraph inspect` and `state` subprocesses get only `PATH`, `HOME`, `LANG`, the standard `LC_` locale categories, `TMPDIR`, `VIRTUAL_ENV` and `PYTHONHOME` from the server environment, plus the agent's `env`, so a graph module that reads any other server variable at import time must now declare it in the agent's `env`. See [ADR-0027](docs/adr/0027-langgraph-graph-introspection.md).
 - **Security: exec no longer logs the raw remote command** — The ssh exec channel and session no longer log the remote command at any log level, and a failed Kubernetes exec is logged and reported without its exec URL, raw cause or stack trace.
 - **Fixed: workspace helpers keep tokens off the command line** — `homer-ask`, `homer-dispatch`, `homer-inbox`, `homer-join`, `homer-result` and `homer-tag` pass the callback token, the result token and request bodies to curl outside argv, where other users on the host could read them.

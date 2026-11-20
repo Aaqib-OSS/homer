@@ -17,7 +17,7 @@ const mutation = (cls, file, line, status = 'SURVIVED') =>
 const xml = (...mutations) => `<mutations>${mutations.join('')}</mutations>`;
 
 /**
- * A temporary repository holding `files` and a stand-in for Gradle that records its arguments,
+ * A scratch repository holding `files` and a stand-in for Gradle that records its arguments,
  * writes `app/report.xml` as PIT's report and exits `exit`. Runs `fn(dir)` with it as the working
  * directory; returns fn's result (or the error it threw) and the recorded Gradle arguments, if any.
  */

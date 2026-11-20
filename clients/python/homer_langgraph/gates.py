@@ -1,17 +1,6 @@
 """Pure interrupt gate helpers for Homer LangGraph workflows.
 
-These helpers are deliberately **pure**: they only call LangGraph's
-``interrupt()`` to park the graph and surface a payload. They perform **no**
-side effects of their own. The side effect a gate implies — asking the
-operator a question, fanning out to a sub-agent — is performed exactly once
-by the runtime (:mod:`homer_langgraph.runner`) *after* ``invoke()`` returns
-with the pending interrupt.
-
-This split matters because Homer resumes a parked thread by re-running the
-agent from the top. LangGraph re-executes the interrupted node from its start
-up to ``interrupt()``; any side effect placed in the node body would fire
-again on every resume. Keeping the gates pure guarantees the ask/fan-out
-happens once.
+They only call ``interrupt()``; the runner performs the side effect once.
 """
 
 from __future__ import annotations
@@ -24,20 +13,14 @@ from langgraph.types import interrupt
 
 from .results import homer_fetch_result
 
-# Hard client-side ceiling on both retry budgets. A retry re-dispatches a
-# sub-agent, so the bound is local and explicit at the point of use — never
-# taken from the caller's value alone (ADR-0047 rule 4).
+# Local ceiling on both retry budgets, since a retry re-dispatches (ADR-0105).
 MAX_FANOUT_RETRIES = 5
 
-# Sub statuses that end the fan-out: the sub is done either way. A KILLED sub is
-# a decision (an operator killed it), not a failure to re-dispatch.
+# KILLED is an operator decision, not a failure to re-dispatch (ADR-0105).
 _FINAL_STATUSES = ("FINISHED", "KILLED")
-# The one terminal status worth re-dispatching: the sub ran and failed.
 _FAILED_STATUS = "FAILED"
 
-# Statuses the retry log may echo verbatim; anything else the resume payload
-# carries prints as a fixed label — never the raw value, which can hold
-# newlines or unbounded text.
+# The only statuses the retry log echoes; the payload is agent-writable (ADR-0105).
 _LOG_STATUSES = ("FAILED", "UNKNOWN", "malformed payload", "no status")
 
 
@@ -49,17 +32,8 @@ def homer_interrupt(
 ) -> str:
     """Park the graph on a human gate and return the operator's answer.
 
-    Surfaces a ``{"type": "human", ...}`` interrupt payload. The runtime turns
-    this into a ``homer-ask ask-and-dispatch`` call; when the operator answers,
-    Homer resumes the thread and this call returns the answer string.
-
-    Args:
-        text: Question text (Markdown) shown to the operator.
-        options: Optional list of suggested answer options.
-        ttl: Optional time-to-live in seconds for the question.
-
-    Returns:
-        The operator's answer string supplied as the resume value.
+    The runtime turns the payload into ``homer-ask ask-and-dispatch``; parameters
+    are in the README "Helper reference".
     """
     return interrupt(
         {
@@ -72,11 +46,7 @@ def homer_interrupt(
 
 
 def _validate_retries(name: str, value: Any) -> None:
-    """Reject a retry budget before any ``interrupt()`` is called.
-
-    ``bool`` is rejected explicitly: it is an ``int`` in Python, and ``True``
-    silently meaning "one retry" hides a caller's mistake.
-    """
+    """Reject a retry budget (a non-int, a ``bool`` or out of range) before any ``interrupt()``."""
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(
             f"homer_fanout: {name} must be an int, got {type(value).__name__}"
@@ -88,14 +58,9 @@ def _validate_retries(name: str, value: Any) -> None:
 
 
 def _decode_resume(raw: Any) -> dict[str, Any]:
-    """Decode a raw resume value into a fan-out payload dict.
+    """Decode a raw resume value (a JSON object string or a dict) into a payload dict.
 
-    The runtime feeds the raw ``HMR_LG_RESUME`` string back via
-    ``Command(resume=...)``, so for a fan-out that string is a JSON object;
-    a caller already handing back a dict (e.g. in tests) is passed through.
-    Anything else — malformed JSON, or JSON that is not an object — raises
-    ``ValueError``: the caller classifies it as an infrastructure outcome,
-    never as a success.
+    Malformed JSON or a non-object raises ``ValueError``, an infrastructure outcome.
     """
     try:
         payload = raw if isinstance(raw, dict) else json.loads(raw)
@@ -117,11 +82,7 @@ def _resolve_result(payload: dict[str, Any], agent: str) -> dict[str, Any]:
         try:
             payload["result"] = homer_fetch_result(payload["resultRef"])
         except RuntimeError as exc:
-            # A sub that did not FINISH broke on its last command, so the artifact
-            # behind the ref is that command's output (often a multi-MB Claude
-            # NDJSON stream Homer refuses to transform). Its result is not what
-            # the graph needs anyway: the graph's own status check must get to
-            # run, so keep ``result`` null and report instead of crashing.
+            # Only a FINISHED sub's ref failure is fatal (ADR-0105).
             if payload.get("status") == "FINISHED":
                 raise
             print(f"homer_fanout: {exc}; sub ended {payload.get('status')}, "
@@ -130,14 +91,10 @@ def _resolve_result(payload: dict[str, Any], agent: str) -> dict[str, Any]:
 
 
 def _retry_kind(payload: dict[str, Any]) -> str:
-    """Which retry budget a payload draws on: ``"failed"``, ``"infra"`` or ``""``.
+    """Which retry budget a payload draws on: ``"failed"``, ``"infra"`` or ``""`` (final).
 
-    Classified by the payload's status alone: anything that is not a terminal
-    status is an infrastructure outcome — an ``UNKNOWN`` sub (Homer restarted
-    mid-run), a missing or unrecognized status — so an outcome the payload does
-    not classify never spends the failure budget, and an unknown status is never
-    read as success. A runner lost mid-run is not infrastructure: its runs fail,
-    so its payload status is ``FAILED``.
+    By status alone: a non-terminal or unrecognized status is infrastructure, never
+    success and never a spend of the failure budget.
     """
     status = payload.get("status")
     if status in _FINAL_STATUSES:
@@ -146,13 +103,7 @@ def _retry_kind(payload: dict[str, Any]) -> str:
 
 
 def _log_retry(agent: str, attempt: int, limit: int, status: Any) -> None:
-    """Report one retry on stderr — agent, attempt and a bounded status label.
-
-    The status arrives in the resume payload, so only a known status is echoed;
-    any other value — a non-string, newlines, unbounded text — prints as one
-    fixed label. Never the params, the result, the processId or a resultRef
-    token: the sub's caller supplied the first and the sub returned the rest.
-    """
+    """Report one retry on stderr: agent, attempt and a status from ``_LOG_STATUSES`` only."""
     label = status if status in _LOG_STATUSES else "unrecognized status"
     print(
         f"homer_fanout: retrying {agent} attempt {attempt}/{limit} after {label}",
@@ -172,48 +123,8 @@ def homer_fanout(
 ) -> dict[str, Any]:
     """Park the graph on a fan-out gate and return the sub-process result.
 
-    Surfaces a ``{"type": "fanout", ...}`` interrupt payload. The runtime turns
-    this into a ``homer-dispatch`` call with completion-continuation flags;
-    when the dispatched sub reaches a terminal state, Homer resumes the thread
-    with the JSON resume payload ``{status, processId, result}``.
-
-    Args:
-        agent: Name of the sub-agent to dispatch.
-        params: Optional query params (``key=value``) for the sub-agent run.
-        result_jsonpath: Optional JsonPath applied to the sub's stdout; the
-            extracted value becomes the ``result`` field of the resume payload.
-        ttl: Optional continuation expiry in seconds.
-        group: Optional fan-out group name. When two or more fanout interrupts
-            parked in the same segment share a non-None ``group``, the runtime
-            dispatches them all at once and resumes the graph **once** after the
-            last finishes (``homer-join``), instead of one resume per sub. Leave
-            it ``None`` (default) for today's sequential, one-resume-per-sub
-            path. The decoded per-branch payload is identical in both modes. See
-            ADR-0026. Node bodies re-run on resume, so a grouped fan-out node
-            must keep its body idempotent (avoid additive reducers over the
-            fan-out result).
-        retries: How many times to re-dispatch this sub after it comes back
-            ``FAILED``, at most ``MAX_FANOUT_RETRIES``. Each attempt parks this
-            node again with a fresh fan-out interrupt, so the runtime dispatches
-            the sub once more; the graph then continues with the payload of the
-            last attempt. ``0`` (default) keeps today's behaviour — the failure
-            is returned as it arrives. The node body must be idempotent: it
-            re-runs from its start on every attempt. See README.md "Retrying
-            failed fan-outs".
-        infra_retries: The same, for infrastructure outcomes: ``UNKNOWN``, a
-            missing or unrecognized status, or an undecodable resume payload.
-            Kept separate from ``retries`` so an infrastructure outcome cannot
-            spend the failure budget. A payload that is still undecodable once
-            this budget is spent raises, exactly as it does with no retries at
-            all.
-
-    Returns:
-        The decoded resume payload dict with ``status``, ``processId`` and
-        ``result`` keys. When the sub's result exceeded Homer's inline cap the
-        payload arrives with ``result`` null and a ``resultRef``; the full
-        result is fetched by reference and spliced back into ``result``. Over
-        the 4 MiB transform cap ``result`` stays null and ``resultTooLarge`` is
-        ``True``.
+    ``group`` joins fan-outs (ADR-0026); ``retries`` / ``infra_retries`` re-dispatch
+    (ADR-0105). Parameters and the idempotent-body rule are in the README.
     """
     _validate_retries("retries", retries)
     _validate_retries("infra_retries", infra_retries)
@@ -224,16 +135,9 @@ def homer_fanout(
         "result_jsonpath": result_jsonpath,
         "ttl": ttl,
     }
-    # Only present the key when grouped, so an ungrouped fan-out payload stays
-    # byte-for-byte identical to the pre-join sequential form.
     if group is not None:
         park["group"] = group
-    # Every retry re-parks with this same payload: the sub is re-dispatched from
-    # the original call's args, never from the failed result.
-    # The budgets are loop-local, and the loop index is the attempt count:
-    # LangGraph re-runs this node from its start and replays the thread's own
-    # recorded resume values in order, so the counters rebuild exactly on every
-    # segment. No state key, no side file — and graph state cannot raise them.
+    # Loop-local budgets rebuilt by replay, never graph state (ADR-0105).
     failed_left, infra_left = retries, infra_retries
     while True:
         raw = interrupt(park)

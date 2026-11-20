@@ -3,7 +3,7 @@ status: accepted
 date: 2026-10-23
 deciders: Lukáš Vlk
 consulted: ADR-0084, ADR-0086
-amended: 2026-10-25, 2026-11-13
+amended: 2026-10-25, 2026-11-13, 2026-11-20
 ---
 
 # ADR-0093: The default compose stack runs published release images
@@ -131,3 +131,30 @@ Consequences above; the minimum-match count keeps every example in the shape
 the release bump updates, so a reworded or dropped one fails loudly instead of
 escaping the guard.
 
+## Amendment (2026-11-20): why the two services are hardened differently
+
+The base compose file's hardening comments shrink to a citation of this ADR, so the reasons are
+recorded here.
+
+- **The console** runs as the non-root `nextjs` user from its first instruction and needs no Linux
+  capability, so it sets `cap_drop: [ALL]` and `no-new-privileges`. Its root filesystem is
+  read-only; the Next.js standalone server writes only to two `tmpfs` mounts, `/tmp` and
+  `/app/.next/cache`. No image cache lands in the latter, because images are unoptimized.
+- **The backend** keeps Docker's default capabilities. `entrypoint.sh` starts as root to fix the
+  ownership of a bind-mounted workspace and then drops to `homer` with `su-exec`. The chown needs
+  `CHOWN`, and `DAC_OVERRIDE` to walk a tree that another UID owns; the drop needs `SETUID` and
+  `SETGID`. `cap_drop: [ALL]` would break that startup. Once `su-exec` changes the UID from root,
+  the kernel clears the permitted and effective sets, so the JVM and every agent it runs hold no
+  capability either way. `no-new-privileges` is safe with the drop: giving up privileges needs no
+  new ones.
+- **The backend's root filesystem stays writable.** Agents and Claude write to `$HOME`, caches and
+  `/tmp` on paths nobody can list in advance, so a read-only root would break the core function.
+  The workspace bind mount is the intended writable surface.
+
+## Amendment (2026-11-20): `rebuild-docker.sh` is removed
+
+The decision above names `rebuild-docker.sh` as the scripted way to stack the dev overlay on the
+build overlay. No doc told anyone to run it, it called the standalone `docker-compose` binary
+instead of `docker compose`, and it deleted the dev overlay's `node_modules` and `next_cache`
+volumes on every run without saying so. It is removed. `DOCKER.md` documents the build-and-dev
+command, and the one-time reset of a broken `node_modules` volume with `docker compose down -v`.

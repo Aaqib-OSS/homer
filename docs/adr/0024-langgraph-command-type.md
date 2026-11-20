@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-06-16
 deciders: Lukáš Vlk
+amended: 2026-08-20, 2026-10-09, 2026-11-20
 ---
 # ADR-0024: `!<langgraph>` command type — thin Kotlin launcher for a Python runtime
 
@@ -42,9 +43,9 @@ continuation paths without new infrastructure.
 the workspace env through (so resume params arriving in env reach the runtime),
 and injects the durable state directory as `HOMER_LG_STATE_DIR`, resolved from
 server config (`server.langGraph.stateDir`, else derived beside the database
-path), not from a per-command field. *(Amended 2026-10-09 by
-[ADR-0046](0046-owner-scoped-langgraph-checkpoints.md): the configured
-directory is now a root, and each run gets `<root>/<owner-segment>`.)*
+path), not from a per-command field.
+
+> **Amendment (2026-10-09) —** Amended by [ADR-0046](0046-owner-scoped-langgraph-checkpoints.md): the configured directory is now a root, and each run gets `<root>/<owner-segment>`.
 
 Two conventions are enforced/established:
 
@@ -62,11 +63,19 @@ Two conventions are enforced/established:
 - Good: no graph engine or checkpointer in Kotlin; Python owns the hard parts.
 - Good: reuses the ADR-0023 continuation path for resume; no new resume protocol.
 - Good: one durable state dir per server, consistent with the SQLite store layout.
-  *(Amended by ADR-0046: one directory per owner under that root.)*
 - Bad: introduces a Python runtime dependency on the execution host (shipped in a
   later commit) — Kotlin alone cannot run a langgraph agent.
 - Bad: re-running the whole agent on resume puts the idempotency burden on the
   author (mitigated by the `HMR_LG_THREAD` guard convention).
+
+> **Amendment (2026-08-20) —** Amended by ADR-0046: one directory per owner under that root.
+
+## Amendment (2026-11-20): exported helpers' parameter contracts live in the README
+
+An exported `homer_langgraph` helper keeps a docstring contract of at most three lines. Its
+parameters, defaults, return value and raises live in the Helper reference table of
+[`clients/python/homer_langgraph/README.md`](../../clients/python/homer_langgraph/README.md), and a
+new exported helper must extend that table in the same commit.
 
 ## More Information
 

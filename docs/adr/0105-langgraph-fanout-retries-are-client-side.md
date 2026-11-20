@@ -3,6 +3,7 @@ status: accepted
 date: 2026-11-12
 deciders: Lukáš Vlk
 consulted: ADR-0023, ADR-0025, ADR-0026, ADR-0044, ADR-0046, ADR-0047
+amended: 2026-11-20
 ---
 
 # ADR-0105: Fan-out retries are a client-side graph capability with replay-derived attempt counts
@@ -113,6 +114,24 @@ interrupt.
 
 - Bad: every graph re-implements the loop; the attempt counts and caps drift per graph, and none
   of them is reviewed.
+
+## Amendment (2026-11-20): retry-loop details the source no longer narrates
+
+- **`KILLED` ends the fan-out.** An operator killed the sub, which is a decision, not a failure to
+  re-dispatch. Only `FAILED` draws on `retries`; any other non-terminal or unrecognized status draws
+  on `infra_retries` and is never read as success.
+- **The retry log echoes only a fixed set of statuses** (`FAILED`, `UNKNOWN`, `malformed payload`,
+  `no status`), otherwise one fixed label. The resume payload is agent-writable, so a status can
+  hold newlines or unbounded text. The log never carries the params, the result, the process id or
+  a `resultRef` token.
+- **A `resultRef` failure is fatal only for a `FINISHED` sub.** A sub that did not finish broke on
+  its last command, so the artifact behind the ref is that command's output (often a multi-MB Claude
+  NDJSON stream Homer refuses to transform). The graph's own status check must get to run, so
+  `result` stays null and the failure is reported on stderr.
+- **A re-park assigns a fresh interrupt id.** LangGraph numbers each park itself, so the id need not
+  survive a retry. The dispatch carries the id of the park it was made from, and a resume keyed by a
+  recorded id still binds after a re-park.
+- **Budgets reject a `bool`**, an `int` in Python, so `True` does not silently mean one retry.
 
 ## More Information
 

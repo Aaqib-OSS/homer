@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-09-04
 deciders: Lukáš Vlk
-amended: 2026-09-24
+amended: 2026-09-24, 2026-10-09
 ---
 # ADR-0058: Parent/child run linkage as a stored, caller-visible reference
 
@@ -235,8 +235,8 @@ same per-row shape `parent_process_id` already has, without a default-page-load
 multiplier of its own. Indexing a low-cardinality integer column on a table bounded by
 eviction buys little; if a flow-dense deployment measures the scans, an
 `index(false, rootProcessId)` beside the `ProcessTags` index is the first change to make.
-*(Amended 2026-10-09: schema v23, commit `6e33603b`, indexes both `parent_process_id`
-and `root_process_id` along with the other `GET /status/all` list filters.)*
+
+> **Amendment (2026-10-09) —** Schema v23, commit `6e33603b`, indexes both `parent_process_id` and `root_process_id` along with the other `GET /status/all` list filters.
 
 Accepted for the console too, so the shape is a decision and not an oversight: the roots
 view computes each root row's summary (run count, total cost, aggregate state) with one

@@ -79,11 +79,8 @@ tasks.named<KotlinJvmCompile>("compileTestKotlin") {
     compilerOptions.optIn.add("kotlinx.coroutines.ExperimentalCoroutinesApi")
 }
 
-// Bundle the project's JSON schemas as classpath resources so the running
-// server can serve them (e.g. for Monaco editor validation in the console)
-// without needing the repo layout at runtime. Single source of truth: the
-// `app/schemas/` directory. Must live inside the Gradle project root so that
-// Docker builds which scope their build context to `app/` can still reach it.
+// Bundles app/schemas/ as classpath resources the server serves. It stays inside the project root
+// so a Docker build with its context scoped to app/ still reaches it.
 tasks.processResources {
     val schemasDir = rootProject.layout.projectDirectory.dir("schemas")
     doFirst {
@@ -101,12 +98,8 @@ tasks.processResources {
     }
 }
 
-// Refresh the bundled copies under `plugins/homer-authoring/` (the distributed
-// Claude Code authoring plugin) from their canonical sources. The plugin ships
-// to external users without the repo layout, so it carries its own copy of
-// AGENT.md and the JSON schemas. `AuthoringPluginBundleTest` fails the build if
-// these copies drift — re-run this task in the same commit as any AGENT.md /
-// schema change (root CLAUDE.md §10).
+// Refreshes the authoring plugin's bundled copies of AGENT.md and the schemas; AuthoringPluginBundleTest
+// fails on drift, so run it with any change to either.
 tasks.register<Copy>("syncAuthoringPlugin") {
     val pluginRoot = rootProject.layout.projectDirectory.dir("../plugins/homer-authoring")
     into(pluginRoot)
@@ -124,18 +117,15 @@ tasks.test {
     jvmArgs("-XX:+EnableDynamicAgentLoading")
     jvmArgs("-Dnet.bytebuddy.experimental=true")
     maxHeapSize = "2g"
-    // GH #286: parallel forks; test capture files are per worker.
+    // Parallel forks; test capture files are per worker.
     maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
 
     // Tests resolve repo files against this (homer.app.fixtures.repoRoot), under the name the
     // architecture module uses.
     val repoRoot = rootDir.parentFile
     systemProperty("homer.repoRoot", repoRoot.absolutePath)
-    // The CI pipeline file: the one the CI names in its own CI_CONFIG_PATH, or else the single
-    // root-level `.<forge>-ci.yml` of a checkout that has one, so the guards that read it run on a
-    // developer's machine too. The published tree ships without it; there they have nothing to check.
-    // A pipeline file that cannot be told (a named one missing, or several candidates) skips
-    // the guards with a warning rather than in silence.
+    // The CI pipeline file: CI_CONFIG_PATH's, else the single root-level `.<forge>-ci.yml`. None
+    // (the published tree) skips its guards; a missing named file or several candidates warns.
     val namedCiConfig =
         providers
             .environmentVariable("CI_CONFIG_PATH")
@@ -155,18 +145,18 @@ tasks.test {
     }
     ciConfig?.let { systemProperty("homer.ciConfig", it.absolutePath) }
 
-    // A test that reads a repo file outside :app must have it declared here. Undeclared, the file
-    // is not part of the cache key, so a change to only that file replays a cached pass and the
-    // test never runs on it -- precisely when it is meant to fire.
+    // A repo file a test reads outside :app must be declared here: undeclared, a change to only that
+    // file replays a cached pass.
     inputs
         .files(
             listOfNotNull(ciConfig),
             repoRoot.resolve("app/Dockerfile"),
             repoRoot.resolve("app/e2e/Dockerfile"),
             repoRoot.resolve("app/entrypoint.sh"),
+            repoRoot.resolve("app/homer-runner.sh"),
+            repoRoot.resolve("app/agentdebug.sh"),
             repoRoot.resolve("app/settings.gradle.kts"),
             repoRoot.resolve("app/buildSrc/settings.gradle.kts"),
-            repoRoot.resolve("app/gradle/artifactory.settings.gradle.kts"),
             // DependencyVerificationGateTest reads these (ADR-0115). The keyrings are files, not
             // directories, so a key added to either one is part of the cache key too.
             repoRoot.resolve("app/gradle/libs.versions.toml"),
@@ -174,10 +164,8 @@ tasks.test {
             repoRoot.resolve("app/gradle/verification-keyring.keys"),
             repoRoot.resolve("app/buildSrc/gradle/verification-metadata.xml"),
             repoRoot.resolve("app/buildSrc/gradle/verification-keyring.keys"),
-            // Every Dockerfile and gradle.properties: DependencyVerificationGateTest scans them all
-            // (any of them may invoke Gradle), so a new one is part of the cache key too. Skip the
-            // same directories the test's walk skips — in particular the build outputs, which are
-            // other tasks' outputs and must not enter this task's inputs.
+            // Every Dockerfile and gradle.properties DependencyVerificationGateTest scans (ADR-0115); build
+            // outputs are skipped as in its walk, since they are other tasks' outputs.
             fileTree(repoRoot) {
                 include("**/Dockerfile", "**/gradle.properties")
                 exclude("**/.git/**", "**/node_modules/**", "**/build/**", "**/.gradle/**", "**/.next/**")
@@ -199,7 +187,6 @@ tasks.test {
             repoRoot.resolve("SECURITY.md"),
             repoRoot.resolve("console/DEPLOYMENT.md"),
             repoRoot.resolve("docs/homer-feature-atlas.html"),
-            repoRoot.resolve("rebuild-docker.sh"),
             repoRoot.resolve(".env.example"),
             // Inside :app, but not compiled into any test input.
             repoRoot.resolve("app/app/src/main/kotlin/homer/app/services/persistence/CLAUDE.md"),
@@ -231,9 +218,8 @@ tasks.test {
     val queryPlansCaptureDir = queryPlansDir.get().asFile
     doFirst { queryPlansCaptureDir.deleteRecursively() }
 
-    // MockCallBudget (META-INF/services) bounds the calls one mock method takes in one test and
-    // lists the tests past its warning here for the `mock-calls` check (ADR-0082). Only it is
-    // autodetected: mockk-jvm registers its own MockKExtension, which stays opt-in per class.
+    // MockCallBudget (ADR-0082, `mock-calls`) is the only autodetected extension: mockk-jvm registers its
+    // own MockKExtension, which stays opt-in per class.
     systemProperty("junit.jupiter.extensions.autodetection.enabled", "true")
     systemProperty("junit.jupiter.extensions.autodetection.include", "homer.app.fixtures.MockCallBudget")
     val mockCallsDir = layout.buildDirectory.dir("reports/mock-calls")
@@ -260,21 +246,17 @@ tasks.register<JavaExec>("queryPlanReport") {
     args(captured.get().asFile.absolutePath, report.get().asFile.absolutePath)
 }
 
-// Mutation testing (ADR-0082), not part of `check`: weekly on all of :app, sharded per package
-// (tools/quality/pit-full.mjs), per pull request on the changed classes. PIT runs the tests covering
-// each mutated line, chosen from every backend package (`targetTests`), so code tested from another
-// package is not reported uncovered.
+// Mutation testing (ADR-0082), outside `check`. `targetTests` spans every backend package, so code tested
+// from another package is not reported uncovered.
 pitest {
     pitestVersion = libs.versions.pitest
     junit5PluginVersion = libs.versions.pitestJunit5
-    // -PpitestTargetClasses=<glob>,… narrows the scope: a shard of the weekly run, or the classes a
-    // pull request changes (tools/quality/pit-changed.mjs).
+    // -PpitestTargetClasses=<glob>,… narrows the scope to a weekly shard or a pull request's classes.
     targetClasses = providers.gradleProperty("pitestTargetClasses").map { it.split(",").toSet() }.orElse(setOf("homer.app.*"))
     excludedClasses = setOf("*\$\$serializer")
     targetTests = setOf("homer.app.*")
-    // These fail PIT's green-suite phase, and the wiring they pin stays enforced by :app:test: the
-    // shutdown tests' MockK constructor mocks cannot be instrumented (ADR-0102), and MockCallBudgetTest
-    // needs the test task's system properties, which load the extension and set its report dir.
+    // These fail PIT's green-suite phase but stay enforced by :app:test: MockK constructor mocks cannot be
+    // instrumented, and MockCallBudgetTest needs the test task's system properties.
     excludedTestClasses =
         setOf("homer.app.MaintenanceShutdownWiringTest", "homer.app.ShutdownWiringTest", "homer.app.fixtures.MockCallBudgetTest")
     outputFormats = setOf("XML", "HTML")
@@ -304,23 +286,14 @@ dependencyCheck {
 // Runtime-dependency license gate; policy and rationale: see ADR-0056.
 licenseReport {
     configurations = arrayOf("runtimeClasspath")
-    // Explicit type parameters matter: the plugin's checkLicense internals do
-    // `renderers += [new JsonReportRenderer(...)]` on the configured array, which
-    // throws a ClassCastException if Kotlin's `arrayOf(...)` narrowed the runtime
-    // array type to the single renderer class instead of the declared ReportRenderer[].
+    // Explicit type parameters keep the runtime arrays widened (ADR-0056).
     filters = arrayOf<DependencyFilter>(LicenseBundleNormalizer())
     renderers = arrayOf<ReportRenderer>(TextReportRenderer("THIRD-PARTY-NOTICES.txt"))
     allowedLicensesFile = rootProject.layout.projectDirectory.file("config/allowed-licenses.json")
 }
 
-// Committed third-party attributions at the repo root: `NOTICE` (the texts bundled dependencies
-// require us to reproduce) and the backend region of `THIRD-PARTY-LICENSES.md` (the inventory).
-// Rendering lives in `buildSrc/src/main/kotlin/ThirdPartyNotices.kt`; policy is ADR-0056, whose
-// addendum also explains why these depend on `checkLicense` rather than `generateLicenseReport`.
-//
-// Every value a task action touches is copied into a local of its configuration block first: a
-// `doLast` reading a script-level property captures the build script itself, which the
-// configuration cache cannot serialize.
+// Committed attributions (NOTICE, THIRD-PARTY-LICENSES.md; ADR-0056). Task actions read locals: a `doLast` reading
+// a script-level property captures the build script, which the configuration cache cannot serialize.
 val repoRoot = rootProject.layout.projectDirectory.dir("..")
 val noticeFile = repoRoot.file("NOTICE").asFile
 val inventoryFile = repoRoot.file("THIRD-PARTY-LICENSES.md").asFile

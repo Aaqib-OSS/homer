@@ -1,6 +1,5 @@
-# Opt-in JDWP overlay: binds container loopback, publishes nothing (a published
-# port re-exposes the agent to homer-network). See ADR-0076 and DOCKER.md.
-# CWE-489 (active debug code).
+# Opt-in JDWP overlay (ADR-0076, CWE-489): binds container loopback and publishes nothing, as a published port
+# re-exposes the agent to homer-network. See DOCKER.md.
 services:
   backend:
     environment:
