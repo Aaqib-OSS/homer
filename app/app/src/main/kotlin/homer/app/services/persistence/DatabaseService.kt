@@ -179,11 +179,13 @@ class DatabaseService(
         }
     }
 
+    private val bounceWriterToAutoCommit = BounceWriterToAutoCommit(logger)
+
     /** Runs [block] inside one write-locked transaction on [ioDispatcher] (blocking JDBC). */
     suspend fun <T> query(block: JdbcTransaction.() -> T): T =
         withContext(ioDispatcher) {
             transaction(database) {
-                registerInterceptor(BounceWriterToAutoCommit)
+                registerInterceptor(bounceWriterToAutoCommit)
                 block()
             }
         }
@@ -239,11 +241,16 @@ class DatabaseService(
         val WRITER_DATABASE_CONFIG: DatabaseConfig = DatabaseConfig { defaultMaxAttempts = 1 }
 
         // Ends the driver's post-commit re-`BEGIN IMMEDIATE` so the write lock ends with the
-        // transaction, not with Exposed's connection teardown; stateless. See ADR-0020.
-        private object BounceWriterToAutoCommit : StatementInterceptor {
+        // transaction, not with Exposed's connection teardown; holds no per-transaction state. See ADR-0020.
+        private class BounceWriterToAutoCommit(
+            private val logger: Logger,
+        ) : StatementInterceptor {
             override fun afterCommit(transaction: Transaction) {
                 val raw = (transaction as JdbcTransaction).connection.connection as java.sql.Connection
-                runCatching { raw.autoCommit = true }
+                // The commit has landed: a failure only keeps the lock until teardown, so it must not fail the write (ADR-0020).
+                runCatching { raw.autoCommit = true }.onFailure {
+                    logger.warn("Writer connection stayed in a transaction after a commit; the write landed: {}", it.message)
+                }
             }
         }
 
