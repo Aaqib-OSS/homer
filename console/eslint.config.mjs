@@ -6,7 +6,7 @@ import sonarjs from 'eslint-plugin-sonarjs';
 import maxProps from './scripts/eslint-max-props.mjs';
 
 // Architecture rules from console/CLAUDE.md, at "warn": `npm run lint` fails on errors only, and
-// `npm run quality:report` reports the warnings (ADR-0082). ESLint replaces a rule's options per
+// the required `eslint-warnings` check fails on any warning (ADR-0082). ESLint replaces a rule's options per
 // config object instead of merging them, so each file group lists every selector it keeps.
 export const SOURCE_FILES = ['**/*.{ts,tsx}'];
 export const TEST_FILES = ['**/*.test.{ts,tsx}', 'vitest.setup.ts'];

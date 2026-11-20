@@ -187,7 +187,7 @@ const ToolCallBlock = memo(function ToolCallBlock({
     <CollapsibleBlock
       summary={
         <>
-          {/* eslint-disable-next-line no-restricted-syntax -- tool-name colour matches the JSON tree's labels, which have no token */}
+          {/* eslint-disable-next-line no-restricted-syntax -- fixed palette hue with no token; non-.dark themes get the light shade */}
           <span className="text-blue-600 dark:text-blue-400 font-semibold">{call.name}</span>
           {inflight && (
             <Loader2 data-testid="inflight-tool" className="h-3 w-3 animate-spin text-muted-foreground" aria-label="Tool running" />
@@ -217,7 +217,7 @@ function ToolCallDetails({ call, result }: Omit<ToolCallBlockProps, 'inflight'>)
           <div className="text-muted-foreground mb-1">Result</div>
           <pre
             className={`whitespace-pre-wrap break-all ${
-              // eslint-disable-next-line no-restricted-syntax -- error/success status colours are fixed, not theme tokens
+              // eslint-disable-next-line no-restricted-syntax -- fixed status hues with no token; non-.dark themes get the light shade
               result.isError ? 'text-red-600 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400'
             }`}
           >

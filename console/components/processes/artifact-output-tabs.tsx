@@ -33,7 +33,7 @@ interface ArtifactOutputTabsProps {
 const jsonStyles = {
   container: 'text-xs font-mono',
   basicChildStyle: 'ml-4 my-0.5',
-  /* eslint-disable no-restricted-syntax -- syntax colours: no token gives the same light/dark pair */
+  /* eslint-disable no-restricted-syntax -- fixed syntax hues with no token; non-.dark themes get the light shade */
   label: 'text-blue-600 dark:text-blue-400 mr-1',
   nullValue: 'text-gray-400 dark:text-gray-500',
   undefinedValue: 'text-gray-400 dark:text-gray-500',

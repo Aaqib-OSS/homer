@@ -56,9 +56,9 @@ export function ThemeSwitcher() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" aria-label="Select theme">
-          {/* eslint-disable-next-line no-restricted-syntax -- the sun/moon swap keys on the .dark class itself */}
+          {/* eslint-disable-next-line no-restricted-syntax -- only .dark shows the moon; every other theme shows the sun */}
           <Sun className="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-          {/* eslint-disable-next-line no-restricted-syntax -- the sun/moon swap keys on the .dark class itself */}
+          {/* eslint-disable-next-line no-restricted-syntax -- only .dark shows the moon; every other theme shows the sun */}
           <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
           <span className="sr-only">Select theme</span>
         </Button>

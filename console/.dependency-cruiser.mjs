@@ -1,6 +1,6 @@
 // Console layering from console/CLAUDE.md § Directory layout and § Data flow, reported by
-// `npm run quality:report` (check `architecture-console`, ADR-0082). Severity stays "warn" while the
-// check is report-only. Tests are not cruised: they may import anything.
+// `npm run quality:report` (check `architecture-console`, ADR-0082), which turns every violation,
+// "warn" severity included, into a finding of a required check. Tests are not cruised.
 const LOCAL = '^(app|components|lib|types|config)/';
 
 const config = {
