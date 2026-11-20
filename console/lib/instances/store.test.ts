@@ -20,6 +20,10 @@ import {
 } from './store';
 
 const INSTANCES_KEY = 'homer_instances';
+const STORED_DEFAULT_STATE = JSON.stringify({
+  instances: [{ id: DEFAULT_INSTANCE_ID, label: 'Default', baseUrl: '', mode: 'bearer' }],
+  activeInstanceId: DEFAULT_INSTANCE_ID,
+});
 const remote: Instance = {
   id: 'remote',
   label: 'Remote',
@@ -129,6 +133,25 @@ describe('instances store', () => {
     resetInstancesStoreForTests();
 
     expect(getActiveToken()).toBe('already-here');
+    expect(localStorage.getItem(appConfig.auth.tokenKey)).toBeNull();
+  });
+
+  it('deletes the un-namespaced token without copying it when instance state is already stored', () => {
+    localStorage.setItem(INSTANCES_KEY, STORED_DEFAULT_STATE);
+    localStorage.setItem(appConfig.auth.tokenKey, 'signed-out-token');
+    resetInstancesStoreForTests();
+
+    expect(getActiveToken()).toBeNull();
+    expect(localStorage.getItem(appConfig.auth.tokenKey)).toBeNull();
+  });
+
+  it('keeps the namespaced token when instance state is already stored, and deletes the old key', () => {
+    localStorage.setItem(INSTANCES_KEY, STORED_DEFAULT_STATE);
+    localStorage.setItem(appConfig.auth.tokenKey, 'old-token');
+    localStorage.setItem(tokenKeyFor(DEFAULT_INSTANCE_ID), 'current-token');
+    resetInstancesStoreForTests();
+
+    expect(getActiveToken()).toBe('current-token');
     expect(localStorage.getItem(appConfig.auth.tokenKey)).toBeNull();
   });
 

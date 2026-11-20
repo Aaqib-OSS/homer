@@ -27,7 +27,7 @@ User-facing docs:
 
 ```
 components.json                     # shadcn CLI config (Tailwind 4: no tailwind.config; cn at lib/utils/cn)
-middleware.ts                       # per-request nonce + per-route CSP (see lib/security/csp.ts)
+middleware.ts                       # per-request nonce + the CSP (see lib/security/csp.ts)
 app/
   layout.tsx                        # root layout; force-dynamic; injects window.__HOMER_CONFIG__ (nonced)
   providers.tsx                     # QueryClient + ThemeProvider + AuthProvider
@@ -69,7 +69,7 @@ lib/
   hooks/                            # shared React hooks (URL query state, auto-scroll, now, in-app navigation marker, sidebar collapse, process-detail LangGraph view, error-boundary logging)
   langgraph/layout.ts               # dagre layout of a LangGraph topology (ADR-0073)
   monaco/setup.ts                   # Monaco editor setup
-  security/csp.ts                   # per-route CSP builder
+  security/csp.ts                   # CSP builder
   utils/{cn,format,validation,agent,curl,download,kv,list,html,process,cost-source,agent-name-matcher}.ts
 types/homer.ts                      # TS mirrors of backend DTOs
 config/default.json                 # defaults; overridable at runtime
@@ -244,8 +244,8 @@ know. `ctx.navigate` wraps `router.push`.
 path and nothing else — a remote URL, a protocol-relative `//host/p.js` (reads
 as local, resolves foreign), a `data:`/`blob:`/`javascript:` URL, or any `..` is
 rejected before the import. Do not "helpfully" widen this: it is the whole
-reason plugin code cannot come from anywhere but the operator's disk, and it is
-what makes `script-src 'self'` sufficient.
+reason plugin code cannot come from anywhere but the operator's disk: the CSP
+would not stop a foreign import, which `'strict-dynamic'` admits and `'self'` cannot narrow.
 
 **A sub-path change is a remount.** The App Router discards the page subtree when
 the catch-all params change — measured, not assumed: a plugin counting its own
@@ -291,7 +291,7 @@ nonce its own scripts.
   switch.
 - Bearer tokens live in `localStorage` namespaced per instance
   (`homer_auth_token::{instanceId}`). A legacy un-namespaced token is
-  moved (copied, then deleted) into the seeded default instance on first load.
+  copied into a freshly seeded default instance, and deleted on every load.
 - `AuthProvider` probes the active instance's `/auth/me` on mount in both
   modes (ADR-0059; a token an old server can't answer: `/heartbeat`, no grants). `switchInstance(id)` repoints the
   active id, clears the React Query cache, and re-probes; global SSE streams

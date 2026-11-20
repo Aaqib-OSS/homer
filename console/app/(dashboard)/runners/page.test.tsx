@@ -56,14 +56,13 @@ describe('RunnersPage', () => {
     expect(screen.getByText('0 / 100')).toBeInTheDocument();
   });
 
-  it('never calls a configured runner unbounded, even when its concurrency is missing', () => {
+  it('shows a dash for the null concurrency a server before 1.44 sends for an unbounded runner', () => {
     mockRunners({
       data: { runners: [{ alias: 'local', kind: 'local', tags: [], concurrency: null, inUse: 3, instances: null }] },
       isLoading: false, error: null,
     });
     render(<RunnersPage />);
     expect(screen.getByText('3 / —')).toBeInTheDocument();
-    expect(screen.queryByText(/unbounded/)).not.toBeInTheDocument();
   });
 
   it('shows each external instance with its name, tags and a draining badge', () => {

@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { waitFor } from '@testing-library/react';
 import { openStream } from './sse';
 
 /** An event-stream response that delivers `frames`, then drops the connection. */
@@ -17,6 +16,7 @@ function droppedStream(frames: string): Response {
 
 describe('openStream reconnect', () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -32,9 +32,12 @@ describe('openStream reconnect', () => {
       }),
     );
 
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const close = openStream('/api/v1/stream/processes/1/logs?cmd=0&stream=out', { onEvent: () => {} });
     try {
-      await waitFor(() => expect(sent.length).toBeGreaterThanOrEqual(2), { timeout: 3000 });
+      await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1));
+      await vi.advanceTimersByTimeAsync(1000);
+      await vi.waitFor(() => expect(sent).toHaveLength(2));
     } finally {
       close();
     }

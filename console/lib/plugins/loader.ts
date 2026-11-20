@@ -56,21 +56,8 @@ function splitEntry(entry: string): [string, string | undefined] {
 }
 
 /**
- * Why a `CONSOLE_PLUGINS` entry is not loadable, or `null` when it is fine.
- *
- * Only same-origin paths are accepted, which is what keeps plugin code out of
- * anyone else's hands: there is no network fetch to intercept, no foreign
- * origin to allowlist, and `script-src 'self'` already covers the import.
- *
- * The two path rejections that matter:
- *  - `//evil.example/p.js` is *protocol-relative*. It starts with `/` and reads
- *    as local, but resolves to a foreign origin — accepting it would turn a
- *    typo into a third-party module running with the operator's privileges.
- *  - `..` is rejected even inside an otherwise valid-looking path, so an entry
- *    can never climb out of the directory the operator meant.
- *
- * An unrecognised requirement is rejected rather than ignored: silently
- * dropping it would turn a typo (`@admn`) into a plugin open to everyone.
+ * Why a `CONSOLE_PLUGINS` entry is not loadable, or `null`: a same-origin `.js`/`.mjs` path, no `//host` or `..`, and
+ * a known requirement (ADR-0059). `'strict-dynamic'` admits the import, not `'self'`, so this check keeps it local.
  */
 export function checkPluginEntry(entry: string): string | null {
   const [path, requires] = splitEntry(entry);

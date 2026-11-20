@@ -263,24 +263,36 @@ describe('AuthProvider (cookie mode)', () => {
     expect(screen.getByTestId('logout-outcome')).toHaveTextContent('ok');
   });
 
-  it('logout reports server-unconfirmed when the request fails, and still signs out locally', async () => {
+  /** Renders an authed session with a scratch cache entry, then logs out against a failing server. */
+  async function logoutAgainstFailingServer() {
     getAuthMe.mockResolvedValue({ username: 'alice', role: 'admin', grants: [] });
     logout.mockRejectedValue(new HomerApiError('Service Unavailable', 503));
-
     const { client } = renderWithProvider();
     await waitFor(() =>
       expect(screen.getByTestId('status')).toHaveTextContent('authed'),
     );
     client.setQueryData(['scratch'], { keep: true });
-
     await act(async () => {
       screen.getByText('do-logout').click();
     });
-
     await waitFor(() =>
-      expect(screen.getByTestId('logout-outcome')).toHaveTextContent('server-unconfirmed'),
+      expect(screen.getByTestId('logout-outcome')).not.toBeEmptyDOMElement(),
     );
+    return client;
+  }
+
+  it('logout reports server-unconfirmed when the request fails', async () => {
+    await logoutAgainstFailingServer();
+    expect(screen.getByTestId('logout-outcome')).toHaveTextContent('server-unconfirmed');
+  });
+
+  it('a failed logout still signs out locally', async () => {
+    await logoutAgainstFailingServer();
     expect(screen.getByTestId('status')).toHaveTextContent('anon');
+  });
+
+  it('a failed logout still clears the cached data', async () => {
+    const client = await logoutAgainstFailingServer();
     expect(client.getQueryData(['scratch'])).toBeUndefined();
   });
 

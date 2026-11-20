@@ -3,13 +3,8 @@ import type { NextRequest } from 'next/server';
 import { buildCsp, parseAllowedApiOrigins } from '@/lib/security/csp';
 
 /**
- * Emits a per-request nonce and a per-route Content-Security-Policy (see
- * `lib/security/csp.ts`). The nonce is forwarded on the `x-nonce` request header
- * so the root layout can stamp its inline runtime-config <script>, and Next.js
- * reads it from the CSP header to nonce its own scripts.
- *
- * Skipped in development: React Refresh / HMR rely on eval + inline scripts a
- * strict policy would break.
+ * Emits a per-request nonce and the Content-Security-Policy (`lib/security/csp.ts`), forwarding the nonce on
+ * `x-nonce` for the root layout's inline script. Skipped outside production: React Refresh needs eval and inline.
  */
 export function middleware(request: NextRequest): NextResponse {
   if (process.env.NODE_ENV !== 'production') {

@@ -50,15 +50,15 @@ function seedDefault(): InstancesState {
 }
 
 /**
- * Moves a token stored under the single-instance console's bare `appConfig.auth.tokenKey` to the
- * default instance's key, unless that key holds one already, then deletes the bare key.
+ * Settles a token under the single-instance console's bare `appConfig.auth.tokenKey`: copies it to the
+ * default instance's key when `copy` and that key is empty, then deletes the bare key. @removeIn 1.46.0
  */
-function migrateUnnamespacedToken(): void {
+function migrateUnnamespacedToken({ copy }: { copy: boolean }): void {
   if (typeof window === 'undefined') return;
   const unnamespaced = localStorage.getItem(appConfig.auth.tokenKey);
   if (unnamespaced === null) return;
   const namespaced = tokenKeyFor(DEFAULT_INSTANCE_ID);
-  if (localStorage.getItem(namespaced) === null) localStorage.setItem(namespaced, unnamespaced);
+  if (copy && localStorage.getItem(namespaced) === null) localStorage.setItem(namespaced, unnamespaced);
   localStorage.removeItem(appConfig.auth.tokenKey);
 }
 
@@ -81,25 +81,27 @@ function persist(state: InstancesState): void {
   localStorage.setItem(INSTANCES_KEY, JSON.stringify(state));
 }
 
+/** The persisted state, with its active id resolving to an instance; null when absent, invalid or corrupt. */
+function storedState(): InstancesState | null {
+  const raw = localStorage.getItem(INSTANCES_KEY);
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isValidState(parsed)) return null;
+    if (parsed.instances.some((i) => i.id === parsed.activeInstanceId)) return parsed;
+    return { ...parsed, activeInstanceId: parsed.instances[0].id };
+  } catch {
+    return null;
+  }
+}
+
 function readState(): InstancesState {
   if (typeof window === 'undefined') return seedDefault();
-  const raw = localStorage.getItem(INSTANCES_KEY);
-  if (raw) {
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      if (isValidState(parsed)) {
-        // Guarantee the active id still resolves to an instance.
-        if (parsed.instances.some((i) => i.id === parsed.activeInstanceId)) {
-          return parsed;
-        }
-        return { ...parsed, activeInstanceId: parsed.instances[0].id };
-      }
-    } catch {
-      /* corrupt — fall through to a fresh seed */
-    }
-  }
+  const stored = storedState();
+  // A stored state means the copy ran in an earlier session: an empty default key is a sign-out.
+  migrateUnnamespacedToken({ copy: stored === null });
+  if (stored) return stored;
   const seeded = seedDefault();
-  migrateUnnamespacedToken();
   persist(seeded);
   return seeded;
 }

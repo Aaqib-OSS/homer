@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -185,12 +185,17 @@ describe('LoginPage', () => {
     login.mockResolvedValue('rate-limited');
     const user = userEvent.setup();
     renderPage();
-
     await user.type(screen.getByLabelText(/username/i), 'alice');
     await user.type(screen.getByLabelText(/^password$/i), 'pw');
-    await user.click(screen.getByRole('button', { name: /^login$/i }));
 
-    expect(await screen.findByRole('button', { name: `Try again in ${refill}s` })).toBeDisabled();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      fireEvent.click(screen.getByRole('button', { name: /^login$/i }));
+      await act(async () => {});
+      expect(screen.getByRole('button', { name: `Try again in ${refill}s` })).toBeDisabled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('surfaces a server-unreachable message on a non-auth error', async () => {
