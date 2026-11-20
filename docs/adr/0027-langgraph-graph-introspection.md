@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-19
 deciders: Lukáš Vlk
-amended: 2026-09-30
+amended: 2026-09-30, 2026-11-20
 ---
 # ADR-0027: Read-only LangGraph graph introspection
 
@@ -90,6 +90,37 @@ suspension point between the two, and read afterwards: `withTimeoutOrNull` can
 report `null` even when the permit was taken (it cancels at the boundary), and
 trusting its return value alone leaks that permit permanently. See ADR-0047
 rules 4–5.
+
+## Amendment (2026-11-20): the subprocess gets an allowlisted environment, not the server's
+
+The decision above lets the inspect subprocess inherit the whole server process
+environment. That no longer holds, for `inspect` and for the `state` subprocess
+of [ADR-0044](0044-langgraph-resume-and-run-introspection.md), which share one
+launcher.
+
+**Why.** Both subprocesses import the agent's graph module, and that code is
+untrusted by construction ([ADR-0047](0047-security-by-design-and-threat-model.md)).
+The server environment holds what the operator gave Homer itself: `@SYSENV:`
+sources, runner tokens, database and cloud credentials. A run never sees it: a
+local run gets only `parentEnvAllowlist`, and a remote run none of it. So the
+introspection path was the one place agent code read the server's whole
+environment, and a caller with only a `read` grant could make Homer start it,
+even on a server whose agents all run on remote runners.
+
+**Now.** The subprocess starts from an empty environment and gets:
+
+1. These server variables, when set: `PATH`, `HOME`, `LANG`, every `LC_*`,
+   `TMPDIR`, `VIRTUAL_ENV`, `PYTHONHOME`. They are what an interpreter needs to
+   start, find its packages and decode text. The list is fixed in code, not
+   configurable.
+2. The agent's declared `env` on top, as before (for `state`, also
+   `HOMER_LG_STATE_DIR`), so the agent's `PYTHONPATH` still makes its module
+   importable.
+3. `PYTHONWARNINGS=ignore` unless the agent's `env` sets it, as before.
+
+`globalEnv` and the runner `env` are not added: the subprocess never got them,
+and a module that reads a server variable at import time now has to declare it
+in the agent's `env`.
 
 ## More Information
 
