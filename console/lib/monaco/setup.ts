@@ -1,7 +1,6 @@
 'use client';
 
 import { loader } from '@monaco-editor/react';
-import * as monaco from 'monaco-editor';
 
 declare global {
   interface Window {
@@ -11,36 +10,39 @@ declare global {
   }
 }
 
-let configured = false;
+// Each worker entry must be a local module: `new URL` over a bare package
+// specifier copies that file verbatim, so its own imports 404 in production.
+let loading: Promise<void> | null = null;
 
-export function setupMonaco(): void {
-  if (configured || typeof window === 'undefined') return;
-  configured = true;
+/**
+ * Loads Monaco on the client and points @monaco-editor/react at it: the import
+ * happens here, never at module scope, so a server render of the editor page
+ * touches no browser global. Concurrent and repeated calls share one load.
+ */
+export function setupMonaco(): Promise<void> {
+  if (typeof window === 'undefined') return Promise.resolve();
+  loading ??= configureMonaco();
+  return loading;
+}
+
+async function configureMonaco(): Promise<void> {
+  const monaco = await import('monaco-editor');
 
   window.MonacoEnvironment = {
     getWorker(_moduleId: string, label: string): Worker {
       switch (label) {
         case 'json':
-          return new Worker(
-            new URL(
-              'monaco-editor/esm/vs/language/json/json.worker',
-              import.meta.url,
-            ),
-            { type: 'module' },
-          );
+          return new Worker(new URL('./json.worker.ts', import.meta.url), {
+            type: 'module',
+          });
         case 'yaml':
-          return new Worker(
-            new URL('monaco-yaml/yaml.worker', import.meta.url),
-            { type: 'module' },
-          );
+          return new Worker(new URL('./yaml.worker.ts', import.meta.url), {
+            type: 'module',
+          });
         default:
-          return new Worker(
-            new URL(
-              'monaco-editor/esm/vs/editor/editor.worker',
-              import.meta.url,
-            ),
-            { type: 'module' },
-          );
+          return new Worker(new URL('./editor.worker.ts', import.meta.url), {
+            type: 'module',
+          });
       }
     },
   };

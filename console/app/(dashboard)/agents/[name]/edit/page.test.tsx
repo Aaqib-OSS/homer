@@ -9,7 +9,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
-// The real editor loads monaco at import, which jsdom cannot run.
+// The real editor loads Monaco once mounted, which jsdom cannot run.
 vi.mock('@/components/editor/agent-file-editor', () => ({
   AgentFileEditor: ({ onChange }: { onChange: (value: string) => void }) => (
     <button onClick={() => onChange('name: demo')}>Edit buffer</button>
