@@ -3590,8 +3590,12 @@ auth: !<key>
   sent as `cd <workdir> && exec env K=V… <argv…>` over the SSH exec
   channel (many sshd configs reject `SendEnv`/`AcceptEnv`), so any
   secret passed via `env` is visible to other users on the remote host
-  via `ps` for the life of the command — the same property k8s exec
-  has. Avoid putting secrets in `env` on multi-tenant remote hosts.
+  via `ps` while the command starts: the shell `exec`s `env`, which
+  `exec`s the command, after which the values sit only in its
+  environment. An `execve` audit record on the host keeps them for as
+  long as the host retains it. Avoid putting secrets in `env` on
+  multi-tenant remote hosts. See `AR-09` in
+  [`SECURITY.md`](../SECURITY.md#accepted-risks).
 
 #### Workspace sync
 

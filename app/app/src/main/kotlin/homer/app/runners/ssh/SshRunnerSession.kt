@@ -85,8 +85,8 @@ class SshRunnerSession(
         }
 
     /**
-     * Refuses the sweep when a component below [remoteWorkspaceRoot] is a symlink, which `rm -rf` would follow (CWE-59).
-     * The `lstat`s and the removal are separate round trips; the same-UID race between them is AR-11 (ADR-0067).
+     * Refuses the sweep when a component below [remoteWorkspaceRoot] is a symlink, which path resolution in `rm -rf`
+     * would follow (CWE-59). The `lstat`s and the removal are separate round trips: their same-UID race is AR-11 (ADR-0067).
      */
     private suspend fun assertNoSymlinkComponentsBelowRoot() {
         val root = remoteWorkspaceRoot.trimEnd('/')

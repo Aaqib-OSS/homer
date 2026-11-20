@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-07-21
 deciders: Lukáš Vlk
+amended: 2026-11-20
 ---
 # ADR-0032: SSH as a runner backend
 
@@ -150,6 +151,17 @@ the kubernetes runner and the highest-risk piece of the implementation
   whatever binaries the agent's commands need (e.g. the `claude` CLI),
   the same responsibility already documented for the kubernetes
   runner's image.
+
+#### Amendment (2026-11-20): the env leaves the process list once the command starts
+
+The bullet above says env values are visible via `ps` "for the life of the command". They are
+visible only while the command starts. The login shell `exec`s `env`, and `env` `exec`s the
+command (or `setsid` in the reaping form of ADR-0041), and none of the later argv carries the
+values. From then on they sit only in the command's environment, which other users cannot read.
+An `execve` audit record on the remote host keeps the argv for as long as that host retains it.
+The residual risk is recorded as `AR-09` in [`SECURITY.md`](../../SECURITY.md#accepted-risks).
+It is an interim record, not an exception to [ADR-0047](0047-security-by-design-and-threat-model.md)
+rule 7: moving the env into a sourced file removes it.
 
 ### One deviation from the design spec: a client per alias, not shared
 
