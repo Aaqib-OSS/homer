@@ -36,7 +36,7 @@ function InstanceRow({
         <span className="truncate text-xs text-muted-foreground">{instance.baseUrl}</span>
       </span>
       <span className="ml-auto flex items-center gap-1">
-        {isActive && <Check className="h-4 w-4" aria-hidden />}
+        {isActive && <Check className="h-4 w-4" aria-hidden data-testid="active-check" />}
         {canRemove && (
           <button
             type="button"
@@ -65,7 +65,7 @@ function InstanceRow({
  */
 export function InstanceSwitcher() {
   const { instances, activeInstanceId, removeInstance } = useInstances();
-  const { switchInstance, logout } = useAuth();
+  const { switchInstance, signOutAndSwitch } = useAuth();
   const router = useRouter();
   const active = instances.find((i) => i.id === activeInstanceId);
   const canRemove = instances.length > 1;
@@ -76,8 +76,8 @@ export function InstanceSwitcher() {
     router.push('/processes');
   }
 
-  // Removing the active instance signs out of it while it is still the active
-  // one (cookie logout / token clear), then switches and drops it.
+  // Removing the active instance signs out of it while it is still active and
+  // switches in one step — no transient anon status for the auth gate to see.
   async function handleRemove(id: string) {
     if (id !== activeInstanceId) {
       removeInstance(id);
@@ -85,8 +85,7 @@ export function InstanceSwitcher() {
     }
     const next = instances.find((i) => i.id !== id);
     if (!next) return;
-    await logout();
-    switchInstance(next.id);
+    await signOutAndSwitch(next.id);
     removeInstance(id);
     router.push('/processes');
   }

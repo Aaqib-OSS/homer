@@ -58,6 +58,12 @@ interface AuthContextType {
   login: (username: string, password: string) => Promise<LoginOutcome>;
   logout: () => Promise<void>;
   /**
+   * Sign out of the *current* active instance and switch to `instanceId` in one
+   * step. Unlike `logout()` + `switchInstance()`, the override is never pinned
+   * to `anon` mid-operation — the dashboard gate redirects on that status.
+   */
+  signOutAndSwitch: (instanceId: string) => Promise<void>;
+  /**
    * Switch the active Homer instance: point the active id at `instanceId`,
    * drop the previous instance's cached data, and re-probe auth against the
    * new instance. Cookie sessions are per-origin in the browser, so switching
@@ -184,7 +190,8 @@ async function loginBearer(setters: AuthSetters, password: string): Promise<Logi
   }
 }
 
-async function logoutActive({ queryClient, setOverride }: AuthSetters): Promise<void> {
+/** Sign out of the current active instance: server cookie logout, or drop its bearer token. */
+async function signOutActive(): Promise<void> {
   if (activeMode() === 'cookie') {
     try {
       await homerApi.logout();
@@ -194,15 +201,13 @@ async function logoutActive({ queryClient, setOverride }: AuthSetters): Promise<
   } else {
     removeActiveToken();
   }
-  queryClient.clear();
-  setOverride({ kind: 'anon' });
 }
 
-/** login / logout / switchInstance, and the auth-expired listener, over the given override setter. */
+/** login / logout / signOutAndSwitch / switchInstance, and the auth-expired listener, over the given override setter. */
 function useAuthActions(
   queryClient: QueryClient,
   setOverride: (override: AuthOverride) => void,
-): Pick<AuthContextType, 'login' | 'logout' | 'switchInstance'> {
+): Pick<AuthContextType, 'login' | 'logout' | 'signOutAndSwitch' | 'switchInstance'> {
   const login = useCallback(
     async (username: string, password: string): Promise<LoginOutcome> => {
       if (authProbeDisabled) {
@@ -229,6 +234,20 @@ function useAuthActions(
     [queryClient, setOverride],
   );
 
+  // Sign-out-and-switch for removing the active instance: the override drops
+  // straight to null, never through `anon`, so the gate reads loading instead.
+  const signOutAndSwitch = useCallback(
+    async (instanceId: string) => {
+      if (!authProbeDisabled) {
+        await signOutActive();
+      }
+      setActiveInstance(instanceId);
+      queryClient.clear();
+      setOverride(null);
+    },
+    [queryClient, setOverride],
+  );
+
   // If a 401 on any other request signals the session expired, the
   // auth-expired bus fires. Clear the override so the next render
   // doesn't show a stale `'authed'` status.
@@ -240,10 +259,12 @@ function useAuthActions(
     if (authProbeDisabled) {
       return;
     }
-    await logoutActive({ queryClient, setOverride });
+    await signOutActive();
+    queryClient.clear();
+    setOverride({ kind: 'anon' });
   }, [queryClient, setOverride]);
 
-  return { login, logout, switchInstance };
+  return { login, logout, signOutAndSwitch, switchInstance };
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -260,7 +281,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
 
   const { status, user } = resolveAuthState(override, query);
-  const { login, logout, switchInstance } = useAuthActions(queryClient, setOverride);
+  const { login, logout, signOutAndSwitch, switchInstance } = useAuthActions(
+    queryClient,
+    setOverride,
+  );
 
   return (
     <AuthContext.Provider
@@ -271,6 +295,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading: status === 'loading',
         login,
         logout,
+        signOutAndSwitch,
         switchInstance,
       }}
     >

@@ -1,16 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 const calls: string[] = [];
 const switchInstance = vi.fn();
+const signOutAndSwitch = vi.fn();
 const logout = vi.fn();
 const removeInstance = vi.fn();
 const push = vi.fn();
 const useInstancesMock = vi.hoisted(() => vi.fn());
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }));
-vi.mock('@/lib/auth/auth-context', () => ({ useAuth: () => ({ switchInstance, logout }) }));
+vi.mock('@/lib/auth/auth-context', () => ({
+  useAuth: () => ({ switchInstance, signOutAndSwitch, logout }),
+}));
 vi.mock('@/lib/instances/use-instances', () => ({ useInstances: () => useInstancesMock() }));
 
 import { InstanceSwitcher } from './instance-switcher';
@@ -28,6 +31,9 @@ describe('InstanceSwitcher', () => {
     });
     logout.mockReset().mockImplementation(async () => {
       calls.push('logout');
+    });
+    signOutAndSwitch.mockReset().mockImplementation(async () => {
+      calls.push('signOutAndSwitch');
     });
     removeInstance.mockReset().mockImplementation(() => {
       calls.push('removeInstance');
@@ -53,6 +59,21 @@ describe('InstanceSwitcher', () => {
       'aria-checked',
       'false',
     );
+  });
+
+  it('renders the check mark only inside the active row', async () => {
+    // The icon is aria-hidden — no role query reaches it, so assert it in the
+    // row's DOM or it could vanish (or appear everywhere) with the suite green.
+    const user = userEvent.setup();
+    render(<InstanceSwitcher />);
+    await user.click(screen.getByRole('button', { name: /select instance/i }));
+    const rows = screen.getAllByRole('menuitemradio');
+    const activeRow = rows.find((row) => row.getAttribute('aria-checked') === 'true');
+    expect(activeRow).toBeDefined();
+    expect(within(activeRow!).getByTestId('active-check')).toBeInTheDocument();
+    for (const row of rows.filter((row) => row !== activeRow)) {
+      expect(within(row).queryByTestId('active-check')).not.toBeInTheDocument();
+    }
   });
 
   it('switches and routes to /processes when picking another instance', async () => {
@@ -107,8 +128,27 @@ describe('InstanceSwitcher', () => {
     await user.click(screen.getByRole('button', { name: 'Remove Remote' }));
     expect(removeInstance).toHaveBeenCalledWith('remote');
     expect(switchInstance).not.toHaveBeenCalled();
+    expect(signOutAndSwitch).not.toHaveBeenCalled();
     expect(logout).not.toHaveBeenCalled();
     expect(push).not.toHaveBeenCalled();
+  });
+
+  it('suppresses the remove click so the row is not selected', async () => {
+    // The handler must default the click out (Radix reads it as selection) and
+    // stop the bubble — assert both directly on the dispatched event.
+    const user = userEvent.setup();
+    render(<InstanceSwitcher />);
+    await user.click(screen.getByRole('button', { name: /select instance/i }));
+    const bubbled = vi.fn();
+    document.addEventListener('click', bubbled);
+    try {
+      const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+      fireEvent(screen.getByRole('button', { name: 'Remove Remote' }), event);
+      expect(event.defaultPrevented).toBe(true);
+      expect(bubbled).not.toHaveBeenCalled();
+    } finally {
+      document.removeEventListener('click', bubbled);
+    }
   });
 
   it('signs out of a removed active instance, switches to a remaining one and routes', async () => {
@@ -117,8 +157,12 @@ describe('InstanceSwitcher', () => {
     await user.click(screen.getByRole('button', { name: /select instance/i }));
     await user.click(screen.getByRole('button', { name: 'Remove Default' }));
     await waitFor(() => expect(push).toHaveBeenCalledWith('/processes'));
-    expect(calls).toEqual(['logout', 'switchInstance', 'removeInstance']);
-    expect(switchInstance).toHaveBeenCalledWith('remote');
+    // The combined helper signs out and switches without ever publishing a
+    // transient anon status the dashboard gate would redirect on.
+    expect(calls).toEqual(['signOutAndSwitch', 'removeInstance']);
+    expect(signOutAndSwitch).toHaveBeenCalledWith('remote');
+    expect(logout).not.toHaveBeenCalled();
+    expect(switchInstance).not.toHaveBeenCalled();
     expect(removeInstance).toHaveBeenCalledWith('default');
   });
 });

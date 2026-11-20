@@ -39,7 +39,11 @@ vi.mock('@/lib/config/app-config', () => ({
 import { useAuth } from './auth-context';
 import { notifyAuthExpired } from './auth-expired-bus';
 import { LoginOutcomeProbe, StatusProbe, renderWithProvider } from './auth-test-utils';
-import { resetInstancesStoreForTests } from '@/lib/instances/store';
+import {
+  getActiveInstance,
+  resetInstancesStoreForTests,
+  upsertInstance,
+} from '@/lib/instances/store';
 
 describe('AuthProvider (cookie mode)', () => {
   beforeEach(() => {
@@ -260,6 +264,46 @@ describe('AuthProvider (cookie mode)', () => {
       expect(screen.getByTestId('status')).toHaveTextContent('anon'),
     );
     expect(client.getQueryData(['scratch'])).toBeUndefined();
+  });
+
+  it('signOutAndSwitch signs out and re-probes without ever publishing anon', async () => {
+    // A plain logout() + switchInstance() pins the override to anon in between,
+    // and the dashboard gate redirects on that — the helper must never do so.
+    getAuthMe.mockResolvedValue({ username: 'alice', role: 'admin', grants: [] });
+    logout.mockResolvedValue(undefined);
+
+    const seenStatuses: string[] = [];
+    function SignOutAndSwitchProbe() {
+      const { status, signOutAndSwitch } = useAuth();
+      seenStatuses.push(status);
+      return (
+        <div>
+          <div data-testid="status">{status}</div>
+          <button onClick={() => void signOutAndSwitch('remote')}>do-sign-out-switch</button>
+        </div>
+      );
+    }
+
+    upsertInstance({ id: 'remote', label: 'Remote', baseUrl: 'https://b.example.com', mode: 'cookie' });
+    renderWithProvider(<SignOutAndSwitchProbe />);
+    await waitFor(() =>
+      expect(screen.getByTestId('status')).toHaveTextContent('authed'),
+    );
+    seenStatuses.length = 0;
+
+    await act(async () => {
+      screen.getByText('do-sign-out-switch').click();
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId('status')).toHaveTextContent('authed'),
+    );
+
+    // One server logout while the removed instance was still active, then the
+    // re-probe against the new one — and never an anon reading in between.
+    expect(logout).toHaveBeenCalledTimes(1);
+    expect(seenStatuses).not.toContain('anon');
+    expect(seenStatuses).toContain('loading');
+    expect(getActiveInstance().id).toBe('remote');
   });
 
   it('login returns rate-limited when the login endpoint responds 429', async () => {
