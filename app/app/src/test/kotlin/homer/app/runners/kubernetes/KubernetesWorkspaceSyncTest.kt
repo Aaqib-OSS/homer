@@ -726,7 +726,7 @@ class KubernetesWorkspaceSyncTest {
                 every { inputStream } returns ByteArrayInputStream(ByteArray(0))
                 every { errorStream } returns ByteArrayInputStream(ByteArray(0))
                 every { waitFor(any<Long>(), any<TimeUnit>()) } returns true
-                every { exitValue() } returns -1
+                every { exitValue() } returns EXEC_ENDED_WITHOUT_EXIT_CODE
             }
         val client = KubernetesExecClient { _, _, _, _ -> closedProbe }
         val ex =

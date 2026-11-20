@@ -20,8 +20,8 @@ import kotlin.time.Duration
 
 /**
  * The one queue every run passes through (ADR-0066): a consumer with a free permit takes the oldest request it matches,
- * and one claim TTL covers the whole wait. Bounded by [maxPending] (ADR-0047 rule 4). A new request wakes one parked
- * consumer and is reserved for it (ADR-0096); a [ClaimAffinity] prefers the flow's last instance (ADR-0099).
+ * one claim TTL covers waiting for a permit and for a consumer, and [maxPending] bounds it (ADR-0047 rule 4). A new
+ * request wakes one parked consumer, reserved for it (ADR-0096); a [ClaimAffinity] prefers the flow's last instance (ADR-0099).
  */
 class RunnerClaimQueue(
     private val maxPending: Int,
@@ -132,7 +132,7 @@ class RunnerClaimQueue(
                 throw RunnerClaimTimeoutException(timeout, filter, reason, publicReason)
             }
             // Claimed, but the session is still opening: the TTL bounds the claim, not the open, and this second wait
-            // only backstops a consumer that never calls complete()/fail() (ADR-0066, amendment of 2026-11-20).
+            // only backstops a consumer that never calls complete()/fail() (ADR-0066).
             val late = withTimeoutOrNull(timeout) { request.deferred.await() }
             if (late != null) return late
             // Make a late complete() return false so the consumer closes what it opened; if a value

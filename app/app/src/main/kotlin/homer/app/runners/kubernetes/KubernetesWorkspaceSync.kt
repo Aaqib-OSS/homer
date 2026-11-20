@@ -152,7 +152,7 @@ class KubernetesWorkspaceSync(
 
     /** Renders an exit code for error messages, naming client-java's "no exit status" values. */
     private fun describeExit(exit: Int): String =
-        if (isNoExitStatus(exit)) "no exit status (exec channel failed or closed without one)" else "exit $exit"
+        if (isNoExitStatus(exit)) "no exit status (exec channel failed or ended without one)" else "exit $exit"
 
     /** Concurrently drains stderr so a full pipe can't stall the transfer. */
     private fun drain(source: InputStream): Drained {

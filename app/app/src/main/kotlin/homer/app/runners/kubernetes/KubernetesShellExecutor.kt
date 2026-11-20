@@ -255,7 +255,7 @@ class KubernetesShellExecutor(
         env: Map<String, String>,
         snap: PodDiagnostics.Snapshot,
     ): String {
-        val closed = cause?.let { "${it.javaClass.simpleName}: ${it.message}" } ?: "closed without an exit status"
+        val closed = cause?.let { "${it.javaClass.simpleName}: ${it.message}" } ?: "ended without an exit status"
         val text =
             "exec channel to pod $podName was lost while the pod was running: $closed. " +
                 (snap.events.lastOrNull() ?: snap.message)

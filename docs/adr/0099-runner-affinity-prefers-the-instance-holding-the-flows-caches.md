@@ -133,6 +133,6 @@ alias-hiding rule of ADR-0077.
 ## Amendment (2026-11-20): why the memory's bounds are what they are
 
 `RunnerAffinityMemory`'s bounds, 1024 entries and a six-hour TTL, are constants local to the memory,
-not config (ADR-0047 rules 4 and 5). Six hours covers a flow's build, fix and verify rounds while it parks on human gates and CI
-waits, and is short enough that an instance reused for other work ages out. A stale entry costs the
-next run of its key one fallback, and a lost one a cold start.
+not config (ADR-0047 rules 4 and 5). Six hours covers a flow's build, fix and verify rounds while it
+parks on human gates and CI waits, and is short enough that an instance reused for other work ages
+out. A stale entry costs the next run of its key one fallback, and a lost one a cold start.

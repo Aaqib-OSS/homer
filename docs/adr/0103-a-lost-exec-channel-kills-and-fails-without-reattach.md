@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-11-12
+amended: 2026-11-20
 deciders: Lukáš Vlk
 consulted: ADR-0041, ADR-0043, ADR-0047, ADR-0100
 ---
@@ -72,6 +73,20 @@ semantics for the steps it opts in.
   idempotent get no recovery here.
 - Bad: reattach, when someone wants it, must undo a documented decision and its tests, not extend
   a deferred one.
+
+## Amendment (2026-11-20): a status without an exit code is a lost channel
+
+A channel loss is wider than a close without a `v1.Status`. client-java reports three endings alike,
+as the exit value `-1`: a close with no status, a status it cannot parse, and a `Failure` status
+that carries no exit code. The main case is the last one: current API servers report a lost
+connection to the kubelet as a `Failure` status with no exit code, not as a status-less close.
+Homer cannot tell these endings apart, and none of them carries the command's outcome, so every
+negative exit value counts as a lost channel: the step gets the `ExecChannelLost` diagnostics, and
+the leftover command is killed pod-wide first, as decided above. A real exit code is 0–255.
+
+- Bad: an exec that never started (its binary missing, say) also reports `ExecChannelLost` and runs
+  the pod-wide kill. Its step fails either way; the kill reaches only the run's own earlier
+  leftovers, since the pod is the run's own.
 
 ## Pros and Cons of the Options
 

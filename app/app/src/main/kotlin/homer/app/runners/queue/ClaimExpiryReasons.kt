@@ -13,7 +13,7 @@ internal fun claimExpiryReasons(
     affinity: ClaimAffinity?,
     timeout: Duration,
 ): Pair<String, String> {
-    // The preference is the cause only while its instance is live and matches the filter: else it blocked no one.
+    // The preference is the cause only while its instance is live and matches the filter: else it blocked no one (ADR-0099).
     val preferenceHeld =
         affinity != null &&
             affinity.heldWholeWait(timeout.inWholeMilliseconds) &&

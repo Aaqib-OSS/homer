@@ -2978,7 +2978,9 @@ names the reason. Homer does not poll the pod while a command runs.
 
 **A lost exec channel.** The exec channel into the pod can close without a
 `v1.Status` — an API server or proxy restart, an idle timeout on the
-websocket — or the client can report its no-exit-status sentinel. When the
+websocket — or the client can report its no-exit-status sentinel, or the
+channel can end on a status that carries no exit code, as current API servers
+report a lost connection to the kubelet. When the
 pod itself is still running, the step fails with `ExecChannelLost` and the
 run's `runner.termination` carries the same reason, the underlying cause
 and the pod's last event, so the failure names the loss without the server

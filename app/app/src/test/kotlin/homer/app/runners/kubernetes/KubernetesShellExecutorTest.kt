@@ -653,8 +653,8 @@ class KubernetesShellExecutorTest {
             "the step error must name the loss: ${thrown.message}",
         )
         assertTrue(
-            thrown.message.orEmpty().contains("closed without an exit status"),
-            "the step error must say the channel closed without a status: ${thrown.message}",
+            thrown.message.orEmpty().contains("ended without an exit status"),
+            "the step error must say the channel ended without a status: ${thrown.message}",
         )
         assertEquals(1, seen.size)
         assertEquals(EXEC_CHANNEL_LOST, seen.single().reason)
@@ -727,11 +727,24 @@ class KubernetesShellExecutorTest {
     }
 
     @Test
-    fun `a channel closed without a status fails as lost and kills the leftover command`(
+    fun `exit value -1 fails as ExecChannelLost`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val proc = fakeProcess(stdout = "", stderr = "", exit = EXEC_ENDED_WITHOUT_EXIT_CODE)
+        val client = KubernetesExecClient { _, _, _, _ -> proc }
+        val executor = KubernetesShellExecutor(client, runningPodApi(), "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS)
+
+        val thrown = assertFailsWith<PodFailedDuringExecutionException> { run(executor, tmp) }
+
+        assertEquals(EXEC_CHANNEL_LOST, thrown.reason)
+    }
+
+    @Test
+    fun `exit value -1 kills the leftover command`(
         @TempDir tmp: Path,
     ) = runTest {
         val started = mutableListOf<List<String>>()
-        val proc = fakeProcess(stdout = "", stderr = "", exit = EXEC_CLOSED_WITHOUT_STATUS)
+        val proc = fakeProcess(stdout = "", stderr = "", exit = EXEC_ENDED_WITHOUT_EXIT_CODE)
         val client =
             KubernetesExecClient { _, _, argv, _ ->
                 started += argv
@@ -739,9 +752,8 @@ class KubernetesShellExecutorTest {
             }
         val executor = KubernetesShellExecutor(client, runningPodApi(), "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS)
 
-        val thrown = assertFailsWith<PodFailedDuringExecutionException> { run(executor, tmp) }
+        assertFailsWith<PodFailedDuringExecutionException> { run(executor, tmp) }
 
-        assertEquals(EXEC_CHANNEL_LOST, thrown.reason)
         assertTrue(started.any { it == KILL_ARGV }, "the leftover command must be killed: $started")
     }
 
@@ -1656,8 +1668,5 @@ class KubernetesShellExecutorTest {
     private companion object {
         /** The pod-wide kill the channel-loss path runs, as the executor's killInsidePod starts it. */
         val KILL_ARGV = listOf("sh", "-c", "kill -KILL -1")
-
-        /** client-java's ExecProcess exit value after its websocket closed with no usable `v1.Status`. */
-        const val EXEC_CLOSED_WITHOUT_STATUS = -1
     }
 }
