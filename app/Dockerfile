@@ -27,9 +27,7 @@ COPY app/schemas ./schemas
 # copying their sources.
 RUN mkdir -p e2e architecture
 
-# Optional Artifactory credentials as BuildKit secrets -- never ARG/ENV, which
-# leak into image history/metadata; see DOCKER.md and root CLAUDE.md §12 rule 7.
-# Download dependencies (cached layer)
+# Caches the Gradle distribution, buildSrc and plugins; secrets never ARG or ENV (ADR-0084).
 # The $(…) ends in `|| true`, so the export masks no failure.
 # hadolint ignore=SC2155
 RUN --mount=type=secret,id=artifactory_url \
@@ -38,7 +36,7 @@ RUN --mount=type=secret,id=artifactory_url \
     export ARTIFACTORY_URL="$(cat /run/secrets/artifactory_url 2>/dev/null || true)" && \
     export ARTIFACTORY_USER="$(cat /run/secrets/artifactory_user 2>/dev/null || true)" && \
     export ARTIFACTORY_TOKEN="$(cat /run/secrets/artifactory_token 2>/dev/null || true)" && \
-    ./gradlew dependencies --no-daemon || true
+    ./gradlew dependencies --no-daemon
 
 # Build fat jar. The release tag is stamped into the runner jar (its name and the version it
 # registers with); declared after the dependency layer so a version change does not refetch them.

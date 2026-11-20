@@ -13,12 +13,7 @@ COPY app/gradlew app/gradle.properties app/settings.gradle.kts ./
 COPY app/buildSrc ./buildSrc
 COPY app/e2e/build.gradle.kts ./e2e/build.gradle.kts
 
-# settings.gradle.kts includes :app, :agentdebug, :homer-runner and :architecture; empty dirs
-# satisfy Gradle without copying (or building) the backend sources into this
-# image. :e2e has no sources yet either — this run only warms the distro,
-# plugins, and deps (`|| true`: a warm-up miss is caught by the real
-# testClasses run below).
-# Optional Artifactory credentials as BuildKit secrets; see app/Dockerfile.
+# Empty dirs stand in for the other projects and :e2e has no sources yet: this caches deps.
 # The $(…) ends in `|| true`, so the export masks no failure.
 # hadolint ignore=SC2155
 RUN --mount=type=secret,id=artifactory_url \
@@ -28,7 +23,7 @@ RUN --mount=type=secret,id=artifactory_url \
     export ARTIFACTORY_URL="$(cat /run/secrets/artifactory_url 2>/dev/null || true)" && \
     export ARTIFACTORY_USER="$(cat /run/secrets/artifactory_user 2>/dev/null || true)" && \
     export ARTIFACTORY_TOKEN="$(cat /run/secrets/artifactory_token 2>/dev/null || true)" && \
-    (./gradlew :e2e:dependencies :e2e:testClasses --no-daemon || true)
+    ./gradlew :e2e:dependencies :e2e:testClasses --no-daemon
 
 COPY app/e2e ./e2e
 
