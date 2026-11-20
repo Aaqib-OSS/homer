@@ -221,6 +221,34 @@ class LogTailServiceTest {
     }
 
     @Test
+    fun `resolve serves a live run's tracked cmd_2 file for cmd=2 only`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        // A live run tracks each command's file under that command's own index, so command 2's
+        // tracked path answers `cmd=2` alone: the run's only row is command 2's, at position 0.
+        val trackedOut = tmp.resolve("cmd_2_attempt_1.out")
+        val trackedErr = tmp.resolve("cmd_2_attempt_1.err")
+        val processManager = processManagerWithoutJob()
+        every { processManager.hasLiveJob(1) } returns true
+        coEvery { processManager.getProcessInfo(1) } returns
+            processInfo(
+                id = 1,
+                artifactsDir = tmp,
+                executions = listOf(execution(tmp.resolve("cmd_2.out"), null, commandIndex = 2)),
+            )
+        coEvery { processManager.getCommandArtifacts(1, 2) } returns CommandArtifactPaths(trackedOut, trackedErr)
+        coEvery { processManager.getCommandArtifacts(1, 0) } returns null
+
+        val service = LogTailService(processManager, TestFixtures.mockLogger())
+
+        assertEquals(trackedOut, service.resolve(1, 2, LogTailService.Stream.OUT))
+        assertEquals(trackedErr, service.resolve(1, 2, LogTailService.Stream.ERR))
+        // Command 0 is not this run's: the `cmd_0` default, never command 2's tracked file.
+        assertEquals(tmp.resolve("cmd_0.out"), service.resolve(1, 0, LogTailService.Stream.OUT))
+        assertEquals(tmp.resolve("cmd_0.err"), service.resolve(1, 0, LogTailService.Stream.ERR))
+    }
+
+    @Test
     fun `resolve falls back to cmd_N naming when the tracked path escapes the artifacts dir`(
         @TempDir tmp: Path,
     ) = runTest {
