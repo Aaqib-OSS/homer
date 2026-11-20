@@ -34,14 +34,9 @@ const PLUGIN_PATH_PATTERN = /^\/[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*\.m?js$/;
 const REQUIREMENTS: readonly PluginRequirement[] = ['admin', 'run', 'read', 'control', 'edit', 'debug'];
 
 /**
- * One `CONSOLE_PLUGINS` entry: a same-origin path, optionally followed by
- * `@<requirement>` — `/plugins/costs.js@admin`.
- *
- * The requirement lives in operator config rather than in the plugin's own
- * manifest for two reasons. It is enforceable **before** the module is fetched,
- * so a caller who may not use a plugin never learns it exists and never runs its
- * top-level code; and the access decision belongs to the operator deploying the
- * plugin, not to the plugin author, who could simply omit it. See ADR-0059.
+ * One `CONSOLE_PLUGINS` entry: a same-origin path, optionally `@<requirement>`
+ * (`/plugins/costs.js@admin`). The requirement is enforced before the module is
+ * fetched. See ADR-0059.
  */
 export interface PluginEntry {
   path: string;
@@ -56,21 +51,9 @@ function splitEntry(entry: string): [string, string | undefined] {
 }
 
 /**
- * Why a `CONSOLE_PLUGINS` entry is not loadable, or `null` when it is fine.
- *
- * Only same-origin paths are accepted, which is what keeps plugin code out of
- * anyone else's hands: there is no network fetch to intercept, no foreign
- * origin to allowlist, and `script-src 'self'` already covers the import.
- *
- * The two path rejections that matter:
- *  - `//evil.example/p.js` is *protocol-relative*. It starts with `/` and reads
- *    as local, but resolves to a foreign origin — accepting it would turn a
- *    typo into a third-party module running with the operator's privileges.
- *  - `..` is rejected even inside an otherwise valid-looking path, so an entry
- *    can never climb out of the directory the operator meant.
- *
- * An unrecognised requirement is rejected rather than ignored: silently
- * dropping it would turn a typo (`@admn`) into a plugin open to everyone.
+ * Why a `CONSOLE_PLUGINS` entry is not loadable, or `null`: a same-origin `.js`/`.mjs` path, no `//host` or `..`, and
+ * a known requirement. The CSP admits the import via the trusted bundle (its nonce or `'strict-dynamic'`), never by
+ * origin, as `'self'` is ignored, so this check alone keeps plugin code local (ADR-0059).
  */
 export function checkPluginEntry(entry: string): string | null {
   const [path, requires] = splitEntry(entry);
@@ -125,9 +108,7 @@ export type PluginImporter = (url: string) => Promise<{ default?: unknown }>;
 
 /**
  * Imports a plugin module at runtime. `webpackIgnore` is load-bearing: without
- * it webpack rewrites this into a bundled require and resolves the path at build
- * time, which is exactly what a runtime plugin must not do. The browser
- * resolves the root-relative path against the console's own origin.
+ * it webpack resolves the path at build time. See ADR-0059.
  */
 const importFromDisk: PluginImporter = (path) =>
   import(/* webpackIgnore: true */ /* @vite-ignore */ path);

@@ -28,11 +28,8 @@ export function useProcessLangGraphView(
   liveWorkflowExpanded: boolean,
 ) {
   const resumeEligible = isResumeEligible(process);
-  // Cheap probe (artifact read only, no python on the backend): drives Resume
-  // button visibility, and identifies the LangGraph command's label — for the
-  // loading state on expanded execution items and for the live-command
-  // workflow toggle. Enabled while a command runs because the artifact is
-  // written before the graph starts, so the live view works mid-run.
+  // Artifact-only probe: Resume visibility and the LangGraph command's label.
+  // The artifact exists before the graph starts, so it is enabled mid-run.
   const lgProbe = useProcessLangGraph(processId, {
     graph: false,
     enabled: probeEnabled(process, resumeEligible, anyExpanded),
@@ -40,10 +37,8 @@ export function useProcessLangGraphView(
   const liveIsLangGraph =
     !!process?.currentCommand && process.currentCommand === lgProbe.data?.label;
   const liveWorkflowOpen = liveWorkflowExpanded && liveIsLangGraph;
-  // Full status (topology + nodes): fetched and polled only while an execution
-  // item or the live-command workflow is open. Polling is NOT gated on this
-  // process being active: a parked segment is FINISHED while its thread keeps
-  // advancing in later segments, so the thread-scoped statuses still change.
+  // Polled while an item or the live workflow is open, whether or not this
+  // process is active: its thread may still advance in later segments.
   const lgStatusOpen = anyExpanded || liveWorkflowOpen;
   const lgStatus = useProcessLangGraph(processId, {
     graph: true,

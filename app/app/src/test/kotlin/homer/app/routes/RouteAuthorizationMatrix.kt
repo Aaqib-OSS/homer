@@ -98,7 +98,7 @@ internal val ROUTE_AUTHZ: List<RouteAuthz> =
         public("GET /api/v1/readyz", "none: readiness probe", 200),
         public("POST /api/v1/auth/login", "username + password", 401, body = """{"username":"nobody","password":"wrong"}"""),
         public("POST /api/v1/auth/logout", "none: clears the session cookie", 204),
-        operator("GET /api/v1/auth/me", "session cookie only; a bearer token is not read", 401),
+        operator("GET /api/v1/auth/me", "bearer token or session cookie; answers the caller's own role and grants", 200),
         callback("POST /api/v1/callback/questions", CALLBACK_TOKEN, 200, body = """{"text":"own?"}"""),
         callback(
             "GET /api/v1/callback/questions/{id}",

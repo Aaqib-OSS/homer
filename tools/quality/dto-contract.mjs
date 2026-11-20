@@ -33,7 +33,7 @@ export const RENAMES = {
 /** TS declarations with no backend DTO of their own, and why. */
 export const CONSOLE_ONLY = {
   ProcessCostSource: "CostSource plus 'mixed'; ProcessInfoResponse.costSource is a String",
-  AgentQueryParam: 'deprecated alias of AgentInput',
+  AgentQueryParam: 'console-only alias of AgentInput; no wire type has this name',
   ProcessFilters: 'query parameters of GET /api/v1/processes, not a body',
   Role: 'MeResponse.role is a String the console narrows',
   ArtifactDownload: 'the client assembles it from an artifact response body and its headers',

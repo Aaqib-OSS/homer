@@ -18,7 +18,7 @@ function describeNoStatus(failure: TransportFailure | undefined): string {
 
 /**
  * One sentence telling the operator why an API query failed, so a page shows
- * the cause instead of waiting forever (#26, #29).
+ * the cause instead of waiting forever.
  */
 export function describeApiError(error: unknown, notFound = 'Not found.'): string {
   if (!(error instanceof HomerApiError)) {

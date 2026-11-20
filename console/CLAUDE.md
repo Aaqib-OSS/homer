@@ -27,7 +27,7 @@ User-facing docs:
 
 ```
 components.json                     # shadcn CLI config (Tailwind 4: no tailwind.config; cn at lib/utils/cn)
-middleware.ts                       # per-request nonce + per-route CSP (see lib/security/csp.ts)
+middleware.ts                       # per-request nonce + the CSP (see lib/security/csp.ts)
 app/
   layout.tsx                        # root layout; force-dynamic; injects window.__HOMER_CONFIG__ (nonced)
   providers.tsx                     # QueryClient + ThemeProvider + AuthProvider
@@ -69,7 +69,7 @@ lib/
   hooks/                            # shared React hooks (URL query state, auto-scroll, now, in-app navigation marker, sidebar collapse, process-detail LangGraph view, error-boundary logging)
   langgraph/layout.ts               # dagre layout of a LangGraph topology (ADR-0073)
   monaco/setup.ts                   # Monaco editor setup
-  security/csp.ts                   # per-route CSP builder
+  security/csp.ts                   # CSP builder
   utils/{cn,format,validation,agent,curl,download,kv,list,html,process,cost-source,agent-name-matcher}.ts
 types/homer.ts                      # TS mirrors of backend DTOs
 config/default.json                 # defaults; overridable at runtime
@@ -244,8 +244,9 @@ know. `ctx.navigate` wraps `router.push`.
 path and nothing else — a remote URL, a protocol-relative `//host/p.js` (reads
 as local, resolves foreign), a `data:`/`blob:`/`javascript:` URL, or any `..` is
 rejected before the import. Do not "helpfully" widen this: it is the whole
-reason plugin code cannot come from anywhere but the operator's disk, and it is
-what makes `script-src 'self'` sufficient.
+reason plugin code cannot come from anywhere but the operator's disk: the CSP admits
+the import via the trusted bundle (its nonce or `'strict-dynamic'`), never by origin, as
+`'self'` is ignored (ADR-0059).
 
 **A sub-path change is a remount.** The App Router discards the page subtree when
 the catch-all params change — measured, not assumed: a plugin counting its own
@@ -266,12 +267,12 @@ before changing any of this.
 
 ## Content-Security-Policy (`middleware.ts` + `lib/security/csp.ts`)
 
-`middleware.ts` mints a per-request nonce and emits a per-route CSP (policy
-built in `lib/security/csp.ts`, unit-tested there). The policy is **strict**
-(`script-src 'self' 'nonce-… ' 'strict-dynamic'`, no `unsafe-eval`/`unsafe-inline`)
-on every route **except** the Monaco editor route `/agents/*/edit`, which is
-relaxed to `script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:` (no nonce,
-no `'strict-dynamic'`) + `blob:` workers. The nonce reaches the inline
+`middleware.ts` mints a per-request nonce and emits the CSP (policy built in
+`lib/security/csp.ts`, unit-tested there). The policy is **strict** and the same
+on every route (`script-src 'self' 'nonce-… ' 'strict-dynamic'`, `worker-src 'self'`,
+no `unsafe-eval`/`unsafe-inline` scripts), the Monaco editor included: Monaco is
+bundled (`lib/monaco/setup.ts`), its workers are same-origin chunks, and it needs
+no `eval`. The nonce reaches the inline
 runtime-config `<script>` via the `x-nonce` request header, read in
 `layout.tsx` with `await headers()`; Next.js reads it from the CSP header to
 nonce its own scripts.
@@ -280,8 +281,8 @@ nonce its own scripts.
   applies under `NODE_ENV=production`.
 - `connect-src` is pinned to `CONSOLE_ALLOWED_API_ORIGINS` when set, else left
   open (multi-instance login can target any backend).
-- Adding a component that needs `eval`/inline scripts elsewhere means either
-  making it CSP-clean or extending `isEditorPath` — don't loosen the global policy.
+- A component that needs `eval`, inline scripts or `blob:` workers must be made
+  CSP-clean; don't loosen the policy (CWE-79).
 
 ## Authentication
 
@@ -291,9 +292,9 @@ nonce its own scripts.
   switch.
 - Bearer tokens live in `localStorage` namespaced per instance
   (`homer_auth_token::{instanceId}`). A legacy un-namespaced token is
-  migrated into the seeded default instance on first load.
-- `AuthProvider` probes the active instance on mount (`/auth/me` in cookie
-  mode, `/heartbeat` in bearer mode). `switchInstance(id)` repoints the
+  copied into a freshly seeded default instance, and deleted on every load.
+- `AuthProvider` probes the active instance's `/auth/me` on mount in both
+  modes (ADR-0059; a token an old server can't answer: `/heartbeat`, no grants). `switchInstance(id)` repoints the
   active id, clears the React Query cache, and re-probes; global SSE streams
   reconnect on the active-instance id change.
 - The login screen carries the **endpoint URL** + mode toggle: on submit it
@@ -321,9 +322,9 @@ nonce its own scripts.
   neutral "Sign in to continue" prompt instead: a 401 on the global SSE streams
   (`sse.ts` is not `AUTH_BUS_EXEMPT`) is not an expiry.
 - Dashboard layout redirects to `/login` when
-  `appConfig.auth.enabled && !isAuthenticated`.
-- `appConfig.auth.enabled === false` bypasses everything and sets
-  `isAuthenticated = true` — matches the backend's `unsecured` mode
+  `appConfig.auth.enabled && status === 'anon'`.
+- `appConfig.auth.enabled === false` bypasses everything and pins
+  `status` to `'authed'` — matches the backend's `unsecured` mode
   for local dev.
 
 ## Theming

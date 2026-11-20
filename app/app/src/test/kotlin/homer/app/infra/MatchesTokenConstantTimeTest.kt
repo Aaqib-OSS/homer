@@ -3,6 +3,7 @@ package homer.app.infra
 import org.junit.jupiter.api.Test
 import java.nio.file.Files
 import java.nio.file.Paths
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -72,20 +73,49 @@ class MatchesTokenConstantTimeTest {
      */
     @Test
     fun `production auth path uses matchesTokenConstantTime not equality`() {
+        val bearerTokenKt = Paths.get("src/main/kotlin/homer/app/auth/BearerToken.kt")
         val authWiringKt = Paths.get("src/main/kotlin/homer/app/AuthWiring.kt")
-        check(Files.exists(authWiringKt)) {
-            "AuthWiring.kt not found at $authWiringKt - did the file move?"
+        check(Files.exists(bearerTokenKt) && Files.exists(authWiringKt)) {
+            "BearerToken.kt or AuthWiring.kt not found - did the file move?"
         }
-        val source = Files.readString(authWiringKt)
+        val lookup = Files.readString(bearerTokenKt)
 
         assertTrue(
-            source.contains("matchesTokenConstantTime(it.value.token, tokenCredential)"),
-            "AuthWiring.kt must call matchesTokenConstantTime in the bearer auth lookup",
+            lookup.contains("matchesTokenConstantTime(it.value.token, credential)"),
+            "BearerToken.kt must call matchesTokenConstantTime in the bearer token lookup",
         )
         assertFalse(
-            source.contains("it.value.token == tokenCredential"),
-            "AuthWiring.kt must not use plain '==' for bearer token compare " +
+            lookup.contains("it.value.token == credential"),
+            "BearerToken.kt must not use plain '==' for bearer token compare " +
                 "(timing side-channel). Use matchesTokenConstantTime instead.",
         )
+        assertTrue(
+            Files.readString(authWiringKt).contains("scheme.principalFor(tokenCredential)"),
+            "the auth-bearer provider must resolve its token through principalFor",
+        )
+        assertTrue(
+            Files.readString(Paths.get("src/main/kotlin/homer/app/routes/UnsecuredRoutes.kt")).contains("scheme.principalFor(credential)"),
+            "GET /auth/me must resolve its bearer token through principalFor",
+        )
+    }
+
+    @Test
+    fun `no production source compares a token with plain equality`() {
+        val equality = Regex("""\.token\s*[!=]=|[!=]=\s*\S*\.token\b|\.token\.equals\(""")
+        val offenders =
+            Files.walk(Paths.get("src/main/kotlin")).use { paths ->
+                paths
+                    .filter { it.toString().endsWith(".kt") }
+                    .toList()
+                    .flatMap { file ->
+                        Files.readAllLines(file).mapIndexedNotNull {
+                            i,
+                            line,
+                            ->
+                            "$file:${i + 1}: ${line.trim()}".takeIf { equality.containsMatchIn(line) }
+                        }
+                    }
+            }
+        assertEquals(emptyList(), offenders, "compare tokens with matchesTokenConstantTime, not ==/!=/equals")
     }
 }

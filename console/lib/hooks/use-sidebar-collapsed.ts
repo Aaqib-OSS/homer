@@ -24,9 +24,8 @@ function subscribe(listener: () => void): () => void {
   };
 }
 
-// The server (and the first client render before hydration) always renders
-// expanded, so the persisted choice cannot cause a hydration mismatch; it
-// applies on the next render once the client snapshot is read.
+// The server and the first client render are always expanded, so the stored
+// choice cannot cause a hydration mismatch.
 function getServerSnapshot(): boolean {
   return false;
 }
@@ -36,7 +35,7 @@ function setCollapsed(collapsed: boolean): void {
     try {
       localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0');
     } catch {
-      // Persisting is best-effort; the in-memory toggle still applies.
+      // Storage unavailable: the in-memory toggle still applies.
     }
   }
   listeners.forEach((l) => l());

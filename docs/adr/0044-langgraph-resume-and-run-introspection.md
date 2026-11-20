@@ -305,6 +305,15 @@ principal is owned by that principal and reads its own checkpoint store.
   second `inspect` subprocess per status request. A draw or topology failure degrades that field to
   null and must not cost the node, error and interrupt fields.
 
+## Amendment (2026-11-20): the console polls by what is open, not by process state
+
+The console's 5 s status poll runs while an execution item or the live-command
+workflow is open, whether or not that process is still active: a parked segment
+is FINISHED while its thread keeps advancing in later segments, so the
+thread-scoped statuses still change. The artifact-only probe that drives the
+Resume button is separate and cheap (no Python on the backend); it also runs
+while a command runs, because the artifact is written before the graph starts.
+
 ## More Information
 
 - Related: [ADR-0024](0024-langgraph-command-type.md) (LangGraph command type

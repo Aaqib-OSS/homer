@@ -187,7 +187,7 @@ const ToolCallBlock = memo(function ToolCallBlock({
     <CollapsibleBlock
       summary={
         <>
-          {/* eslint-disable-next-line no-restricted-syntax -- tool-name colour matches the JSON tree's labels, which have no token */}
+          {/* eslint-disable-next-line no-restricted-syntax -- fixed palette hue with no token; non-.dark themes get the light shade */}
           <span className="text-blue-600 dark:text-blue-400 font-semibold">{call.name}</span>
           {inflight && (
             <Loader2 data-testid="inflight-tool" className="h-3 w-3 animate-spin text-muted-foreground" aria-label="Tool running" />
@@ -217,7 +217,7 @@ function ToolCallDetails({ call, result }: Omit<ToolCallBlockProps, 'inflight'>)
           <div className="text-muted-foreground mb-1">Result</div>
           <pre
             className={`whitespace-pre-wrap break-all ${
-              // eslint-disable-next-line no-restricted-syntax -- error/success status colours are fixed, not theme tokens
+              // eslint-disable-next-line no-restricted-syntax -- fixed status hues with no token; non-.dark themes get the light shade
               result.isError ? 'text-red-600 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400'
             }`}
           >
@@ -254,9 +254,8 @@ type ConversationItem =
   | { kind: 'text'; text: string; key: string }
   | { kind: 'tool'; call: LlmToolCall; result: LlmToolResult | undefined };
 
-// The rendered items in event order: non-blank assistant texts and tool calls
-// paired with their results. A blank-text assistant_message (thinking-only)
-// renders nothing here, but still counts toward the live turn count.
+// Items in event order: non-blank assistant texts and tool calls paired with results; a
+// blank thinking-only message renders nothing but still counts as a turn.
 function conversationItems(events: LlmEvent[]): ConversationItem[] {
   // Build tool-result lookup map from every tool_result event.
   const toolResults = new Map<string, LlmToolResult>();
@@ -374,9 +373,8 @@ interface LlmConversationViewProps {
   accounting?: LlmAccounting | null;
 }
 
-// Turns are counted by distinct message id across assistant_message and
-// tool_call events, so a tool-only message (or a blank thinking-only one)
-// still counts once.
+// Distinct message ids across assistant_message and tool_call, so a tool-only or
+// blank message counts once.
 function countTurns(events: LlmEvent[]): number {
   const turnIds = new Set<string>();
   for (const event of events) {

@@ -5,13 +5,12 @@ import sonarjs from 'eslint-plugin-sonarjs';
 
 import maxProps from './scripts/eslint-max-props.mjs';
 
-// Architecture rules from console/CLAUDE.md, at "warn": `npm run lint` fails on errors only, and
-// `npm run quality:report` reports the warnings (ADR-0082). ESLint replaces a rule's options per
-// config object instead of merging them, so each file group lists every selector it keeps.
+// Architecture rules at "warn"; the `eslint-warnings` check fails on any warning (ADR-0082).
+// ESLint replaces a rule's options per config object, so each file group lists every selector it keeps.
 export const SOURCE_FILES = ['**/*.{ts,tsx}'];
 export const TEST_FILES = ['**/*.test.{ts,tsx}', 'vitest.setup.ts'];
 
-// Parameters per function and props per component (GH #311), each the worst today; ratcheted by scripts/size.mjs (`size-console`).
+// Parameters per function and props per component, ratcheted by scripts/size.mjs (`size-console`).
 export const MAX_PARAMS = 5;
 export const MAX_PROPS = 14;
 
@@ -92,7 +91,7 @@ const config = [
     },
   },
   {
-    // Cognitive complexity per function (GH #307) and nesting depth via core `max-depth` (GH #308); the plugin's recommended preset stays off.
+    // Cognitive complexity per function and nesting depth via core `max-depth`; the plugin's recommended preset stays off.
     files: SOURCE_FILES,
     ignores: TEST_FILES,
     plugins: { sonarjs },

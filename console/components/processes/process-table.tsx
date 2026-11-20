@@ -77,16 +77,9 @@ function commandDotName(dot: CommandDot): string {
 }
 
 /**
- * One square per command the run executed, coloured like the LangGraph dot
- * rows (`workflow-dots.ts`). The tooltip names the command, its state and its
- * duration only — no arguments, which the list never shows either (threat
- * model, Secrets). Each dot is `role="img"` with the same text as its
- * accessible name: a bare `title` on a generic span is not announced, and the
- * dots are the only place the row says which commands ran and how each ended.
- *
- * `sixPerLine` pins the squares to a six-per-line grid — the desktop Commands
- * cell, which the ticket scopes the wrap to. The mobile card keeps the free
- * wrap it always had.
+ * One square per command the run executed, coloured like the LangGraph dot rows. Each is
+ * `role="img"` named by command, state and duration, never arguments; a bare `title` is not
+ * announced. `sixPerLine` pins the desktop Commands cell to six per line; the card wraps freely.
  */
 function CommandDots({ dots, sixPerLine = false }: { dots: CommandDot[]; sixPerLine?: boolean }) {
   if (dots.length === 0) return null;
@@ -119,10 +112,8 @@ interface CommandStatusProps {
 }
 
 /**
- * The mobile card's command block: the dots above the last-command status
- * fragment. The desktop table renders `CommandDots` alone as its Commands cell.
- * The dots and the icon logic are the shared parts; both come from the row,
- * which computes the dots once per render.
+ * The mobile card's command block: the dots above the last-command status fragment.
+ * The desktop table renders `CommandDots` alone as its Commands cell.
  */
 function CommandStatus({ lastCmd, dots }: CommandStatusProps) {
   if (!lastCmd.label) return null;

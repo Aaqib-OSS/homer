@@ -1,8 +1,7 @@
 """Example graph for the ``langgraph_demo`` agent.
 
-Two checks run in parallel as one fan-out group (a single ``homer-join``
-round-trip to the ``langgraph_demo_check`` sub-agent), their results are
-summarized, then an operator approves or rejects on a human gate.
+Two parallel checks (one ``homer-join`` fan-out to ``langgraph_demo_check``),
+then a summary and an operator approve/reject gate.
 """
 
 from __future__ import annotations

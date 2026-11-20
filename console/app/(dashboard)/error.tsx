@@ -8,10 +8,8 @@ import { useBoundaryError, type ErrorBoundaryProps } from '@/lib/hooks/use-bound
 /**
  * Route-segment error boundary for every page under `(dashboard)`.
  *
- * Next.js renders this in place of the page's content when a child throws
- * during render, while the dashboard layout (header, sidebar) stays mounted —
- * so a bug in one page no longer blanks the whole console. Must be a Client
- * Component per the App Router contract.
+ * Replaces the page's content when a child throws during render; the dashboard
+ * layout stays mounted. Must be a Client Component.
  */
 export default function DashboardError({ error, reset }: ErrorBoundaryProps) {
   const details = useBoundaryError(error);

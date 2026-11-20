@@ -14,13 +14,9 @@ function normalizeSubPath(path: string): string {
 }
 
 /**
- * Renders a runtime-loaded plugin into a plain DOM node. The plugin owns its
- * own React root, so the console only supplies the element and the context and
- * calls the cleanup function on unmount.
- *
- * The App Router discards this subtree when the catch-all params change, so a
- * sub-path change is a remount and `subPath` is part of the mount effect's
- * deps: pretending otherwise would leave the plugin showing a stale path.
+ * Renders a runtime-loaded plugin, which owns its React root, into a DOM node and calls its
+ * cleanup on unmount. `subPath` is a dep of the mount effect: the App Router remounts this
+ * subtree on a sub-path change, and omitting it would leave a stale path.
  */
 export function PluginHost({ plugin, subPath }: { plugin: LoadedPlugin; subPath: string }) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -55,9 +51,8 @@ export function PluginHost({ plugin, subPath }: { plugin: LoadedPlugin; subPath:
       });
     } catch (e) {
       console.error(`[plugins] ${plugin.sourceUrl} threw during mount:`, e);
-      // Reported into the host element instead of via setState: a synchronous
-      // setState here is a cascading render, and this node is already ours to
-      // own and to clear on unmount.
+      // Reported into the host element, not via setState: a synchronous setState here
+      // is a cascading render.
       el.replaceChildren(failureNode(plugin.title));
     }
 

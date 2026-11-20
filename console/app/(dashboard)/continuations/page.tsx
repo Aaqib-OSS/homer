@@ -6,9 +6,7 @@ import { ContinuationItem } from '@/components/continuations/continuation-item';
 
 export default function ContinuationsPage() {
   const { data: pendingData } = useContinuations({ status: 'PENDING' });
-  // A continuation that never fires is the failure mode worth seeing: agents use
-  // continuations as their crash-reporting channel, so a lost one is a report
-  // nobody gets. Failures were previously only a WARN line in the server log.
+  // A failed continuation is a crash report nobody receives, so it is listed.
   const { data: failedData } = useContinuations({ status: 'FAILED' });
 
   const pending = pendingData?.continuations ?? [];

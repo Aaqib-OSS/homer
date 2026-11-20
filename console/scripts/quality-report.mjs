@@ -1,9 +1,7 @@
 /**
- * Shared output of the console's report-only quality checks (ADR-0082). Each check turns its tool's
- * output into findings `{path, line, message, severity}` — `path` repo-relative, `message` free of
- * line numbers, `severity` `minor` or `major` — and writes them to `reports/quality/<check>/` as
- * `<check>-summary.txt`, `<check>-report.txt` and `gl-code-quality-<check>.json`, the files the CI
- * quality gate reads. Findings never fail a check; only a tool error does.
+ * Shared output of the console's quality checks (ADR-0082): findings `{path, line, message, severity}`
+ * (`message` free of line numbers) written to `reports/quality/<check>/` for the CI gate. Findings
+ * never fail a check; only a tool error does.
  */
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';

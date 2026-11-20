@@ -23,11 +23,9 @@ const FLOW_STATE_STYLE: Record<FlowState, { label: string; className: string }> 
 };
 
 /**
- * Aggregate state of a flow's runs, most actionable first: a question blocking
- * a run is what the operator has to act on, then anything still running, then a
- * failure, and only then a clean finish. The question check must come first —
- * a question exists only while its run is WORKING, so ranking `running` above
- * it would make that state unreachable.
+ * Aggregate state of a flow's runs, most actionable first: question, running, failed,
+ * finished. The question check must come first: a question exists only while its run is
+ * WORKING, so ranking `running` above it would make that state unreachable.
  */
 export function flowState(processes: ProcessInfo[]): FlowState | null {
   // An empty flow has no state to report; callers render nothing rather than a
@@ -42,14 +40,9 @@ export function flowState(processes: ProcessInfo[]): FlowState | null {
 }
 
 /**
- * One root row's flow summary: how many runs the flow holds beyond the root,
- * what they cost together, and their aggregate state.
- *
- * The row itself already shows the root's own status and cost, so this
- * summarizes its descendants — the backend's `?rootProcessId=` filter matches
- * `root_process_id = N` and the root's own column is null. A flow whose page
- * was cut short by [FLOW_SUMMARY_LIMIT] is marked `partial` instead of silently
- * reporting a cheaper, smaller flow.
+ * One root row's flow summary: the runs beyond the root (the row shows the root itself),
+ * their combined cost and aggregate state. A page cut short by [FLOW_SUMMARY_LIMIT] is
+ * marked `partial`, not reported as a cheaper, smaller flow.
  */
 export function FlowSummaryCell({ rootProcessId }: { rootProcessId: number }) {
   const { data } = useFlowSummary(rootProcessId, FLOW_SUMMARY_LIMIT);

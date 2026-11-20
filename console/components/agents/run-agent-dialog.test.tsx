@@ -327,7 +327,7 @@ describe('RunAgentDialog input list and typed constraints', () => {
     expect(screen.queryByText(/Allowed:/)).not.toBeInTheDocument();
   });
 
-  // getAgentInputs falls back to the deprecated queryParams alias verbatim.
+  // getAgentInputs falls back to the queryParams alias verbatim.
   it('renders the alias path’s default, values and secret redaction like the canonical one', () => {
     mockExecuteAgent(vi.fn());
     render(

@@ -1,16 +1,8 @@
 #!/usr/bin/env node
 /**
- * Size report (check `size-console`, ADR-0082): files over MAX_FILE_LINES and functions over
- * MAX_FUNCTION_LINES in console production code, blank lines and comments not counted — the backend's
- * limits. Its own ESLint run: only these two rules run, so they never reach `npm run lint` or the
- * `eslint-warnings` check. Writes `reports/quality/size-console/`.
- *
- * It also budgets `jscpd:ignore-start` blocks in the same files, ratcheted like the caps. `eslint-disable` and its reason are
- * counted by `tools/quality/comment-policy.mjs`; the backend's counterpart is `SuppressionBudgetTest`.
- *
- * Both caps ratchet (ADR-0082): a cap more than 5% of itself (rounded up, at least 1) above the current maximum is a finding; lower it to
- * the maximum the finding names. So do the lint caps on parameters per function and props per component (GH #311): `MAX_PARAMS` and
- * `MAX_PROPS` in `eslint.config.mjs` report through `eslint-warnings`, and a probe run here over the files they cover finds a stale one.
+ * Size report (check `size-console`, ADR-0082): files and functions over their line caps, plus the
+ * `jscpd:ignore-start` budget. Every cap, `MAX_PARAMS` / `MAX_PROPS` included, ratchets: one over
+ * 5% above its current maximum is a finding naming the value to lower it to.
  */
 import { readFileSync } from 'node:fs';
 import { matchesGlob, relative } from 'node:path';

@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-05-18
 deciders: Lukáš Vlk
-amended: 2026-08-11, 2026-10-09, 2026-10-25
+amended: 2026-08-11, 2026-10-09, 2026-10-25, 2026-11-20
 ---
 # ADR-0011: Cookie-based console authentication (username + password)
 
@@ -124,6 +124,10 @@ edits to `Application.kt` / `SessionAuth.kt` must keep them:
    cookie + valid bearer should still clear the cookie, not 401).
    `/me` reads the session directly so it isn't mis-authenticated as
    the bearer principal by `FirstSuccessful`.
+
+   > **Amendment (2026-11-20) — `/me` answers a bearer header first when a `bearer` scheme
+   > is configured and the session otherwise, still outside `FirstSuccessful`; see the
+   > amendment below.**
 8. **`provider("auth-session")`, not `session<T>()`.** Ktor 3.4's
    built-in `session<T>()` provider does not give access to
    `call.request.path()` for the per-user endpoint check. The
@@ -220,3 +224,37 @@ secret to manage in a first run); and the unsecured `config-local.json`, which
 stays opt-in. This is acceptable because the stack binds to `127.0.0.1` and the
 setting is documented as a quick-start one. Cookie sign-in with
 `CONSOLE_ALLOW_BEARER` off remains the recommendation for any real deployment.
+
+## Amendment (2026-11-20): `/me` also answers a bearer token
+
+`GET /api/v1/auth/me` is mounted whenever a `bearer` or `password` scheme is
+configured, and reads its credential itself, still outside `authenticate(...)`.
+When a `bearer` scheme is configured, a request carrying `Authorization: Bearer`
+is answered for that token: its name, role and grants. A stale or unknown token
+gets `401` with no fallback to the session cookie. Every other request is
+answered for its cookie, exactly as invariant 7 describes. The secured routes keep
+`FirstSuccessful` in `apiAuth` order, so a request carrying both credentials can
+be described by `/me` as the bearer principal while a secured route acts as the
+cookie user. For example, a same-origin bearer console holding a valid token next to
+a leftover cookie of another user. (A stale token is a different case: `/me` answers
+`401`, and the console falls back to `/heartbeat`, which the cookie passes, so it
+shows no capabilities.) That gap is UI-only: both credentials sit in the same
+browser, and every route still authorizes the principal it authenticated. Why the
+console needs this: [ADR-0059](0059-console-plugins-are-runtime-loaded-modules.md)
+(amendment of 2026-11-20).
+
+## Amendment (2026-11-20): the login form gates its endpoint and bearer mode
+
+An `endpoint=` on the login URL that is not one of the operator's saved instances is attacker-suppliable:
+a link to the console's trusted origin could aim the credential POST at any host. The form therefore
+requires an explicit trust confirmation for such an endpoint until the field is edited to a saved
+instance (on a login page opened without `endpoint=`, a typed endpoint is the operator's own
+decision and is not gated); the sign-in
+button is disabled meanwhile and the submit handler re-checks it. When the operator pins an allowlist,
+an off-allowlist endpoint is refused with a message before the request, because the CSP `connect-src`
+would otherwise block it opaquely. The form offers bearer mode only when `CONSOLE_ALLOW_BEARER` is set,
+because a bearer token lives in `localStorage`. Otherwise it opens in cookie mode whatever `mode=` or the
+saved instance's mode says, and shows no toggle. With it set, the initial mode is the URL's, else the
+saved instance's, else bearer, because that setting marks a bearer-only backend that cannot accept a
+password. This is the form only: the API client still follows the active instance's saved mode, and the
+seeded default instance is bearer when `auth.mode` is bearer.

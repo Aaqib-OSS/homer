@@ -50,9 +50,8 @@ function renderTabs(overrides: Partial<React.ComponentProps<typeof ArtifactOutpu
   return { ...utils, onDownload };
 }
 
-// Raw harness NDJSON — no longer sniffed for view-mode detection (that is now
-// solely driven by the `kind` prop), but still exercised as opaque raw/log
-// content that must load past the "empty content" gate.
+// Raw harness NDJSON, used as opaque raw/log content that must load past the
+// empty-content gate.
 const NDJSON =
   '{"type":"system","subtype":"init","model":"claude-sonnet-4-6"}\n' +
   '{"type":"assistant","message":{"content":[{"type":"text","text":"hello from claude"}]}}\n';
@@ -295,9 +294,8 @@ describe('ArtifactOutputTabs — live LLM stream', () => {
   });
 
   it('shows intermediate events live, not only the final turn end (regression)', async () => {
-    // The full replayable /llm-events stream (not the old broadcast-only
-    // event feed) must carry the early assistant turn + tool call, not
-    // only the terminal turn_end.
+    // The replayable /llm-events stream must carry the early assistant turn and
+    // tool call, not only the terminal turn_end.
     artifactContentMock.mockReturnValue(streamingArtifact);
     logStreamMock.mockReturnValue({ content: 'raw harness line\n', offset: 18, ended: false });
     llmEventStreamMock.mockReturnValue({
@@ -350,9 +348,8 @@ describe('ArtifactOutputTabs — download button', () => {
 
   it('hides the download button when the active tab path is null', async () => {
     renderTabs({ stdoutPath: null });
-    // Content is loaded (this block's beforeEach sets isLoading: false with
-    // data present), but the stdout path itself is null, so no filename/button
-    // can be derived from it.
+    // Content is loaded but the stdout path is null, so no filename or button
+    // can be derived.
     expect(screen.queryByRole('button', { name: /cmd_0\.out/ })).not.toBeInTheDocument();
   });
 

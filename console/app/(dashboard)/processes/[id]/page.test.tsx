@@ -73,10 +73,7 @@ vi.mock('@/lib/hooks/use-now', () => ({
   useNow: () => 1_700_000_100,
 }));
 
-// React's `use()` always suspends on a plain Promise, even an already-settled
-// one. Next.js's real params promise pre-attaches the {status, value}
-// thenable-cache fields React's `use()` reads synchronously. Mirror that here
-// so the page renders in one synchronous pass.
+// Pre-attaches the {status, value} fields React's `use()` reads synchronously, like Next.js's params.
 function fulfilledParams(id: string): Promise<{ id: string }> {
   const p = Promise.resolve({ id }) as Promise<{ id: string }> & {
     status?: string;

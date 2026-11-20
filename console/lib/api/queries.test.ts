@@ -990,9 +990,8 @@ describe('process hooks', () => {
   });
 
   it('useProcess keeps polling after a failure, with no data to read', async () => {
-    // The interval predicate runs on a query whose data is still undefined — at
-    // mount and after the rejection — so a status read that assumes data would
-    // break the very query it is polling.
+    // The interval predicate runs on a query with no data (at mount, after a
+    // rejection), so it must not assume data.
     const failure = new Error('Failed to fetch');
     vi.mocked(homerApi.getProcess).mockRejectedValue(failure);
 

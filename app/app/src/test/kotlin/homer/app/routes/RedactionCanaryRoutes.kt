@@ -80,7 +80,7 @@ internal val CANARY_ROUTES: List<CanaryRoute> =
         exempt("GET /api/v1/readyz", "readiness probe: no run data"),
         exempt("POST /api/v1/auth/login", "auth: no run data"),
         exempt("POST /api/v1/auth/logout", "auth: no run data"),
-        exempt("GET /api/v1/auth/me", "session identity: no run data"),
+        exempt("GET /api/v1/auth/me", "caller identity: no run data"),
         exempt("POST /api/v1/callback/questions", CALLBACK_CREDENTIAL),
         exempt("GET /api/v1/callback/questions/{id}", CALLBACK_CREDENTIAL),
         exempt("POST /api/v1/callback/tags", CALLBACK_CREDENTIAL),

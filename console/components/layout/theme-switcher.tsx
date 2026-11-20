@@ -31,13 +31,9 @@ const BUILT_IN_OPTIONS: ThemeOption[] = [
 const SYSTEM_OPTION: ThemeOption = { value: 'system', label: 'System', icon: Monitor };
 
 /**
- * The built-ins plus one entry per valid `CONSOLE_THEMES` name. Invalid entries
- * are dropped by the parser (and logged once by the root layout), so they add no
- * item here; a custom theme's item is never rendered if it is not loadable.
- *
- * When the root layout resolved a `CONSOLE_THEME_MODES` pair, the built-ins are
- * hidden instead and the list is the configured entries plus `System` — which
- * `next-themes` resolves to that pair's light or dark theme per the OS scheme.
+ * The built-ins plus one entry per valid `CONSOLE_THEMES` name; the parser drops invalid ones.
+ * When a `CONSOLE_THEME_MODES` pair resolved, the built-ins are hidden: the list is the
+ * configured entries plus `System`, which `next-themes` maps to that pair per the OS scheme.
  */
 function themeOptions(): ThemeOption[] {
   const custom = resolveThemeEntries(appConfig.themes.entries).entries.map(
@@ -56,9 +52,9 @@ export function ThemeSwitcher() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" aria-label="Select theme">
-          {/* eslint-disable-next-line no-restricted-syntax -- the sun/moon swap keys on the .dark class itself */}
+          {/* eslint-disable-next-line no-restricted-syntax -- only .dark shows the moon; every other theme shows the sun */}
           <Sun className="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-          {/* eslint-disable-next-line no-restricted-syntax -- the sun/moon swap keys on the .dark class itself */}
+          {/* eslint-disable-next-line no-restricted-syntax -- only .dark shows the moon; every other theme shows the sun */}
           <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
           <span className="sr-only">Select theme</span>
         </Button>

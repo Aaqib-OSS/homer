@@ -314,11 +314,10 @@ rather than defence-in-depth, so pin it exactly. See
 #### CSP Headers
 
 **Do not add a CSP header at the proxy.** The console already emits a
-per-request nonce-based policy with `'strict-dynamic'` from `middleware.ts`,
-and deliberately relaxes it to `'unsafe-eval'`/`'unsafe-inline'` on exactly one
-route (`/agents/<name>/edit`, which hosts the Monaco editor). A blanket proxy
-header would apply that relaxation site-wide and override the stricter policy
-everywhere else — strictly worse than the built-in behaviour.
+per-request nonce-based policy with `'strict-dynamic'` from `middleware.ts`, on
+every route, the Monaco editor included. A proxy header cannot carry that
+per-request nonce, so it would either break the console's scripts or have to
+allow inline scripts — strictly worse than the built-in behaviour.
 
 Note the built-in CSP is only emitted in production builds. If you need
 additional headers at the proxy, add ones the app does not set (for example

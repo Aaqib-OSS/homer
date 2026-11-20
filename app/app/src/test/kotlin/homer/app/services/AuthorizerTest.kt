@@ -19,6 +19,14 @@ class AuthorizerTest {
         Authorizer(principals = p.toMap(), agentGrants = emptyMap(), enabled = true)
 
     @Test
+    fun `principalGrants answers what a configured principal holds and null for an unknown name`() {
+        val held = Authorizer.PrincipalGrants(false, listOf(Grant(listOf("a"), listOf(Action.READ))))
+        val a = authz("ci" to held)
+        assertEquals(held, a.principalGrants("ci"))
+        assertNull(a.principalGrants("nobody"))
+    }
+
+    @Test
     fun `admin has every action on every agent`() {
         val a = authz("root" to Authorizer.PrincipalGrants(admin = true, grants = emptyList()))
         assertTrue(a.hasAction("root", Action.DEBUG, "anything"))

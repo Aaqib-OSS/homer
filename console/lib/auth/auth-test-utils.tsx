@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { render } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from './auth-context';
@@ -9,14 +10,16 @@ import { AuthProvider, useAuth } from './auth-context';
  */
 export function StatusProbe() {
   const { status, user, login, logout } = useAuth();
+  const [logoutOutcome, setLogoutOutcome] = useState('');
   return (
     <div>
       <div data-testid="status">{status}</div>
+      <div data-testid="logout-outcome">{logoutOutcome}</div>
       <div data-testid="username">{user?.username ?? ''}</div>
       <div data-testid="role">{user?.role ?? ''}</div>
       <div data-testid="grant-count">{user?.grants?.length ?? ''}</div>
       <button onClick={() => void login('alice', 'pw')}>do-login</button>
-      <button onClick={() => void logout()}>do-logout</button>
+      <button onClick={() => void logout().then(setLogoutOutcome)}>do-logout</button>
     </div>
   );
 }
