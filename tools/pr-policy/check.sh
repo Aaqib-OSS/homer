@@ -1,6 +1,6 @@
 #!/bin/sh
-# PR policy check: the pull request links an issue of this repository labelled `accepted`; the factory's release pull request is exempt as a whole (ADR-0090).
-# Usage: tools/pr-policy/check.sh OWNER/REPO <closing-issues.json; the exemption reads PR_AUTHOR_ID, PR_AUTHOR_TYPE, PR_HEAD_REPO, PR_HEAD_REF, PR_FILES (`STATUS PATH` lines).
+# PR policy: the PR links an `accepted` issue of this repository; the factory's release PR is exempt whole (ADR-0090).
+# Usage: check.sh OWNER/REPO <closing-issues.json; the exemption reads PR_* (PR_FILES: `STATUS PATH` lines).
 set -eu
 
 repo=$1

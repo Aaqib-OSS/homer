@@ -130,8 +130,9 @@ function pathLike(span, dir, dirs) {
   return ['.', '..'].includes(first) || dirs.has(first) || dirs.has(join(dir, first))
 }
 
-/** Checks the links, anchors and CLAUDE.md paths of the `walk` files against `targets`.
- * @param {{walk: string[], targets: Iterable<string>, read: (path: string) => string, linkDir?: Record<string, string> (files whose links resolve from another directory)}} repo
+/**
+ * Checks the links, anchors and CLAUDE.md paths of the `repo.walk` files against `repo.targets`, read with `repo.read`;
+ * `repo.linkDir` maps a file whose links resolve from another directory to that directory.
  * @returns {{ problems: string[], counts: { files: number, links: number, anchors: number, paths: number } }}
  */
 export function checkLinks({ walk, targets, read, linkDir = {} }) {

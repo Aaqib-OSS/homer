@@ -1,7 +1,7 @@
 /**
- * Diff mode of the quality gate (ADR-0082): runs the checks of checks.json that a working-tree change can affect, with only the tests related to it, and prints what they find.
- * Usage (repository root, JAVA_HOME on a JDK 25): node tools/quality/changed.mjs [--base <rev>] [--only <check>[,<check>…]]
- * Exit codes as the gate's: 0 no findings; 3 findings only in warn-mode checks; 1 findings in a required check, a failed build or test, or a tool error.
+ * Diff mode of the quality gate (ADR-0082): runs the checks a working-tree change can affect, with only its tests.
+ * Usage (repository root, JDK 25 JAVA_HOME): node tools/quality/changed.mjs [--base <rev>] [--only <check>[,<check>…]]
+ * Exit codes as the gate's: 0 clean; 3 warn-mode findings only; 1 a required finding, failed build or test, tool error.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';

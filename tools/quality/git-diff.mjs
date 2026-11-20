@@ -46,9 +46,9 @@ export function changedFiles(base, cwd = process.cwd()) {
 }
 
 /**
- * `git diff -U0` → Map(repo path → Set of added/changed line numbers in the new version).
- * A file header is read only between a `diff --git` line and the first hunk, so an added line starting `+++ ` is never taken for one.
- * A path git still quotes cannot be read reliably, so it is an error, not a skip.
+ * `git diff -U0` → Map(repo path → Set of added/changed line numbers in the new version). A file header is read only
+ * between a `diff --git` line and the first hunk, so an added `+++ ` line is never taken for one. A path git still
+ * quotes cannot be read reliably: an error, not a skip.
  */
 export function changedLines(diff) {
   const files = new Map();

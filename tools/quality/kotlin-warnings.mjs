@@ -1,7 +1,7 @@
 /**
- * kotlin-warnings: every Kotlin compiler warning in a Gradle build log (ADR-0082).
+ * kotlin-warnings (ADR-0082): every Kotlin compiler warning in a Gradle build log. Only tasks that ran print warnings,
+ * so a module whose task was cached or up to date is named, not counted: changed code always recompiles.
  * Usage: node tools/quality/kotlin-warnings.mjs <gradle.log> [out dir]
- * Only tasks that ran print warnings; a module whose task was cached or up to date is named in the report, not counted, as changed code always recompiles.
  */
 import fs from 'node:fs';
 import { repoRelative, runMain, writeCheck } from './lib.mjs';

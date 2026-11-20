@@ -1,7 +1,7 @@
 /**
- * infra-lint: shellcheck over every `*.sh`, actionlint and zizmor over the workflows, hadolint over every Dockerfile, of the files git tracks or does not ignore (ADR-0082).
- * Usage (repository root): node tools/quality/infra-lint.mjs [out dir]. The four tools must be on the PATH; zizmor runs `--offline`, needing no network or token.
- * Exceptions are inline (`# shellcheck disable=`, `# zizmor: ignore[…]`, `# hadolint ignore=`) or in `.hadolint.yaml`, each with its reason.
+ * infra-lint (ADR-0082): shellcheck on `*.sh`, actionlint and zizmor `--offline` on workflows, hadolint on Dockerfiles,
+ * of the files git tracks or does not ignore; exceptions are inline or in `.hadolint.yaml`, each with its reason.
+ * Usage (repository root): node tools/quality/infra-lint.mjs [out dir]; the four tools must be on the PATH.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';

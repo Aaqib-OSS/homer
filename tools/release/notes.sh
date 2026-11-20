@@ -1,6 +1,6 @@
 #!/bin/sh
-# The GitHub release page of a version (release.yml): its notes are the version's CHANGELOG.md section plus an images section of digests and the verify command (CONTRIBUTING.md#releasing).
-# Usage: notes.sh changelog VERSION [CHANGELOG] | images TAG <LINES (`IMAGE DIGEST [SUFFIX]` each) | merge BODY SECTION; REPO (default livesport/homer) names the repository and GHCR namespace.
+# A version's release notes (release.yml): its CHANGELOG.md section plus image digests and verify commands.
+# Usage: notes.sh changelog VERSION [CHANGELOG] | images TAG <`IMAGE DIGEST [SUFFIX]` lines | merge BODY SECTION
 set -eu
 
 repo=${REPO:-livesport/homer}

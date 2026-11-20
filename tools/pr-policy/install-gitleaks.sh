@@ -1,6 +1,6 @@
 #!/bin/sh
-# Installs the gitleaks release pinned in gitleaks.env into DIR (prints the binary's path), refusing an archive whose SHA-256 differs from the pin.
-# Usage: tools/pr-policy/install-gitleaks.sh DIR. Test-only overrides: HOMER_TEST_GITLEAKS_URL (download URL), HOMER_TEST_UNAME (the "OS-arch").
+# Installs the gitleaks release pinned in gitleaks.env into DIR, prints its path; an archive off the SHA-256 pin fails.
+# Usage: install-gitleaks.sh DIR. Test-only: HOMER_TEST_GITLEAKS_URL (download URL), HOMER_TEST_UNAME ("OS-arch").
 set -eu
 
 dir=$1

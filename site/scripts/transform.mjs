@@ -18,9 +18,10 @@ const IMAGE_FILE = /\.(png|jpe?g|gif|svg|webp|avif|bmp|ico)$/i
 /** Where an image from the repository is served on the site, relative to the site root. */
 export const REPO_ASSETS = '_repo'
 
-/** Returns {page, deadLinks, images}: the site page, its dead links, the repository image paths to copy under REPO_ASSETS.
- * @param {string} markdown the file's contents
- * @param {{from: string (repo path), to: string (site path), siteOf: (p: string) => string | undefined, kind: (p: string) => 'file' | 'dir' | undefined, repoUrl: string, ref: string}} ctx
+/**
+ * `{ page, deadLinks, images }` of a file's `markdown`: the site page, its dead links, the repository image paths to
+ * copy under REPO_ASSETS. `ctx`: `from` (repo path), `to` (site path), `siteOf(p)` (site path or undefined),
+ * `kind(p)` ('file', 'dir' or undefined), `repoUrl`, `ref`.
  */
 export function transform(markdown, ctx) {
   const deadLinks = []

@@ -1,5 +1,5 @@
 /**
- * detekt: the findings of each module's type-resolved `detektMain` SARIF report (ADR-0082), the rule sets from app/config/detekt/detekt.yml.
+ * detekt: each module's type-resolved `detektMain` SARIF findings (ADR-0082); rule sets: app/config/detekt/detekt.yml.
  * Usage (repository root): node tools/quality/detekt.mjs [out dir]
  * Coroutine and potential-bug findings are major, as they point at a defect; exception-handling findings are minor.
  */

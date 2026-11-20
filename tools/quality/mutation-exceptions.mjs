@@ -1,7 +1,7 @@
 /**
- * Accepted mutation-test exceptions (ADR-0082): a reviewed JSON file per stack mapping an exception key, with no line number, to the reason its surviving mutant is accepted; not a baseline.
- * Key forms and the `{ "reason", "count" }` entry of an `<inline>` key: docs/quality-checks.md. Only undetected mutants are offered to `applyExceptions`.
- * An entry matching no mutant in a full run is itself a finding.
+ * Accepted mutation-test exceptions (ADR-0082), not a baseline: a reviewed JSON file per stack maps a key without a
+ * line number to why its surviving mutant is accepted (key forms: docs/quality-checks.md). Only undetected mutants
+ * reach `applyExceptions`; an entry matching no mutant in a full run is itself a finding.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -40,8 +40,9 @@ export function loadExceptions(file) {
 const reasonOf = (entry) => (isObject(entry) ? entry.reason : entry);
 
 /**
- * Splits `mutants` by `keyOf` into `kept` and `accepted` (`{ mutant, key, reason }`). Only for a `full` run, since a changed-lines run sees too few mutants:
- * `stale` lists the keys matching no mutant, `miscounted` (`{ key, matched, expected }`) the entries whose `count` differs from their matches, all still accepted.
+ * Splits `mutants` by `keyOf` into `kept` and `accepted` (`{ mutant, key, reason }`). A `full` run only (a
+ * changed-lines run sees too few) also lists `stale` keys matching no mutant and `miscounted` entries (`{ key, matched,
+ * expected }`) whose `count` differs from their matches; both stay accepted.
  */
 export function applyExceptions(mutants, keyOf, exceptions, { full }) {
   const kept = [];

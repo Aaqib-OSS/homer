@@ -1,6 +1,6 @@
 /**
- * Backend mutation testing of a change (check `mutation-backend`, ADR-0082): PIT mutates the classes whose lines `MUTATE_BASE..HEAD` (the working tree with `MUTATE_WORKTREE=1`) adds or modifies; findings and score cover only those lines.
- * Only `:app` is mutated. A run over `MUTATE_BUDGET_SEC` (default 14 minutes, inside the CI job's 20) is stopped and reported skipped, left to the weekly full run, so the job is not cancelled without a report.
+ * Mutation testing of a change (`mutation-backend`, ADR-0082): PIT mutates the `:app` classes MUTATE_BASE..HEAD changes
+ * (the working tree with MUTATE_WORKTREE=1), scoring those lines; past MUTATE_BUDGET_SEC it stops and reports skipped.
  * Usage (repository root, JAVA_HOME on a JDK 25): MUTATE_BASE=<rev> node tools/quality/pit-changed.mjs
  */
 import { spawnSync } from 'node:child_process';
@@ -48,8 +48,9 @@ export function codeLines(source, lines) {
 }
 
 /**
- * The changed backend sources: `{ globs, lines }`, `lines` mapping each source's PIT path to its repository path and changed lines. `read` returns a file's text, or null for one to skip.
- * A source whose changed lines hold no code is left out, so a comment-only change runs no PIT; all changed lines are kept, as PIT places no mutant on a comment line.
+ * The changed backend sources as `{ globs, lines }`, `lines` mapping a PIT path to its repo path and changed lines;
+ * `read` returns a file's text, or null to skip it. A source whose changed lines hold no code is left out; else all its
+ * changed lines are kept, as PIT places no mutant on a comment line.
  */
 export function changedSources(changed, read) {
   const globs = new Set();

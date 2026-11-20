@@ -1,5 +1,5 @@
 #!/bin/sh
-# Tests secret-scan.sh against the pinned gitleaks: a merge commit's conflict resolution, rules from the base only, fail closed on an unresolvable range.
+# Tests secret-scan.sh with the pinned gitleaks: merge conflict resolutions, base-only rules, unresolvable ranges.
 # Usage: tools/pr-policy/secret-scan-test.sh   (from anywhere; downloads gitleaks, needs git)
 set -eu
 

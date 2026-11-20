@@ -1,7 +1,7 @@
 /**
- * Renders one check's report files as Markdown for a GitHub Actions job summary: the summary values as a table, the findings and the accepted exceptions (`<check>-accepted.txt`) each in a collapsed list.
+ * A check's report files as Markdown for a job summary: summary values as a table, findings and accepted exceptions in
+ * collapsed lists, every value HTML-escaped, since findings quote source text and the summary renders HTML.
  * Usage (repository root): node tools/quality/step-summary.mjs <dir> <check> <heading> >> "$GITHUB_STEP_SUMMARY"
- * Findings quote source text (Stryker replacements, PIT descriptions), so every value is HTML-escaped: the summary renders HTML.
  */
 import fs from 'node:fs';
 import path from 'node:path';

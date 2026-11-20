@@ -630,7 +630,8 @@ def test_traversed_edges_stops_at_write_less_checkpoints():
 
 
 def test_traversed_edges_stops_at_write_cap():
-    """The write cap bounds the scan on its own: each checkpoint stays well under it, so only the write counter can stop the loop."""
+    """The write cap bounds the scan on its own: each checkpoint stays well under it, so only the write counter
+    can stop the loop."""
     checkpoints_per_batch = 100
     total_checkpoints = 10_000_000
     writes_consumed = 0
@@ -658,7 +659,8 @@ def test_traversed_edges_stops_at_write_cap():
 def test_traversed_edges_limits_the_saver_list_read(
     env, shared_saver, monkeypatch, tmp_path
 ):
-    """`saver.list` receives the checkpoint cap as its own `limit`, so the store read is bounded at the source (ADR-0047 rule 4)."""
+    """`saver.list` receives the checkpoint cap as its own `limit`, so the store read is bounded at the source
+    (ADR-0047 rule 4)."""
     thread_id = _run_complete(monkeypatch, tmp_path)
 
     seen_limits = []

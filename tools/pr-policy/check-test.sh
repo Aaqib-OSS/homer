@@ -42,7 +42,8 @@ expect fail "an accepted issue in another repository" "someone/homer:4:accepted"
 expect pass "an accepted issue" "livesport/homer:5:bug,accepted"
 expect pass "one accepted issue among several" "livesport/homer:6:" "someone/homer:7:accepted" "livesport/homer:8:accepted"
 
-# The factory's release pull request, exempt only as a whole (ADR-0090, 2026-10-24 amendment): its bot account, an own-repository release branch, release files only.
+# The factory's release pull request, exempt only as a whole (ADR-0090, 2026-10-24 amendment): its bot account,
+# an own-repository release branch, release files only.
 release() {
   want=$1 name=$2 type=$3 id=$4 repo=$5 ref=$6 files=$7 list=${8:-$scratch/files.txt}
   answer >"$scratch/answer.json"

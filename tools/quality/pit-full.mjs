@@ -1,7 +1,7 @@
 /**
- * The whole backend through PIT (check `mutation-backend`, ADR-0082), sharded per package (a directory directly holding `.kt` files) so each shard fits one GitHub Actions job (6 hours at most): the Nightly workflow's weekly run.
- * Usage (repository root, JAVA_HOME on a JDK 25): `shards` prints the shard names as JSON; `run <shard>` writes reports/quality/mutation-backend-shards/<shard>.xml;
- * `merge <dir>` reports every <shard>.xml in <dir>, as a full run only when every shard of the checkout is there.
+ * The Nightly weekly PIT run of the whole backend (`mutation-backend`, ADR-0082), a shard per `.kt` directory to fit a
+ * 6-hour Actions job. Usage (repository root, JDK 25): `shards` prints the names as JSON; `run <shard>` writes its XML
+ * to reports/quality/mutation-backend-shards/; `merge <dir>` reports them, as a full run only when all are there.
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';

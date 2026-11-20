@@ -1,7 +1,7 @@
 /**
- * architecture-backend: the Konsist rule violations of `:architecture:test` (ADR-0082), one finding per `VIOLATION <path>:<line> <text>` line of a failed testcase.
+ * architecture-backend (ADR-0082): a finding per `VIOLATION <path>:<line> <text>` line of a failed Konsist testcase of
+ * `:architecture:test`; the check `architecture-backend-pending` reads `:architecture:architectureReportOnly` instead.
  * Usage: node tools/quality/architecture-backend.mjs [test-results dir] [out dir] [check]
- * The check `architecture-backend-pending` reads the report-only rules of `:architecture:architectureReportOnly`.
  */
 import fs from 'node:fs';
 import path from 'node:path';

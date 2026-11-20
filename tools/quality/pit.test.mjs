@@ -153,8 +153,8 @@ test('a null-return mutant on a suspend function is ignored only when its declar
 test('the Unit branches of the suspend decision: every body form but a block or : Unit keeps the mutant', () => {
   const suspend = (method) => mutation('SURVIVED', { method, descriptor: '(Lkotlin/coroutines/Continuation;)Ljava/lang/Object;', description: `replaced return value with null for homer/app/config/A::${method}#private suspend fun ${method}(` });
   const unit = (lines) => withKeys(parsed(suspend('tick')), lines)[0].unitReturn;
-  // Kept: an inferred `=` body, an overload the name cannot tell apart, an unclosed parameter list, a where clause before an inferred body, an unreadable source.
-  // The scan reads code text, so a `: Unit` in a string literal and a declaration example in a KDoc decide nothing.
+  // Kept: an inferred `=` body, an ambiguous overload, an unclosed parameter list, a where clause before an inferred
+  // body, an unreadable source; a `: Unit` in a string literal or a declaration example in a KDoc decides nothing.
   assert.equal(unit(lineOf('private suspend fun tick() = Unit')), false);
   assert.equal(unit(lineOf('private suspend fun tick(x: Int) {', 'private suspend fun tick(x: Long) {')), false);
   assert.equal(unit(lineOf('private suspend fun tick(delay: Long')), false);

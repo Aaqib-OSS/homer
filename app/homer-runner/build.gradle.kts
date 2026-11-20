@@ -37,7 +37,7 @@ configurations.named("testRuntimeClasspath") {
     exclude(group = "org.slf4j", module = "slf4j-simple")
 }
 
-// The release this runner is built from: -PhomerVersion, else HOMER_VERSION (ADR-0093), else `dev`; an unsafe value fails the build.
+// The runner's release: -PhomerVersion, else HOMER_VERSION (ADR-0093), else `dev`; an unsafe value fails the build.
 // A copy of RunnerTagValidation.PATTERN, which a build script cannot read; RunnerVersionTest pins it.
 val runnerVersionPattern = Regex("^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$")
 val runnerVersion: String =
