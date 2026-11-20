@@ -33,6 +33,11 @@ describe('capabilitiesFor', () => {
     expect(c.canKillProcess({ agentName: 'deploy-web', owner: 'bob' })).toBe(true);
     expect(c.canKillProcess({ agentName: 'deploy-web', owner: 'session:bob' })).toBe(false);
   });
+  it('a bearer principal the server did not report owns no run, not even one stamped with its placeholder name', () => {
+    const fallback: AuthUser = { username: 'bearer', role: null, grants: [], unreported: true };
+    const c = capabilitiesFor(fallback, false, 'bearer');
+    expect(c.canKillProcess({ agentName: 'deploy-web', owner: 'bearer' })).toBe(false);
+  });
   it('a session user does not own a run stamped with its bare name', () => {
     const c = capabilitiesFor(scoped, false, 'cookie');
     expect(c.canKillProcess({ agentName: 'deploy-web', owner: 'bob' })).toBe(false);

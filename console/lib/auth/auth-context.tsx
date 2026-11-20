@@ -36,6 +36,8 @@ export interface AuthUser {
   username: string;
   role: Role;
   grants: Grant[];
+  /** True when an older server named no principal for the bearer token: `username` is a placeholder. */
+  unreported?: boolean;
 }
 
 interface AuthContextType {
@@ -97,7 +99,7 @@ async function bearerPrincipal(): Promise<AuthUser> {
     if (!(e instanceof HomerApiError) || (e.status !== 401 && e.status !== 404)) throw e;
   }
   await homerApi.getHeartbeat();
-  return { username: 'bearer', role: null, grants: [] };
+  return { username: 'bearer', role: null, grants: [], unreported: true };
 }
 
 async function probeAuthBearer(): Promise<AuthUser> {

@@ -206,12 +206,15 @@ scheme is configured. A request carrying `Authorization: Bearer` is answered
 for the token; any other request for its session cookie, exactly as before.
 The header goes first because it is the credential the caller chose: a bearer
 console on the API's own origin may also carry a stale cookie, which must not
-lock it out or speak for it.
+lock `/me` out or speak for the token there. The secured routes keep
+`FirstSuccessful` in `apiAuth` order, so with both credentials present they can
+act as a different principal than `/me` describes. That gap is UI-only; see the
+ADR-0011 amendment of the same date.
 
 The console reads `/auth/me` in both modes, so `useCan` and the plugin gate see
 the reported role and grants. Against a server that predates this (a `404`, or a
 `401` under a combined scheme) it validates the token with `/heartbeat` and
-grants nothing: no role, no grants. It never falls back to admin — failing open
+grants nothing: no role, no grants, and no run counted as its own. It never falls back to admin — failing open
 is the defect this amendment removes.
 
 ## Pros and Cons of the Options

@@ -17,10 +17,10 @@ export interface Capabilities {
 
 /**
  * The owner the backend stamps on the caller's runs (ADR-0038): `session:{username}` for a
- * session, the token's own name for a bearer token.
+ * session, the token's own name for a bearer token; null when the server named no principal.
  */
 function selfOwnerId(user: AuthUser | null, mode: InstanceMode): string | null {
-  if (!user) return null;
+  if (!user || user.unreported) return null;
   return mode === 'bearer' ? user.username : `session:${user.username}`;
 }
 
