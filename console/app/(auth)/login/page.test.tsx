@@ -59,6 +59,15 @@ async function signIn(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: /^login$/i }));
 }
 
+function findBackendFile(relative: string): string {
+  const target = path.join('app/app/src/main/kotlin/homer/app', relative);
+  for (let dir = __dirname; dir !== path.dirname(dir); dir = path.dirname(dir)) {
+    const candidate = path.join(dir, target);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  throw new Error(`${target} not found above ${__dirname}`);
+}
+
 describe('LoginPage', () => {
   beforeEach(() => {
     login.mockReset();
@@ -176,10 +185,7 @@ describe('LoginPage', () => {
   });
 
   it("counts the cooldown down from the backend's default login refill period", async () => {
-    const serverConfig = fs.readFileSync(
-      path.join(__dirname, '../../../../app/app/src/main/kotlin/homer/app/models/ServerConfig.kt'),
-      'utf8',
-    );
+    const serverConfig = fs.readFileSync(findBackendFile('models/ServerConfig.kt'), 'utf8');
     const refill = /loginRateLimit: RateLimitConfig = RateLimitConfig\(limit = \d+, refillPeriod = (\d+)\)/.exec(serverConfig)?.[1];
     expect(refill).toBeDefined();
     login.mockResolvedValue('rate-limited');
