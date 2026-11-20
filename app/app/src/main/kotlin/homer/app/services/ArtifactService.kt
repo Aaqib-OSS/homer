@@ -137,9 +137,8 @@ class ArtifactService(
     }
 
     /**
-     * Streams an artifact file to the output stream
-     * For active files (still being written), uses tail-like incremental streaming
-     * For complete files, streams the entire file at once
+     * Copies [artifactPath] to [output] once, up to its end at read time. A file its process still
+     * writes is not followed; the route marks it `X-File-Complete: false`.
      */
     suspend fun streamArtifact(
         artifactPath: Path,

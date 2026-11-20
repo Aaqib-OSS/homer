@@ -176,8 +176,8 @@ internal class ContinuationService(
     }
 
     /**
-     * [validate] plus every sub agent's dispatchability and hop authorization. Call it before starting any
-     * sub, so a 4xx leaves none untracked. See ADR-0026, ADR-0039.
+     * [validate], a sub count of 1..`maxJoinSubs`, and every sub agent's dispatchability and hop authorization.
+     * Call it before starting any sub, so a 4xx leaves none untracked. See ADR-0026, ADR-0039.
      */
     suspend fun validateJoin(
         originProcessId: Int,

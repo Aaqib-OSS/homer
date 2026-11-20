@@ -174,5 +174,7 @@ A `403` from the race above must leave no directory behind. A denied `write()` r
 empty chain of parent directories it created for the file. A denied `create()` removes the new
 agent directory while it holds no `agent.yaml`. A leftover directory with no definition would
 wedge the name, because every retry hits the `409` for an existing directory, and the file API
-cannot delete directories. A file raced into the new directory makes the removal fail, and the
-directory stays; the `409` then reports it truthfully.
+cannot delete directories. A leftover chain from `write()` wedges no name, but it costs every later
+discovery walk entries of the agent's budget (ADR-0068), and nothing can remove it through the API.
+A file raced into the new directory makes the removal fail, and the directory stays; the `409` then
+reports it truthfully.

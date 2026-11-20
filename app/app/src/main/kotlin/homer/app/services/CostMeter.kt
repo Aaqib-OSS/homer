@@ -14,9 +14,9 @@ import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
 /**
- * Soft spend caps over the durable `cost_entries` ledger: a 60 s global window ([CostLimits.globalUsdPerMin]) and
- * a 24 h per-agent one ([CostLimits.perAgentUsdPerDay]). [checkCaps] runs before a run, [recordCost] after one.
- * See ADR-0035, ADR-0007.
+ * Soft spend caps over the durable `cost_entries` ledger: a rolling 60 s global window ([CostLimits.globalUsdPerMin])
+ * and a rolling 24 h per-agent one ([CostLimits.perAgentUsdPerDay]). [checkCaps] runs before a run, [recordCost]
+ * after each priced LLM attempt. See ADR-0035, ADR-0007.
  */
 @OptIn(ExperimentalTime::class)
 class CostMeter(

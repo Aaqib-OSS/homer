@@ -46,7 +46,7 @@ class Authorizer(
 
     /**
      * Whether [principal] may read runner state (`GET /runners`, `/runners/queue`, `/maintenance`): an
-     * admin, unsecured mode, or a READ grant on the literal `*`. An unknown principal fails closed. ADR-0111.
+     * admin, unsecured mode, or a READ grant on the literal `*`. An unknown or absent principal fails closed. ADR-0111.
      */
     fun canReadServerState(principal: String?): Boolean = isAdmin(principal) || readableAgents(principal)?.contains("*") == true
 

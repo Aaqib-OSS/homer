@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-16
 deciders: Lukáš Vlk
-amended: 2026-09-30, 2026-11-20
+amended: 2026-09-30, 2026-10-09, 2026-11-12, 2026-11-20
 ---
 # ADR-0023: Completion continuations — resume a parked workflow when a watched process ends
 
@@ -176,12 +176,18 @@ with their `continuation_watches` rows, once their `created_at` is older than
 its `created_at` anchor and its consequences are recorded once, in
 [ADR-0021's 2026-09-30 amendment](0021-ask-and-dispatch.md#amendment-2026-09-30-settled-records-are-pruned-after-a-retention-window).
 
-## Amendment (2026-11-20): a registration re-checks its watched run, and retries back off to an hour
+## Amendment (2026-11-20): a registration re-checks its watched run, and the retry budget spans about two hours
 
 The watched sub can end between its start and the continuation's insert. Its terminal hook then
 finds no `PENDING` row. `create` therefore re-reads the watched run's status after the insert and
 fires at once when it is already terminal; the claim CAS keeps that exactly-once against a
 concurrent hook. ADR-0026 does the same for a join.
 
-The retry delay doubles from 60 s and is capped at 1 h, so a refusal that clears with a rolling
-window, such as a cost cap or a cooldown, is retried within an hour of clearing.
+The retry budget is 8 fire attempts: the first fire and 7 retries. The delay before each retry
+doubles from 60 s (60 s, 2, 4, 8, 16 and 32 min) and is capped at 1 h, a cap that binds only the
+last one, so the retries span about 2 h 3 min. The sweep re-fires a due row on its next tick, which
+adds up to one `sweepIntervalSec` (default 60 s) per retry, and a row past its TTL expires before
+it spends another attempt. A refusal that clears inside that span and the TTL, such as the 60 s
+global cost window or a short cooldown, is retried within an hour, plus one sweep interval, of
+clearing. One that outlasts it, typically the 24 h per-agent cost cap or a cooldown longer than
+about 2 h, ends `FAILED` and is never retried.
