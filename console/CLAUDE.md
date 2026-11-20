@@ -292,8 +292,8 @@ nonce its own scripts.
 - Bearer tokens live in `localStorage` namespaced per instance
   (`homer_auth_token::{instanceId}`). A legacy un-namespaced token is
   migrated into the seeded default instance on first load.
-- `AuthProvider` probes the active instance on mount (`/auth/me` in cookie
-  mode, `/heartbeat` in bearer mode). `switchInstance(id)` repoints the
+- `AuthProvider` probes the active instance's `/auth/me` on mount in both
+  modes (ADR-0059; a token an old server can't answer: `/heartbeat`, no grants). `switchInstance(id)` repoints the
   active id, clears the React Query cache, and re-probes; global SSE streams
   reconnect on the active-instance id change.
 - The login screen carries the **endpoint URL** + mode toggle: on submit it

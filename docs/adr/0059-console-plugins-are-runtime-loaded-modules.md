@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-07
 deciders: Lukáš Vlk
+amended: 2026-11-20
 ---
 # ADR-0059: Console plugins are same-origin ES modules imported at runtime
 
@@ -189,6 +190,29 @@ What same-origin buys, and what it does not:
 - `Dockerfile` must copy `public/` explicitly; `output: 'standalone'` omits it.
   Before this ADR the console shipped without `public/` at all — it happened to
   be unused — so the omission was invisible.
+
+## Amendment (2026-11-20): capabilities come from `/auth/me` in both auth modes
+
+The gate above is only as good as the capabilities it filters against. In
+bearer mode the console had none to read — `GET /api/v1/auth/me` answered only
+a session cookie — so it gave every bearer token a synthetic `role: 'admin'`.
+Every bearer user therefore imported every `@admin` plugin and saw every
+admin-only page, whatever the token's own grants: the gate decided nothing.
+
+The backend now answers `/auth/me` for a bearer token too, with that token's
+name, role and grants from the same `Authorizer` data the routes enforce, and
+never the token itself. The route is mounted whenever a `bearer` or `password`
+scheme is configured. A request carrying `Authorization: Bearer` is answered
+for the token; any other request for its session cookie, exactly as before.
+The header goes first because it is the credential the caller chose: a bearer
+console on the API's own origin may also carry a stale cookie, which must not
+lock it out or speak for it.
+
+The console reads `/auth/me` in both modes, so `useCan` and the plugin gate see
+the reported role and grants. Against a server that predates this (a `404`, or a
+`401` under a combined scheme) it validates the token with `/heartbeat` and
+grants nothing: no role, no grants. It never falls back to admin — failing open
+is the defect this amendment removes.
 
 ## Pros and Cons of the Options
 

@@ -49,7 +49,8 @@ interface AuthContextType {
    * In `cookie` mode: posts username + password to `/api/v1/auth/login` and
    * waits for the resulting `homer_session` cookie + `/me` refetch before
    * resolving. In `bearer` mode: ignores `username`, stores `password` as
-   * the bearer token, probes `/heartbeat`. In `disabled` mode: no-op.
+   * the bearer token, reads the token's principal from `/auth/me`. In
+   * `disabled` mode: no-op.
    *
    * Returns `'ok'` on success, `'invalid-credentials'` on rejection,
    * `'rate-limited'` when the login limiter returns 429, or `'error'` for
@@ -75,8 +76,7 @@ const authProbeDisabled = !appConfig.auth.enabled || appConfig.auth.mode === 'di
  * Probe used to populate the auth-me query cache.
  *  - cookie mode: GET `/api/v1/auth/me` — server returns `{username, role, grants}`
  *    on a valid session cookie, 401 on any other.
- *  - bearer mode: probe `/heartbeat` with the localStorage token. Returns a
- *    synthetic principal so the same query plumbing surfaces both modes.
+ *  - bearer mode: the stored token's principal, from {@link bearerPrincipal}.
  *  - disabled mode: never invoked (query is disabled).
  */
 async function probeAuthCookie(): Promise<AuthUser> {
@@ -84,11 +84,26 @@ async function probeAuthCookie(): Promise<AuthUser> {
   return { username: me.username, role: me.role, grants: me.grants };
 }
 
+/**
+ * The active token's principal from `/auth/me`. An older server that cannot answer it for a token
+ * (404, or 401 under a combined scheme) is only asked `/heartbeat`, and the token gets no role
+ * and no grants: the console never assumes a capability the server did not report (ADR-0059).
+ */
+async function bearerPrincipal(): Promise<AuthUser> {
+  try {
+    const me: MeResponse = await homerApi.getAuthMe();
+    return { username: me.username, role: me.role, grants: me.grants };
+  } catch (e) {
+    if (!(e instanceof HomerApiError) || (e.status !== 401 && e.status !== 404)) throw e;
+  }
+  await homerApi.getHeartbeat();
+  return { username: 'bearer', role: null, grants: [] };
+}
+
 async function probeAuthBearer(): Promise<AuthUser> {
   const token = getActiveToken();
   if (!token) throw new Error('no bearer token');
-  await homerApi.getHeartbeat();
-  return { username: 'bearer', role: 'admin', grants: [] };
+  return bearerPrincipal();
 }
 
 async function probeAuth(): Promise<AuthUser> {
@@ -174,8 +189,7 @@ async function loginBearer(setters: AuthSetters, password: string): Promise<Logi
   // bearer (legacy): username is ignored; password is the token.
   try {
     setActiveToken(password);
-    await homerApi.getHeartbeat();
-    markAuthed(setters, { username: 'bearer', role: 'admin', grants: [] });
+    markAuthed(setters, await bearerPrincipal());
     return 'ok';
   } catch (e) {
     removeActiveToken();

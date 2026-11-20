@@ -16,6 +16,10 @@
 - **Fixed: Claude raw options next to variadic flags** — A raw `options` list that starts with a bare value is no longer taken as a `--file`, `--add-dir` or `--mcp-config` value.
 - **Fixed: a Kubernetes exec channel closed without a status fails as lost** — Such a step now fails with `ExecChannelLost` and kills its leftover command, instead of reporting exit code -1. See [ADR-0103](docs/adr/0103-a-lost-exec-channel-kills-and-fails-without-reattach.md).
 
+### Console
+
+- **Security: bearer-mode sign-in no longer grants admin** — A bearer token now sees only the pages, controls and plugins its own role and grants allow, and none of the admin ones against a server too old to report them. See [ADR-0059](docs/adr/0059-console-plugins-are-runtime-loaded-modules.md).
+
 ## [1.43.2] - 2026-11-18
 
 ### Homer

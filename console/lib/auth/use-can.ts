@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useAuth, type AuthUser } from './auth-context';
 import { agentNameMatches } from '@/lib/utils/agent-name-matcher';
 import { appConfig } from '@/lib/config/app-config';
+import { activeMode, type InstanceMode } from '@/lib/instances/store';
 import type { Action } from '@/types/homer';
 
 export type ProcessLike = { agentName: string; owner?: string | null };
@@ -14,9 +15,13 @@ export interface Capabilities {
   canRetryProcess(p: ProcessLike): boolean;
 }
 
-/** A session user owns runs as `session:{username}`; bearer console mode is synthetic admin. */
-function selfOwnerId(user: AuthUser | null): string | null {
-  return user ? `session:${user.username}` : null;
+/**
+ * The owner the backend stamps on the caller's runs (ADR-0038): `session:{username}` for a
+ * session, the token's own name for a bearer token.
+ */
+function selfOwnerId(user: AuthUser | null, mode: InstanceMode): string | null {
+  if (!user) return null;
+  return mode === 'bearer' ? user.username : `session:${user.username}`;
 }
 
 /**
@@ -25,7 +30,11 @@ function selfOwnerId(user: AuthUser | null): string | null {
  * that allows everything when auth is off (see auth-context.tsx's
  * `authProbeDisabled`).
  */
-export function capabilitiesFor(user: AuthUser | null, unsecured = false): Capabilities {
+export function capabilitiesFor(
+  user: AuthUser | null,
+  unsecured = false,
+  mode: InstanceMode = 'cookie',
+): Capabilities {
   const isAdmin = unsecured || user?.role === 'admin';
   const can = (action: Action, agentName?: string): boolean => {
     if (isAdmin) return true;
@@ -36,7 +45,7 @@ export function capabilitiesFor(user: AuthUser | null, unsecured = false): Capab
     );
   };
   const isOwner = (p: ProcessLike): boolean =>
-    isAdmin || (p.owner != null && p.owner === selfOwnerId(user));
+    isAdmin || (p.owner != null && p.owner === selfOwnerId(user, mode));
   const canSeeProcess = (p: ProcessLike): boolean =>
     isAdmin || isOwner(p) || can('read', p.agentName);
   const canKillProcess = (p: ProcessLike): boolean =>
@@ -48,5 +57,6 @@ export function capabilitiesFor(user: AuthUser | null, unsecured = false): Capab
 export function useCan(): Capabilities {
   const { user } = useAuth();
   const unsecured = !appConfig.auth.enabled || appConfig.auth.mode === 'disabled';
-  return useMemo(() => capabilitiesFor(user ?? null, unsecured), [user, unsecured]);
+  const mode = activeMode();
+  return useMemo(() => capabilitiesFor(user ?? null, unsecured, mode), [user, unsecured, mode]);
 }

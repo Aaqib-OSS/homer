@@ -60,12 +60,13 @@ describe('AuthProvider (bearer mode)', () => {
       expect(screen.getByTestId('status')).toHaveTextContent('anon'),
     );
     expect(screen.getByTestId('username')).toHaveTextContent('');
+    expect(getAuthMe).not.toHaveBeenCalled();
     expect(getHeartbeat).not.toHaveBeenCalled();
   });
 
-  it('lands authed as the synthetic bearer principal when a stored token probes ok', async () => {
+  it('lands authed as the principal /auth/me reports for a stored token', async () => {
     localStorage.setItem(TOKEN_KEY, 'stored-token');
-    getHeartbeat.mockResolvedValue(undefined);
+    getAuthMe.mockResolvedValue({ username: 'ci', role: null, grants: [{ agents: ['echo'], actions: ['run'] }] });
 
     renderWithProvider();
 
@@ -73,16 +74,61 @@ describe('AuthProvider (bearer mode)', () => {
     await waitFor(() =>
       expect(screen.getByTestId('status')).toHaveTextContent('authed'),
     );
-    expect(screen.getByTestId('username')).toHaveTextContent('bearer');
-    expect(getHeartbeat).toHaveBeenCalled();
-    // The bearer principal is synthetic — the backend is never asked for
-    // role/grants, so it is always the fixed admin/no-grants shape.
-    expect(screen.getByTestId('role')).toHaveTextContent('admin');
-    expect(screen.getByTestId('grant-count')).toHaveTextContent('0');
+    expect(screen.getByTestId('username')).toHaveTextContent('ci');
+    expect(screen.getByTestId('role')).toHaveTextContent('');
+    expect(screen.getByTestId('grant-count')).toHaveTextContent('1');
+    expect(getHeartbeat).not.toHaveBeenCalled();
   });
 
-  it('login stores the password as the token, probes /heartbeat, and lands authed', async () => {
-    getHeartbeat.mockResolvedValue(undefined);
+  it.each([404, 401])(
+    'falls back to no role and no grants when an older server answers /auth/me with %i',
+    async (status) => {
+      localStorage.setItem(TOKEN_KEY, 'stored-token');
+      getAuthMe.mockRejectedValue(new HomerApiError('old server', status));
+      getHeartbeat.mockResolvedValue(undefined);
+
+      renderWithProvider();
+
+      await waitFor(() =>
+        expect(screen.getByTestId('status')).toHaveTextContent('authed'),
+      );
+      expect(getHeartbeat).toHaveBeenCalled();
+      expect(screen.getByTestId('role')).toHaveTextContent('');
+      expect(screen.getByTestId('grant-count')).toHaveTextContent('0');
+    },
+  );
+
+  it('lands anon when /auth/me cannot answer and /heartbeat rejects the token', async () => {
+    localStorage.setItem(TOKEN_KEY, 'stale-token');
+    getAuthMe.mockRejectedValue(new HomerApiError('Unauthorized', 401));
+    getHeartbeat.mockRejectedValue(new HomerApiError('Unauthorized', 401));
+
+    renderWithProvider();
+
+    await waitFor(() =>
+      expect(screen.getByTestId('status')).toHaveTextContent('anon'),
+    );
+  });
+
+  it('lands anon without asking /heartbeat when /auth/me fails for another reason', async () => {
+    localStorage.setItem(TOKEN_KEY, 'stored-token');
+    getAuthMe.mockRejectedValue(new HomerApiError('Internal Server Error', 500));
+
+    renderWithProvider();
+
+    await waitFor(() =>
+      expect(screen.getByTestId('status')).toHaveTextContent('anon'),
+    );
+    expect(getHeartbeat).not.toHaveBeenCalled();
+  });
+
+  it('login stores the password as the token, reads /auth/me, and lands authed as that principal', async () => {
+    getAuthMe.mockImplementation(() =>
+      localStorage.getItem(TOKEN_KEY) === 'pw'
+        ? Promise.resolve({ username: 'ops', role: 'admin', grants: [] })
+        : Promise.reject(new HomerApiError('Unauthorized', 401)),
+    );
+    getHeartbeat.mockRejectedValue(new HomerApiError('Unauthorized', 401));
 
     renderWithProvider();
     await waitFor(() =>
@@ -98,13 +144,14 @@ describe('AuthProvider (bearer mode)', () => {
     );
     // login() ignores the username and stores the password argument as the token.
     expect(localStorage.getItem(TOKEN_KEY)).toBe('pw');
-    expect(getHeartbeat).toHaveBeenCalled();
     expect(login).not.toHaveBeenCalled();
-    expect(screen.getByTestId('username')).toHaveTextContent('bearer');
+    expect(screen.getByTestId('username')).toHaveTextContent('ops');
+    expect(screen.getByTestId('role')).toHaveTextContent('admin');
   });
 
   it('login removes the token and stays anon when /heartbeat rejects', async () => {
     // First probe (mount) and the post-login probe both reject.
+    getAuthMe.mockRejectedValue(new HomerApiError('Not Found', 404));
     getHeartbeat.mockRejectedValue(new Error('401'));
 
     let loginResult: string | undefined;
@@ -137,9 +184,10 @@ describe('AuthProvider (bearer mode)', () => {
   it.each([
     ['rate-limited', () => new HomerApiError('Too Many Requests', 429)],
     ['invalid-credentials', () => new HomerApiError('Unauthorized', 401)],
-  ])('login reports %s when the /heartbeat probe rejects the token', async (expected, failure) => {
+  ])('login reports %s when /auth/me rejects the token', async (expected, failure) => {
     // Same classification as cookie mode: a throttled backend must not read as a
     // bad token, or the user retries harder against the limiter.
+    getAuthMe.mockRejectedValue(failure());
     getHeartbeat.mockRejectedValue(failure());
 
     let loginResult: string | undefined;
@@ -167,7 +215,7 @@ describe('AuthProvider (bearer mode)', () => {
 
   it('logout removes the token and lands anon without calling homerApi.logout', async () => {
     localStorage.setItem(TOKEN_KEY, 'stored-token');
-    getHeartbeat.mockResolvedValue(undefined);
+    getAuthMe.mockResolvedValue({ username: 'ops', role: 'admin', grants: [] });
 
     renderWithProvider();
     await waitFor(() =>

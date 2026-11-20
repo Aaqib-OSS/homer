@@ -28,6 +28,15 @@ describe('capabilitiesFor', () => {
     // owner branch: bob owns this run -> can kill even without control
     expect(c.canKillProcess({ agentName: 'deploy-web', owner: 'session:bob' })).toBe(true);
   });
+  it('a bearer token owns the runs stamped with its own name, not with a session: prefix', () => {
+    const c = capabilitiesFor(scoped, false, 'bearer');
+    expect(c.canKillProcess({ agentName: 'deploy-web', owner: 'bob' })).toBe(true);
+    expect(c.canKillProcess({ agentName: 'deploy-web', owner: 'session:bob' })).toBe(false);
+  });
+  it('a session user does not own a run stamped with its bare name', () => {
+    const c = capabilitiesFor(scoped, false, 'cookie');
+    expect(c.canKillProcess({ agentName: 'deploy-web', owner: 'bob' })).toBe(false);
+  });
   it('retry needs run AND see', () => {
     const c = capabilitiesFor(scoped);
     expect(c.canRetryProcess({ agentName: 'deploy-web', owner: null })).toBe(true); // read gives see, run gives retry
