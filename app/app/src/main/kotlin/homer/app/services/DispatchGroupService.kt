@@ -20,12 +20,9 @@ import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
 /**
- * Grouped ask-and-dispatch (ADR-0109): N questions registered as one dispatch, answered
- * independently by the operator, the target started once — with all N answers aggregated in
- * question order — after the last of them.
- *
- * The create path mirrors [DispatchService.create]'s gates; the fire path is
- * [aggregateAnswers], which [DispatchService.fire] consults before it claims the group.
+ * Grouped ask-and-dispatch: N questions answered independently, the target started once after the
+ * last with every answer in question order. [create] runs the gates of [DispatchService.create], and
+ * [DispatchService.fire] consults [aggregateAnswers] before it claims the group. See ADR-0109.
  */
 @OptIn(ExperimentalTime::class)
 internal class DispatchGroupService(
@@ -58,12 +55,9 @@ internal class DispatchGroupService(
     )
 
     /**
-     * Registers [questions] as one GROUP dispatch to [agent]. The size bounds are checked first,
-     * before any other work and before any row exists, so a refused group leaves nothing behind
-     * and a group is never observably partial. Every other gate is [DispatchService.create]'s:
-     * live origin, unreserved `answerParam`, question caps, authorized and opted-in target,
-     * satisfiable inputs, positive TTL. The group counts against the global PENDING cap and the
-     * origin process's open-question cap — the bound on this call's own multiplication. See ADR-0109.
+     * Registers [questions] as one GROUP dispatch to [agent]. The size bounds are checked before any
+     * other gate and any row, so a refused group leaves nothing behind. The group counts against the
+     * global PENDING cap and the origin process's open-question cap. See ADR-0109.
      */
     suspend fun create(
         originProcessId: Int,
@@ -88,9 +82,8 @@ internal class DispatchGroupService(
         val members = questions.map { targetGate.questionRow(originProcessId, registration.agentName, it.text, it.options, now) }
         val dispatch =
             targetGate.dispatchRow(
-                // A sentinel, not a question id: a GROUP row names no single question, and
-                // `dispatches.question_id` is uniquely indexed, so it can be neither empty nor
-                // shared with a member. The ordered set is the member table. See ADR-0109.
+                // A sentinel, not a question id: `dispatches.question_id` is uniquely indexed and a
+                // GROUP row names no single question. See ADR-0109.
                 questionId = GROUP_QUESTION_ID_PREFIX + UUID.randomUUID(),
                 agent = agent,
                 answerParam = answerParam,
@@ -103,7 +96,7 @@ internal class DispatchGroupService(
                 kind = DispatchKind.GROUP,
             )
         val dispatchId = insertGroup(members, dispatch)
-        // Ids and counts only: the questions' text is workspace-controlled. §12 rule 7.
+        // Ids and counts only: the questions' text is workspace-controlled. ADR-0047 rule 7.
         logger.info(
             "Process {} registered dispatch group {} of {} question(s) -> agent '{}'",
             originProcessId,

@@ -9,12 +9,9 @@ import org.slf4j.Logger
 import java.util.UUID
 
 /**
- * The registration gates a single and a grouped dispatch share, after the payload and question
- * checks: the target is authorized and opted in, its inputs are satisfiable (an inheriting
- * dispatch to the same agent counts the origin run's stored inputs as provided, ADR-0101), and
- * the TTL is positive. The rows a registration writes — the dispatch-bound question and the
- * PENDING dispatch — are built here too, so the two create paths cannot drift. See ADR-0021,
- * ADR-0109.
+ * The registration gates a single and a grouped dispatch share: authorized, opted-in target, satisfiable
+ * inputs (inherited ones count, ADR-0101), positive TTL. It also builds the rows both create paths
+ * write, so they cannot drift. See ADR-0021, ADR-0109.
  */
 internal class DispatchTargetGate(
     private val authorizer: Authorizer,
@@ -67,10 +64,8 @@ internal class DispatchTargetGate(
         )
 
     /**
-     * The PENDING dispatch row a registration inserts, single or grouped by [kind]. The
-     * ADR-0052 secret snapshot is captured here — the one place both create paths get it
-     * from — so a change to how a dispatch captures secrets cannot land in one create path
-     * and miss the other.
+     * The PENDING dispatch row a registration inserts, single or grouped by [kind]. The ADR-0052
+     * secret snapshot is captured only here, so the two create paths cannot capture it differently.
      */
     fun dispatchRow(
         questionId: String,
@@ -96,9 +91,8 @@ internal class DispatchTargetGate(
             expiresAt = effectiveTtl?.let { now + it },
             createdAt = now,
             owner = owner,
-            // Captured now, read at fire: the target may be edited in between, and a value
-            // collected under `secret: true` must not become a trace tag or an unredacted
-            // API field because the flag was flipped. See ADR-0052.
+            // Captured now, read at fire: a value collected under `secret: true` must not become a
+            // trace tag or an unredacted API field once the flag is flipped. See ADR-0052.
             secretInputKeys = agentsService.agents[agent]?.secretEnvNames,
             // paramName counterpart of secretInputKeys — see Dispatch.secretParamNames.
             secretParamNames = agentsService.agents[agent]?.secretParamNames,
@@ -113,9 +107,8 @@ internal class DispatchTargetGate(
         if (!authorizer.canDispatchHop(dispatch.owner, dispatch.originAgentName, dispatch.agentName)) {
             return "agent '${dispatch.originAgentName}' is not authorized to dispatch to '${dispatch.agentName}'"
         }
-        // Re-check the opt-in at fire time: registration gated on `dispatch.enabled`, but the
-        // agent may have been reloaded to `enabled: false` or replaced since. Without this a
-        // pending dispatch created while enabled would still fire the now-disabled target.
+        // A reload may have set `dispatch.enabled: false` since registration: re-check the opt-in at
+        // fire time, as the hop is re-checked (ADR-0039), so a pending dispatch never fires it.
         if (agent.dispatch?.enabled != true) {
             return "Target agent '${dispatch.agentName}' is no longer an allowed dispatch target"
         }

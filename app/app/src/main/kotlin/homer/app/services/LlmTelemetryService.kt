@@ -24,10 +24,8 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * Builds OpenTelemetry spans (exported to Langfuse) from a harness-neutral [TranslatedStream]
- * of [LlmEvent]s. Nothing here reads a harness's own wire dialect — that translation already
- * happened in the adapter ([homer.app.executors.llm.ClaudeHarness],
- * [homer.app.executors.llm.CodexHarness]). See ADR-0070.
+ * Builds OpenTelemetry spans (exported to Langfuse) from a harness-neutral [TranslatedStream] of
+ * [LlmEvent]s; no harness wire dialect is read here, the adapter already translated it. See ADR-0070.
  */
 class LlmTelemetryService(
     private val telemetryService: TelemetryService,
@@ -75,11 +73,8 @@ class LlmTelemetryService(
         val spans = linkedMapOf<String, LlmSpanData>()
         var completionStart = Instant.now()
         var seen: SeenModel? = null
-        // Real Claude streams emit a `system/hook_*` line carrying only a session id
-        // BEFORE `init`, and a model-less one again off the result line — both become
-        // model-less SessionStarts here. Parent-span metadata and the INFO log come from
-        // the FIRST SessionStart that carries a model, exactly once; a model-less one
-        // never sets metadata, never logs, and never blocks a later one from doing so.
+        // Claude also emits model-less SessionStarts (`system/hook_*`, before `init` and after the result):
+        // only the first one with a model sets the parent metadata and logs, and a model-less one never blocks it.
         var sessionStartSeen = false
         val turnEnds = stream.events.filterIsInstance<LlmEvent.TurnEnd>()
         val turnCosts = LlmTurnCosts.allocate(turnEnds, resolvedCostUsd)
@@ -306,20 +301,15 @@ class LlmTelemetryService(
         }
 
     /**
-     * The generation observation is named after the step that produced it — `implement`,
-     * `commit-message` — so the cost of one `!<claude>`/`!<codex>` step can be told from
-     * another's across the runs of one agent. Falls back to the historical name for a
-     * caller with no step.
+     * The generation observation's name: the step's label (`implement`, `commit-message`), so one step's
+     * cost can be told from another's, or `Result` for a step with no label.
      */
     private fun generationName(step: LlmStepInfo): String = step.label?.takeIf { it.isNotBlank() } ?: DEFAULT_GENERATION_NAME
 
     /**
-     * Most authoritative first: what the harness reported (session start, then the first
-     * main-agent message), then the turn-end event's own model accounting, then what the step
-     * asked for. Losing any single event degrades the answer instead of erasing it.
-     * The step's configured model is deliberately last — it is what was requested, not what
-     * ran: it may be an alias (`sonnet`, `opusplan`), and a `fallbackModel` may have served
-     * the run instead.
+     * The model that ran, most authoritative first: the harness report ([seen]), the turn end's own
+     * accounting, then the step's configured model — last, since it may be an alias (`sonnet`) or a
+     * `fallbackModel` may have served the run instead.
      */
     private fun resolveModel(
         seen: SeenModel?,
