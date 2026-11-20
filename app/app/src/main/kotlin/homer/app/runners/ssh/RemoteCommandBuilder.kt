@@ -18,9 +18,8 @@ object RemoteCommandBuilder {
         return (parts + head).joinToString(" ")
     }
 
-    // Makes the command lead its own process group and records its pgid to [pgidFile] so a later
-    // control channel can `kill -KILL -<pgid>` the whole group (a backgrounded remote child would
-    // otherwise orphan on the target host). Requires `setsid -w` (util-linux), capability-probed. See ADR-0041.
+    // Runs the command as its own process group and records its pgid to [pgidFile], so a control channel can kill
+    // the whole group, backgrounded children included; needs `setsid -w`, which SshRunner probes for (ADR-0041).
     fun buildReaping(
         remoteWorkdir: String,
         env: Map<String, String>,

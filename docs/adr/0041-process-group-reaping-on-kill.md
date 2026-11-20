@@ -111,3 +111,13 @@ procps-ng `kill` (checked at 4.0.4) takes a negative pid argument from its first
 (procps-ng issue 354), so `kill -INT -432` would signal group 4. A single-digit `-1` parses
 correctly there; an earlier code comment claimed otherwise. The pod-wide kill uses the builtin too,
 so both kills parse their target the same way in every image.
+
+## Amendment (2026-11-20): an SSH signal request would not replace the group kill
+
+The SSH decision above starts from the client library having no signal API. The control-channel
+group kill does not rest on that, and it stays even with a client that can send an RFC 4254
+`signal` channel request. The RFC leaves delivery to the server. OpenSSH sends the signal with
+`killpg` to the session's own process group, and refuses it for a forced command or a subsystem.
+The reaping form runs the command under `setsid -w`, in a new session and process group, so the
+session's group holds only the `setsid` waiter. The command and its backgrounded children are
+reached only by `kill -<pgid>` of the group the command recorded.

@@ -27,12 +27,9 @@ import kotlin.io.path.outputStream
 import kotlin.time.Duration
 
 /**
- * Runs each command in its own SSH exec channel. Argv semantics are preserved by
- * RemoteCommandBuilder (POSIX-escaped `cd && exec env ... argv`); the timeout / cancellation /
- * output-cap contract mirrors KubernetesShellExecutor's. When [reapProcessGroup] is set (SshRunner's
- * capability probe found `setsid -w` on the target), the command runs as its own remote process group
- * and, on kill/timeout, the whole group is `kill -KILL`ed over a control channel before the exec
- * channel is closed, so a backgrounded remote child cannot orphan on the target host. See ADR-0041.
+ * Runs each command in its own SSH exec channel, argv kept by [RemoteCommandBuilder], under KubernetesShellExecutor's
+ * timeout, cancellation and output-cap contract. With [reapProcessGroup] the command leads its own remote process
+ * group, which a kill or timeout kills over a control channel before the exec channel closes (ADR-0041).
  */
 class SshShellExecutor(
     private val session: ClientSession,
@@ -61,10 +58,8 @@ class SshShellExecutor(
             val pgidFile = if (reapProcessGroup && reapDir != null) "$reapDir/cmd-${reapCounter.incrementAndGet()}.pgid" else null
             val remoteCmd = remoteCommand(command, env, pgidFile)
             val channel = session.createExecChannel(remoteCmd)
-            // channel.use{} closes the exec channel on every path (success, timeout,
-            // cancel, exception); the forceful close(true) in the catch block below
-            // still runs first for prompt termination, and use{}'s graceful close
-            // afterward is idempotent.
+            // use{} closes the channel on every path; the catch below closes it forcibly first, and the
+            // graceful close after that is idempotent.
             channel.use {
                 val rawOut: OutputStream = stdOut.outputStream()
                 val filteredOut: OutputStream = if (stdOutFilter != null) LineFilteringOutputStream(rawOut, stdOutFilter) else rawOut
@@ -84,14 +79,8 @@ class SshShellExecutor(
                             awaitClose(channel, stdOut, stdErr, timeout, kill)
                         } catch (e: Throwable) {
                             withContext(NonCancellable) {
-                                // MINA 2.20.0 exposes no client-side SSH signal API (RFC 4254 channel
-                                // signal request), so close(true) is the only lever on the exec channel
-                                // itself. When reaping is enabled the command leads its own remote
-                                // process group; kill that whole group over a control channel FIRST so a
-                                // backgrounded/detached child (which close(true) alone would leave to
-                                // orphan on the target host) dies too. See ADR-0041. A timeout with a
-                                // configured grace interrupts the group before the kill (ADR-0108); an
-                                // output-cap kill or a caller cancellation keeps the immediate SIGKILL.
+                                // Reap the command's own group before closing the channel: neither the close nor an
+                                // SSH signal reaches a group outside the session's own (ADR-0041).
                                 reapOnStop(pgidFile, kill, interruptGrace)
                                 runCatching { channel.close(true) }
                                 appendKillNotices(stdErr, kill, timeout, maxOutputBytes)
@@ -164,12 +153,8 @@ class SshShellExecutor(
             kill.byTimeout = true
             throw CancellationException("Timeout reached. $timeout.")
         }
-        // A fast-exiting command can overshoot the cap between the
-        // last poll and channel close; MINA has flushed all output by
-        // CLOSED (with a stdout filter, up to one buffered partial line
-        // lands when the stream closes below), so re-check after the
-        // loop and fail instead of accepting the oversized artifact. The
-        // catch's close(true) is idempotent on the closed channel.
+        // MINA has flushed all output by CLOSED, so a command that passed the cap after the last poll fails
+        // here too; only a filtered stdout's last partial line lands later, when its stream closes.
         if (exceedsOutputCap(stdOut, stdErr, maxOutputBytes)) {
             kill.byCap = true
             throw OutputCapExceededException("Output cap exceeded: $maxOutputBytes bytes.")
@@ -198,12 +183,9 @@ class SshShellExecutor(
     }
 
     /**
-     * Reaps the process group the command self-reported to [pgidFile] over a fresh control
-     * channel. The pgid is validated to be a plain integer > 1 before any signal runs (see
-     * [RemoteCommandBuilder.buildReapKill] / [RemoteCommandBuilder.buildReapInterrupt]), so a
-     * forged/stale/corrupt side-file can never become `kill -KILL -1` or `kill -INT -1`. With
-     * [interruptGrace] the group is SIGINTed, given the grace, then SIGKILLed, the channel wait
-     * covering that grace; best-effort, a missing/invalid file or a failed kill is a no-op.
+     * Over a fresh control channel, SIGKILLs the group the command recorded in [pgidFile], or with [interruptGrace]
+     * SIGINTs it, waits the grace, then SIGKILLs it. Only a plain integer pgid above 1 is signalled, never `-1`;
+     * a missing or invalid file signals nothing, and the caller ignores a failed kill (ADR-0041).
      */
     private fun reapRemoteGroup(
         pgidFile: String,

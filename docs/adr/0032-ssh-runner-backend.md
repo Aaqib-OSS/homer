@@ -163,6 +163,12 @@ The residual risk is recorded as `AR-09` in [`SECURITY.md`](../../SECURITY.md#ac
 It is an interim record, not an exception to [ADR-0047](0047-security-by-design-and-threat-model.md)
 rule 7: moving the env into a sourced file removes it.
 
+The bullet's comparison with the Kubernetes runner no longer holds as written. Both runners prefix
+`env K=V…`, but the exposures differ in reader and lifetime. On ssh, the reader is another user of
+the remote host during the launch. On Kubernetes, the values ride the exec request URI, so the
+reader is whoever reads the cluster's audit backend, for as long as it keeps them (`AR-10`,
+[ADR-0043](0043-k8s-sync-workspaces.md)).
+
 ### One deviation from the design spec: a client per alias, not shared
 
 The design spec described a single MINA `SshClient`, started once and

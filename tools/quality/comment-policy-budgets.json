@@ -1,6 +1,6 @@
 {
   "$comment": "Budgets of tools/quality/comment-policy.mjs per rule and area, seeded with the counts of 2026-11-19 (GH #344). They only go down: lower one when its count falls (the check names the value), never raise one to fit a new finding. node tools/quality/comment-policy.mjs --counts prints the counts.",
-  "length": { "backend-main": 904, "backend-test": 643, "console": 263, "python": 64, "infra": 61, "tools": 68 },
+  "length": { "backend-main": 826, "backend-test": 643, "console": 263, "python": 64, "infra": 61, "tools": 68 },
   "citation": { "backend-main": 25, "backend-test": 28, "console": 13, "python": 0, "infra": 7, "tools": 5 },
   "shortcut-word": { "backend-main": 32, "backend-test": 30, "console": 20, "python": 5, "infra": 4, "tools": 3 },
   "todo": { "backend-main": 0, "backend-test": 0, "console": 0, "python": 0, "infra": 0, "tools": 0 },

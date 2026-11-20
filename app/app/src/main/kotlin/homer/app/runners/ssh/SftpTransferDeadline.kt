@@ -17,11 +17,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration
 
 /**
- * [WorkspaceSync]'s deadline on blocking SFTP round trips: opens a client per operation
- * and bounds every call, including the client's own close, by [transferTimeout]
- * (CWE-400). `withTimeout` cannot interrupt a blocked JVM read, so a
- * watchdog closes [session] instead.
- * See ADR-0064.
+ * [WorkspaceSync]'s deadline on blocking SFTP round trips: opens a client per operation and bounds every
+ * call, the client's close included, by [transferTimeout] (CWE-400). A watchdog closes [session], since
+ * `withTimeout` cannot interrupt a blocked JVM read (ADR-0064).
  */
 internal class SftpTransferDeadline(
     private val session: ClientSession,
@@ -41,23 +39,16 @@ internal class SftpTransferDeadline(
     }
 
     /**
-     * Close [sftp] under the transfer deadline; a failed or timed-out release is swallowed and
-     * WARN-logged, so cleanup cannot mask the block's own outcome. The release is non-cancellable
-     * (CWE-400): the watchdog is a child of the caller's job, so a caller already cancelled at
-     * entry would never let its `delay()` fire and an unbounded close would ride in under the
-     * cancellation. See ADR-0064.
+     * Closes [sftp] under the transfer deadline, non-cancellably so the deadline holds for a cancelled caller
+     * (CWE-400). A failed or timed-out release is WARN-logged, never thrown over the block's outcome (ADR-0064).
      */
     @Suppress("SuspendFunSwallowedCancellation") // NonCancellable inside: a failure here is the close, not a cancel
     private suspend fun release(sftp: SftpClient) {
         try {
             withContext(NonCancellable) { withTransferTimeout { sftp.close() } }
         } catch (e: Exception) {
-            // CWE-400: shed the whole session on a failed release — the
-            // session's state is unknown, and leaving it open would let every later
-            // withSftp in this run reuse it and strand another channel per failure
-            // while it holds the workspace lock and run slot (§12.5: shed rather
-            // than accumulate). A deadline expiry already closed it via the
-            // watchdog; this covers a close that fails outright.
+            // CWE-400: shed the session, whose state is unknown, so no later withSftp strands another channel on
+            // it while the run holds its lock and slot (ADR-0047 rule 5, ADR-0064).
             logger.warn("Failed to close the SFTP client; closing the session so nothing reuses it", e)
             runCatching { session.close(true) }
         }
@@ -70,9 +61,7 @@ internal class SftpTransferDeadline(
         val timedOut = AtomicBoolean(false)
         try {
             return coroutineScope {
-                // Dispatchers.Default, not the inherited context: under runBlocking (tests)
-                // or a saturated Dispatchers.IO pool the caller's event loop is busy inside
-                // the blocking copy and would never run a same-dispatcher watchdog.
+                // Dispatchers.Default: the caller's dispatcher may be busy inside the blocking copy (ADR-0064).
                 val watchdog =
                     launch(Dispatchers.Default) {
                         delay(transferTimeout)

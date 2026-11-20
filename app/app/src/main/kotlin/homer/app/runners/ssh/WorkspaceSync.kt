@@ -24,12 +24,9 @@ import kotlin.io.path.name
 import kotlin.time.Duration
 
 /**
- * Recursive SFTP transfer over an authenticated [session]. Directory-oriented: uploads the
- * workspace + agent dir before a run, downloads artifacts (and workdir when kept) after, and
- * removes the remote projectRoot on cleanup. A fresh SftpClient is opened per operation.
- * Every blocking SFTP round trip is bounded by [transferTimeout], including the client's own
- * close (CWE-400): a stalling peer answering keepalives while withholding SFTP data would
- * otherwise hold a `Dispatchers.IO` worker, the workspace lock and a run slot indefinitely.
+ * Recursive SFTP transfer over an authenticated [session], on a fresh SftpClient per operation: uploads before
+ * a run, downloads after, removes the remote project root on cleanup. Every blocking round trip, the client's
+ * close included, is bounded by [transferTimeout] against a peer that stalls SFTP data (CWE-400, ADR-0064).
  */
 class WorkspaceSync(
     session: ClientSession,
@@ -38,21 +35,16 @@ class WorkspaceSync(
     // Test seam: runs after a file's link checks and before its open, so a test can
     // swap the file for a symlink inside that window deterministically.
     internal val beforeLocalOpen: (Path) -> Unit = {},
-    // Test seam: MINA's own close only *enqueues* the close packet and
-    // returns, so no SSH peer can make the release itself stall. Injecting the
-    // client is the only way to assert the release is really under the deadline.
+    // Test seam: MINA's close only enqueues its packet, so no peer can stall the release; an injected
+    // client is how a test proves the release is under the deadline.
     internal val openSftp: (ClientSession) -> SftpClient = { SftpClientFactory.instance().createSftpClient(it) },
 ) {
     companion object {
         const val DEFAULT_MAX_DIR_ENTRIES = 100_000
 
         /**
-         * Resolve a remote-supplied directory-entry name against [localDir].
-         * SFTP listings cross the runner trust boundary — a compromised
-         * runner (or a MITM when host-key checking is off) can return names
-         * like `../../etc/cron.d/x` or absolute paths, which `Path.resolve`
-         * would happily escape [localDir] with. Only a plain single-segment
-         * child name is accepted.
+         * Resolves a remote-supplied entry name against [localDir], accepting only a plain single-segment child: an
+         * SFTP listing crosses the runner trust boundary, so `../x` or an absolute name is refused (CWE-22, ADR-0047).
          */
         internal fun containedChild(
             localDir: Path,
@@ -112,20 +104,16 @@ class WorkspaceSync(
     }
 
     /**
-     * Upload a local file or directory to [remote]. Directories recurse and
-     * honor [excludes]: a bare entry name matches at any depth, a leading
-     * `/` anchors the exclude to the upload root; single files get remote
-     * parent dirs created. The local path must exist.
+     * Uploads an existing local file or directory to [remote]. In a directory a bare [excludes] name matches at
+     * any depth and a leading `/` anchors it to the upload root; a single file gets its remote parent dirs created.
      */
     suspend fun upload(
         local: Path,
         remote: String,
         excludes: List<String> = emptyList(),
     ) = withSftp { sftp ->
-        // Refused before any branching or remote side effect, for a file or a directory
-        // source alike: isDirectory()/isRegularFile() below follow a link, so a symlinked
-        // directory would otherwise be walked and streamed as if it were the real upload
-        // root. CWE-59: parity with TarStreams.pack.
+        // CWE-59: a symlinked source is refused before any remote effect, since isDirectory()/isRegularFile()
+        // follow links; parity with TarStreams.pack (ADR-0042).
         if (Files.isSymbolicLink(local)) throw SecurityException("upload source '$local' is a symlink")
         when {
             local.isDirectory() -> {
@@ -133,9 +121,8 @@ class WorkspaceSync(
             }
 
             local.isRegularFile() -> {
-                // The directory walk's hard-link rule (below), refused rather than skipped: a
-                // single file was named explicitly, so silently skipping it would hide the
-                // refusal. CWE-59: hard-link parity with TarStreams.pack's single-file branch.
+                // CWE-59: the walk's hard-link rule, refused rather than skipped as in TarStreams.pack: a file
+                // named explicitly must not vanish silently.
                 if (PathSafety.isHardLinked(local)) throw SecurityException("upload source '$local' is hard-linked")
                 remote.substringBeforeLast('/', "").takeIf { it.isNotEmpty() }?.let { withTransferTimeout { sftp.mkdirsIdempotent(it) } }
                 uploadFile(sftp, local, remote)
@@ -148,12 +135,9 @@ class WorkspaceSync(
     }
 
     /**
-     * [visited] holds the realpath of every directory already descended into (seeded with the upload
-     * root's realpath); every directory is resolved with its own `toRealPath()` at descent, symlinked
-     * or not (canonical-form rationale at the descent site; ADR-0042). A symlink resolving back INSIDE
-     * the tree passes the containment check and isDirectory() follows it, so the de-duplicated visited
-     * set and the [depth] cap are what make the walk terminate. [prefix] is concatenated, never
-     * `root.relativize(localDir)`: the walk descends on realpaths, so relativize corrupts anchored excludes (ADR-0042).
+     * Walks [localDir] on realpaths; [visited] (seeded with the root's realpath) and the [depth] cap make a walk
+     * through in-tree symlinks terminate. [prefix] is built by concatenation, never `relativize`, which corrupts
+     * anchored excludes below a link (ADR-0042).
      */
     private suspend fun uploadDirInto(
         sftp: SftpClient,
@@ -172,14 +156,8 @@ class WorkspaceSync(
         TarStreams
             .walkEntries(localDir, prefix, excludes)
             .forEach { (entry, entryName) ->
-                // isDirectory()/isRegularFile() below follow symlinks, and uploadFile streams
-                // the resolved target's bytes — fine for links that stay inside the upload
-                // root (venv/tooling links are common there), but a link at a host file would
-                // otherwise leak that file's content to the remote host. Warn+skip rather than
-                // fail: failing the whole upload over a legitimate absolute tooling symlink
-                // would break real runs.
-                // A file is checked and streamed at the resolved target, not the link: the link's
-                // own nlink is always 1 (CWE-59, parity with TarStreams.addDirContents).
+                // CWE-59: a link escaping the root is skipped with a warning, never failed; a contained one is checked
+                // and streamed at its target, since the link's own nlink is always 1. Parity with TarStreams (ADR-0042).
                 val source = TarStreams.containedSource(entry, root)
                 if (source == null) {
                     logger.warn("Skipping symlink '{}' escaping the upload root", entry)
@@ -193,9 +171,8 @@ class WorkspaceSync(
 
                     source.isRegularFile() -> {
                         if (PathSafety.isHardLinked(source)) {
-                            // CWE-59: hard-link parity with TarStreams — a hardlink is a second
-                            // name for another file's inode, with no path back to the first, so
-                            // containment cannot be decided; warn+skip like an escaping symlink.
+                            // CWE-59: a hard link's other name may lie outside the root, so containment cannot be
+                            // decided; skipped with a warning like an escaping symlink, as in TarStreams.
                             logger.warn("Skipping '{}': hard-linked file, its other name may be outside the upload root", entry)
                             return@forEach
                         }
@@ -219,20 +196,15 @@ class WorkspaceSync(
         viaLink: Boolean,
         realDir: Path,
     ) {
-        // Resolve every directory here, symlink or not, to its canonical realpath —
-        // an unresolved root (macOS /var -> /private/var) would otherwise let
-        // `visited` hold two forms of the same directory. See ADR-0042 (2026-09-30
-        // amendment).
+        // Resolve every directory, symlink or not: an unresolved root (macOS /var -> /private/var) would let
+        // `visited` hold two forms of one directory (ADR-0042).
         val real = runCatching { source.toRealPath() }.getOrNull()
         if (real == null || !real.startsWith(root.toRealPath())) {
             logger.warn("Skipping '{}': does not resolve inside the upload root", entry)
             return
         }
-        // Descend on the checked realpath, not the entry's name: a name is
-        // re-resolved when listed, so a link repointed after its check would lead
-        // out of the root (CWE-59). Skip with a warning,
-        // like TarStreams, rather than follow a link into a directory already
-        // visited under another path.
+        // CWE-59: descend on the checked realpath, never the name, which a repointed link would lead out of the
+        // root; a link into a directory already visited is skipped with a warning, as in TarStreams (ADR-0042).
         val throughLink = viaLink || real != realDir.resolve(entry.name)
         when {
             depth >= TarStreams.MAX_UPLOAD_DEPTH -> {
@@ -251,10 +223,8 @@ class WorkspaceSync(
     }
 
     /**
-     * Streams [local] from one handle opened before anything is written remotely. Callers
-     * pass an already-resolved path for a contained symlink, so the link is never followed
-     * here. The mode is read by path (java.nio has no permission read on a handle), also
-     * `NOFOLLOW_LINKS`, as in `TarStreams.addFile`.
+     * Streams [local], already resolved by the caller, from one handle opened before any remote write. The mode
+     * is read by path with `NOFOLLOW_LINKS`, as in `TarStreams.addFile`: java.nio reads no mode on a handle.
      */
     private suspend fun uploadFile(
         sftp: SftpClient,
@@ -262,9 +232,8 @@ class WorkspaceSync(
         remote: String,
     ) {
         beforeLocalOpen(local)
-        // CWE-367: open once with NOFOLLOW_LINKS, so a symlink swapped in
-        // after the caller's checks is refused, not streamed. The ancestor-swap residual is
-        // accepted in ADR-0047's 2026-09-23 amendment.
+        // CWE-367: one open with NOFOLLOW_LINKS refuses a symlink swapped in after the caller's checks; an
+        // ancestor swap remains (AR-04).
         FileChannel.open(local, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS).use { channel ->
             // CWE-400: bound the transfer so a stalling peer cannot hold resources indefinitely.
             withTransferTimeout { sftp.write(remote).use { out -> Channels.newInputStream(channel).copyTo(out) } }
@@ -292,11 +261,8 @@ class WorkspaceSync(
     }
 
     /**
-     * Download a remote file or directory to [local]. Missing remote paths
-     * are a silent no-op (mirrors downloadDir). [mode] controls how remote
-     * content reconciles with what's already at [local] — see [DownloadMode].
-     * A single-file download has no extras scope, so MIRROR behaves like
-     * OVERWRITE there.
+     * Downloads a remote file or directory to [local]; a missing remote path is a no-op, as in [downloadDir].
+     * [mode] reconciles remote with local content; a single file has no extras, so MIRROR acts as OVERWRITE.
      */
     suspend fun download(
         remote: String,
@@ -338,14 +304,8 @@ class WorkspaceSync(
             val fn = entry.filename
             if (fn == "." || fn == "..") continue
             val remoteChild = "$remoteDir/$fn"
-            // containedChild is lexical only (absolute/".."/multi-segment rejection); it can't see a
-            // symlink already present in the destination, so PathSafety adds the realpath check and a
-            // pre-existing local symlink cannot steer the write outside the workspace (intra-root
-            // symlinks stay allowed). Used as a pure check, not for its return value: binding the
-            // resolved realpath into the next level's localDir would compare a realpath child against
-            // the still-lexical root and spuriously reject deep downloads on symlinked-prefix hosts.
-            // Recursion and writes stay lexical throughout — the same reason materialized records the
-            // lexical localChild: prune()'s own walk stays lexical too, so the two must agree.
+            // CWE-22, CWE-59: containedChild is lexical, so PathSafety adds a realpath check, used only as a check:
+            // the walk, its writes and `materialized` stay lexical, like prune() (ADR-0055).
             val localChild = containedChild(localDir, fn)
             PathSafety.assertContained(root, localChild)
             materialized?.add(root.toAbsolutePath().normalize().relativize(localChild.toAbsolutePath().normalize()))
