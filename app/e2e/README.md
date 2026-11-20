@@ -83,10 +83,7 @@ always-on "does the production Dockerfile still build" gate.
 ## Running
 
 Image builds resolve dependencies from Maven Central; no credentials are
-needed. Optionally, exporting `ARTIFACTORY_URL` / `ARTIFACTORY_USER` / `ARTIFACTORY_TOKEN` routes
-resolution through an Artifactory proxy instead; see [DOCKER.md § Artifactory
-build secrets](../../DOCKER.md#artifactory-build-secrets-optional). Stack
-topology (services, volumes, ports): [DOCKER.md § E2E test
+needed. Stack topology (services, volumes, ports): [DOCKER.md § E2E test
 stack](../../DOCKER.md#e2e-test-stack).
 
 ```bash

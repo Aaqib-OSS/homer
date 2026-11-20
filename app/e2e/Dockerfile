@@ -14,27 +14,11 @@ COPY app/buildSrc ./buildSrc
 COPY app/e2e/build.gradle.kts ./e2e/build.gradle.kts
 
 # Empty dirs stand in for the other projects and :e2e has no sources yet: this caches deps.
-# The $(…) ends in `|| true`, so the export masks no failure.
-# hadolint ignore=SC2155
-RUN --mount=type=secret,id=artifactory_url \
-    --mount=type=secret,id=artifactory_user \
-    --mount=type=secret,id=artifactory_token \
-    mkdir -p app agentdebug homer-runner architecture && \
-    export ARTIFACTORY_URL="$(cat /run/secrets/artifactory_url 2>/dev/null || true)" && \
-    export ARTIFACTORY_USER="$(cat /run/secrets/artifactory_user 2>/dev/null || true)" && \
-    export ARTIFACTORY_TOKEN="$(cat /run/secrets/artifactory_token 2>/dev/null || true)" && \
+RUN mkdir -p app agentdebug homer-runner architecture && \
     ./gradlew :e2e:dependencies :e2e:testClasses --no-daemon
 
 COPY app/e2e ./e2e
 
-# The $(…) ends in `|| true`, so the export masks no failure.
-# hadolint ignore=SC2155
-RUN --mount=type=secret,id=artifactory_url \
-    --mount=type=secret,id=artifactory_user \
-    --mount=type=secret,id=artifactory_token \
-    export ARTIFACTORY_URL="$(cat /run/secrets/artifactory_url 2>/dev/null || true)" && \
-    export ARTIFACTORY_USER="$(cat /run/secrets/artifactory_user 2>/dev/null || true)" && \
-    export ARTIFACTORY_TOKEN="$(cat /run/secrets/artifactory_token 2>/dev/null || true)" && \
-    ./gradlew :e2e:testClasses --no-daemon
+RUN ./gradlew :e2e:testClasses --no-daemon
 
 ENTRYPOINT ["./gradlew", ":e2e:test", "--no-daemon"]

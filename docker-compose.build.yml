@@ -6,8 +6,7 @@
 #   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d
 #   docker compose -f docker-compose.yml -f docker-compose.build.yml -f docker-compose.dev.yml up
 #
-# No ports and no secrets here: the base file owns the topology, and the
-# Artifactory credentials are BuildKit secrets of the E2E stack only.
+# No ports here: the base file owns the topology.
 services:
   backend:
     build:

@@ -121,3 +121,24 @@ GitLab CI variable, and the upstream pipeline that set it ended with the mirror
 the remote cache is read-only in every environment: Gradle's default for a remote
 cache. GitHub CI never turns it on, since it sets no Artifactory variable; its
 Gradle cache is `setup-gradle`'s, which only the default branch writes.
+
+## Amendment (2026-11-20): the optional Artifactory build path is retired
+
+The decision above kept the Artifactory gate for builds that set `ARTIFACTORY_URL`,
+`ARTIFACTORY_USER` and `ARTIFACTORY_TOKEN`, "such as the upstream pipeline during the migration".
+The migration is over, and no supported build sets the three. The path is removed:
+
+- the plugin and dependency repository gates in both settings scripts and
+  `gradle/artifactory.settings.gradle.kts`;
+- the remote build cache, read-only since the amendment above, with nothing that writes it;
+- the BuildKit secret mounts in `app/Dockerfile` and `app/e2e/Dockerfile`, the `build.secrets` and
+  the E2E runner's run-time pass-through in `docker-compose.e2e.yml`;
+- `DOCKER.md` § Artifactory build secrets, and the tests that guarded the path
+  (`ArtifactoryTransportTest`, `ArtifactorySecretExposureTest`).
+
+The accepted risk of the E2E runner holding the credentials, AR-03 in `SECURITY.md`, goes with the
+pass-through; its id is not reused. Every build now resolves from Maven Central and the Gradle
+Plugin Portal, as CI already did, and Gradle dependency verification
+([ADR-0115](0115-gradle-dependency-verification.md)) checks what they serve. An environment that
+meets the `429` again has the Gradle user-home cache as its remedy, as CI does, not a proxy in this
+repository.

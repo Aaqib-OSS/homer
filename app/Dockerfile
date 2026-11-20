@@ -27,29 +27,13 @@ COPY app/schemas ./schemas
 # copying their sources.
 RUN mkdir -p e2e architecture
 
-# Caches the Gradle distribution, buildSrc and plugins; secrets never ARG or ENV (ADR-0084).
-# The $(…) ends in `|| true`, so the export masks no failure.
-# hadolint ignore=SC2155
-RUN --mount=type=secret,id=artifactory_url \
-    --mount=type=secret,id=artifactory_user \
-    --mount=type=secret,id=artifactory_token \
-    export ARTIFACTORY_URL="$(cat /run/secrets/artifactory_url 2>/dev/null || true)" && \
-    export ARTIFACTORY_USER="$(cat /run/secrets/artifactory_user 2>/dev/null || true)" && \
-    export ARTIFACTORY_TOKEN="$(cat /run/secrets/artifactory_token 2>/dev/null || true)" && \
-    ./gradlew dependencies --no-daemon
+# Caches the Gradle distribution, buildSrc and plugins in their own layer.
+RUN ./gradlew dependencies --no-daemon
 
 # Build fat jar. The release tag is stamped into the runner jar (its name and the version it
 # registers with); declared after the dependency layer so a version change does not refetch them.
 ARG HOMER_VERSION=dev
-# The $(…) ends in `|| true`, so the export masks no failure.
-# hadolint ignore=SC2155
-RUN --mount=type=secret,id=artifactory_url \
-    --mount=type=secret,id=artifactory_user \
-    --mount=type=secret,id=artifactory_token \
-    export ARTIFACTORY_URL="$(cat /run/secrets/artifactory_url 2>/dev/null || true)" && \
-    export ARTIFACTORY_USER="$(cat /run/secrets/artifactory_user 2>/dev/null || true)" && \
-    export ARTIFACTORY_TOKEN="$(cat /run/secrets/artifactory_token 2>/dev/null || true)" && \
-    ./gradlew shadowJar --no-daemon -PhomerVersion="$HOMER_VERSION"
+RUN ./gradlew shadowJar --no-daemon -PhomerVersion="$HOMER_VERSION"
 
 # The runtime image is Alpine (musl), where sqlite-jdbc loads only its Linux-Musl
 # native library; drop the other platforms' copies. Only the image's jar is musl-only:
