@@ -44,8 +44,8 @@ object Dumpability {
             runCatching { setNonDumpable() }
                 .getOrElse { return Result.Failed("prctl(PR_SET_DUMPABLE, 0) failed: ${it.message}") }
         if (rc != 0) return Result.Failed("prctl(PR_SET_DUMPABLE, 0) returned $rc")
-        // Verified through PR_GET_DUMPABLE, not /proc/self/status: the kernel's
-        // "Dumpable:" field is absent before Linux 6.2 and some containers mask it.
+        // Verified through PR_GET_DUMPABLE: /proc/self/status has no dumpable field, and the
+        // /proc ownership signal (root-owned /proc/<pid> files) is invisible to a root reader.
         val state = runCatching { readDumpable() }.getOrDefault(-1)
         if (state != 0) return Result.Failed("prctl(PR_SET_DUMPABLE, 0) did not take effect (PR_GET_DUMPABLE=$state)")
         return Result.Hardened
