@@ -104,7 +104,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
   | `app/**` | `JAVA_HOME=<path to a JDK 25> app/gradlew -p app ktlintFormat :app:test :app:checkThirdPartyNotices` |
   | `app/buildSrc/**` | `JAVA_HOME=<path to a JDK 25> app/gradlew -p app/buildSrc check` (a separate build — `-p app check` does not cover it) |
   | `console/**` | `cd console && npm run lint && npm test && npm run build && npm run licenses:check` |
-  | `clients/python/**` | `cd clients/python && .venv/bin/python -m pytest` (venv setup: [`clients/python/homer_langgraph/CLAUDE.md`](clients/python/homer_langgraph/CLAUDE.md)) |
+  | `clients/python/**` | `cd clients/python && .venv/bin/ruff check && .venv/bin/pytest` (venv: [`clients/python/homer_langgraph/CLAUDE.md`](clients/python/homer_langgraph/CLAUDE.md)) |
   | `tools/quality/**` | `cd tools/quality && npm ci && npm test` |
   | a `*.sh` file, `.github/workflows/**`, a `Dockerfile` or `.hadolint.yaml` | `node tools/quality/infra-lint.mjs` (shellcheck, actionlint, zizmor and hadolint must be on the `PATH`; CI's versions are in [`docs/quality-checks.md`](docs/quality-checks.md)) |
   | `site/**`, any tracked `*.md` file, or a file the site publishes (listed in `site/scripts/sources.mjs`, every ADR) | `cd site && npm ci && npm test && npm run docs:build` (fails on a link to a missing file or to a heading the target page does not have; `npm test` also on a dead relative link or heading anchor in a tracked `*.md` outside `site/pages/` (the site build checks those), or a missing backticked path in a `CLAUDE.md`) |

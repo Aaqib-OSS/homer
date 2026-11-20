@@ -34,7 +34,7 @@ update it in the same commit when a contract it describes changes.
 python3 -m venv .venv                                                 # from clients/python
 .venv/bin/pip install --require-hashes --no-deps -r requirements.lock -r requirements-test.lock
 .venv/bin/pip install --no-deps --no-build-isolation -e .
-.venv/bin/python -m pytest                                            # from clients/python
+.venv/bin/ruff check && .venv/bin/python -m pytest                     # from clients/python
 ```
 
 Tests mock `subprocess.run` and use LangGraph's in-memory `MemorySaver`, except
@@ -56,7 +56,7 @@ commit, from `clients/python`, with the command its header records:
 uv pip compile pyproject.toml --universal --generate-hashes --python-version=3.12 --no-emit-package=sqlite-vec --output-file=requirements.lock
 ```
 
-`requirements-test.lock` pins the tools the tests need (pytest, and setuptools
+`requirements-test.lock` pins the test tools (pytest, ruff, setuptools
 for the editable install) from `requirements-test.in`, with the runtime lock as a
 constraint; regenerate it after the runtime lock, with its header's command:
 

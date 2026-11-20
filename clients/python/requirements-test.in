@@ -1,4 +1,5 @@
-# The homer-python-tests job's test runner and the build backend for its editable
-# install, compiled into requirements-test.lock; neither ships.
+# The homer-python-tests job's test runner and linter, and the build backend for its
+# editable install, compiled into requirements-test.lock; none ships.
 pytest
+ruff
 setuptools>=68

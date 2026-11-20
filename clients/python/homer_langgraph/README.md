@@ -310,6 +310,7 @@ cd clients/python
 python3 -m venv .venv
 .venv/bin/pip install --require-hashes --no-deps -r requirements.lock -r requirements-test.lock
 .venv/bin/pip install --no-deps --no-build-isolation -e .
+.venv/bin/ruff check
 .venv/bin/python -m pytest
 ```
 

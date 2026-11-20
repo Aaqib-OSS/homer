@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from homer_langgraph import runner
+from homer_langgraph import homer_cli, runner
 
 DEMO_DIR = Path(__file__).resolve().parents[4] / "example" / "agents" / "langgraph_demo"
 
@@ -26,7 +26,7 @@ def demo_path(monkeypatch):
 def calls(monkeypatch):
     recorded = []
     monkeypatch.setattr(
-        runner.subprocess, "run", lambda argv, **kw: recorded.append((argv, kw)) or None
+        homer_cli.subprocess, "run", lambda argv, **kw: recorded.append((argv, kw)) or None
     )
     return recorded
 
