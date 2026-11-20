@@ -1,15 +1,6 @@
 """Run/resume loop for the Homer LangGraph runtime.
 
-Homer launches this via ``python -m homer_langgraph run --module <module>``.
-A single invocation handles one *segment* of a workflow: it runs (or resumes)
-the graph until it either completes or parks on a pending ``interrupt()``.
-When the graph parks, this runtime performs the side effect the gate implied
-(ask the operator, fan out to a sub-agent) exactly once, then exits 0. The
-side effect re-runs the agent later with a resume value in the environment,
-which drives the next segment.
-
-See ``README.md`` in this package for the durable-checkpoint + dispatch-resume
-model and the env contract.
+One invocation runs one segment of the graph; see ``README.md`` for the model.
 """
 
 from __future__ import annotations
@@ -35,18 +26,11 @@ ENV_RESUME = "HMR_LG_RESUME"
 ENV_STATE_DIR = "HOMER_LG_STATE_DIR"
 ENV_AGENT_NAME = "HMR_AGENT_NAME"
 ENV_INPUT = "HMR_LG_INPUT"
-# EnvConstants.LG_INTERRUPT on the Homer side, which reserves the name and reads
-# it to attribute sub-agent runs to their node: the stable id of the single
-# interrupt this segment is resolving. Threaded back to the resumed agent (as a
-# --param for the human gate, a --continue-param for fan-out) so the resume run
-# can build a per-interrupt Command(resume={id: value}) map; absent → the
-# back-compat scalar resume path. See README.md "Multi-interrupt resolution".
+# Id(s) of the interrupt this segment resolves (README.md "Multi-interrupt resolution").
 ENV_INTERRUPT = "HMR_LG_INTERRUPT"
 ENV_ARTIFACTS_DIR = "HMR_ARTIFACTS_DIR"
 ENV_RECOVER = "HMR_LG_RECOVER"  # recover marker (ADR-0044): set by Homer's resume endpoint
 
-# The env name the runtime asks Homer to deliver the resume value under. The
-# wrappers default to HMR_LG_RESUME; we pass it explicitly to stay in sync.
 RESUME_PARAM = ENV_RESUME
 
 ARTIFACT_FILENAME = "langgraph.json"
@@ -56,12 +40,7 @@ DEFAULT_GRAPH_ATTR = "graph"
 
 
 def _load_graph(module_spec: str) -> Any:
-    """Import the graph object named by ``pkg.mod:attr`` or ``pkg.mod``.
-
-    Without an explicit ``:attr`` the attribute ``graph`` is used. The module
-    is expected to expose either a compilable ``StateGraph`` builder or an
-    already-compiled graph.
-    """
+    """Import the graph object named by ``pkg.mod:attr``; the attribute defaults to ``graph``."""
     if ":" in module_spec:
         module_name, attr = module_spec.split(":", 1)
     else:
@@ -73,9 +52,8 @@ def _load_graph(module_spec: str) -> Any:
 def _compile(graph: Any, saver: SqliteSaver) -> CompiledStateGraph:
     """Return a compiled graph bound to ``saver``.
 
-    Accepts an uncompiled ``StateGraph`` (compiles it with the checkpointer) or
-    an already-compiled graph (used as-is — the module is then responsible for
-    having attached a checkpointer). Anything else raises ``TypeError``.
+    An uncompiled ``StateGraph`` is compiled with ``saver``; a compiled graph is
+    used as-is. Anything else raises ``TypeError``.
     """
     if isinstance(graph, StateGraph):
         return graph.compile(checkpointer=saver)
@@ -89,16 +67,8 @@ def _resume_payload(
 ) -> list[str]:
     """Build the wrapper argv for a pending interrupt payload.
 
-    ``human`` → ``homer-ask ask-and-dispatch`` (re-run the agent with the
-    operator's answer). ``fanout`` → ``homer-dispatch`` with completion
-    continuation flags (re-run the agent with the sub's result).
-
-    ``interrupt_id`` is the stable id of the interrupt being resolved; it is
-    threaded back so the resume run targets exactly this interrupt via a
-    per-interrupt resume map. It must reach the *resumed agent*: for the human
-    gate that agent is the dispatch target, so it rides as ``--param``; for
-    fan-out the resumed agent is the *continuation*, not the sub, so it rides as
-    ``--continue-param`` (a plain ``--param`` would land on the sub and be lost).
+    ``interrupt_id`` rides ``--param`` for a human gate and ``--continue-param``
+    for a fan-out.
     """
     kind = payload.get("type")
     ttl = payload.get("ttl")
@@ -137,8 +107,7 @@ def _resume_payload(
             thread_id,
             "--resume-param",
             RESUME_PARAM,
-            # The interrupt id targets the resumed PARENT (the continuation), not the
-            # sub — so it must ride the continuation channel, not --param. See README.md.
+            # --continue-param: the id targets the resumed parent, not the sub.
             "--continue-param",
             f"{ENV_INTERRUPT}={interrupt_id}",
         ]
@@ -157,8 +126,7 @@ def _resume_payload(
 def _join_groups(interrupts: list[Any]) -> dict[str, list[Any]]:
     """Group pending fanout interrupts by their non-None ``group`` key.
 
-    Human gates and ungrouped fanouts (no ``group`` in the payload) are skipped,
-    so they always take the single, one-resume-per-interrupt path.
+    Human gates and ungrouped fanouts are skipped.
     """
     groups: dict[str, list[Any]] = {}
     for i in interrupts:
@@ -175,11 +143,8 @@ def _join_groups(interrupts: list[Any]) -> dict[str, list[Any]]:
 def _join_body(members: list[Any], thread_id: str, agent_name: str) -> dict[str, Any]:
     """Build the ``/api/v1/callback/joins`` request body for a fan-out group.
 
-    One sub per member interrupt (agent + params + result transform + the
-    interrupt id its result is keyed under). The comma-joined sorted interrupt
-    ids ride ``continueParams`` as ``HMR_LG_INTERRUPT`` — the signal the resume
-    run uses to deliver the full result map. The continuation TTL, when any
-    member sets one, is the largest member ttl.
+    One sub per member interrupt; the comma-joined sorted ids ride
+    ``continueParams`` as ``HMR_LG_INTERRUPT``. The TTL is the largest member ttl.
     """
     ordered = sorted(members, key=lambda i: i.id)
     ids = [i.id for i in ordered]
@@ -208,10 +173,7 @@ def _join_body(members: list[Any], thread_id: str, agent_name: str) -> dict[str,
 def _select_interrupt(interrupts: list[Any]) -> Any:
     """Pick the single interrupt to resolve this segment: the smallest stable id.
 
-    A pure function of the interrupt set — deterministic regardless of insertion
-    order or which thread parked them. (The ids themselves are assigned by
-    LangGraph and are not stable across *fresh* runs, so determinism is "same id
-    set → same choice", not "same branch across reruns".)
+    A pure function of the interrupt set: the same id set gives the same choice.
     """
     return min(interrupts, key=lambda i: i.id)
 
@@ -219,10 +181,8 @@ def _select_interrupt(interrupts: list[Any]) -> Any:
 def _has_failed_task(snapshot: Any) -> bool:
     """Whether the latest checkpoint still holds a task that raised.
 
-    A segment whose node raised after resolving an interrupt checkpoints no
-    ``next`` task, only the failed one, so ``not snapshot.next`` alone reads as
-    "completed" and would end a failed run as FINISHED. Recover must re-enter
-    such a thread: ``invoke(None)`` re-runs the failed task.
+    A failed task leaves ``snapshot.next`` empty, so ``next`` alone would end a
+    failed run as FINISHED (ADR-0044).
     """
     return any(task.error is not None for task in snapshot.tasks)
 
@@ -230,10 +190,8 @@ def _has_failed_task(snapshot: Any) -> bool:
 def _write_artifact(thread_id: str, module: str, segment: str) -> None:
     """Record this run's LangGraph identity for Homer, crash-safe.
 
-    Written before the graph executes so a mid-run crash cannot lose the
-    thread id; Homer's resume/status endpoints read it from the process's
-    artifacts directory. Skipped when HMR_ARTIFACTS_DIR is unset (agentdebug).
-    See ADR-0044.
+    Written before the graph executes so a crash keeps the thread id; skipped when
+    ``HMR_ARTIFACTS_DIR`` is unset. See ADR-0044.
     """
     artifacts_dir = os.environ.get(ENV_ARTIFACTS_DIR)
     if not artifacts_dir:
@@ -248,18 +206,12 @@ def _write_artifact(thread_id: str, module: str, segment: str) -> None:
 def run(module: str, input_env: str = ENV_INPUT) -> int:
     """Run or resume one workflow segment for the graph named by ``module``.
 
-    On a fresh run the graph's initial JSON input is read from the env var
-    named by ``input_env`` (the command's ``inputEnv``, defaulting to
-    ``HMR_LG_INPUT``). Resume detection is independent of this.
-
-    Returns a process exit code. Graph exceptions propagate (the process exits
-    non-zero with the traceback on stderr).
+    A fresh run reads its JSON input from the env var ``input_env``. Returns the
+    exit code; graph exceptions propagate.
     """
     thread_env = os.environ.get(ENV_THREAD) or ""
     resuming = bool(thread_env) and ENV_RESUME in os.environ
-    # Recover mode (ADR-0044): re-enter a crashed thread from its latest
-    # checkpoint. A stored HMR_LG_RESUME wins over recover on purpose — a
-    # segment that crashed mid-interrupt-resume must replay its resume value.
+    # A stored resume value wins over recover (ADR-0044).
     recovering = (
         bool(thread_env)
         and not resuming
@@ -277,12 +229,8 @@ def run(module: str, input_env: str = ENV_INPUT) -> int:
     _write_artifact(thread_id, module, segment)
 
     if resuming:
-        # The parking segment chose a unit and recorded its id(s) in HMR_LG_INTERRUPT:
-        #   - comma-joined ids → a join: HMR_LG_RESUME is the full {id: per_sub} map,
-        #     resolving every interrupt in the group in this one invoke.
-        #   - one id → a single targeted interrupt: a per-interrupt {id: value} map,
-        #     leaving the other pending interrupts untouched.
-        #   - absent → back-compat scalar resume.
+        # Comma-joined ids resume a join, one id a single interrupt, none a scalar
+        # resume (README.md "Multi-interrupt resolution").
         iid = os.environ.get(ENV_INTERRUPT) or ""
         if "," in iid:
             graph_input: Any = Command(resume=json.loads(os.environ[ENV_RESUME]))
@@ -309,7 +257,7 @@ def run(module: str, input_env: str = ENV_INPUT) -> int:
                 )
                 return 1
             if not snapshot.next and not _has_failed_task(snapshot):
-                # Thread already completed — idempotent recover: emit final state.
+                # An already completed thread recovers idempotently.
                 print(json.dumps(snapshot.values, default=str))
                 return 0
 
@@ -317,26 +265,17 @@ def run(module: str, input_env: str = ENV_INPUT) -> int:
 
         interrupts = result.get("__interrupt__") if isinstance(result, dict) else None
         if not interrupts:
-            # Graph completed: emit the final state as JSON.
             print(json.dumps(result, default=str))
             return 0
 
-        # Per-segment unit selection. A fan-out group (≥2 fanout interrupts sharing
-        # a non-None `group`) is resolved as ONE join: dispatch all subs at once and
-        # resume the thread a single time after the last finishes. Otherwise fall
-        # back to today's path — resolve exactly one interrupt (smallest stable id),
-        # leaving the rest pending for later segments. Either way a segment has
-        # exactly one resume-producing side effect. See ADR-0026.
+        # One resume-producing side effect per segment: a join group or one interrupt (ADR-0026).
         eligible = {g: m for g, m in _join_groups(interrupts).items() if len(m) >= 2}
         if eligible:
-            # The eligible group with the smallest min interrupt id wins; the rest
-            # (other groups, ungrouped fanouts, human gates) stay pending.
             group_name = min(eligible, key=lambda g: min(i.id for i in eligible[g]))
             members = eligible[group_name]
             body = _join_body(members, thread_id, agent_name)
             run_homer_cli("homer-join", [], input=json.dumps(body))
-            # Status line goes to stderr: on the parked path stdout must stay clean
-            # so a result-env/resultJsonPath mapping over this segment sees no prose.
+            # stdout stays clean on the parked path (README.md).
             print(
                 f"homer_langgraph: parked thread {thread_id} on join group "
                 f"'{group_name}' ({len(members)} subs)",
@@ -355,8 +294,7 @@ def run(module: str, input_env: str = ENV_INPUT) -> int:
 
         argv = _resume_payload(payload, thread_id, agent_name, chosen.id)
         run_homer_cli(argv[0], argv[1:])
-        # Status line goes to stderr: on the parked path stdout must stay clean
-        # so a result-env/resultJsonPath mapping over this segment sees no prose.
+        # stdout stays clean on the parked path (README.md).
         print(
             f"homer_langgraph: parked thread {thread_id} on {payload.get('type')} gate",
             file=sys.stderr,

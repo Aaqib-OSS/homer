@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-19
 deciders: Lukáš Vlk
-amended: 2026-08-20, 2026-09-30, 2026-10-09
+amended: 2026-08-20, 2026-09-30, 2026-10-09, 2026-11-20
 ---
 # ADR-0044: LangGraph resume and run introspection
 
@@ -281,6 +281,29 @@ only continuations whose `owner` equals the run's, and an unowned run only
 unowned rows. No served case crosses owners — continuations copy their
 origin run's owner down the chain (ADR-0038), and a retry or resume by another
 principal is owned by that principal and reads its own checkpoint store.
+
+## Amendment (2026-11-20): runtime constraints the source no longer narrates
+
+- **`state` opens the store read-only and only if it is a regular, singly-linked file.** The state
+  directory is agent-writable. A missing file is "no checkpoint" (a plain connect would create an
+  empty one), a symlink or hard link would make the server-host read serve another database, a FIFO
+  would block it, and a read-write connection would let `SqliteSaver` set up tables and switch to
+  WAL in a planted file, so the URI is `mode=ro` (CWE-59). The lstat-to-open window and a swapped
+  parent directory are the same-UID residual of ADR-0047.
+- **`interruptsSeen` is capped in payload, not in the fold.** `done` may only be provable from the
+  oldest snapshot, so the history walk stays unbounded; only the reported ids per node are cut, so a
+  node that served thousands of fan-outs does not keep growing the JSON, the response and the
+  per-id continuation lookup. Each node's ids are an ordered set: the live park from the latest
+  snapshot first (history may omit it on some backends), then history newest-first, so a clipped
+  node still reports what it is parked on now.
+- **A task is completed when it has a `result`**, since a recovery that succeeds keeps the failed
+  attempt's error on the same task. A thread whose last checkpoint holds only a failed task has no
+  `next` task, so recover treats it as unfinished and re-runs it with `invoke(None)` instead of
+  reporting FINISHED. A stored `HMR_LG_RESUME` wins over recover, because a segment that crashed
+  mid-interrupt-resume must replay its resume value.
+- **`state` carries the Mermaid source** because the graph is already compiled there, which saves a
+  second `inspect` subprocess per status request. A draw or topology failure degrades that field to
+  null and must not cost the node, error and interrupt fields.
 
 ## More Information
 
