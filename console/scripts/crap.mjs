@@ -71,7 +71,8 @@ export function isScoredPath(relPath) {
     included &&
     !path.posix.basename(relPath).includes('.test.') &&
     !relPath.startsWith('components/ui/') &&
-    !relPath.endsWith('.d.ts')
+    !relPath.endsWith('.d.ts') &&
+    !/^lib\/monaco\/[^/]*\.worker\.ts$/.test(relPath)
   );
 }
 
