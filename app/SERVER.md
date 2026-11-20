@@ -3997,9 +3997,11 @@ backstop that only trips on misconfiguration, never in steady state.
 Homer logs via **logback-classic** (`app/src/main/resources/logback.xml`).
 The bundled defaults set `homer.app` to `DEBUG`, frameworks (`io.ktor`,
 `io.netty`, `io.opentelemetry`) to `INFO`, and the root level to
-`${HOMER_LOG_LEVEL:-INFO}`. `org.apache.sshd.client.channel.ChannelExec` is
-pinned to `ERROR`, because its lower levels quote the ssh runner's remote
-command and the env it carries; `HOMER_LOG_LEVEL` does not lower it. (`agentdebug` is the exception — it keeps
+`${HOMER_LOG_LEVEL:-INFO}`. Two Apache MINA SSHD loggers have fixed levels,
+because their lower levels quote the ssh runner's remote command and the env
+it carries: `org.apache.sshd.client.channel.ChannelExec` is pinned to `ERROR`
+and `org.apache.sshd.client.session.ClientSessionImpl` to `INFO`.
+`HOMER_LOG_LEVEL` does not lower either. (`agentdebug` is the exception — it keeps
 slf4j-simple to avoid a double SLF4J binding.)
 
 Two log streams:

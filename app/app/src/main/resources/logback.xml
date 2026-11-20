@@ -51,9 +51,11 @@
     <logger name="io.ktor" level="INFO"/>
     <logger name="io.netty" level="INFO"/>
     <logger name="io.opentelemetry" level="INFO"/>
-    <!-- Its WARN and DEBUG lines quote the remote command, which carries the run's env.
-         An explicit level, so HOMER_LOG_LEVEL on the root cannot lower it. -->
+    <!-- These quote the ssh remote command, which carries the run's env: the channel's
+         WARN/DEBUG lines, the session's DEBUG createExecChannel line and TRACE packet dump.
+         Explicit levels, so HOMER_LOG_LEVEL on the root cannot lower them. -->
     <logger name="org.apache.sshd.client.channel.ChannelExec" level="ERROR"/>
+    <logger name="org.apache.sshd.client.session.ClientSessionImpl" level="INFO"/>
 
     <!-- HOMER_LOG_LEVEL raises the root level (e.g. DEBUG in dev compose);
          defaults to INFO. Replaces the old slf4j-simple defaultLogLevel prop. -->
