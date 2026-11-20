@@ -28,12 +28,8 @@ import kotlin.time.ExperimentalTime
 enum class ContinuationStatus { PENDING, DISPATCHING, DISPATCHED, FAILED, CANCELLED, EXPIRED }
 
 /**
- * Continuation shape, stored in the `continuations.kind` column.
- *
- * - [SINGLE] watches one process and resumes the target once it ends (today's path).
- * - [JOIN] watches N processes (a parallel fan-out group) and resumes the target a
- *   single time after the *last* of them reaches a terminal state, carrying all N
- *   results keyed by interrupt id. See ADR-0026.
+ * Continuation shape, the `continuations.kind` column: [SINGLE] resumes the target when its one watched
+ * process ends, [JOIN] once after the last of N watched processes ends. See ADR-0026.
  */
 enum class ContinuationKind { SINGLE, JOIN }
 
@@ -49,12 +45,9 @@ data class JoinWatch(
 )
 
 /**
- * A registered completion continuation: the target agent to start once a watched sub-process
- * reaches a terminal state, carrying that process's result under [resumeParam]. The
- * continuation outlives both the origin and watched processes. See ADR-0023.
- * For [ContinuationKind.JOIN] continuations [watchedProcessId] is the sentinel `0` (real
- * process ids start at 1) so the single-watch trigger never matches them; the watched set
- * lives in [watches] instead. See ADR-0026.
+ * A completion continuation: the target to start, with the watched result under [resumeParam], once the
+ * watched process ends. A JOIN's [watchedProcessId] is the sentinel `0`; [watches] holds its set.
+ * See ADR-0023, ADR-0026.
  */
 data class Continuation(
     val id: Int,
@@ -125,11 +118,8 @@ internal class ContinuationService(
     private val starts by lazy { ContinuationStartService(this, dispatchService, processManager, logger) }
 
     /**
-     * Validates everything [create] checks before it inserts a row — the dispatch hop's
-     * authorization, origin liveness, resumeParam (blank / key collision), dispatchable target, and
-     * ttl. Callers that start a side effect (e.g. a sub-process) before registering the continuation
-     * MUST call this first so a 4xx can't leave an untracked run behind. Throws the same exceptions
-     * [create] would. See ADR-0023, ADR-0039.
+     * Checks everything [create] does before its insert, throwing what [create] would. A caller starting a
+     * sub first must call it, so a 4xx leaves no untracked run. See ADR-0023, ADR-0026, ADR-0039.
      */
     suspend fun validate(
         originProcessId: Int,
@@ -176,10 +166,8 @@ internal class ContinuationService(
             watchedProcessId,
             target,
         )
-        // Race close: the watched sub-process may have reached a terminal state in the gap
-        // between its start and this insert, so the live terminal hook already ran and found
-        // no PENDING row. Re-check now; if it is already terminal, fire here. The claim CAS
-        // makes this safe against a concurrent live hook (only one fires). See ADR-0023.
+        // The watched run may have ended before this insert, unseen by its terminal hook: fire it here.
+        // The claim CAS keeps it exactly-once. See ADR-0023.
         val watchedStatus = processManager.getProcessStatus(watchedProcessId)
         if (watchedStatus in TERMINAL_STATUSES) {
             fires.fire(continuation.copy(id = id), watchedStatus)
@@ -188,11 +176,8 @@ internal class ContinuationService(
     }
 
     /**
-     * Full pre-flight for a JOIN continuation — everything [createJoin] checks plus the
-     * dispatchability and dispatch-hop authorization of every sub agent. The endpoint MUST call
-     * this BEFORE starting any sub so a 4xx can't leave started subs untracked (ADR-0023's
-     * validate-before-start, generalized to N). Throws the same exceptions as [validate].
-     * See ADR-0026, ADR-0039.
+     * [validate] plus every sub agent's dispatchability and hop authorization. Call it before starting any
+     * sub, so a 4xx leaves none untracked. See ADR-0026, ADR-0039.
      */
     suspend fun validateJoin(
         originProcessId: Int,
@@ -218,10 +203,8 @@ internal class ContinuationService(
     }
 
     /**
-     * Registers a JOIN continuation over already-started sub-processes (in [watches]) and resumes
-     * [target] a single time once the last sub reaches a terminal state. Sub agents were validated
-     * and started by the caller, so this re-validates only the continuation-level inputs (origin,
-     * target, resumeParam, ttl). Race-closes if every sub is already terminal. See ADR-0026.
+     * Registers a JOIN over the started subs in [watches], resuming [target] once the last ends. Re-validates
+     * only the continuation's own inputs, and fires at once if every sub already ended. See ADR-0026.
      */
     suspend fun createJoin(
         originProcessId: Int,
@@ -244,9 +227,8 @@ internal class ContinuationService(
             watches.size,
             target,
         )
-        // Race close: every sub may have terminated before this insert, so the live terminal hooks
-        // already ran and found no PENDING join. Re-check; if all are terminal, fire here. The claim
-        // CAS makes this safe against a concurrent live hook (only one fires). See ADR-0026.
+        // Every sub may have ended before this insert, unseen by their hooks: fire it here. The claim
+        // CAS keeps it exactly-once. See ADR-0026.
         val registered = continuation.copy(id = id)
         if (allWatchedTerminal(registered)) {
             fires.fireJoin(registered)
@@ -317,12 +299,8 @@ internal class ContinuationService(
     }
 
     /**
-     * The completion trigger. Fires every PENDING continuation watching [processId] now that it
-     * has reached [status] (any terminal status — the parked workflow must always wake). Each is
-     * claimed (PENDING→DISPATCHING CAS) before its run starts so a crash between run-start and
-     * markDispatched cannot double-fire; the claim makes it idempotent against concurrent calls
-     * and boot replay. Never throws into the caller — a failure marks the continuation FAILED and
-     * is logged, so it can never corrupt the watched process's terminal status. See ADR-0023.
+     * The completion trigger: fires every PENDING continuation watching [processId], at any terminal
+     * [status], each behind its claim CAS. Never throws, so it cannot corrupt that status. See ADR-0023.
      */
     suspend fun onProcessTerminal(
         processId: Int,
@@ -338,9 +316,8 @@ internal class ContinuationService(
         for (continuation in pending) {
             fires.fire(continuation, status)
         }
-        // JOIN continuations watching this process fire only once all of their watched processes are
-        // terminal; the last sub to finish triggers the resume. Two subs finishing concurrently can
-        // both observe "all terminal" — the claim CAS in fireJoin keeps it exactly-once. See ADR-0026.
+        // A JOIN fires once all its watched runs are terminal; two subs ending together both see that,
+        // and fireJoin's claim CAS keeps it exactly-once. See ADR-0026.
         val joins =
             coRunCatching {
                 repository.findJoinsByWatchedProcessId(processId)

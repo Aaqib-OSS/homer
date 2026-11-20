@@ -28,14 +28,8 @@ internal class AgentDefinitionWriteGate(
         authorizeCreateAgent: (String) -> Boolean,
     ): AgentFilesService.FileOpResult<Unit>? {
         val isYaml = landingRel.endsWith(".yaml")
-        // A definition write at ANY depth needs the create-agent grant on the name it declares,
-        // denied as not-found (§12 rule 3). See ADR-0068. A body that does not parse declares
-        // nothing and is denied the same way (CWE-285): gating on `declared != null` alone would
-        // let an unparsable definition-named file create the boundary directory on disk, which
-        // the file API then denies as not-found and nobody can remove — fail open on malformed
-        // input (§12 rule 3). The agent's own root definition is exempt: it cannot create an
-        // agent, and the schema validation below already denies it, with the parse errors the
-        // caller needs (a 404 there would only hide them).
+        // Any definition write needs the create-agent grant on its declared name; one that does not
+        // parse is denied alike, the root definition excepted (ADR-0068, ADR-0047 rule 3, CWE-285).
         if (isDefFileName(landingRel)) {
             val declared = declaredAgentName(content, isYaml)
             if (declared == null) {

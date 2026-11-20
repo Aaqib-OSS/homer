@@ -14,9 +14,8 @@ import kotlinx.coroutines.withContext
 import org.slf4j.Logger
 
 /**
- * The start path of a continuation: the two callback bodies that dispatch the run(s) and register the
- * continuation watching them, with [ContinuationService] owning the row and the fire path. Split out
- * of that class so neither exceeds the size limit (root CLAUDE.md §2). See ADR-0023, ADR-0026.
+ * The start path of a continuation: dispatches the run(s) a callback body asks for and registers the
+ * continuation watching them; [ContinuationService] owns the row and the fire path. See ADR-0023, ADR-0026.
  */
 internal class ContinuationStartService(
     private val continuations: ContinuationService,
@@ -25,10 +24,8 @@ internal class ContinuationStartService(
     private val logger: Logger,
 ) {
     /**
-     * Starts the run a `POST /api/v1/callback/runs` body asks for: a plain dispatch when it names no
-     * [CreateRunRequest.continueAgent], otherwise the sub plus the completion continuation watching
-     * it. Every continuation input is validated BEFORE the sub starts, and a failure only visible
-     * after the start (the pending cap) kills the sub, so a 4xx never orphans a run. See ADR-0023.
+     * Starts the run a `POST /api/v1/callback/runs` body asks for: a plain dispatch, or with a
+     * [CreateRunRequest.continueAgent] the sub plus its continuation. A 4xx never orphans the sub. ADR-0026.
      */
     suspend fun startWithContinuation(
         originProcessId: Int,
@@ -38,9 +35,8 @@ internal class ContinuationStartService(
         if (continueAgent == null) {
             return CreateRunResponse(dispatchService.dispatchNow(originProcessId, request.agent, request.params))
         }
-        // `params` go to the sub (dispatchNow); `continueParams` (+ the thread id) go to the
-        // continuation run — the resumed parent. The LangGraph interrupt id rides here so it
-        // reaches the parent, not the useless sub. See ADR-0023.
+        // `params` go to the sub, `continueParams` and the thread id to the resumed parent, so the
+        // LangGraph interrupt id reaches the parent. See ADR-0023.
         val continuationParams = continuationRunParams(request.continueThread, request.continueParams)
         continuations.validate(
             originProcessId = originProcessId,
@@ -68,10 +64,8 @@ internal class ContinuationStartService(
     }
 
     /**
-     * Starts the parallel fan-out a `POST /api/v1/callback/joins` body asks for: every sub, plus ONE
-     * join continuation resuming the parent after the last of them ends. The join and every sub are
-     * validated before the first start, and a failure only visible once subs start kills every sub
-     * this request started, so a 4xx cannot orphan one. See ADR-0026.
+     * Starts every sub a `POST /api/v1/callback/joins` body asks for, plus ONE join continuation resuming
+     * the parent after the last ends. A 4xx never orphans a sub. See ADR-0026.
      */
     suspend fun startJoin(
         originProcessId: Int,

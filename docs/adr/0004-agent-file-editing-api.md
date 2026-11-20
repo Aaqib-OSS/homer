@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-04-30
 deciders: Lukáš Vlk
+amended: 2026-11-20
 ---
 # ADR-0004: Agent file editing API
 
@@ -166,3 +167,12 @@ mental model.
 - Schema backstop: `SchemaValidationTest` still guards the on-disk
   format; the write path uses the loader's deserializer, not the
   schema file directly.
+
+## Amendment (2026-11-20): a denied write or create removes the directories it made
+
+A `403` from the race above must leave no directory behind. A denied `write()` removes the
+empty chain of parent directories it created for the file. A denied `create()` removes the new
+agent directory while it holds no `agent.yaml`. A leftover directory with no definition would
+wedge the name, because every retry hits the `409` for an existing directory, and the file API
+cannot delete directories. A file raced into the new directory makes the removal fail, and the
+directory stays; the `409` then reports it truthfully.

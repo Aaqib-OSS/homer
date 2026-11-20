@@ -16,10 +16,8 @@ import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Loads agent definitions from [agentsSearchPath] and publishes them as one atomic
- * snapshot. Scanning ([AgentScanner], validating through [AgentDefinitionValidator])
- * and the reload diff ([AgentReloadDiff]) are collaborators built from the
- * constructor's parameters, so the DI wiring sees one service.
+ * Loads agent definitions from [agentsSearchPath] and publishes them as one atomic snapshot. The
+ * [AgentScanner] and the [AgentReloadDiff] are built from the constructor's parameters. See ADR-0068.
  */
 class AgentsService(
     private val agentsSearchPath: String,
@@ -71,12 +69,8 @@ class AgentsService(
     }
 
     /**
-     * Rescan agent definitions on disk and atomically swap in the new state.
-     * Disk I/O (`scanner.scan()`) runs outside any lock so concurrent callers can scan in
-     * parallel; the new state is published via `compareAndSet` against the snapshot the scan
-     * was based on. On a lost race we rescan and retry — both the scan AND the diff must be
-     * recomputed against the now-current state, or a stale scan attributes "removed" to
-     * directories the winning writer just legitimately added.
+     * Rescans the agents outside any lock and publishes by compare-and-set on the snapshot the scan
+     * began from; a lost race rescans and re-diffs, up to [MAX_RELOAD_CAS_ATTEMPTS]. See ADR-0068.
      */
     fun reload(): AgentReloadResult {
         var attempt = 0

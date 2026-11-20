@@ -8,10 +8,8 @@ import homer.app.models.Principaled
 import homer.app.models.flattenAuthSchemes
 
 /**
- * Authorization authority for the grants model (ADR-0037). Built once from the
- * resolved config; all lookups are in-memory. `enabled = false` means no auth
- * schemes are configured (unsecured mode) — every check passes, matching the
- * pre-grants behavior.
+ * Authorization authority for the grants model, built once from the resolved config (ADR-0037).
+ * `enabled = false`, unsecured mode with no auth scheme configured, passes every check (ADR-0039).
  */
 class Authorizer(
     private val principals: Map<String, PrincipalGrants>,
@@ -47,11 +45,8 @@ class Authorizer(
     }
 
     /**
-     * Whether [principal] may read server-level runner state (`GET /runners`, `/runners/queue`
-     * and `/maintenance`): an admin, unsecured mode, or a READ grant listing the literal `*`
-     * pattern. A narrower read grant does not unlock server state, and an unknown or absent
-     * principal fails closed. Read-only: it grants no reload, kill or maintenance toggle.
-     * See ADR-0111.
+     * Whether [principal] may read runner state (`GET /runners`, `/runners/queue`, `/maintenance`): an
+     * admin, unsecured mode, or a READ grant on the literal `*`. An unknown principal fails closed. ADR-0111.
      */
     fun canReadServerState(principal: String?): Boolean = isAdmin(principal) || readableAgents(principal)?.contains("*") == true
 
@@ -61,17 +56,15 @@ class Authorizer(
         agentName: String,
     ): Boolean = Action.entries.any { hasAction(principal, it, agentName) }
 
-    /** Whether agent [agentName]'s own agentGrants permit dispatching to [target] (Plan 2). */
+    /** Whether agent [agentName]'s own agentGrants permit dispatching to [target] (ADR-0039). */
     fun agentCanDispatch(
         agentName: String,
         target: String,
     ): Boolean = agentGrants[agentName].orEmpty().any { it.matches(target, Action.RUN) }
 
     /**
-     * Whether the hop `dispatchingAgent → target` is authorized: [root] holds RUN
-     * on [target] (admin / disabled short-circuit via [hasAction]), OR
-     * [dispatchingAgent] is delegated RUN on [target] via `server.agentGrants`.
-     * The write-path counterpart of the read-side [canSee]. See ADR-0039.
+     * Whether the hop `dispatchingAgent → target` is authorized: [root] holds RUN on [target], or
+     * [dispatchingAgent] is delegated RUN on it by `server.agentGrants`. See ADR-0039.
      */
     fun canDispatchHop(
         root: String?,

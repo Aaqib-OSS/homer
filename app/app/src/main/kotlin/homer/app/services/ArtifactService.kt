@@ -86,13 +86,8 @@ class ArtifactService(
                 // the distinction lets an attacker probe filesystem layout.
                 return Result.failure(IllegalArgumentException("Artifact not found"))
             }
-        // Reject an existing non-regular file (FIFO/device/directory/symlink) and a
-        // hard-linked regular file (its other name may be another run's artifact —
-        // the same cross-principal read LogTailService/LlmEventStreamService refuse
-        // for stdout, CWE-59). Files.size reports 0 for a FIFO so the size pre-flight
-        // passes, then the blocking read would pin the request thread forever. A
-        // not-yet-existing path still succeeds — streamed/tailed artifacts resolve
-        // before they are written.
+        // Refuse a non-regular or hard-linked file: a FIFO would pin the request thread, a hard link
+        // may name another run's artifact. A missing path passes (CWE-59, ADR-0070).
         if (PathSafety.isLinkedOrSpecial(contained)) {
             return Result.failure(IllegalArgumentException("Artifact not found"))
         }
@@ -100,12 +95,9 @@ class ArtifactService(
     }
 
     /**
-     * Lists regular files under the process's artifacts directory (recursive). Paths are
-     * relative to the artifacts directory, use forward slashes, and are sorted ascending.
-     * The listing is capped at [maxListEntries] entries — more files yield exactly that many
-     * with `truncated = true`, so an agent writing an enormous number of artifacts cannot
-     * exhaust memory here. Returns failure if the process is unknown, has no artifacts dir,
-     * or the directory does not exist on disk or is a symlink.
+     * The regular files under the process's artifacts directory, relative, `/`-separated and sorted, capped
+     * at [maxListEntries] with `truncated = true` (CWE-400). Fails for an unknown process and for a missing
+     * or symlinked artifacts directory.
      */
     suspend fun listArtifacts(processId: Int): Result<ArtifactListingResponse> {
         val processInfo =

@@ -14,12 +14,9 @@ import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
 /**
- * Rolling-window tracker for Claude spend, backed by the durable `cost_entries` SQLite ledger —
- * windows, monthly and all-time statistics survive restarts. See ADR-0035.
- * Two cap windows: **Global**, all recorded costs in the trailing [GLOBAL_WINDOW_SECONDS] (60 s)
- * window capped by [CostLimits.globalUsdPerMin]; **Per-agent**, one agent's costs in the trailing
- * [AGENT_WINDOW_SECONDS] (24 h) window capped by [CostLimits.perAgentUsdPerDay]. The call pattern
- * is fail-fast: [checkCaps] BEFORE invoking Claude (refuses overage), [recordCost] AFTER a run.
+ * Soft spend caps over the durable `cost_entries` ledger: a 60 s global window ([CostLimits.globalUsdPerMin]) and
+ * a 24 h per-agent one ([CostLimits.perAgentUsdPerDay]). [checkCaps] runs before a run, [recordCost] after one.
+ * See ADR-0035, ADR-0007.
  */
 @OptIn(ExperimentalTime::class)
 class CostMeter(
@@ -39,20 +36,15 @@ class CostMeter(
     private var lastOvershootLogAtMs = 0L
 
     /**
-     * Running count of [recordCost] calls that pushed a window past its cap.
-     * Because [checkCaps] reserves no budget (see ADR-0007), this is expected
-     * to be non-zero under concurrency; it exists so operators can see how
-     * often — and by how much — the soft cap is actually exceeded. Counts
-     * this process's lifetime only (observability, not durable state).
+     * The [recordCost] calls that pushed a window past its cap since this process started; non-zero under
+     * concurrency, since [checkCaps] reserves no budget. See ADR-0007, ADR-0035.
      */
     val overshootCount: Long
         get() = overshootTotal.get()
 
     /**
-     * Throws [CostCapExceededException] if EITHER the global or the agent's per-day
-     * window already exceeds its cap. This is called pre-flight: a passing check
-     * does NOT reserve budget — concurrent callers may all pass the check and then
-     * collectively push the window over the cap. Acceptable for a soft throttle.
+     * Throws [CostCapExceededException] when the global or [agentName]'s window is already at its cap.
+     * A pass reserves no budget, so concurrent callers can push a window over together. See ADR-0007.
      */
     suspend fun checkCaps(agentName: String) {
         val now = clock.now().epochSeconds
@@ -82,9 +74,7 @@ class CostMeter(
         if (costUsd <= 0.0) return
         val now = clock.now().epochSeconds
         repository.insert(agentName, now, costUsd)
-        // Detect a window that has crept past its cap. checkCaps is
-        // pre-flight and reserves nothing, so concurrent callers (or a
-        // single over-budget run) can push a window strictly over the cap.
+        // checkCaps reserves nothing, so concurrent runs, or one over-budget run, can push a window past its cap.
         var overshoot: Overshoot? = null
         limits.perAgentUsdPerDay[agentName]?.let { cap ->
             val sum = repository.sumAgentSince(agentName, now - AGENT_WINDOW_SECONDS)
