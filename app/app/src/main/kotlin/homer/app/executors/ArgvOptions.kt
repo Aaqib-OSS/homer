@@ -24,7 +24,7 @@ internal fun MutableList<String>.addListOpt(
 
 /**
  * Emits `name v1 v2 v3` for variadic CLI flags (`--add-dir`, `--mcp-config`, `--file`).
- * The caller must place a flag right after it; `ClaudeArgvBuilderTest` pins that order.
+ * ClaudeArgvBuilder emits these last, so the fixed tail flags close each block.
  */
 internal fun MutableList<String>.addVariadicOpt(
     optionName: String,

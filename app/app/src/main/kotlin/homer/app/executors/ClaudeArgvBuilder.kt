@@ -44,6 +44,7 @@ class ClaudeArgvBuilder(
                 addMiscOpts(opts)
 
                 opts.options?.let { addAll(it) }
+                addVariadicOpts(opts)
                 add("--output-format")
                 add("stream-json")
                 add("--print")
@@ -111,7 +112,6 @@ class ClaudeArgvBuilder(
         addBoolOpt("--disable-slash-commands", opts.disableSlashCommands)
 
         // MCP
-        addVariadicOpt("--mcp-config", opts.mcpConfig)
         addBoolOpt("--strict-mcp-config", opts.strictMcpConfig)
 
         // Settings
@@ -121,10 +121,15 @@ class ClaudeArgvBuilder(
         addListOpt("--setting-sources", opts.settingSources)
     }
 
-    private fun MutableList<String>.addMiscOpts(opts: ClaudeCmdOptions) {
-        addStringOpt("--max-turns", opts.maxTurns.toString())
+    /** Emitted last, so the fixed `--output-format` tail closes each block for every input. */
+    private fun MutableList<String>.addVariadicOpts(opts: ClaudeCmdOptions) {
+        addVariadicOpt("--mcp-config", opts.mcpConfig)
         addVariadicOpt("--add-dir", opts.addDir)
         addVariadicOpt("--file", opts.file)
+    }
+
+    private fun MutableList<String>.addMiscOpts(opts: ClaudeCmdOptions) {
+        addStringOpt("--max-turns", opts.maxTurns.toString())
         addDoubleOpt("--max-budget-usd", opts.maxBudgetUsd)
         addStringOpt("--effort", opts.effort)
         addBoolOpt("--bare", opts.bare)

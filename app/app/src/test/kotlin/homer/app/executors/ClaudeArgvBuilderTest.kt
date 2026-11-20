@@ -11,29 +11,25 @@ class ClaudeArgvBuilderTest {
     private fun argv(opts: ClaudeCmdOptions) = ClaudeArgvBuilder().build("claude", opts, emptyMap())
 
     @Test
-    fun `a variadic option is closed by a flag, so it cannot swallow later arguments`() {
+    fun `variadic blocks are directly followed by the fixed tail whatever raw options precede it`() {
         val optionSets =
             listOf(
-                ClaudeCmdOptions(mcpConfig = listOf("a.json", "b.json")) to ("--mcp-config" to 2),
-                ClaudeCmdOptions(addDir = listOf("/x", "/y", "/z")) to ("--add-dir" to 3),
-                ClaudeCmdOptions(file = listOf("f1")) to ("--file" to 1),
+                ClaudeCmdOptions(mcpConfig = listOf("a.json", "b.json")),
+                ClaudeCmdOptions(addDir = listOf("/x", "/y", "/z")),
+                ClaudeCmdOptions(file = listOf("f1")),
+                ClaudeCmdOptions(mcpConfig = listOf("a.json"), addDir = listOf("/x", "/y"), file = listOf("f1")),
             )
-        optionSets.forEach { (opts, flagAndCount) ->
-            val (flag, count) = flagAndCount
-            val argv = argv(opts)
-            val after = argv.drop(argv.indexOf(flag) + 1)
-            assertTrue(after[count].startsWith("--"), "$flag's $count value(s) are followed by a flag in $argv")
-            assertEquals(tail, argv.takeLast(tail.size), "the fixed flag block closes the argv")
-        }
-    }
+        optionSets.forEach { base ->
+            listOf(null, listOf("--continue"), listOf("bare-value", "-p")).forEach { raw ->
+                val argv = argv(base.copy(options = raw))
 
-    @Test
-    fun `every variadic option set together keeps each value block closed by a flag`() {
-        val argv = argv(ClaudeCmdOptions(mcpConfig = listOf("a.json"), addDir = listOf("/x", "/y"), file = listOf("f1")))
-
-        listOf("--mcp-config" to 1, "--add-dir" to 2, "--file" to 1).forEach { (flag, count) ->
-            val after = argv.drop(argv.indexOf(flag) + 1)
-            assertTrue(after[count].startsWith("--"), "$flag is followed by a flag in $argv")
+                assertEquals(tail, argv.takeLast(tail.size), "the fixed tail closes the argv: $argv")
+                raw?.let { assertTrue(argv.indexOf(it.first()) < argv.indexOf("--output-format"), "raw options stay before the tail") }
+                val lastVariadic = listOf("--mcp-config", "--add-dir", "--file").filter { it in argv }.maxOf { argv.indexOf(it) }
+                val block = argv.subList(lastVariadic + 1, argv.size - tail.size)
+                assertTrue(block.none { it.startsWith("-") }, "the last variadic block holds only its values: $argv")
+                raw?.let { r -> assertTrue(argv.indexOf(r.last()) < lastVariadic, "raw options precede every variadic block: $argv") }
+            }
         }
     }
 }
