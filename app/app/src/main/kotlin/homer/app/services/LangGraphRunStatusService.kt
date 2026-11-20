@@ -113,6 +113,8 @@ class LangGraphRunStatusService(
     /** The run's LangGraph identity, or null when this is not a LangGraph run. */
     fun identity(processInfo: ProcessInfo): LangGraphRunIdentity? {
         val dir = processInfo.artifactsDir ?: return null
+        // Agent-written: read capped and NOFOLLOW; a same-UID hard link or ancestor swap between the link
+        // check and the open is AR-12 (ADR-0047).
         val text = fileOperations.readTextBounded(dir.resolve(ARTIFACT_FILENAME), MAX_IDENTITY_BYTES) ?: return null
         return runCatching { json.decodeFromString<LangGraphRunIdentity>(text) }.getOrNull()
     }

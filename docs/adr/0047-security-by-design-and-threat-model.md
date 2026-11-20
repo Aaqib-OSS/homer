@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-21
 deciders: Lukáš Vlk
-amended: 2026-09-23, 2026-09-30, 2026-10-06, 2026-10-16, 2026-11-05
+amended: 2026-09-23, 2026-09-30, 2026-10-06, 2026-10-16, 2026-11-05, 2026-11-20
 ---
 # ADR-0047: Security is a design input, and these are the boundaries it defends
 
@@ -298,6 +298,24 @@ still refuses a link. Closing it needs an `fchmod` on the descriptor the write u
 `java.nio` does not expose, or creating the file with its final mode, which the umask and an
 overwritten file's kept mode defeat. The ineffective option is removed, so the code no longer
 claims a guarantee it does not give, and both branches look the mode view up the same way.
+
+## Amendment (2026-11-20): the bounded identity read keeps a link-swap residual
+
+`LocalFileOperations.readTextBounded` reads a LangGraph run's agent-written `langgraph.json`
+for the status endpoint. It refuses a symlink, a hard-linked or a non-regular file, then opens
+the file by name with `NOFOLLOW_LINKS` on the bounded, timed open pool and reads at most
+`MAX_IDENTITY_BYTES`. A final-component symlink swapped in after the check fails the open, and a
+FIFO times out on the pool. Two swaps still win the window between the check and the open: a
+hard link renamed into place, because `NOFOLLOW_LINKS` ignores the link count, and an ancestor
+directory replaced by a symlink, because the option binds only the final component. Either makes
+Homer read a different regular file of at most 64 KiB and report its identity fields when it
+parses as one (CWE-59/CWE-367).
+
+**Accepted, not fixed**, like the tar walks above. The race needs a concurrent local writer
+holding Homer's own UID, and that writer can already read any file the swap could lead to and
+write its content into `langgraph.json` directly, so the swap crosses no principal and gains
+nothing. Closing it needs an `fstat` on the opened handle and an `openat`-style ancestor walk,
+which `java.nio` does not expose portably. `SECURITY.md` carries the row as AR-12.
 
 ## Pros and Cons of the Options
 
