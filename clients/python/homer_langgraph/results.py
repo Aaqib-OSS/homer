@@ -16,7 +16,7 @@ from .homer_cli import run_homer_cli
 def homer_fetch_result(ref: dict[str, Any]) -> str:
     """Fetch the full result behind a ``resultRef`` capability token.
 
-    The token travels in ``HMR_RESULT_TOKEN``, never argv.
+    The token travels in ``HMR_RESULT_TOKEN``, never argv. See README "Helper reference".
     """
     try:
         completed = run_homer_cli(

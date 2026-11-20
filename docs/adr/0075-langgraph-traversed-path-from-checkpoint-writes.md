@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-10-03
 deciders: Lukáš Vlk
-amended: 2026-10-09
+amended: 2026-10-09, 2026-11-20
 ---
 # ADR-0075: The traversed path comes from checkpoint routing writes
 
@@ -161,6 +161,12 @@ both in the topology it draws and present in `traversed`.
   `traversedTruncated` flag on the output contract and its consumers is
   not paid here. An operator seeing tail edges that never light up should
   check the run's history size against the caps.
+
+## Amendment (2026-11-20): node ids are matched longest first
+
+Node ids may themselves contain `:` or `+`. The scan therefore tries the node ids longest first
+when it matches a `join:` channel's trailing `:<target>`, so a shorter id that is a suffix of a
+longer one cannot claim the match. Dropping the sort would attribute the write to the wrong edge.
 
 ## Pros and Cons of the Options
 

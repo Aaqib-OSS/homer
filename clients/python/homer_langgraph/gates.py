@@ -32,7 +32,8 @@ def homer_interrupt(
 ) -> str:
     """Park the graph on a human gate and return the operator's answer.
 
-    The runtime turns the payload into ``homer-ask ask-and-dispatch``.
+    The runtime turns the payload into ``homer-ask ask-and-dispatch``; parameters
+    are in the README "Helper reference".
     """
     return interrupt(
         {
@@ -118,7 +119,7 @@ def homer_fanout(
     """Park the graph on a fan-out gate and return the sub-process result.
 
     ``group`` joins fan-outs (ADR-0026); ``retries`` / ``infra_retries`` re-dispatch
-    (ADR-0105). The node body must stay idempotent; see ``README.md``.
+    (ADR-0105). Parameters and the idempotent-body rule are in the README.
     """
     _validate_retries("retries", retries)
     _validate_retries("infra_retries", infra_retries)

@@ -63,6 +63,7 @@ def traversed_edges(
 
     ``None`` when completed tasks wrote no recognized routing channel (ADR-0075).
     """
+    # Longest first: ids may contain ":" or "+", so the longest suffix match must win (ADR-0075).
     node_ids = sorted((node["id"] for node in topology["nodes"]), key=len, reverse=True)
     edges = {(edge["source"], edge["target"]) for edge in topology["edges"]}
     # Channel length bound covering every legitimate form; CWE-770, ADR-0075.
@@ -133,7 +134,7 @@ def _no_checkpoint(thread_id: str) -> ValueError:
 def inspect_mermaid(module: str) -> str:
     """Return the Mermaid source for the graph named by ``module``, compiled without a checkpointer.
 
-    Backs the no-flag ``inspect`` mode; Homer calls :func:`inspect_graph` (ADR-0073).
+    Backs the no-flag ``inspect`` mode (README); Homer calls :func:`inspect_graph`.
     """
     return _compile_for_inspect(module).get_graph().draw_mermaid()
 

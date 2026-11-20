@@ -14,7 +14,7 @@ def homer_dispatch(agent: str, params: dict[str, Any] | None = None) -> int:
     """Start a sub-agent fire-and-forget and return its process id.
 
     Never place it before an interrupt or gate in the same node: a resume re-runs
-    the node and would dispatch again (``clients/python/homer_langgraph/CLAUDE.md``).
+    it and dispatches again. Parameters: README "Helper reference".
     """
     args = ["--agent", agent]
     for key, value in (params or {}).items():
