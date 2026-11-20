@@ -236,3 +236,16 @@ leftover valid cookie. That gap is UI-only: both credentials belong to the same
 holder, and every route still authorizes the principal it authenticated. Why the
 console needs this: [ADR-0059](0059-console-plugins-are-runtime-loaded-modules.md)
 (amendment of 2026-11-20).
+
+## Amendment (2026-11-20): the login form gates the endpoint it signs in against
+
+An `endpoint=` on the login URL that is not one of the operator's saved instances is attacker-suppliable:
+a link to the console's trusted origin could aim the credential POST at any host. The form therefore
+requires an explicit trust confirmation for such an endpoint until the field is edited to a saved
+instance (a manually typed endpoint is the operator's own decision and is not gated); the sign-in
+button is disabled meanwhile and the submit handler re-checks it. When the operator pins an allowlist,
+an off-allowlist endpoint is refused with a message before the request, because the CSP `connect-src`
+would otherwise block it opaquely. Bearer mode stays off unless `CONSOLE_ALLOW_BEARER` is set: its token
+lives in `localStorage`, so a `mode=bearer` URL value or a saved bearer instance is ignored and the
+toggle is not offered. With it on, the initial mode is the URL's, else the saved instance's, else bearer,
+because that setting marks a bearer-only backend that cannot accept a password.

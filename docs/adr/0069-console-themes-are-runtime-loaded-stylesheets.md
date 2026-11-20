@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-09-26
 deciders: Lukáš Vlk
-amended: 2026-10-08
+amended: 2026-10-08, 2026-11-20
 ---
 # ADR-0069: Console themes are same-origin stylesheets loaded at runtime
 
@@ -252,3 +252,16 @@ The built-ins therefore remain the default for Homer's own deployment; a
 deployment that names a pair opts into a closed theme list, and does so at deploy
 time through the same `window.__HOMER_CONFIG__` path as `CONSOLE_THEMES`.
 
+## Amendment (2026-11-20): font variable, pre-paint nonce and the missing-sheet probe
+
+- The root layout exposes the body font as the `--font-inter` variable on `<html>` (where `:root`
+  resolves it), not as a font-family class on `<body>`: a class on `<body>` outranks the
+  `--font-family-sans` token, so no theme could set its own font.
+- The layout's `x-nonce` reaches `Providers` as a `nonce` prop: `next-themes` renders its pre-paint
+  `<script>` inline, which the production CSP blocks without the request's nonce, so the theme pair
+  would otherwise apply only after React mounts.
+- The missing-stylesheet probe runs on the window `load` event, not at mount: a healthy sheet may still
+  be in flight and absent from `document.styleSheets` at mount, so probing earlier logs a false error
+  on every slow network.
+- With a valid light/dark pair `Providers` passes `next-themes` only the configured names and maps
+  `system` onto the pair; without one, the lists are the built-ins plus the configured names.

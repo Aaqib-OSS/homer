@@ -3,12 +3,8 @@
 import { useBoundaryError, type ErrorBoundaryProps } from '@/lib/hooks/use-boundary-error';
 
 /**
- * Last-resort error boundary. Next.js renders this only when the root layout
- * itself throws, which means the app's providers, theme tokens, and global
- * styles are not available — so this uses inline styles and renders its own
- * `<html>`/`<body>`. Segment errors under `(dashboard)` are handled by the
- * styled boundary in `(dashboard)/error.tsx`; this catches the rare case that
- * would otherwise blank the entire app.
+ * Last-resort boundary for a throwing root layout, where providers and styles are
+ * absent: inline styles and its own `<html>`/`<body>`.
  */
 export default function GlobalError({ error, reset }: ErrorBoundaryProps) {
   const details = useBoundaryError(error);

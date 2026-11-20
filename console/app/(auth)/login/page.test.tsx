@@ -269,7 +269,7 @@ describe('LoginPage', () => {
       value: { ...original, protocol: 'https:' },
     });
     renderPage();
-    // Default endpoint is http://localhost:8080 → mixed content under https.
+    // The default endpoint is plain http, so https is mixed content.
     expect(screen.getByText(/mixed content/i)).toBeInTheDocument();
     Object.defineProperty(window, 'location', { configurable: true, value: original });
   });
@@ -401,9 +401,7 @@ describe('LoginPage', () => {
 
   it('preselects Token when bearer is the deployment default', () => {
     appConfigMock.auth.allowBearer = true;
-    // No saved mode resolves (no active instance), so the `?? 'bearer'`
-    // deployment default alone decides — a saved mode has the sibling test
-    // above.
+    // No saved mode resolves, so the deployment default alone decides.
     instancesMock.instances = [];
     renderPage();
     expect(screen.getByRole('radio', { name: /token/i })).toBeChecked();

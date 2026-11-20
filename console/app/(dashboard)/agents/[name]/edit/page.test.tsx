@@ -9,9 +9,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
-// AgentFileEditor pulls in monaco-editor / monaco-yaml as a module-load side
-// effect (setupMonaco()), which jsdom can't run, so stub it with a button that
-// edits the buffer.
+// The real editor loads monaco at import, which jsdom cannot run.
 vi.mock('@/components/editor/agent-file-editor', () => ({
   AgentFileEditor: ({ onChange }: { onChange: (value: string) => void }) => (
     <button onClick={() => onChange('name: demo')}>Edit buffer</button>
@@ -44,12 +42,7 @@ function mockCan(can: (action: string, name?: string) => boolean, isAdmin = fals
   );
 }
 
-// React's `use()` always suspends on a plain Promise, even an already-settled
-// one, because JS gives no synchronous way to read a native Promise's state.
-// Next.js's real params promise avoids this by pre-attaching the
-// {status, value} thenable-cache fields React's `use()` reads synchronously
-// (see React's `use(thenable)` implementation) instead of tracking it async.
-// Mirror that here so the page renders in one synchronous pass.
+// Pre-attaches the {status, value} fields React's `use()` reads synchronously, like Next.js's params.
 function fulfilledParams(name: string): Promise<{ name: string }> {
   const p = Promise.resolve({ name }) as Promise<{ name: string }> & {
     status?: string;

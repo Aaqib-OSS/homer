@@ -84,9 +84,7 @@ function ProcessMeta({ process }: { process: ProcessInfo }) {
             Parent run #{process.parentProcessId}
           </Link>
         )}
-        {/* The direct parent above is one hop; this jumps to the first run
-            of the whole flow (ADR-0058). Null only on the root, which
-            links nowhere — its own page is the flow view. */}
+        {/* The first run of the whole flow; null only on the root (ADR-0058). */}
         {process.rootProcessId != null && (
           <Link
             href={`/processes/${process.rootProcessId}`}
@@ -123,9 +121,7 @@ function liveWorkflow(open: boolean, status: { data?: LangGraphRunStatus | null;
   };
 }
 
-// A flow root holds no descendants, so it lists the whole flow instead of the
-// direct-children card (ADR-0058). Absence of rootProcessId is read only on
-// the root's own row — a descendant always carries one.
+// A flow root lists the whole flow instead of the direct-children card (ADR-0058).
 function RelatedRuns({
   process,
   processId,
@@ -233,10 +229,8 @@ function useExecutionsView(processId: number, process: ProcessInfo | undefined) 
   return { expansion, lg, toggleLiveWorkflow: () => setLiveWorkflowExpanded((v) => !v) };
 }
 
-// Direct children of this run (ADR-0058). The SSE process stream invalidates
-// ['processes'], so a child appearing or finishing updates this card live.
-// Gated on a real id: with NaN the filter would drop and the card would list
-// unrelated runs as children.
+// Direct children of this run (ADR-0058). Gated on a real id: with NaN the filter drops
+// and unrelated runs would list as children.
 function useChildRuns(processId: number) {
   return useProcesses(
     { parentProcessId: processId, order: 'asc', limit: CHILD_RUNS_SHOWN },
@@ -246,9 +240,7 @@ function useChildRuns(processId: number) {
 
 type LangGraphView = ReturnType<typeof useProcessLangGraphView>;
 
-// A finished execution's workflow panel: the status when it belongs to this
-// execution's label, and a loading state while the LangGraph command's first
-// status fetch is in flight.
+// A finished execution's workflow panel: the status only when its label matches.
 function executionWorkflow(label: string, lg: LangGraphView) {
   return {
     workflow: lg.lgStatus.data && label === lg.lgStatus.data.label ? lg.lgStatus.data : undefined,

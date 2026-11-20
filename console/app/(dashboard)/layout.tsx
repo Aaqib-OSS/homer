@@ -24,19 +24,12 @@ export default function DashboardLayout({
   const { status } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-  // The handler decides whether a 401 was an expiry from the credential it
-  // rejected — a stored bearer token, or a session that was ever `authed`; the
-  // status is passed so it can latch the latter. A session-less first visit
-  // must not read as an expiry.
+  // A session-less first visit must not read as an expiry; the handler latches `authed` from status.
   const expiredHandled = useAuthExpiredHandler(status);
 
   useEffect(() => {
-    // Only redirect on an explicit anon status. While loading, render the
-    // skeleton so the cookie-bound auth probe has a chance to land before
-    // we bounce the user to /login. Closes P1 #19 (auth-redirect race).
-    // Skip if expiry recovery already replaced to /login — a second push here
-    // would win the race and drop the expired banner. No `expired` marker
-    // here: an anon reader never had a session to expire.
+    // Redirect only on explicit anon, so the auth probe lands before we bounce.
+    // Skip once expiry recovery replaced to /login: a second push would drop the expired banner.
     if (status === 'anon' && appConfig.auth.enabled && !expiredHandled.current) {
       router.push(loginHref(pathname, false));
     }
