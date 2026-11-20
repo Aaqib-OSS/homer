@@ -1,10 +1,7 @@
 /**
- * diff-coverage: test coverage of the lines a pull request adds or changes (ADR-0082), from the
- * backend's Kover XML reports and the console's V8 `coverage-final.json`. One finding per changed
- * file whose changed, instrumented lines are less than THRESHOLD% covered.
+ * diff-coverage: test coverage of the lines a pull request adds or changes (ADR-0082), from the backend's Kover XML and the console's V8 `coverage-final.json`; one finding per file under THRESHOLD%.
  * Usage (repository root): node tools/quality/diff-coverage.mjs [base sha] [out dir]
- * CI passes the pull request merge commit's first parent as the base (ci.yml); without a base there is
- * no diff to measure.
+ * CI passes the pull request merge commit's first parent as the base (ci.yml); without a base there is no diff to measure.
  */
 import fs from 'node:fs';
 import path from 'node:path';

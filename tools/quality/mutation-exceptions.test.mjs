@@ -120,9 +120,8 @@ test('the checked-in exceptions files load, and each key names a source file tha
     for (const key of Object.keys(exceptions)) {
       assert.ok(key.split('#').length >= 4, `${file}: key has fewer than 4 #-separated parts: ${key}`);
       const source = key.slice(0, key.indexOf('#'));
-      // An <inline> key names the source PIT reports, which for compiler-inlined code is a file the
-      // checkout does not hold (a stdlibComparisons.kt, say). Its count pins it to its mutants, and a
-      // full run reports it stale when none match, so the existence check below does not apply there.
+      // An <inline> key names a source PIT reports for compiler-inlined code, which the checkout may not hold;
+      // its count pins it to its mutants and a full run reports it stale, so the existence check does not apply.
       if (!key.endsWith('<inline>')) {
         assert.ok(fs.existsSync(path.join(root, sourceRoot, source)), `${file}: no such source file ${sourceRoot}/${source}: ${key}`);
       }

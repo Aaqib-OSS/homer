@@ -1,11 +1,6 @@
 #!/bin/sh
-# Scans the commits BASE..HEAD for secrets with gitleaks (job secret-scan, pr-policy.yml).
-#
+# Scans the commits BASE..HEAD with gitleaks, with the rules of BASE's .gitleaks.toml, never the scanned commits' (job secret-scan; ADR-0090, 2026-11-20 amendment).
 # Usage: tools/pr-policy/secret-scan.sh GITLEAKS BASE_SHA HEAD_SHA   (from the repository root)
-#
-# The rules come from BASE's .gitleaks.toml, never from the scanned commits: a pull request must not
-# be able to allowlist its own secret. A base without one gets gitleaks' default rules. The scanned
-# tree's .gitleaksignore and gitleaks:allow comments are ignored for the same reason.
 set -eu
 
 gitleaks=$1
@@ -25,10 +20,8 @@ else
 fi
 mkdir "$scratch/ignore"
 
-# -m: a merge commit's patch against each parent, so a secret added while resolving a merge is
-# scanned too (plain git log prints no patch for a merge). The source is the git directory, not the
-# work tree: gitleaks also loads a .gitleaksignore from the source, whatever the ignore path says.
-# --verbose --redact: each finding by commit, file and rule, never its value (the CI log is public).
+# -m scans a merge's patch against each parent; the git directory is the source, as gitleaks loads a .gitleaksignore from a work tree (ADR-0090, 2026-11-20 amendment).
+# --verbose --redact: findings by commit, file and rule, never the value, as the CI log is public.
 "$gitleaks" git --no-banner --no-color --verbose --redact \
   --config "$scratch/gitleaks.toml" --gitleaks-ignore-path "$scratch/ignore" --ignore-gitleaks-allow \
   --log-opts="-m $base..$head" "$(git rev-parse --absolute-git-dir)"

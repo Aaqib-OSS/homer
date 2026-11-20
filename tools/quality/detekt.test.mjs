@@ -67,7 +67,7 @@ test('the complexity rule set runs exactly CognitiveComplexMethod and NestedBloc
   assert.match(complexity, /^ {4}allowedComplexity: 23$/m);
   assert.match(complexity, /^ {4}allowedDepth: 4$/m);
   assert.deepEqual(active, ['CognitiveComplexMethod', 'NestedBlockDepth']);
-  // Unlisted, detekt would run these at their defaults (NestedBlockDepth is on, GH #308).
+  // Unlisted, detekt would run these at their defaults (ADR-0082, nesting-depth cap amendment).
   for (const rule of ['ComplexCondition', 'CyclomaticComplexMethod', 'LargeClass', 'LongMethod', 'LongParameterList', 'TooManyFunctions']) {
     assert.match(complexity, new RegExp(`^ {2}${rule}:\\n {4}active: false$`, 'm'), `${rule} must be listed active: false`);
   }

@@ -161,11 +161,8 @@ test('only mutants on changed lines remain, with their repository path', () => {
 });
 
 /**
- * Runs `main` in a temporary repository whose last commit adds `A.kt` with `text`, against a
- * stand-in for Gradle that records its arguments, writes `mutations` as PIT's report and exits
- * `exit`, or first hangs for `hang` seconds (and `exceptions` as the backend exceptions file, when
- * given; `budget` as MUTATE_BUDGET_SEC). The stand-in answers `--stop` at once, exiting `stopExit`.
- * Returns main's output (or the error it threw), what it wrote to stderr and the recorded arguments, if any.
+ * Runs `main` in a scratch repository whose last commit adds `A.kt` with `text`, against a Gradle stand-in that records its arguments, writes `mutations` as PIT's report and exits `exit`, or first hangs `hang` seconds.
+ * `exceptions` is the backend exceptions file, `budget` MUTATE_BUDGET_SEC; the stand-in answers `--stop` at once, exiting `stopExit`. Returns main's output (or its error), its stderr and the recorded arguments, if any.
  */
 async function runMain(text, { mutations = [], exit = 0, exceptions, hang, budget, stopExit = 0 } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pit-changed-'));

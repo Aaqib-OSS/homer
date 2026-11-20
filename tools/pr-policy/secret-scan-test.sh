@@ -1,8 +1,5 @@
 #!/bin/sh
-# Tests for secret-scan.sh against the pinned gitleaks: a token only in a merge commit's conflict
-# resolution is found, the rules come from the base and not from the scanned commits, and an
-# unresolvable base or head fails closed.
-#
+# Tests secret-scan.sh against the pinned gitleaks: a merge commit's conflict resolution, rules from the base only, fail closed on an unresolvable range.
 # Usage: tools/pr-policy/secret-scan-test.sh   (from anywhere; downloads gitleaks, needs git)
 set -eu
 

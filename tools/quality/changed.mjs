@@ -1,22 +1,7 @@
 /**
- * Diff mode of the quality gate, for coding agents checking their work in a loop (ADR-0082): runs
- * the checks of checks.json that a working-tree change can affect and prints what they find.
+ * Diff mode of the quality gate (ADR-0082): runs the checks of checks.json that a working-tree change can affect, with only the tests related to it, and prints what they find.
  * Usage (repository root, JAVA_HOME on a JDK 25): node tools/quality/changed.mjs [--base <rev>] [--only <check>[,<check>…]]
- *
- * The change is the working tree against `--base` (default `git merge-base origin/main HEAD`),
- * uncommitted and untracked files included. A check runs only when the change touches what it reads.
- * Tests run only where they relate to the change: a changed Kotlin file's own `<Name>*Test` classes
- * in its test package, else the tests naming its declarations; `vitest related` in the console. So
- * `crap` and `diff-coverage` judge only the changed functions and lines, and a Kotlin file no test
- * relates to is listed as not measured; CI's full run decides it. The other checks read the whole
- * project and report everything they find, since main has no findings: a change can make an export
- * unused or a query scan in a file it does not touch. Such findings are marked outside the change.
- * The `build` row also reports what fails CI outside the gate: compile errors, failed tests, ktlint,
- * ESLint errors and tsc errors (left out under --only). mutation-console and mutation-backend (warn
- * mode, minutes per run) run only when --only names them.
- *
- * Exit codes as the gate's: 0 no findings; 3 findings only in warn-mode checks; 1 findings in a
- * required check, a failed build or test, or a tool error.
+ * Exit codes as the gate's: 0 no findings; 3 findings only in warn-mode checks; 1 findings in a required check, a failed build or test, or a tool error.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';

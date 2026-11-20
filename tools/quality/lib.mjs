@@ -1,8 +1,6 @@
 /**
- * Shared output contract of the quality reports (ADR-0082): every check writes
- * `<check>-summary.txt`, `<check>-report.txt` and `gl-code-quality-<check>.json` into its own
- * directory, and never exits non-zero because of findings. Also the home of helpers more than one
- * check needs: regular-expression escaping, the mutation score, and a minimal Kotlin source lexer.
+ * Shared output contract of the quality reports (ADR-0082): every check writes `<check>-summary.txt`, `<check>-report.txt` and `gl-code-quality-<check>.json` into its own directory, and never exits non-zero because of findings.
+ * Also the helpers more than one check needs: regular-expression escaping, the mutation score, and a minimal Kotlin source lexer.
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -118,10 +116,8 @@ function stepInCode(source, i, stack) {
 }
 
 /**
- * The lines of a Kotlin source holding anything outside a comment. Lexes just enough for that:
- * block comments nest; a comment opener inside a string or char literal is text; a `${…}` template
- * is code again, its own literals included. A source this lexer cannot read to a clean end (an
- * unclosed literal or comment, which valid Kotlin never has) counts as code on every line.
+ * The lines of a Kotlin source holding anything outside a comment: block comments nest, a comment opener inside a string or char literal is text, a `${…}` template is code again.
+ * A source this lexer cannot read to a clean end (an unclosed literal or comment) counts as code on every line.
  */
 export function codeLineNumbers(source) {
   const code = new Set();
@@ -152,10 +148,8 @@ export function codeLineNumbers(source) {
 }
 
 /**
- * `source` with every comment and string or char literal blanked to a space, so a scan of the rest
- * reads code only: no `fun` declaration example in a KDoc, no parenthesis inside a default value.
- * The same lexer as `codeLineNumbers`; a source it cannot read to a clean end comes back unchanged,
- * all of it code, as there `codeLineNumbers` counts every line.
+ * `source` with every comment and string or char literal blanked to a space, so a scan of the rest reads code only (no `fun` example in a KDoc, no parenthesis in a default value).
+ * The lexer of `codeLineNumbers`; a source it cannot read to a clean end comes back unchanged, all of it code.
  */
 export function codeText(source) {
   let out = '';

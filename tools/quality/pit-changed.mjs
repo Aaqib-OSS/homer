@@ -1,12 +1,6 @@
 /**
- * Backend mutation testing of a change (check `mutation-backend`, ADR-0082): PIT mutates the
- * backend classes whose lines the change adds or modifies, and the findings and score cover only
- * the mutants on those lines, as the console's `mutation:changed` does. The change is
- * `MUTATE_BASE..HEAD`, or with `MUTATE_WORKTREE=1` the working tree's (the diff mode,
- * tools/quality/changed.mjs). Only `:app` is mutated; no changed code line there: a skipped report,
- * no Gradle run. The PIT run has a time budget, `MUTATE_BUDGET_SEC` (default 14 minutes, inside the
- * CI job's 20): a run over it is stopped and reported skipped, and the weekly full run covers those
- * classes, instead of the job being cancelled with no report.
+ * Backend mutation testing of a change (check `mutation-backend`, ADR-0082): PIT mutates the classes whose lines `MUTATE_BASE..HEAD` (the working tree with `MUTATE_WORKTREE=1`) adds or modifies; findings and score cover only those lines.
+ * Only `:app` is mutated. A run over `MUTATE_BUDGET_SEC` (default 14 minutes, inside the CI job's 20) is stopped and reported skipped, left to the weekly full run, so the job is not cancelled without a report.
  * Usage (repository root, JAVA_HOME on a JDK 25): MUTATE_BASE=<rev> node tools/quality/pit-changed.mjs
  */
 import { spawnSync } from 'node:child_process';
@@ -54,10 +48,8 @@ export function codeLines(source, lines) {
 }
 
 /**
- * The changed backend sources: `{ globs, lines }`, `lines` mapping each source's PIT path to its
- * repository path and changed lines. `read` returns a file's text, or null for one to skip. A
- * source whose changed lines hold no code is left out, so a comment-only change runs no PIT; the
- * changed lines kept are all of them, since PIT places no mutant on a comment line anyway.
+ * The changed backend sources: `{ globs, lines }`, `lines` mapping each source's PIT path to its repository path and changed lines. `read` returns a file's text, or null for one to skip.
+ * A source whose changed lines hold no code is left out, so a comment-only change runs no PIT; all changed lines are kept, as PIT places no mutant on a comment line.
  */
 export function changedSources(changed, read) {
   const globs = new Set();

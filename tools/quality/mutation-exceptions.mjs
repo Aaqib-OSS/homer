@@ -1,17 +1,7 @@
 /**
- * Accepted mutation-test exceptions (ADR-0082): a reviewed file per stack, a JSON object mapping an
- * exception key to the reason the surviving mutant is accepted. Not a baseline: every unaccepted
- * finding stays visible, and an entry that matches no mutant in a full run is itself a finding.
- * A key carries no line number, so it survives edits above the mutant, and it matches every mutant
- * with that key. Only undetected (survived or uncovered) mutants are offered to `applyExceptions`.
- * Keys (text trimmed, whitespace runs collapsed to one space):
- *   backend  `<PIT source path>#<mutated method>#<description>#<line text>` (tools/quality/pit.mjs)
- *   console  `<file>#<mutator>#<original text>→<replacement>#<line text>` (console/scripts/mutation.mjs)
- * A backend key ends in `<inline>` instead of a line text when the mutant's line is past the file's end
- * (code the Kotlin compiler inlined) or its source is unreadable. Such a key covers every such mutant
- * of its description in the method, so its entry is
- * `{ "reason": "…", "count": N }`, the number of mutants it accepts; a full run reports an entry that
- * matches another number as a finding. Every other entry is a reason string.
+ * Accepted mutation-test exceptions (ADR-0082): a reviewed JSON file per stack mapping an exception key, with no line number, to the reason its surviving mutant is accepted; not a baseline.
+ * Key forms and the `{ "reason", "count" }` entry of an `<inline>` key: docs/quality-checks.md. Only undetected mutants are offered to `applyExceptions`.
+ * An entry matching no mutant in a full run is itself a finding.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -50,10 +40,8 @@ export function loadExceptions(file) {
 const reasonOf = (entry) => (isObject(entry) ? entry.reason : entry);
 
 /**
- * Splits `mutants` by `keyOf` into `kept` and `accepted` (`{ mutant, key, reason }`). Only for a `full`
- * run, since a changed-lines run sees too few mutants: `stale` lists the keys matching no mutant, and
- * `miscounted` (`{ key, matched, expected }`) the entries with a `count` that match another number of
- * mutants than it, all of which are still accepted.
+ * Splits `mutants` by `keyOf` into `kept` and `accepted` (`{ mutant, key, reason }`). Only for a `full` run, since a changed-lines run sees too few mutants:
+ * `stale` lists the keys matching no mutant, `miscounted` (`{ key, matched, expected }`) the entries whose `count` differs from their matches, all still accepted.
  */
 export function applyExceptions(mutants, keyOf, exceptions, { full }) {
   const kept = [];
