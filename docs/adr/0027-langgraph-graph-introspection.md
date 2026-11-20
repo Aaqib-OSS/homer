@@ -133,11 +133,11 @@ literal in the agent definition.
 
 ## Amendment (2026-11-20): what one inspect costs the host
 
-The 2026-09-30 amendment bounds the inspects without saying what one costs. Each `inspect` is a
-Python interpreter with `langgraph` imported, about 75 MiB resident, and its exit is awaited by
-blocking a `Dispatchers.IO` thread, the pool SQLite's blocking JDBC runs on too. An unbounded
-wait for a slot would only move that pile-up from interpreters to suspended callers holding
-connections, which is why a caller past `maxQueueWait` is shed.
+The 2026-09-30 amendment bounds the inspects without saying what one costs. An `inspect` costs
+the host what a `state` run does, and the 2026-09-30 amendment of
+[ADR-0044](0044-langgraph-resume-and-run-introspection.md) records that cost under "Cache versus
+semaphore". An unbounded wait for a slot would only move the pile-up from interpreters to
+suspended callers holding connections, which is why a caller past `maxQueueWait` is shed.
 
 ## More Information
 

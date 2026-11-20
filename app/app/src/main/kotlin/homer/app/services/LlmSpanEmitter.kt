@@ -105,8 +105,8 @@ internal class LlmSpanEmitter(
 
             generationSpan.setAttribute("name", spanData.name)
             generationSpan.setAttribute("model", spanData.model)
-            // Children stay SPANs: Langfuse prices every GENERATION from its own model table, and exactly
-            // one priced observation per run, the result generation, keeps the run from being charged twice.
+            // Children stay SPANs: Langfuse prices every GENERATION from its model table, and exactly one
+            // priced observation per run, the result generation, keeps it from being charged twice. See ADR-0057.
             generationSpan.setAttribute("langfuse.observation.type", "span")
             spanData.input?.let { generationSpan.setAttribute("input", redactor.redact(it.toString())) }
             spanData.output?.let { generationSpan.setAttribute("output", redactor.redact(it.toString())) }

@@ -107,8 +107,8 @@ internal class DispatchTargetGate(
         if (!authorizer.canDispatchHop(dispatch.owner, dispatch.originAgentName, dispatch.agentName)) {
             return "agent '${dispatch.originAgentName}' is not authorized to dispatch to '${dispatch.agentName}'"
         }
-        // A reload may have set `dispatch.enabled: false` since registration: re-check the opt-in at
-        // fire time, as the hop is re-checked (ADR-0039), so a pending dispatch never fires it.
+        // Re-check the opt-in at fire time: a reload may have set `dispatch.enabled: false` since
+        // registration, and a pending dispatch must never start that target. See ADR-0021, ADR-0039.
         if (agent.dispatch?.enabled != true) {
             return "Target agent '${dispatch.agentName}' is no longer an allowed dispatch target"
         }

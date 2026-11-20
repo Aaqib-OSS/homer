@@ -73,7 +73,7 @@ class LlmTelemetryService(
         val spans = linkedMapOf<String, LlmSpanData>()
         var completionStart = Instant.now()
         var seen: SeenModel? = null
-        // Claude also emits model-less SessionStarts (`system/hook_*`, before `init` and after the result):
+        // Claude also emits model-less SessionStarts (a `system/hook_*` line before `init`, and one off the result line):
         // only the first one with a model sets the parent metadata and logs, and a model-less one never blocks it.
         var sessionStartSeen = false
         val turnEnds = stream.events.filterIsInstance<LlmEvent.TurnEnd>()
