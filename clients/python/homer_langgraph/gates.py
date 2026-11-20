@@ -107,11 +107,8 @@ def _decode_resume(raw: Any) -> dict[str, Any]:
 
 
 def _resolve_result(payload: dict[str, Any], agent: str) -> dict[str, Any]:
-    """Splice a by-reference result into the payload, when there is one.
-
-    Over-cap result: the value was dropped in favor of a capability token.
-    Fetch it by reference (idempotent GET) and present a normal payload.
-    A ``resultTooLarge`` result has no token, so it is reported on stderr.
+    """Splice a by-reference result into the payload, fetched by its token (idempotent GET).
+    A ``resultTooLarge`` payload has no token and is reported on stderr.
     """
     if payload.get("resultTooLarge") is True:
         print(f"homer_fanout: {agent} result is over Homer's 4 MiB transform cap; "

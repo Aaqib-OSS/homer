@@ -353,7 +353,7 @@ class DispatchRepository(
         }
 
     /**
-     * Moves dispatch [id] from [from] through [body] and, in the same transaction, deletes its
+     * Settles dispatch [id] from [from] through [body] and, in the same transaction, deletes its
      * dispatch-bound question or a group's member questions; the member rows stay until the
      * settled-row prune. ADR-0021, ADR-0109.
      */

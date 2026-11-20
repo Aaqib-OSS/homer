@@ -63,7 +63,7 @@ internal fun encodeRunStop(value: RunStop) = columnJson.encodeToString(RunStop.s
 internal fun decodeRunStop(text: String) = columnJson.decodeFromString(RunStop.serializer(), text)
 
 // Both status writes' projection: status, history, agent_name and the hook rows' owner. Never
-// `selectAll()`: it runs under the write lock. See ADR-0020, ADR-0107.
+// `selectAll()`: it runs under the write lock. See ADR-0020 (2026-09-29 amendment), ADR-0107.
 internal fun transitionRowTx(processId: Int): ResultRow? =
     Processes
         .select(Processes.status, Processes.history, Processes.agentName, Processes.owner)
@@ -109,7 +109,7 @@ internal fun inputsForTx(processId: Int): Map<String, String> =
         ?.let { decodeParams(it[ProcessInputs.inputParams]) }
         ?: emptyMap()
 
-// A page's inputs in one chunked `IN` read keyed by process id, never one query per row.
+// A page's inputs in chunked `IN` reads keyed by process id, never one query per row.
 private fun inputsByProcessTx(ids: List<Int>): Map<Int, Map<String, String>> {
     if (ids.isEmpty()) return emptyMap()
     val inputsById = mutableMapOf<Int, Map<String, String>>()
@@ -122,8 +122,8 @@ private fun inputsByProcessTx(ids: List<Int>): Map<Int, Map<String, String>> {
     return inputsById
 }
 
-// A page's tags in one chunked `IN` read grouped by process id, never one query per row. CWE-400: an id
-// set past SQLite's bound-parameter cap must degrade to repeated reads, not a 500.
+// A page's tags in chunked `IN` reads grouped by process id, never one query per row. CWE-400: a caller-supplied
+// id set past SQLite's bound-parameter cap must degrade to repeated reads, not a 500.
 private fun tagsByProcessTx(ids: List<Int>): Map<Int, List<String>> =
     if (ids.isEmpty()) {
         emptyMap()

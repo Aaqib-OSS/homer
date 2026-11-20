@@ -92,8 +92,8 @@ internal class FiredRecords<T>(
 
     /**
      * One page of rows, newest first, mapped by [toRecords] inside the read, and the count of all matching rows.
-     * Visibility applies in SQL before the limit, so neither shows a row the caller cannot see ([visibleAgents]
-     * null = admin); each filtered shape is an index-driven `id IN (… UNION …)` (ADR-0021, 2026-09-30 amendment).
+     * Visibility applies in SQL before the limit, so neither shows a row the caller cannot see ([visibleAgents] null =
+     * admin); each filtered shape is an index-driven `id IN (… UNION …)` (ADR-0039; ADR-0021, 2026-09-30 amendment).
      */
     suspend fun <R> page(
         status: String?,

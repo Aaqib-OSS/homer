@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-11
 deciders: Lukáš Vlk
-amended: 2026-09-28, 2026-11-20
+amended: 2026-09-28, 2026-10-09, 2026-11-20
 ---
 # ADR-0038: Per-process ownership and the union visibility rule
 

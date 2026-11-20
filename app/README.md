@@ -518,10 +518,14 @@ edges or 200-character ids/labels is reported as `error`. A command whose
 `python` carries a `homer_langgraph` without `inspect --json` reports that as
 `error`.
 
-Introspection imports the module in a subprocess with the agent's declared
-`env` applied, so the `module` resolves exactly as it does for a real run — if
-the module needs a `PYTHONPATH`, set it in the agent's `env`. A module that is
-not importable yields an `error` element rather than failing the request.
+Introspection imports the module in a subprocess whose environment is a
+minimal server environment (`PATH`, `HOME`, `LANG`, the standard `LC_` locale
+categories, `TMPDIR`, `VIRTUAL_ENV` and `PYTHONHOME`) plus the agent's declared
+`env`; `globalEnv` and the runner's `env` are not applied. A variable the module
+reads at import time, such as a `PYTHONPATH` or an API key a module-level client
+reads, must therefore be declared in the agent's `env`, a secret by
+`@SYSENV:` reference. A module that is not importable yields an `error` element
+rather than failing the request.
 
 ### Agent execution inputs
 

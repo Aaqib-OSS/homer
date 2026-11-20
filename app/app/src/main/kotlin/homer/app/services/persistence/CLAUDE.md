@@ -200,7 +200,7 @@ not state.
 - **`processes.failure_reason` is written only while `status = FAILED` with no
   recorded execution and no current command**, and a non-null value keeps the row
   out of `cooldown.afterFailure`'s latest-failure lookup: only a run that failed
-  while executing arms the window (ADR-0098).
+  while executing arms the window (ADR-0051, ADR-0098).
 - **`processes.stop` is NULL on every run that was not stopped gracefully**, read
   only where `ProcessInfo` is served, through the same `getOrNull` guard the other
   blob columns use (ADR-0108).

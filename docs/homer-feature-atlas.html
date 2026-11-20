@@ -2112,8 +2112,9 @@ JSON</code></pre>
         <article class="f">
           <h3>Large results by reference <span class="where">shell</span></h3>
           <p>With <code>--result-jsonpath</code> set, a result over the 64 KiB inline cap (up to 4 MiB of stdout)
-            arrives as a <code>resultRef</code> capability token instead; with no JsonPath the payload carries
-            <code>result: null</code> and no ref, and over 4 MiB it also carries <code>resultTooLarge: true</code>. Fetch the full, server-side transformed value with
+            arrives as a <code>resultRef</code> capability token instead, and one over 4 MiB as <code>result: null</code>
+            with <code>resultTooLarge: true</code>; with no JsonPath the payload carries <code>result: null</code>, no ref
+            and no marker. Fetch the full, server-side transformed value with
             <code>homer-result</code>. The token is audience-bound: only the continuation's target agent can redeem
             it, any other gets <code>403</code>.</p>
           <pre><code>HMR_RESULT_TOKEN="$TOKEN" homer-result --out result.txt</code></pre>

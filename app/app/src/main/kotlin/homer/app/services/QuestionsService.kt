@@ -31,8 +31,8 @@ import kotlin.time.ExperimentalTime
 
 /**
  * Operator questions asked by running commands and answered over the API, durable via [QuestionsRepository] (ADR-0020).
- * The callback tokens in [registrations], the only credential a workspace sees, and [completions] and [activeWaits] are
- * never persisted, so a restart drops the tokens and expires open questions. See ADR-0019.
+ * The callback tokens in [registrations], [completions] and [activeWaits] are never persisted, so a restart drops the
+ * tokens and expires open questions. See ADR-0019.
  */
 @OptIn(ExperimentalTime::class)
 class QuestionsService(
@@ -42,8 +42,8 @@ class QuestionsService(
     private val config: QuestionsConfig = QuestionsConfig(),
 ) : QuestionExpiry,
     QuestionRegistration {
-    // Serializes registration changes against ask's checks, so no question stays OPEN in a closed registration, and the
-    // activeWaits counts. Never held across a database write, nor taken by `resolveToken`. See ADR-0019.
+    // Serializes registration changes against ask's checks, so no question stays OPEN in a closed registration, and guards
+    // the activeWaits counts. Never held across a database write, nor taken by `resolveToken`. See ADR-0019.
     private val mutex = Mutex()
     private val registrations = ConcurrentHashMap<Int, ProcessRegistration>()
 

@@ -73,8 +73,8 @@ class ProcessManager(
             .epochSeconds
             .toString()
 
-    // In memory only, by (processId, cmdIndex): the paths an executor wrote, for LogTailService's tail. Cleared only
-    // when the row goes, never at a terminal status, so a finished command's tail still resolves.
+    // In memory only: the paths an executor wrote, by (processId, cmdIndex). Cleared only when the row goes, never at a
+    // terminal status, so a finished command's log tail and LLM-event stream still resolve.
     private val commandArtifacts = ConcurrentHashMap<Int, ConcurrentHashMap<Int, CommandArtifactPaths>>()
 
     // Settled accountings whose step is not recorded yet, keyed by the pending accounting the step will carry.
@@ -167,7 +167,7 @@ class ProcessManager(
         new: ProcessStatus,
     ): Boolean =
         // Guards terminal transitions: a concurrent killProcess() can land KILLED before the
-        // FINISHED write, and returning false here keeps KILLED.
+        // FINISHED write, and returning false here keeps KILLED (ADR-0020).
         transitionStatus(processId, new, guard = expected)
 
     @OptIn(ExperimentalTime::class)
@@ -215,9 +215,9 @@ class ProcessManager(
     }
 
     /**
-     * Appends [executionInfo] and sets [nextLabel] as the current command in one write transaction, emitting at most one
-     * [ProcessEvent.CurrentCommandChanged]. A gone row writes nothing; a terminal row records the execution but keeps the
-     * command cleared, with no event, so a boundary after a kill cannot resurrect a running command. See ADR-0020.
+     * Appends [executionInfo] and sets [nextLabel] as the current command (null clears it) in one write transaction, emitting
+     * at most one [ProcessEvent.CurrentCommandChanged]. A gone row writes nothing; a terminal row records the execution but keeps
+     * the command cleared, with no event, so a boundary after a kill cannot resurrect a running command. See ADR-0020.
      */
     override suspend fun completeStep(
         processId: Int,

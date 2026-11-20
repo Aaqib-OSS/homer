@@ -20,7 +20,7 @@ class ServerMetaRepository(
     /**
      * The per-instance id, created on first call and, unlike `HMR_SERVER_ID`, kept across restarts: it scopes the
      * Kubernetes startup sweep to this instance's own orphans. Blocking and startup-only, not through
-     * [DatabaseService.query] (ADR-0020); [DatabaseService.migrate] must have created `server_meta`.
+     * [DatabaseService.query] (ADR-0020, 2026-09-29 amendment); [DatabaseService.migrate] must have created `server_meta`.
      */
     fun getOrCreateInstanceId(): String =
         transaction(db.database) {

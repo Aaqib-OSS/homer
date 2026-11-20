@@ -15,7 +15,7 @@ import kotlin.io.path.Path
 
 /**
  * The one [Json] for the persistence layer's JSON-text columns. `encodeDefaults` so optional fields
- * round-trip; `ignoreUnknownKeys` so a row holding a field the model no longer declares still loads.
+ * round-trip; `ignoreUnknownKeys` so a row holding a field the model does not declare still loads.
  */
 internal val columnJson =
     Json {

@@ -116,7 +116,9 @@ registration is closed or removed.
 
 - A run's terminal transition, and startup reconciliation, close its registration and expire its
   open questions. The closed registration stays until the run's record is purged or evicted, so a
-  helper that calls after the run ended gets `409`, not `401`.
+  helper that calls after the run ended gets `409`, not `401`. Lifecycle above says workspace purge
+  removes a run's questions; since ADR-0048 the record purge or a capacity eviction removes them,
+  together with the registration.
 - One coroutine mutex serializes registration changes against the registration check in `ask`. The
   mutex is never held across a database write, so `ask` inserts the question outside it and then
   re-reads the registration. A question whose registration was closed in the meantime is expired,

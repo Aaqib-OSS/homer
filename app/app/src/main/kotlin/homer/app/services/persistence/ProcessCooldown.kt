@@ -39,7 +39,7 @@ private fun ProcessRepository.cooldownPredicate(
     ).reduce { a, b -> a and b }
 
 /**
- * The latest `ended_at` of a matching run that failed while executing, by `ended_at`, never by `id`: overlapping
+ * The newest `ended_at` of a matching run that failed while executing, ordered by `ended_at`, never `id`: overlapping
  * runs fail out of INSERT order. A run refused before it started carries a `failure_reason` and never arms the
  * window. ADR-0051.
  */

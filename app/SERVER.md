@@ -3750,7 +3750,8 @@ Use it on a server whose agents all run on external, Kubernetes or SSH runners.
 `GET /api/v1/runners` then no longer lists `local`. The setting covers runs only:
 the server still runs `homer_langgraph inspect` and `state` itself for the
 console's LangGraph views (ADR-0027, ADR-0044), and those import the agent's
-graph module on the server host.
+graph module on the server host, with a minimal server environment plus the
+agent's `env` rather than `parentEnvAllowlist`.
 
 ```yaml
 server:

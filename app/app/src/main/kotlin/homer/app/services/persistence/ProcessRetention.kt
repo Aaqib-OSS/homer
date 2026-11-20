@@ -182,7 +182,7 @@ internal fun evictForCapacityTx(maxProcesses: Int): ProcessRepository.EvictedPro
 }
 
 // Co-transactional with the row delete, on record purge and capacity eviction alike, so no tag, input or
-// run-message row outlives its run. See ADR-0020, ADR-0060, ADR-0097.
+// run-message row outlives its run. See ADR-0020 (2026-09-29 amendment), ADR-0060, ADR-0097.
 private fun deleteProcessRowsTx(processId: Int) {
     ProcessInputs.deleteWhere { ProcessInputs.processId eq processId }
     ProcessTags.deleteWhere { ProcessTags.processId eq processId }
