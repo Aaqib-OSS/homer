@@ -6,6 +6,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import {
   changedLinesOf,
+  consoleBuild,
   results,
   asPaths,
   buildFailures,
@@ -265,6 +266,67 @@ test('consoleErrors reads ESLint errors (not warnings) and tsc errors as repo pa
 
 test('asPaths keeps a changed path that looks like an option a path (CWE-88)', () => {
   assert.deepEqual(asPaths(['--config=evil.ts', 'lib/a.ts']), ['./--config=evil.ts', './lib/a.ts']);
+});
+
+/** A consoleBuild context over a fake root (no filesystem access: exists and tool are injected). */
+function consoleBuildContext() {
+  const reported = [];
+  return {
+    ctx: { root: '/repo', changed: new Map([['console/lib/a.ts', new Set([1])]]), report: (...args) => reported.push(args) },
+    reported,
+  };
+}
+
+test('consoleBuild skips next typegen when next-env.d.ts exists, and runs eslint and tsc', () => {
+  const { ctx, reported } = consoleBuildContext();
+  const ran = [];
+  const status = consoleBuild(ctx, {
+    exists: (p) => p.endsWith('next-env.d.ts'),
+    tool: (dir, name, args) => {
+      ran.push([name, args]);
+      return { name, status: 0, stdout: name === 'eslint' ? '[]' : '' };
+    },
+  });
+  assert.equal(status, undefined);
+  assert.deepEqual(ran.map(([name, args]) => name), ['eslint', 'tsc']);
+  assert.deepEqual(reported, [['build', [], undefined]]);
+});
+
+test('consoleBuild runs next typegen when next-env.d.ts is missing, then eslint and tsc', () => {
+  const { ctx, reported } = consoleBuildContext();
+  let generated = false;
+  const ran = [];
+  consoleBuild(ctx, {
+    exists: (p) => p.endsWith('next-env.d.ts') && generated,
+    tool: (dir, name, args) => {
+      ran.push([name, args]);
+      if (name === 'next') {
+        assert.deepEqual(args, ['typegen']);
+        generated = true;
+      }
+      return { name, status: 0, stdout: name === 'eslint' ? '[]' : '' };
+    },
+  });
+  assert.deepEqual(ran.map(([name]) => name), ['next', 'eslint', 'tsc']);
+  assert.deepEqual(reported, [['build', [], undefined]]);
+});
+
+test('consoleBuild reports an error and skips eslint and tsc when next typegen fails or writes nothing', () => {
+  for (const typegenStatus of [1, 0]) {
+    const { ctx, reported } = consoleBuildContext();
+    const ran = [];
+    consoleBuild(ctx, {
+      exists: () => false,
+      tool: (dir, name) => {
+        ran.push(name);
+        return { name, status: typegenStatus, stdout: '' };
+      },
+    });
+    assert.deepEqual(ran, ['next'], `typegen status ${typegenStatus}`);
+    assert.equal(reported.length, 1);
+    assert.deepEqual(reported[0].slice(0, 2), ['build', []]);
+    assert.match(reported[0][2], /next typegen failed to write console\/next-env\.d\.ts/);
+  }
 });
 
 test('formatFindings prints path:line, a bare path for line 0, the outside marker and errors', () => {
