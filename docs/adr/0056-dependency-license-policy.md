@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-28
 deciders: Lukáš Vlk
-amended: 2026-10-09
+amended: 2026-10-09, 2026-11-20
 ---
 # ADR-0056: Dependency license policy and gating
 
@@ -10,6 +10,11 @@ amended: 2026-10-09
 > [ADR-0066](0066-external-pull-runners-and-unified-claim-queue.md)) is a third gated
 > module: it carries the same `licenseReport { }` gate, and its report feeds the merged
 > notices alongside `:app` and `:agentdebug`.
+
+> **Amendment (2026-11-20):** the console image's LGPL-3.0 `libvips` gate moved from the
+> GitLab `build-homer-console` job to the Release workflow's `LGPL gate` step, which scans each
+> platform's image before the push. `console/Dockerfile` can prune `sharp` and `@img/*` because
+> `next.config.js` sets `images.unoptimized`, so Next never loads them at run time.
 
 ## Context and Problem Statement
 

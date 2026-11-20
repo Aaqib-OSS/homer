@@ -19,13 +19,8 @@ ENV NEXT_PUBLIC_CONSOLE_VERSION=$CONSOLE_VERSION
 # Build the application
 RUN npm run build
 
-# Image optimization is disabled (next.config.js images.unoptimized), so the
-# sharp binaries Next bundles into the standalone output are never loaded at
-# runtime. Prune them here, before the runner COPYs the standalone tree, so the
-# ~33 MB never enters an image layer.
-# Load-bearing beyond size: those binaries are LGPL-3.0-or-later, and keeping
-# them out of the image is what keeps Homer from conveying LGPL code. The
-# build-homer-console license gate fails the push if this stops working.
+# Keeps sharp's LGPL-3.0 binaries out of every layer (ADR-0056); the Release
+# workflow's LGPL gate refuses the push if any remain.
 RUN rm -rf .next/standalone/node_modules/@img .next/standalone/node_modules/sharp
 
 # Production stage
