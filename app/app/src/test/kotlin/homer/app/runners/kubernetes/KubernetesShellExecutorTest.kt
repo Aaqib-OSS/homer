@@ -27,6 +27,10 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
+import java.io.PrintWriter
+import java.io.StringWriter
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -691,7 +695,6 @@ class KubernetesShellExecutorTest {
             "the step error must carry the websocket cause: ${thrown.message}",
         )
         assertTrue(thrown.message.orEmpty().contains("BackOff: restarting the container"), "and the last pod event: ${thrown.message}")
-        assertTrue(thrown.cause is IllegalThreadStateException, "the cause must survive, got ${thrown.cause}")
         assertEquals(EXEC_CHANNEL_LOST, seen.single().reason)
     }
 
@@ -829,6 +832,50 @@ class KubernetesShellExecutorTest {
         assertTrue(thrown.message.orEmpty().contains("***"), "the secret must be masked: ${thrown.message}")
         assertFalse(seen.single().message.contains(encoded), "the encoded secret must not reach the termination: ${seen.single().message}")
         assertTrue(seen.single().message.contains("***"), "the secret must be masked there too: ${seen.single().message}")
+    }
+
+    @Test
+    fun `a lost channel's exception chain carries no env value`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val secret = "s3cr3t/t0ken+value"
+        val encoded = URLEncoder.encode(secret, StandardCharsets.UTF_8)
+        val closed =
+            mockk<Process>(relaxed = true) {
+                every { inputStream } returns ByteArrayInputStream(ByteArray(0))
+                every { errorStream } returns ByteArrayInputStream(ByteArray(0))
+                every { outputStream } returns ByteArrayOutputStream()
+                every { waitFor(any<Long>(), any<TimeUnit>()) } returns true
+                every { exitValue() } throws
+                    IllegalThreadStateException("wss://api/exec?command=env&command=TOKEN=$encoded raw TOKEN=$secret")
+            }
+        val executor =
+            KubernetesShellExecutor(
+                KubernetesExecClient { _, _, _, _ -> closed },
+                runningPodApi(),
+                "homer",
+                "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
+            )
+
+        val thrown =
+            assertFailsWith<PodFailedDuringExecutionException> {
+                executor.cmd(
+                    command = listOf("true"),
+                    stdOut = tmp.resolve("out"),
+                    stdErr = tmp.resolve("err"),
+                    env = mapOf("TOKEN" to secret),
+                    timeout = 10.seconds,
+                )
+            }
+
+        val chain = generateSequence<Throwable>(thrown) { it.cause }.toList()
+        val printed = StringWriter().also { thrown.printStackTrace(PrintWriter(it)) }.toString()
+        val texts = chain.flatMap { listOf(it.message.orEmpty(), it.toString()) } + printed
+        texts.forEach { text ->
+            assertFalse(text.contains(secret), "the raw env value must not reach the exception chain: $text")
+            assertFalse(text.contains(encoded), "the encoded env value must not reach the exception chain: $text")
+        }
     }
 
     @Test

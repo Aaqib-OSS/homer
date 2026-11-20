@@ -245,7 +245,8 @@ class KubernetesShellExecutor(
         killLeftoverAfterLostChannel(remote)
         val msg = channelLostMessage(exit.exceptionOrNull(), env, snap)
         onTermination(PodTermination(EXEC_CHANNEL_LOST, msg))
-        throw PodFailedDuringExecutionException(EXEC_CHANNEL_LOST, msg, snap.events, exit.exceptionOrNull(), channelLost = true)
+        // No cause: it quotes the exec URL with the env unmasked; msg keeps its class and masked text.
+        throw PodFailedDuringExecutionException(EXEC_CHANNEL_LOST, msg, snap.events, null, channelLost = true)
     }
 
     /**

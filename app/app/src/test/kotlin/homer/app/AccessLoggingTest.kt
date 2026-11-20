@@ -132,6 +132,32 @@ class AccessLoggingTest {
         }
     }
 
+    @Test
+    fun `the ssh exec channel logger keeps the remote command out of the log at any HOMER_LOG_LEVEL`(
+        @TempDir tmp: Path,
+    ) {
+        System.setProperty("HOMER_LOG_DIR", tmp.toString())
+        System.setProperty("HOMER_LOG_LEVEL", "TRACE")
+        val ctx = LoggerContext().apply { mdcAdapter = LogbackMDCAdapter() }
+        try {
+            val configurator = JoranConfigurator().apply { context = ctx }
+            javaClass.getResourceAsStream("/logback.xml").use { configurator.doConfigure(it) }
+            val channel = ctx.getLogger("org.apache.sshd.client.channel.ChannelExec")
+            assertEquals(LogbackLevel.ERROR, channel.effectiveLevel)
+
+            val command = "cd '/w' && exec env 'TOKEN=s3cr3t-value' 'true'"
+            channel.warn("handleFailure(ch) pending since=0, command={}", command)
+            channel.debug("doOpen(ch) send SSH_MSG_CHANNEL_REQUEST exec command={}", command)
+            ctx.stop()
+
+            assertFalse(tmp.resolve("app.log").readText().contains("s3cr3t-value"), "the remote command must not reach app.log")
+        } finally {
+            ctx.stop()
+            System.clearProperty("HOMER_LOG_DIR")
+            System.clearProperty("HOMER_LOG_LEVEL")
+        }
+    }
+
     // ---- CallLogging routing to the homer.access logger ----
 
     @Test
