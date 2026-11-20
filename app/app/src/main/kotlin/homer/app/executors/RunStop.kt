@@ -82,10 +82,9 @@ internal fun stopStepPlan(
     )
 
 /**
- * [command]'s own timeout, cut at the deadlines that apply to it and floored at [MIN_STEP_SECONDS]:
- * a regular step at the soft deadline — the deadline is what stops it — and at the hard one less
- * [DEADLINE_MARGIN_SECONDS]; a stop step at the hard one and at [MAX_STOP_STEP_SECONDS], whichever
- * is shorter. See ADR-0108.
+ * [command]'s timeout cut at the hard deadline less [DEADLINE_MARGIN_SECONDS], then at the soft one
+ * for a regular step or at [MAX_STOP_STEP_SECONDS] for a stop step; floored at [MIN_STEP_SECONDS].
+ * See ADR-0108.
  */
 private fun cappedTimeout(
     command: Command,
@@ -119,12 +118,9 @@ internal fun stopDeadlinePassed(deadline: RunDeadline?): Boolean =
     deadline != null && Clock.System.now().epochSeconds >= deadline.softEpochSec
 
 /**
- * Why [cause] ends the run's steps as a graceful stop, or null when it is an ordinary failure. The
- * soft deadline stops the run whether or not the step opted in — it is what cut the step's own
- * timeout short; otherwise only a step declaring `onTimeout: stop` does, and only a timeout of its
- * own: an output-cap trip ([OutputCapExceededException], a `CancellationException` subclass) is an
- * ordinary failure, and a cancelled job is the caller's kill — neither is a stop trigger. The same
- * two distinctions the run's catch draws when it decides between a failure and a kill. See ADR-0108.
+ * Why [cause] ends the steps as a graceful stop, or null: a passed soft deadline always stops; else
+ * only a timeout of a step declaring `onTimeout: stop` does, never an output-cap trip
+ * ([OutputCapExceededException]) or a kill. See ADR-0108.
  */
 internal suspend fun stopReasonFor(
     cause: Throwable,

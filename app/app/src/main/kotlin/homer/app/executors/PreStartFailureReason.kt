@@ -12,10 +12,9 @@ import homer.app.models.RunnerFilter
 import homer.app.models.truncateFailureReason
 
 /**
- * Why a run ended FAILED before any of its commands started, ready to store: [reason] is the
- * sentence shown to a reader of the run, [holderRunId] the run that blocked it when the cause
- * names one. The holder is kept out of [reason] so the API can withhold the id from a caller
- * who may not see that run. See ADR-0058.
+ * Why a run ended FAILED before any command started: [reason] for a reader of the run, and
+ * [holderRunId], the run that blocked it, kept out of [reason] so the API can withhold it from a
+ * caller who may not see that run. See ADR-0098, ADR-0058.
  */
 data class PreStartFailure(
     val reason: String,
@@ -23,11 +22,9 @@ data class PreStartFailure(
 )
 
 /**
- * Maps the typed pre-start causes to a stored failure reason; any other exception maps to
- * null (it failed while running, or the reader gains nothing from it). The text is built
- * from the exception's typed fields, never its message: a message can carry a runner alias
- * (admin-only on the status API, ADR-0077), a lock key or a value read from the run's inputs
- * (§12 rule 7). See ADR-0047.
+ * Maps the typed pre-start causes to a stored reason, any other exception to null. Built from typed
+ * fields, never the message, which can carry a runner alias (ADR-0077), a lock key or an input value.
+ * See ADR-0098, ADR-0047 rule 7.
  */
 object PreStartFailureReason {
     fun of(e: Exception): PreStartFailure? = describe(e)?.let { it.copy(reason = sanitize(it.reason)) }

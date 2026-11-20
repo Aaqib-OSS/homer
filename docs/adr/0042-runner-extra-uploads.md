@@ -238,3 +238,11 @@ legitimately hold absolute links to host tooling, such as a venv's interpreter l
 whole upload on one would break real runs. The skip transfers none of the target's content, so the
 disclosure the 2026-08-18 hardening closed stays closed. A link that stays inside the root is still
 dereferenced, because in-tree tooling links are common.
+
+## Amendment (2026-11-20): which upload sources are resolved to their realpath
+
+The pack refuses a symlinked source. The run's `projectRoot` is created per run by Homer, so it is
+packed as it stands: a symlink there is tampering and must fail the upload. The local agent dir and
+every `extraUploads` entry are operator-configured and may legitimately be symlinks, so they are
+resolved to their realpath (`TarStreams.resolvedPackSource`) first, and containment is checked
+against the real root.

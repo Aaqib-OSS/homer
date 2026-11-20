@@ -55,12 +55,11 @@ data class RunSpec(
     // The flow's first run, read by ProcessExecutor and stored with the row at
     // INSERT, exported as HMR_ROOT_PROCESS_ID. Null at the root. See ADR-0058.
     val rootProcessId: Int? = null,
-    // The run's already-rendered `cooldown.key`, or null when the agent sets none. Read by
-    // ProcessExecutor, stored with the row at INSERT and used to scope the cooldown reads
-    // in the same transaction. Rendered by the caller, never re-derived here. ADR-0106.
+    // The rendered `cooldown.key` (null when unset), stored at INSERT and scoping that transaction's
+    // cooldown reads. Rendered by the caller, never re-derived here. ADR-0106.
     val cooldownKey: String? = null,
 ) {
-    // Input values and the agent's env can be secret: names only. Root CLAUDE.md §12 rule 7.
+    // Input values and the agent's env can be secret: names only. ADR-0047 rule 7, CWE-532.
     override fun toString() =
         "RunSpec(agent=${agent.name}, inputKeys=${queryParams.keys}, parentProcessId=$parentProcessId, rootProcessId=$rootProcessId)"
 }
@@ -82,44 +81,34 @@ class Process(
     // the same transaction as the INSERT. See ADR-0051.
     val cooldown = agent.cooldown
 
-    // Snapshot of which inputs were secret when this run started; stored with the
-    // row so API redaction never depends on the agent's current flags. A replay
-    // (retry/resume) adds the SOURCE run's snapshot via extraSecretInputKeys: it is
-    // replaying that run's values, so it inherits that run's secrecy. ADR-0052.
+    // The secret-input snapshot stored with the row; a replay adds its source run's snapshot
+    // (extraSecretInputKeys), so it inherits that run's secrecy. ADR-0052.
     val secretInputKeys: Set<String> = agent.secretEnvNames + run.extraSecretInputKeys
     private val purgeSchedule = PurgeSchedule.of(agent.workspace)
     val purgeAfterSeconds: Long = purgeSchedule.purgeAfterSeconds
     val purgeRecordAfterSeconds: Long = purgeSchedule.purgeRecordAfterSeconds
 
-    // Artifact globs that survive the workspace purge, captured here so the row
-    // stores what was declared when this run ended, not the agent's current
-    // definition (same principle as secretInputKeys / ADR-0052).
+    // Captured with the run: the row keeps the globs declared at run time, not the agent's current
+    // definition. ADR-0053.
     val retainArtifacts: List<String> = purgeSchedule.retainArtifacts
 
-    // Screens the stored failure reason (ADR-0052). Built here rather than in the failure
-    // path: the workspace config it would otherwise be read from is created inside
-    // `execute`, which a pre-start failure never reaches, and building it there would need
-    // the runner lookup that may itself be what timed out. §12 rule 7, ADR-0052.
+    // Screens the stored failure reason; built here, not in the failure path, which a pre-start
+    // failure may reach before `execute` builds the workspace config. ADR-0098, ADR-0047 rule 7.
     val failureReasonRedactor: SecretRedactor = SecretRedactor.from(agent.env + queryParams, secretInputKeys + agent.sysEnvBackedEnvNames)
 
-    // `paramName:value` subject tags resolved from this run's declared `fromInputs`,
-    // stored co-transactionally with the row INSERT (ADR-0051). Shares the single
-    // derivation with the Langfuse trace tags, and passes the ADR-0052 secret union
-    // (secretInputKeys) so a historically-secret value is never stored as a tag.
-    // See ADR-0060.
+    // `fromInputs` subject tags, stored with the row INSERT: the Langfuse tags' derivation over the
+    // ADR-0052 secret union, so a historically secret value is never a tag. ADR-0060.
     val fromInputTags: List<String> = langfuseTraceTags(agent, queryParams, secretInputKeys)
 
     suspend fun execute(
         processId: Int,
         processSpan: Span,
     ) {
-        // Resolved before createWorkspaceConfig: the runner declares whether it is
-        // remote (so allowlisted host env stays off a remote machine) and supplies
-        // its own per-runner env layer. See ADR-0003.
+        // Resolved before the workspace config: the runner says whether it is remote (host env stays
+        // off a remote machine) and supplies its own env layer. ADR-0065.
         val runner = deps.runnerRegistry.forAgent(agent)
-        // No reorder: this renders the lock key and denies a run whose placeholder has no value,
-        // so it stays above the workspace, the slot and the lock — a denied run takes none of
-        // them (it also covers the acceptParentLock pass-through below). See ADR-0047.
+        // No reorder: rendering the lock key denies a run with an unresolved placeholder before it
+        // takes a workspace, slot or lock, the pass-through below included. ADR-0098.
         val workspaceConfig =
             workspaceConfigFor(
                 processId,
@@ -129,9 +118,8 @@ class Process(
                 runnerAlias = runner.alias,
             )
 
-        // Pass-through: a flow cannot self-collide on a shared lock key. When the
-        // agent opts in and its resolved key is already held by an ancestor in
-        // this invocation chain, skip acquire AND release entirely.
+        // Pass-through: an opted-in run whose key an ancestor in this chain holds skips both acquire
+        // and release, so a flow cannot self-collide on a shared key. ADR-0029.
         val inheritLock = agent.lockStrategy.acceptParentLock && workspaceConfig.lockKey in run.ancestorLockKeys
 
         // Cleanup guard probe: live rows on this run's artifacts dir, excluding itself.
@@ -175,12 +163,9 @@ class Process(
     }
 
     /**
-     * Takes the run's gates in order — its subject lock, then a parallel-run slot, then the kill a
-     * `KILL_OLD_RUN_CURRENT` collision deferred — recording each in [admission] as it is taken.
-     * The lock comes first (ADR-0104): a run waiting on another run's subject lock must not hold
-     * an agent-wide slot, or one busy subject starves every other subject of this agent. The slot
-     * attempt can still be refused, and the victim is killed only once it is not: a refused slot
-     * leaves the displaced run alive and this run's `tearDown` releases the lock again.
+     * Takes the run's subject lock, then a parallel-run slot, then the kill a `KILL_OLD_RUN_CURRENT`
+     * collision deferred, recording each in [admission]. A refused slot leaves the displaced run
+     * alive, and `tearDown` releases the lock. See ADR-0104.
      */
     private suspend fun admit(
         processId: Int,
@@ -229,13 +214,8 @@ class Process(
             ancestorLockKeys = run.ancestorLockKeys,
             parentProcessId = parentProcessId,
             rootProcessId = rootProcessId,
-            // secretInputKeys, NOT a fresh read of the current flags: on a replay it
-            // carries the source run's snapshot, and this set is what masks values in
-            // span input/output and in the live log stream. Recomputing here is how a
-            // historically-secret value reached those sinks unmasked. See ADR-0052.
-            // Unioned with the queued runner's names: a tag-filtered run's alias
-            // ("tags:...") has no entry in the factory's per-alias map, so the
-            // candidates' @SYSENV-backed names must arrive through this set. ADR-0066.
+            // secretInputKeys, never the current flags, masks spans and the live log (ADR-0052); the
+            // runner's names cover a tag-filtered alias the per-alias map lacks (ADR-0066).
             secretEnvNames = secretInputKeys + agent.sysEnvBackedEnvNames + runnerSecretEnvNames,
             runnerEnv = runnerEnv,
             includeParentEnv = !runnerIsRemote,
@@ -261,9 +241,8 @@ class Process(
         // check must be able to see this run as an owner of the directory.
         deps.processManager.setArtifactsDir(processId, workspace.config.artifacts)
         workspace.create()
-        // The redactor screens runtime tag values against every secret this run holds
-        // (secret inputs under the ADR-0052 union, @SYSENV globals, and the token
-        // itself — appended to env only below, hence the explicit entry). See ADR-0060.
+        // Screens runtime tag values against every secret the run holds, the token included: it joins
+        // the env only below, hence its explicit entry. ADR-0060.
         val callbackToken =
             deps.questionsService.registerProcess(processId, agent.name) { token ->
                 SecretRedactor.from(
@@ -285,9 +264,8 @@ class Process(
         heldLockKey: String?,
         acquiredSlot: Semaphore?,
     ) {
-        // Each teardown step is isolated: a cleanup failure must never skip the
-        // lock/slot release below (a leaked lock or slot wedges every later run
-        // of this agent), and must not mask the primary exception.
+        // Each step is isolated: a cleanup failure must neither skip the lock and slot release (a leak
+        // wedges every later run of this agent) nor mask the primary exception.
         runCatching { workspace.cleanup() }
             .onFailure { processSpan.recordException(it) }
         heldLockKey?.let { lockKey ->
@@ -312,9 +290,8 @@ internal class ProcessFactory(
         invocationChain: List<String> = emptyList(),
         ancestorLockKeys: List<String> = emptyList(),
         owner: String? = null,
-        // Defaulted, unlike langfuseTraceTags' secret set: omitting it yields the current
-        // definition's flags, which is correct for every fresh-input path. Only a replay
-        // of stored inputs has more to carry.
+        // Defaulted, unlike langfuseTraceTags' secret set: the current flags are right for every
+        // fresh-input path; only a replay of stored inputs carries more. ADR-0052.
         extraSecretInputKeys: Set<String> = emptySet(),
         parentProcessId: Int? = null,
         rootProcessId: Int? = null,

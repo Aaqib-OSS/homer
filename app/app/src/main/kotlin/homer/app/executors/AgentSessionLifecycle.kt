@@ -25,15 +25,13 @@ internal suspend fun prepareBackendWorkspace(
     processId: Int,
     logger: Logger,
 ) {
-    // Must be read BEFORE createWorkspace(): its overrides rewrite
-    // HMR_AGENT_DIR to the backend-side path, but the upload source
-    // is the local agent dir.
+    // Read before createWorkspace(), whose overrides point HMR_AGENT_DIR at the backend path: the
+    // upload source is the local agent dir.
     val localAgentDir = workspace.config.env[EnvConstants.AGENT_DIR]
     val workspaceOverrides = session.createWorkspace()
     logger.debug("Process {}: backend workspace ready on '{}'", processId, session.runnerAlias)
-    // The serving backend is only known now: for a tag-filtered run the queued
-    // alias is a filter string ("tags:..."), not a backend (ADR-0066). Merge
-    // rather than replace so the Kubernetes runner's pod fields survive.
+    // The serving backend is known only now: a tag-filtered run's alias is a filter (ADR-0066).
+    // Merged, not replaced, so the Kubernetes runner's pod fields survive.
     stepRecords.setRunnerState(processId) { prev ->
         prev?.copy(alias = session.runnerAlias) ?: RunnerState(alias = session.runnerAlias)
     }
@@ -42,18 +40,13 @@ internal suspend fun prepareBackendWorkspace(
     }
     val uploadMs =
         measureTimeMillis {
-            // projectRoot is created per run by Homer: a symlink there is tampering,
-            // so it is deliberately NOT resolved. The other two are operator-configured
-            // and may legitimately be symlinks (a symlinked agent dir, an extraUploads
-            // entry — ADR-0042); TarStreams.pack refuses a symlinked source, so resolve
-            // them here and let containment be checked against the real root.
+            // Homer creates projectRoot per run, so it stays unresolved (a symlink there is tampering);
+            // the operator-configured sources are resolved to their realpath. ADR-0042.
             session.upload(workspace.config.projectRoot, ".")
             localAgentDir?.let { agentDir ->
                 val source = TarStreams.resolvedPackSource(Path.of(agentDir))
-                // A nested agent is a different agent: a parent's HMR_AGENT_DIR
-                // upload carries none of its children's directories (ADR-0068,
-                // ADR-0047). Leading `/` anchors each exclude to the upload root;
-                // a bare name would match a same-named directory at any depth.
+                // A parent's upload carries none of its nested agents' dirs (ADR-0068, ADR-0047); the
+                // leading `/` anchors each exclude to the root, where a bare name matches at any depth.
                 val nestedExcludes =
                     AgentDirs.nestedAgentDirsUnder(source).map { "/${it.invariantSeparatorsPathString}" }
                 session.upload(source, ".homer/agent", nestedExcludes)
@@ -70,7 +63,7 @@ internal suspend fun prepareBackendWorkspace(
 }
 
 /** Syncs the backend's artifacts (and a kept workdir) down, cleans a cleared one, and closes [session]. */
-@Suppress("SuspendFunSwallowedCancellation") // best-effort, and only ever runs under NonCancellable
+@Suppress("SuspendFunSwallowedCancellation") // sync-down is best-effort (ADR-0055); runs only under NonCancellable
 internal suspend fun syncDownAndClose(
     session: RunnerSession,
     workspace: Workspace,
@@ -78,7 +71,7 @@ internal suspend fun syncDownAndClose(
     logger: Logger,
     activeSessions: ActiveSessionsRegistry,
 ) {
-    // Sync-down is best-effort: never fail an otherwise-successful run.
+    // Sync-down is best-effort (ADR-0055): a failure is logged and never fails the run.
     runCatching {
         val elapsedMs =
             measureTimeMillis { session.download("artifacts", workspace.config.artifacts, DownloadMode.OVERLAY) }

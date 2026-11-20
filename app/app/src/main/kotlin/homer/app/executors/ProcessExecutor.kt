@@ -24,10 +24,8 @@ class ProcessExecutor(
     private val runMessages: RunMessageExpiry,
     private val coroutineScope: CoroutineScope,
     private val logger: Logger,
-    // Invoked once the terminal status is durably committed (after the CAS), with
-    // the actual final status — fires completion continuations. Lazy/post-construction
-    // wired in DI to break the ContinuationService → AgentRunStarter → ProcessExecutor
-    // cycle; never throws into the status commit (failures are swallowed here). See ADR-0023.
+    // Fires completion continuations with the committed terminal status; wired lazily in DI to break
+    // a cycle, and a failure is caught in releaseJob, never reaching the status. ADR-0023.
     private val onTerminal: suspend (Int, ProcessStatus) -> Unit = { _, _ -> },
 ) {
     suspend fun execute(
@@ -70,11 +68,8 @@ class ProcessExecutor(
                 .setParent(parentContext)
                 .startSpan()
 
-        // Stamp the run's trace id while the span exists. It is the same trace as
-        // the root `agent_request` span, and it outlives the artifacts — so a run
-        // still links to its Langfuse trace after the workspace is purged.
-        // isSampled, not just isValid: a `telemetry: OFF` run has a valid trace id
-        // that is never exported, and storing it would render a dead Langfuse link.
+        // The trace id outlives the artifacts, so a purged run still links to its Langfuse trace.
+        // isSampled: a `telemetry: OFF` run's valid id is never exported, so it would be a dead link.
         processSpan.spanContext
             .takeIf { it.isValid && it.isSampled }
             ?.let { processManager.setTraceId(processId, it.traceId) }
@@ -100,9 +95,8 @@ class ProcessExecutor(
         process: Process,
         processSpan: Span,
     ) {
-        // Guard WORKING/CREATED → FINISHED so a concurrent
-        // killProcess (which atomically moves the record to KILLED) is
-        // not overwritten after execute() returned.
+        // A CAS, so a concurrent kill's KILLED is never overwritten ("Status precedence rules",
+        // app/CLAUDE.md).
         val transitionedToFinished =
             processManager.compareAndSetStatus(
                 processId,
@@ -138,18 +132,15 @@ class ProcessExecutor(
         processSpan: Span,
         e: Exception,
     ) {
-        // CAS like the FINISHED write above: a concurrent killProcess
-        // landing between a status read and this write must not be
-        // overwritten with FAILED.
+        // A CAS like the FINISHED write: a concurrent kill's KILLED is never overwritten with FAILED.
         processManager.compareAndSetStatus(
             processId,
             ProcessStatus.entries.toSet() - ProcessStatus.KILLED,
             ProcessStatus.FAILED,
         )
 
-        // Why the run never started, when the cause is one of the typed pre-start ones. The
-        // write is guarded on the committed status and on the run having recorded no step, so
-        // a mid-run failure and a kill that won the CAS above both store nothing.
+        // Only a typed pre-start cause stores a reason; the guarded write skips a run that recorded
+        // a step or whose kill won the CAS above. ADR-0098.
         storeFailureReason(processId, process, e)
 
         // Get final status for telemetry
@@ -215,9 +206,8 @@ class ProcessExecutor(
         processId: Int,
         processSpan: Span,
     ) {
-        // Every exit from this job is a terminal status, so open
-        // questions can never be answered anymore — expire them
-        // and resume their waiters.
+        // Every exit is terminal, so open questions can never be answered: expire them and resume
+        // their waiters.
         questionsService.expireForProcess(processId)
         // Messages still queued can never be delivered either. A failure here must not stop the release.
         try {
@@ -225,10 +215,8 @@ class ProcessExecutor(
         } catch (e: Exception) {
             logger.error("Closing the inbox of process {} failed: {}", processId, e.message, e)
         }
-        // Fire completion continuations off the durably-committed
-        // final status (re-read for the actual KILLED-wins value).
-        // Caught here so a hook failure can never corrupt the
-        // process's terminal status. See ADR-0023.
+        // Fired off the committed final status, re-read for the KILLED-wins value; caught so a hook
+        // failure never touches that status. ADR-0023.
         try {
             onTerminal(processId, processManager.getProcessStatus(processId))
         } catch (e: Exception) {

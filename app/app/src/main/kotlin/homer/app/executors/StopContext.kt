@@ -12,11 +12,8 @@ val StopReason.wire: String
         }
 
 /**
- * Builds the `HMR_STOP_*` environment of an agent's `onStop:` steps — the stop reason, the
- * interrupted step, the hard deadline and the interrupted `!<claude>` step's CLI session id.
- * Every value here is attacker-influenced (the label is author- and template-written, the
- * session id is parsed from the CLI's stdout), so the map is built once, validated and
- * bounded, and handed to the stop steps as plain env values — never interpolated into a shell
+ * Builds the `HMR_STOP_*` env of an agent's `onStop:` steps. Every value is attacker-influenced, so it
+ * is validated and bounded here and passed as a plain env value, never interpolated into a shell
  * string (ADR-0047 rule 2, ADR-0108).
  */
 object StopContext {

@@ -214,3 +214,10 @@ expires waits once more, for the same time, for its consumer to deliver the sess
 ssh connect). That second wait only backstops a consumer that never calls `complete()` or `fail()`,
 so a run fails after at most twice its TTL instead of hanging. A session delivered after the run
 stopped waiting is closed, by the consumer or by the queue.
+
+## Amendment (2026-11-20): a tag-filtered run's secret env names
+
+A tag-filtered run's queued alias (`tags:...`) has no entry in the workspace config factory's
+per-alias map of `@SYSENV`-backed names. `Process` therefore unions the queued runner's own
+`sysEnvBackedEnvNames`, every candidate's names, into the run's secret env names, so the
+per-runner `env` values that reach the run through `RunnerSession.env` are masked like any other.
