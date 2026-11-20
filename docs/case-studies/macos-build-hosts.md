@@ -134,7 +134,7 @@ as a daemon:
 
 ```bash
 HOMER_RUNNER_TOKEN="$(cat /path/to/shared/token)" \
-  java -jar homer-runner.jar --url https://homer.example.com \
+  java -XX:-UseBASE64Intrinsics -jar homer-runner.jar --url https://homer.example.com \
     --tags macos,ios --concurrency 1 --root /Users/runner/homer-runner \
     --name "$(hostname -s)"
 ```

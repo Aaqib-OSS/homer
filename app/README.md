@@ -97,8 +97,11 @@ start it from the directory holding `config.yaml` and `agents/` — relative
 paths in the config resolve against the working directory:
 
 ```bash
-java -jar <repo>/app/app/build/libs/homer-<version>-all.jar config.yaml
+java -XX:-UseBASE64Intrinsics -jar <repo>/app/app/build/libs/homer-<version>-all.jar config.yaml
 ```
+
+`-XX:-UseBASE64Intrinsics` mitigates Java4Shell (CVE-2026-114938), as the images and the launch
+scripts do; keep it until your JRE carries the fix.
 
 ### 4. Execute the Agent
 
@@ -151,7 +154,7 @@ Output: `app/build/libs/homer-<version>-all.jar` (e.g. `homer-0.0.2-all.jar`)
 
 Run with:
 ```bash
-java -jar app/build/libs/homer-0.0.2-all.jar config.yaml
+java -XX:-UseBASE64Intrinsics -jar app/build/libs/homer-0.0.2-all.jar config.yaml
 ```
 
 **Use case**: Simple deployments, containers, single-file distribution

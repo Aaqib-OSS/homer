@@ -461,7 +461,7 @@ echo "HOMER_ADMIN_TOKEN=$(openssl rand -hex 24)" &gt;&gt; .env
 docker compose up -d
 
 # or, without Docker:
-java -jar homer-&lt;version&gt;-all.jar config.yaml</code></pre>
+java -XX:-UseBASE64Intrinsics -jar homer-&lt;version&gt;-all.jar config.yaml</code></pre>
         </article>
 
         <article class="f step">
@@ -3645,7 +3645,7 @@ CONSOLE_THEME_MODES=light:corp-light,dark:corp-dark</code></pre>
           <h3>Start the server <span class="where">cli</span></h3>
           <p>One YAML or JSON config file as the sole argument. Ships as a fat jar, a thin jar, or an installable
             distribution.</p>
-          <pre><code>java -jar homer-&lt;version&gt;-all.jar config.yaml</code></pre>
+          <pre><code>java -XX:-UseBASE64Intrinsics -jar homer-&lt;version&gt;-all.jar config.yaml</code></pre>
         </article>
 
         <article class="f">
