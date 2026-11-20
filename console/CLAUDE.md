@@ -291,7 +291,7 @@ nonce its own scripts.
   switch.
 - Bearer tokens live in `localStorage` namespaced per instance
   (`homer_auth_token::{instanceId}`). A legacy un-namespaced token is
-  migrated into the seeded default instance on first load.
+  moved (copied, then deleted) into the seeded default instance on first load.
 - `AuthProvider` probes the active instance's `/auth/me` on mount in both
   modes (ADR-0059; a token an old server can't answer: `/heartbeat`, no grants). `switchInstance(id)` repoints the
   active id, clears the React Query cache, and re-probes; global SSE streams

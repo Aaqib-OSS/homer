@@ -25,11 +25,7 @@ const INSTANCES_KEY = 'homer_instances';
 /** Id/label of the instance seeded from the deployment's build/runtime config. */
 export const DEFAULT_INSTANCE_ID = 'default';
 
-/**
- * Per-instance bearer-token localStorage key. Namespacing by instance id keeps
- * tokens for different backends from clobbering each other (the legacy
- * single-instance console used the bare `appConfig.auth.tokenKey`).
- */
+/** Per-instance bearer-token localStorage key, so tokens for different backends never clobber each other. */
 export function tokenKeyFor(id: string): string {
   return `${appConfig.auth.tokenKey}::${id}`;
 }
@@ -54,18 +50,16 @@ function seedDefault(): InstancesState {
 }
 
 /**
- * Copy a pre-existing legacy bearer token (stored under the un-namespaced
- * `appConfig.auth.tokenKey`) into the seeded default instance's namespaced key
- * so users upgrading from the single-instance console are not silently logged
- * out. Idempotent: only runs when the namespaced key is still empty.
+ * Moves a token stored under the single-instance console's bare `appConfig.auth.tokenKey` to the
+ * default instance's key, unless that key holds one already, then deletes the bare key.
  */
-function migrateLegacyToken(): void {
+function migrateUnnamespacedToken(): void {
   if (typeof window === 'undefined') return;
-  const legacy = localStorage.getItem(appConfig.auth.tokenKey);
+  const unnamespaced = localStorage.getItem(appConfig.auth.tokenKey);
+  if (unnamespaced === null) return;
   const namespaced = tokenKeyFor(DEFAULT_INSTANCE_ID);
-  if (legacy !== null && localStorage.getItem(namespaced) === null) {
-    localStorage.setItem(namespaced, legacy);
-  }
+  if (localStorage.getItem(namespaced) === null) localStorage.setItem(namespaced, unnamespaced);
+  localStorage.removeItem(appConfig.auth.tokenKey);
 }
 
 function isValidState(value: unknown): value is InstancesState {
@@ -105,7 +99,7 @@ function readState(): InstancesState {
     }
   }
   const seeded = seedDefault();
-  migrateLegacyToken();
+  migrateUnnamespacedToken();
   persist(seeded);
   return seeded;
 }

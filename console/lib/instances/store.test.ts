@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { appConfig } from '@/lib/config/app-config';
 import {
   DEFAULT_INSTANCE_ID,
@@ -103,12 +103,48 @@ describe('instances store', () => {
     expect(localStorage.getItem(tokenKeyFor(DEFAULT_INSTANCE_ID))).toBe('legacy-token');
   });
 
-  it('does not overwrite an existing namespaced token during migration', () => {
+  it('deletes the un-namespaced token once it is copied', () => {
+    localStorage.setItem(appConfig.auth.tokenKey, 'legacy-token');
+    resetInstancesStoreForTests();
+
+    expect(getActiveToken()).toBe('legacy-token');
+    expect(localStorage.getItem(appConfig.auth.tokenKey)).toBeNull();
+  });
+
+  it('does not copy the token again on a later seed, so a signed-out token stays gone', () => {
+    localStorage.setItem(appConfig.auth.tokenKey, 'legacy-token');
+    resetInstancesStoreForTests();
+    expect(getActiveToken()).toBe('legacy-token');
+    removeActiveToken();
+
+    localStorage.removeItem(INSTANCES_KEY);
+    resetInstancesStoreForTests();
+
+    expect(getActiveToken()).toBeNull();
+  });
+
+  it('does not overwrite an existing namespaced token during migration, and deletes the old key', () => {
     localStorage.setItem(appConfig.auth.tokenKey, 'legacy-token');
     localStorage.setItem(tokenKeyFor(DEFAULT_INSTANCE_ID), 'already-here');
     resetInstancesStoreForTests();
 
     expect(getActiveToken()).toBe('already-here');
+    expect(localStorage.getItem(appConfig.auth.tokenKey)).toBeNull();
+  });
+
+  it('keeps the un-namespaced token when the copy fails', () => {
+    localStorage.setItem(appConfig.auth.tokenKey, 'legacy-token');
+    resetInstancesStoreForTests();
+    const setItem = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+      throw new Error('QuotaExceededError');
+    });
+    try {
+      expect(() => getActiveToken()).toThrow('QuotaExceededError');
+    } finally {
+      setItem.mockRestore();
+    }
+
+    expect(localStorage.getItem(appConfig.auth.tokenKey)).toBe('legacy-token');
   });
 
   it('falls back to a fresh seed when stored state is corrupt', () => {
