@@ -2,6 +2,7 @@ package homer.agentdebug
 
 import com.github.ajalt.clikt.core.parse
 import com.github.ajalt.clikt.core.subcommands
+import com.github.ajalt.clikt.testing.test
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream
@@ -12,8 +13,9 @@ import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
-/** The root command's `--config` / `--env` loading, through the `list` subcommand. */
+/** The root command: its help, and its `--config` / `--env` loading through the `list` subcommand. */
 class MainTest {
     private fun capture(block: () -> Unit): String {
         val buffer = ByteArrayOutputStream()
@@ -75,6 +77,61 @@ class MainTest {
 
         assertContains(output, "hello")
     }
+
+    @Test
+    fun `the help has one usage line per registered subcommand and no other`() {
+        val cli = agentdebugCli()
+
+        val usages = usagesOf(cli.test("--help").stdout)
+
+        assertEquals(
+            cli.registeredSubcommands().map { it.commandName }.sorted(),
+            usages.map(::subcommandOf).sorted(),
+            usages.joinToString("\n"),
+        )
+    }
+
+    @Test
+    fun `each usage in the help starts a line of its own`() {
+        val cli = agentdebugCli()
+        val lineStarts = usageBlockLines(cli.test("--help").stdout).filter { it.startsWith("agentdebug ") }
+
+        assertEquals(
+            cli
+                .registeredSubcommands()
+                .map {
+                    it.commandName
+                }.sorted(),
+            lineStarts.map(::subcommandOf).sorted(),
+            lineStarts.joinToString("\n"),
+        )
+    }
+
+    @Test
+    fun `the help's hash-password usage says it needs no --config`() {
+        val usage = usagesOf(agentdebugCli().test("--help").stdout).single { subcommandOf(it) == "hash-password" }
+
+        assertContains(usage, "needs no --config")
+    }
+
+    /** The hand-written usage block's entries, each rejoined across the help formatter's wrapping. */
+    private fun usagesOf(help: String): List<String> =
+        usageBlockLines(help)
+            .joinToString(" ")
+            .split(Regex("(?=agentdebug )"))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+
+    /** The hand-written usage block's rendered lines, trimmed. */
+    private fun usageBlockLines(help: String): List<String> =
+        help
+            .lines()
+            .map { it.trim() }
+            .dropWhile { it != "Usage:" }
+            .drop(1)
+            .takeWhile { it.isNotEmpty() }
+
+    private fun subcommandOf(usage: String): String = usage.split(" ").drop(1).first { it.matches(Regex("[a-z][a-z-]*")) }
 
     @Test
     fun `a subcommand without --config fails`() {
