@@ -180,6 +180,9 @@ The per-exec `env KEY=VAL … argv` delivery above, and the residual audit-log s
   ([ADR-0032](0032-ssh-runner-backend.md), same amendment): the file's first line removes it, the
   command's `sh` sources it and `exec`s the argv, and the setsid reaping form records its pgid before
   sourcing. The directory is outside `workdir` and `artifacts`, so no download brings it back.
+
+  > **Amendment (2026-11-21) — a step with an interrupt grace no longer `exec`s the argv.** The sourcing `sh` runs it in a waiting child and reports a signal death as 128 + n; see the 2026-11-21 amendment in [ADR-0108](0108-graceful-stop-of-a-run.md).
+
 - **Lifecycle and cleanup.** Whenever the step fails, times out or is cancelled, the executor removes
   the file with one more exec before the session decides whether to keep the pod, so a kept-for-debug
   pod normally holds none. The removal is best effort and only logged when it fails (an exec refused

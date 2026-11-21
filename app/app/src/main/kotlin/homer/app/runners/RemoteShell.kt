@@ -16,7 +16,8 @@ object RemoteShell {
 
     /**
      * The ssh and Kubernetes reaping wrapper's `sh -c` script, run as `sh -c <it> <pgidFile> [envFile] <argv>`: [record]
-     * first, then the argv in a child (after sourcing `$1` when [sourcesEnvFile]), so a signal death exits 128 + n (ADR-0041).
+     * first (it must end with `; `), then the argv in a child (after sourcing `$1` when [sourcesEnvFile]), so a signal
+     * death exits 128 + n (ADR-0041).
      */
     fun reapingWrapper(
         record: String,
