@@ -971,6 +971,7 @@ class LocalShellExecutorTest {
         assertTrue(reason.contains("stdout"), "the failure must name the lost stream: $reason")
         assertFalse(reason.contains("hi"), "the failure must not carry the child's output: $reason")
         assertFalse(reason.contains("s3cr3t"), "the failure must not carry an env value: $reason")
+        assertEquals(-1, thrown.exitCode, "a step that failed without the child's exit contributing records the sentinel")
     }
 
     @Test

@@ -71,10 +71,10 @@ class LocalShellExecutor(
                         throw CancellationException("Timeout reached. $timeout.")
                     }
                 }
-                // A pump that lost its artifact fails the step whatever the child's exit code: an
-                // output that fit the pipe buffer leaves exit 0 behind a lost stdout (ADR-0063).
+                // A pump that lost its artifact fails the step with -1, the sentinel for a step that
+                // failed without the child's exit contributing: exit 0 behind a lost stdout (ADR-0063).
                 if (outPump?.failed == true) {
-                    throw CommandExecutionException("stdout could not be written", process.exitValue(), command.first())
+                    throw CommandExecutionException("stdout could not be written", -1, command.first())
                 }
             } catch (e: Throwable) {
                 withContext(NonCancellable) { tearDown(process, stdInJob, outPump, stdErr, timeout, stopped, interruptGrace) }
@@ -267,6 +267,10 @@ class LocalShellExecutor(
         private val target: Path,
         filter: OutputLineFilter,
     ) {
+        // The failure write and [join]'s shed flag share one guard, as in the pod pump: a failure
+        // caused by the shed itself can never mark the step failed (ADR-0063).
+        private val lock = Any()
+
         @Volatile
         private var file: OutputStream? = null
 
@@ -275,7 +279,6 @@ class LocalShellExecutor(
         var failed = false
             private set
 
-        @Volatile
         private var shed = false
 
         private val thread =
@@ -286,7 +289,7 @@ class LocalShellExecutor(
                     LineFilteringOutputStream(out, filter).use { source.copyTo(it) }
                 } catch (e: Exception) {
                     logger.warn("Failed to pump process stdout to {}", target, e)
-                    if (!shed) failed = true
+                    synchronized(lock) { if (!shed) failed = true }
                     // Nobody drains the pipe any more: close our end so the child gets
                     // EPIPE instead of blocking on a full pipe until its timeout.
                     runCatching { source.close() }
@@ -303,7 +306,7 @@ class LocalShellExecutor(
             logger.warn("stdout pump still running {} ms after the command ended; a child may hold stdout open", ms)
             // A shed pump is not a failed one: a background child holding the pipe open is not the
             // command's fault, so nothing it writes into the closed file later fails the step.
-            shed = true
+            synchronized(lock) { shed = true }
             // On Linux a pipe read blocked in another thread is not woken by close(): the
             // thread ends only at the child's next write or exit, and a read that fills
             // its buffer is still handed over. Closing the file first makes that write

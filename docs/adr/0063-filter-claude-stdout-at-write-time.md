@@ -120,9 +120,11 @@ subtypes, non-empty default"**.
 - Good: a pump that cannot open or write its file fails the step, naming the stream it
   could not write, on the local and Kubernetes runners alike — a child whose whole
   output fits the buffer can no longer report exit 0 with the artifact lost. The
-  bounded join and its shed semantics are unchanged: a pump still running past the
-  bound because a background child holds the stream open is abandoned, not failed.
-  (2026-11-21.)
+  failure carries exit code `-1`, the sentinel for a step that failed without the
+  child's exit contributing, on both runners alike, so a failed step never records
+  the child's own `0`. The bounded join and its shed semantics are unchanged: a pump
+  still running past the bound because a background child holds the stream open is
+  abandoned, not failed. (2026-11-21.)
 
 ## Pros and Cons of the Options
 
