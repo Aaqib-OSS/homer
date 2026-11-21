@@ -530,48 +530,62 @@ class ProcessTest {
 
     // ========== Integration Tests ==========
 
+    private fun stubWorkspaceConfig() {
+        every {
+            mockWorkspaceConfigFactory.createWorkspaceConfig(
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+            )
+        } returns TestFixtures.mockWorkspaceConfig()
+    }
+
+    private fun verifyWorkspaceConfigBuilt() {
+        verify {
+            mockWorkspaceConfigFactory.createWorkspaceConfig(
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+            )
+        }
+    }
+
     @Test
-    fun `execute builds the workspace config and runs the agent's command`() =
+    fun `execute builds the workspace config`() =
         runTest {
-            val mockWorkspaceConfig = TestFixtures.mockWorkspaceConfig()
-            every {
-                mockWorkspaceConfigFactory.createWorkspaceConfig(
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                )
-            } returns mockWorkspaceConfig
+            stubWorkspaceConfig()
 
             process.execute(1, mockSpan)
 
-            // Verify the workspace config factory was called
-            verify {
-                mockWorkspaceConfigFactory.createWorkspaceConfig(
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                )
-            }
+            verifyWorkspaceConfigBuilt()
+        }
+
+    @Test
+    fun `execute runs the agent's command once`() =
+        runTest {
+            stubWorkspaceConfig()
+
+            process.execute(1, mockSpan)
 
             coVerify(exactly = 1) { mockExecutorFactory.getExecutor<Command>(any()).execute(any(), any(), any()) }
         }
