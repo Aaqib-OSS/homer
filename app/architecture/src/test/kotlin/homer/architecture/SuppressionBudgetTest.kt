@@ -8,7 +8,7 @@ import kotlin.test.fail
 
 /**
  * Budgets for `jscpd:ignore-start` in backend main code and the pending-rule tag in the architecture tests. Each count
- * may not exceed its budget (root CLAUDE.md section 5) and the budget ratchets like the size caps (ADR-0082).
+ * may not exceed its budget and the budget ratchets like the size caps (ADR-0082).
  * `@Suppress` and its reason are counted by `tools/quality/comment-policy.mjs`.
  */
 class SuppressionBudgetTest {

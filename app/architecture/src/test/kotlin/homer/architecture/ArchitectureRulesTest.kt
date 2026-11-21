@@ -226,7 +226,7 @@ class ArchitectureRulesTest {
 
         val INLINE_BAD_REQUEST = Regex("""\brespond\w*\(\s*(status\s*=\s*)?HttpStatusCode\.BadRequest\b""")
 
-        /** The `homer.app.infra` unit names root CLAUDE.md section 6 requires a property-based test for. */
+        /** The `homer.app.infra` unit names that need a property-based test. */
         val PROPERTY_TESTED_SUFFIXES = listOf("Parser", "Validator", "Builder")
 
         const val KOTEST_PROPERTY = "io.kotest.property"

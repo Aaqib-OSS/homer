@@ -12,7 +12,7 @@ import kotlin.test.assertTrue
 /**
  * Guards the agent-CLI version pins (CWE-1357): each npm package the `runner` stage installs is pinned identically in
  * `app/Dockerfile`, `docker-compose.build.yml` and the `DOCKER.md` table, and the Claude Code pin matches the newest
- * committed capture, so a bump cannot ship a release no recorded stream came from (ADR-0057).
+ * committed capture, so a bump cannot ship a release no recorded stream came from.
  */
 class CliVersionPinTest {
     /** Build argument → the npm package it pins. */
@@ -99,7 +99,7 @@ class CliVersionPinTest {
 
     /**
      * The Claude Code release a capture was recorded from, as `name to version`. The captures are
-     * the streams ADR-0057 verifies a bump with, so a pin no capture reports is a pin nothing tested.
+     * the streams a bump is verified with, so a pin no capture reports is a pin nothing tested.
      */
     private fun captureVersions(): List<Pair<String, String>> =
         File(

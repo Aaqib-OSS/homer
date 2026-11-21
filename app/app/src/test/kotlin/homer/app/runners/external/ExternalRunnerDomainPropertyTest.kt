@@ -13,7 +13,7 @@ import org.junit.jupiter.api.assertThrows
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/** Property-based companion to [ExternalRunnerDomainTest] (root CLAUDE.md section 6): the version shape is swept. */
+/** Property-based companion to [ExternalRunnerDomainTest]: the version shape is swept. */
 class ExternalRunnerDomainPropertyTest {
     @Test
     fun `a version outside the tag shape is refused and stores nothing, any shape-conforming one is stored`() =

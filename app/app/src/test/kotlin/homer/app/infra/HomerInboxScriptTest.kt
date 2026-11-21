@@ -18,7 +18,7 @@ import kotlin.test.assertTrue
 /**
  * Behavioural tests for the materialized `homer-inbox` helper (run through `/bin/sh`, with a stub `curl` returning a
  * canned body and status): plain mode's exit 0 / 2, and hook mode's contract with Claude Code: the body on 200,
- * nothing on 204, exit 1 (never 2) with a `homer-inbox:` reason on failure. See ADR-0097.
+ * nothing on 204, exit 1 (never 2) with a `homer-inbox:` reason on failure.
  */
 class HomerInboxScriptTest {
     private data class Run(

@@ -25,7 +25,7 @@ import kotlin.test.assertNotNull
 /**
  * Property test for the shared JsonPath→text conversion: whatever shape an agent's stdout holds,
  * a selected object or array must come back as text that parses to the very same JSON. Example
- * tests mirror the shapes we thought of; this finds the ones we did not (root CLAUDE.md section 6).
+ * tests mirror the shapes we thought of; this finds the ones we did not (ADR-0082).
  */
 class JsonPathValuePropertyTest {
     @Test

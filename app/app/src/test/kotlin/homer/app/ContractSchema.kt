@@ -9,7 +9,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import java.io.File
 
-/** A hand-written schema under `app/schemas/`, read as JSON for the contract-sync tests (root CLAUDE.md section 10). */
+/** A hand-written schema under `app/schemas/`, read as JSON for the contract-sync tests. */
 internal class ContractSchema(
     val fileName: String,
 ) {
