@@ -4,10 +4,8 @@ plugins {
 }
 
 dependencies {
-    // Deliberately NO project(":app") dependency: this suite is a black-box
-    // client of the shipped HTTP contract. Response shapes are re-declared as
-    // minimal DTOs in src/test so serialization regressions in :app fail here
-    // instead of being shared by both sides. See README.md.
+    // Deliberately NO project(":app") dependency: the suite re-declares response shapes
+    // as its own DTOs, so :app serialization regressions fail here (README.md).
     testImplementation(libs.kotlinTest)
     testImplementation(libs.kotlinTestJunit5)
     testImplementation(libs.junitJupiter)

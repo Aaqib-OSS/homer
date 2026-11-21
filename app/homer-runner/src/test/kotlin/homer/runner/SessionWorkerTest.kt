@@ -235,9 +235,8 @@ class SessionWorkerTest {
                 val run = async { w.run() }
                 api.ops.send(RunnerOp.CreateWorkspace("cw"))
                 api.result()
-                // Neither post ever returns, so both pumps are still handing their chunk over when
-                // the drain bound expires: the tail of both streams is dropped, and the op's own
-                // deadline is shorter than that bound.
+                // Neither post returns, so both pumps are mid-chunk at the drain bound: both tails are
+                // dropped, and the op's own deadline is shorter than that bound.
                 api.postOutputStalls = true
                 api.ops.send(
                     RunnerOp.Cmd(
@@ -383,9 +382,8 @@ class SessionWorkerTest {
             api.result()
             val cwd = w.sessionRoot.toString()
 
-            // Negative: clamped to 0 — a SIGINT-ignoring command is SIGKILLed at once after its
-            // own timeout. Unclamped, the negative wait throws out of the reap and takes the
-            // session down with it.
+            // Negative: clamped to 0, so a SIGINT-ignoring command is SIGKILLed at once; unclamped,
+            // the negative wait would throw out of the reap and take the session down.
             api.ops.send(
                 RunnerOp.Cmd(
                     "c1",
@@ -405,9 +403,8 @@ class SessionWorkerTest {
             assertTrue((System.nanoTime() - started) < 10_000_000_000L, "a negative grace clamps to an immediate kill")
             assertFalse(w.lost, "the session survives the out-of-range grace")
 
-            // Huge: clamped to the runner's own cap, so the reap waits the clamp at most — never
-            // the 10^9 s the wire carried. A command that dies on SIGINT is reaped inside it and
-            // the worker goes on answering.
+            // Huge: clamped to the runner's cap, never the 10^9 s the wire carried; a command that
+            // dies on SIGINT is reaped inside it.
             api.ops.send(
                 RunnerOp.Cmd(
                     "c2",
@@ -704,10 +701,7 @@ class SessionWorkerTest {
             api.result()
 
             val started = System.nanoTime()
-            // Sent back-to-back with no delay: both are already queued in FakeRunnerApi
-            // before the worker's poller drains either, so dispatchLoop can process the
-            // Cancel before runCmd has registered "c1" in `running` — exactly the race
-            // fix-round-1 item 3 closes.
+            // Back-to-back: dispatchLoop can process the Cancel before runCmd registers "c1" in `running`.
             api.ops.send(
                 RunnerOp.Cmd("c1", listOf("sleep", "30"), mapOf("PATH" to "/usr/bin:/bin"), null, 60_000, w.sessionRoot.toString()),
             )
@@ -723,9 +717,8 @@ class SessionWorkerTest {
     @Test
     fun `non-cmd op results are delivered off the dispatcher so a sequence of them isn't gated by a poll window each`() =
         live {
-            // Forces the worst case from the observed defect: every result-carrying `next` call
-            // loses its race with the dedicated poller and never gets an op back on that same
-            // call, so the fix has to keep the dispatcher moving on already-queued ops regardless.
+            // Every result-carrying `next` loses its race with the poller, so the dispatcher must keep
+            // moving on already-queued ops.
             api.resultsNeverCarryOps = true
             api.nextPollMs = 2_000L
             val src = tmp.resolve("src").createDirectories()
@@ -743,13 +736,7 @@ class SessionWorkerTest {
             assertTrue(api.result().ok)
 
             api.ops.send(RunnerOp.Close("cl", "done"))
-            // Measures how fast the dispatcher itself progresses through the queued ops down to
-            // Close, not how long run() takes to fully return: run() is a structured parent of the
-            // (deliberately never-resolving-fast, here) background delivery jobs for the two ops
-            // above, and per the fix waits for them like any other child on a graceful finish —
-            // that wait is bounded by the fake server's behavior, not by the dispatcher's own
-            // pace, which is exactly what this regression covers. Bounded so a regression hangs
-            // instead of stalling the suite.
+            // Times the dispatcher down to Close, not run(): run() also waits for the slow delivery jobs.
             withTimeout(1_500) {
                 while (w.sessionRoot.exists()) delay(5)
             }
@@ -766,10 +753,8 @@ class SessionWorkerTest {
             val run = async { w.run() }
             api.ops.send(RunnerOp.CreateWorkspace("cw"))
             api.result()
-            // Still running when heartbeat is lost: killAll() kills it, and its deliver()
-            // call (posting c1's result) races lost()'s ops.close() — exactly the window
-            // fix-round-2 item covers (a "late deliver" trying to hand off after the local
-            // queue is already closed must not throw and must not re-post to Homer).
+            // killAll() kills c1 and its deliver() races lost()'s ops.close(): a late deliver must
+            // neither throw nor re-post to Homer.
             api.ops.send(
                 RunnerOp.Cmd("c1", listOf("sleep", "30"), mapOf("PATH" to "/usr/bin:/bin"), null, 60_000, w.sessionRoot.toString()),
             )

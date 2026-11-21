@@ -24,10 +24,7 @@ class RunnerVersionTest {
 
     @Test
     fun `current is the version this build stamped into the jar`() {
-        // A test build passes no -PhomerVersion, so the build's fallback is what it reports;
-        // the point is that it is a real build value, never the old hardcoded constant.
-        // Asserted as the shape the server accepts, not as one build invocation's value —
-        // a build stamped -PhomerVersion=1.42.0 must pass this same test.
+        // Asserted as the shape the server accepts, not one build's value: any -PhomerVersion must pass.
         assertTrue(RunnerTagValidation.PATTERN.matches(RunnerVersion.current))
     }
 

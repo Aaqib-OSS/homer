@@ -84,9 +84,7 @@ class RunnerStatusAccessTest : E2eTestBase() {
                     }
 
                 assertEquals(1, view.pending, "only the seeded claim may be pending: $view")
-                // An alias filter is the one group shape whose redaction loses information: an
-                // admin sees the alias here, so a pending group carrying neither field is what a
-                // redaction regression fails.
+                // An admin sees the alias, so a pending group with neither field is a redaction regression.
                 assertTrue(
                     view.byFilter.any { it.pending > 0 && it.filter.alias == null && it.filter.tags == null },
                     "a pending alias filter must arrive with both filter fields withheld: $view",

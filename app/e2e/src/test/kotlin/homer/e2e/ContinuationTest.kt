@@ -97,11 +97,7 @@ class ContinuationTest : E2eTestBase() {
     @Test
     fun `a continuation fired back to its own agent inherits the origin run's inputs`() =
         runBlocking {
-            // `continuation-inherit` resumes itself with `continuation.inheritInputs: true`,
-            // so the resumed segment carries the registering run's subject even though the
-            // continuation itself never passed it. Its `ticket` input is `required: true`,
-            // so registration succeeds only because the origin run's stored inputs count as
-            // provided. ADR-0101.
+            // The required `ticket` input is provided only by the origin run's stored inputs (ADR-0101).
             val ticket = "e2e-inherit-${System.nanoTime()}"
             val originId = HomerApi.startRun("continuation-inherit", query = mapOf("ticket" to ticket))
 
@@ -151,10 +147,8 @@ class ContinuationTest : E2eTestBase() {
     @Test
     fun `a resumed segment holds the origin subject's lock key`() =
         runBlocking {
-            // The fixture's lock key is `ticket-{{TICKET_ID}}`, so a resumed segment that
-            // renders it with the inherited subject holds the same key the origin run did —
-            // which is what makes a fresh run for the same subject skip rather than stack.
-            // ADR-0101.
+            // The lock key `ticket-{{TICKET_ID}}` renders with the inherited subject, so a fresh run
+            // for that subject skips instead of stacking (ADR-0101).
             val ticket = "e2e-key-${System.nanoTime()}"
             val originId = HomerApi.startRun("continuation-inherit", query = mapOf("ticket" to ticket))
 
@@ -189,11 +183,8 @@ class ContinuationTest : E2eTestBase() {
             assertTrue(reason.contains("SKIP_CURRENT"), "skipped run must say why: $reason")
             assertTrue(reason.contains("(run #$resumedId)"), "the holder must be the resumed segment: $reason")
 
-            // A run for a *different* subject must not be affected. Together the two
-            // halves pin the key to the inherited value: an unrendered template would
-            // leave the resumed segment on the literal `ticket-{{TICKET_ID}}`, which no
-            // fresh run (every one of them renders its own subject) could ever collide
-            // with, while two segments of different subjects would collide with each other.
+            // A different subject is unaffected; together the halves rule out an unrendered
+            // `ticket-{{TICKET_ID}}` key, which no fresh run could collide with.
             val other =
                 HomerApi.startRun(
                     "continuation-inherit",

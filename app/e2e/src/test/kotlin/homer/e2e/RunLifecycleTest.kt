@@ -210,13 +210,8 @@ class RunLifecycleTest : E2eTestBase() {
             HomerApi.kill(workingId)
         }
 
-    // Cooldown on the manual-recovery endpoints (ADR-0051 amendment). The fixture
-    // agents are plain cmd/script agents; resume needs a LangGraph thread id, which
-    // only the Python runtime writes (`langgraph.json`), and this suite excludes
-    // LangGraph commands on purpose (README § Design) — resume's cooldown wiring
-    // shares retry's `withoutFailureBackoff()` call site, so the Ktor test-host
-    // (`CooldownEndpointTest`) pins it directly while retry pins it here over real
-    // HTTP.
+    // Retry only: resume needs a LangGraph thread id and this suite has no LangGraph commands;
+    // `CooldownEndpointTest` pins resume (ADR-0051 amendment).
 
     @Test
     fun `minInterval refuses an immediate retry with 429 and launches nothing`() =

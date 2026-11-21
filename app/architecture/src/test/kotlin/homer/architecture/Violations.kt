@@ -9,7 +9,7 @@ import kotlin.test.fail
 
 /** Source sets the rules scan, by module directory relative to the Gradle root (`app/`). */
 internal object Sources {
-    /** :app and the two modules built on it; their tests mirror their packages too (root CLAUDE.md §6). */
+    /** :app and the two modules built on it; their tests mirror their packages too (root CLAUDE.md section 6). */
     val modules = listOf("app", "agentdebug", "homer-runner")
 
     fun main(module: String): KoScope = Konsist.scopeFromDirectory("$module/src/main/kotlin")

@@ -26,10 +26,7 @@ class RunnerSelectionTest : E2eTestBase() {
             assertTrue(stdout.contains("claimed by a runner serving e2e-local"), "stdout was: $stdout")
             // The recorded backend is the serving runner, never the "tags:..." filter alias.
             assertEquals("local", info.runner?.alias, "a tag-routed run must record the serving backend")
-            // The built-in local runner's alias ("local") is also what the non-tag e2e
-            // checks, so it cannot on its own distinguish "resolved to the serving
-            // backend" from "left as queued": also assert the queued filter string is
-            // gone, which fails on a build that writes it unmodified or never overwrites it.
+            // "local" is also the alias of untagged runs, so also assert the queued filter string is gone.
             assertTrue(
                 info.runner?.alias?.startsWith("tags:") != true,
                 "the queued filter alias must not survive into the recorded runner state",
