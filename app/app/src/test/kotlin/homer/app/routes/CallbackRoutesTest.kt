@@ -1161,6 +1161,29 @@ class CallbackRoutesTest {
         }
 
     @Test
+    fun `result fetch of an artifact swapped for a symlink after resolve responds 404 without following it`() =
+        testApplication {
+            val outside = resultFile("""{"summary":"HOST-SECRET"}""")
+            val link = Files.createTempDirectory("result").resolve("cmd_0.out")
+            Files.createSymbolicLink(link, outside)
+            val service = newService()
+            val token = runBlocking { service.registerProcess(1, "agent-a") }
+            mountCallbackRoutes {
+                every { questionsService } returns service
+                coEvery { resultTokenService.resolve("tok-1") } returns record()
+                servesResult(link, size = 18L)
+            }
+
+            val response =
+                client.get("/api/v1/callback/results/tok-1") {
+                    header(HttpHeaders.Authorization, "Bearer $token")
+                }
+
+            assertEquals(HttpStatusCode.NotFound, response.status)
+            assertFalse(response.bodyAsText().contains("HOST-SECRET"))
+        }
+
+    @Test
     fun `result fetch of an artifact grown past the transform cap after its size check responds 404`() =
         testApplication {
             val file = resultFile("""{"summary":"DONE"}""" + " ".repeat(RESULT_TRANSFORM_MAX_BYTES.toInt()))
