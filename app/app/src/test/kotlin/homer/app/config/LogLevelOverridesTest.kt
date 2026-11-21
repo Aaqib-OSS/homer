@@ -1,25 +1,28 @@
 package homer.app.config
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.LoggerContext
 import org.junit.jupiter.api.Test
+import org.slf4j.LoggerFactory
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class LogLevelOverridesTest {
     @Test
     fun `returns empty map when env var is absent`() {
-        assertTrue(logLevelSystemProps(emptyMap()).isEmpty())
+        assertTrue(logLevelOverrides(emptyMap()).isEmpty())
     }
 
     @Test
     fun `returns empty map when env var is blank`() {
-        assertTrue(logLevelSystemProps(mapOf("HOMER_LOG_LEVELS" to "   ")).isEmpty())
+        assertTrue(logLevelOverrides(mapOf("HOMER_LOG_LEVELS" to "   ")).isEmpty())
     }
 
     @Test
-    fun `maps a single logger=level pair to the slf4j-simple property`() {
-        val props = logLevelSystemProps(mapOf("HOMER_LOG_LEVELS" to "homer.app.executors.ProcessExecutor=debug"))
+    fun `maps a single logger=level pair`() {
+        val props = logLevelOverrides(mapOf("HOMER_LOG_LEVELS" to "homer.app.executors.ProcessExecutor=debug"))
         assertEquals(
-            mapOf("org.slf4j.simpleLogger.log.homer.app.executors.ProcessExecutor" to "debug"),
+            mapOf("homer.app.executors.ProcessExecutor" to "debug"),
             props,
         )
     }
@@ -27,13 +30,13 @@ class LogLevelOverridesTest {
     @Test
     fun `maps multiple comma-separated pairs and lowercases the level`() {
         val props =
-            logLevelSystemProps(
+            logLevelOverrides(
                 mapOf("HOMER_LOG_LEVELS" to "homer.app.executors.ProcessExecutor=TRACE, io.ktor=warn"),
             )
         assertEquals(
             mapOf(
-                "org.slf4j.simpleLogger.log.homer.app.executors.ProcessExecutor" to "trace",
-                "org.slf4j.simpleLogger.log.io.ktor" to "warn",
+                "homer.app.executors.ProcessExecutor" to "trace",
+                "io.ktor" to "warn",
             ),
             props,
         )
@@ -42,11 +45,11 @@ class LogLevelOverridesTest {
     @Test
     fun `skips entries with an unknown level`() {
         val props =
-            logLevelSystemProps(
+            logLevelOverrides(
                 mapOf("HOMER_LOG_LEVELS" to "homer.app=verbose,homer.app.services=debug"),
             )
         assertEquals(
-            mapOf("org.slf4j.simpleLogger.log.homer.app.services" to "debug"),
+            mapOf("homer.app.services" to "debug"),
             props,
         )
     }
@@ -54,12 +57,41 @@ class LogLevelOverridesTest {
     @Test
     fun `skips malformed pairs and empty logger names`() {
         val props =
-            logLevelSystemProps(
+            logLevelOverrides(
                 mapOf("HOMER_LOG_LEVELS" to "no-equals,=debug,homer.app=info"),
             )
         assertEquals(
-            mapOf("org.slf4j.simpleLogger.log.homer.app" to "info"),
+            mapOf("homer.app" to "info"),
             props,
         )
+    }
+
+    @Test
+    fun `changes the effective level of a named logger and ignores an invalid entry`() {
+        val context = LoggerFactory.getILoggerFactory() as LoggerContext
+        val target = context.getLogger("homer.test.loglevels.Target")
+        val untouched = context.getLogger("homer.test.loglevels.Other")
+        val before = untouched.effectiveLevel
+        try {
+            applyLogLevelOverrides(
+                mapOf("HOMER_LOG_LEVELS" to "homer.test.loglevels.Target=trace,homer.test.loglevels.Other=bogus"),
+                context,
+            )
+            assertEquals(Level.TRACE, target.effectiveLevel)
+            assertEquals(before, untouched.effectiveLevel)
+        } finally {
+            target.level = null
+        }
+    }
+
+    @Test
+    fun `re-applies the overrides after a context reset`() {
+        val context = LoggerContext()
+        val target = context.getLogger("homer.test.loglevels.Reset")
+        applyLogLevelOverrides(mapOf("HOMER_LOG_LEVELS" to "homer.test.loglevels.Reset=error"), context)
+        context.start()
+        context.reset()
+        context.stop()
+        assertEquals(Level.ERROR, target.level)
     }
 }

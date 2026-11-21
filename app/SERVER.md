@@ -4026,8 +4026,14 @@ first, then the OS environment, so either form works:
 
 - **`HOMER_LOG_LEVEL`** — root log level (default `INFO`).
   `docker-compose.dev.yml` sets it as a system property via
-  `JAVA_OPTS=-DHOMER_LOG_LEVEL=DEBUG`. Per-logger levels are set in
-  `logback.xml`; adjust them there rather than at runtime.
+  `JAVA_OPTS=-DHOMER_LOG_LEVEL=DEBUG`. Bundled per-logger levels are set in
+  `logback.xml`.
+- **`HOMER_LOG_LEVELS`** — per-logger overrides, read from the OS environment only:
+  comma-separated `logger=LEVEL` pairs (`trace`, `debug`, `info`, `warn`, `error`, `off`;
+  case-insensitive), e.g. `homer.app.executors.ProcessExecutor=trace,io.ktor=warn`.
+  Applied to logback at startup, over `logback.xml`, and re-applied if logback's context
+  is reset. Malformed pairs and unknown levels are skipped. It can lower the two pinned
+  MINA SSHD loggers, which quote the ssh command and its env, so leave those alone.
 - **`HOMER_LOG_DIR`** — directory for `app.log` and `api.log`. Defaults to the working
   directory; the Dockerfile sets it as an env var to `/app/workspace`.
 

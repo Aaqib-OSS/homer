@@ -2,7 +2,7 @@ package homer.app
 
 import com.charleskorn.kaml.Yaml
 import homer.app.auth.CsrfProtection
-import homer.app.config.logLevelSystemProps
+import homer.app.config.applyLogLevelOverrides
 import homer.app.config.resolveLlmPrice
 import homer.app.di.bootModules
 import homer.app.executors.ProcessExecutor
@@ -76,12 +76,7 @@ val serverId = UUID.randomUUID().toString()
 val isDraining: AtomicBoolean = AtomicBoolean(false)
 
 fun main(args: Array<String>) {
-    // Apply HOMER_LOG_LEVELS overrides before any DI-created logger is built.
-    // Only set a property the operator hasn't pinned via -D, so a system
-    // property always wins over the env var.
-    logLevelSystemProps(System.getenv()).forEach { (key, value) ->
-        if (System.getProperty(key) == null) System.setProperty(key, value)
-    }
+    applyLogLevelOverrides(System.getenv(), LoggerFactory.getILoggerFactory())
 
     val resolvedConfig = loadStartupConfig(args) ?: return
 
