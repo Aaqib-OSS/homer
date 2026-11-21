@@ -506,6 +506,38 @@ class SessionWorkerTest {
         }
 
     @Test
+    fun `a transfer through a symlink leading outside the session root is refused, one staying inside is not`() =
+        live {
+            val outside = tmp.resolve("outside").createDirectories()
+            outside.resolve("host.txt").writeText("host secret")
+            val src = tmp.resolve("src").createDirectories()
+            src.resolve("in.txt").writeText("payload")
+            api.tarToServe = ByteArrayOutputStream().also { TarStreams.pack(it, src) }.toByteArray()
+
+            val w = worker()
+            val run = async { w.run() }
+            api.ops.send(RunnerOp.CreateWorkspace("cw"))
+            api.result()
+            Files.createSymbolicLink(w.sessionRoot.resolve("workdir/out"), outside)
+            Files.createSymbolicLink(w.sessionRoot.resolve("workdir/in"), w.sessionRoot.resolve("artifacts"))
+
+            api.ops.send(RunnerOp.Upload("u1", "workdir/out"))
+            assertFalse(api.result().ok, "an upload through an escaping symlink is refused")
+            assertFalse(outside.resolve("in.txt").exists(), "nothing is written outside the session root")
+
+            api.ops.send(RunnerOp.Download("d1", "workdir/out/host.txt", DownloadMode.OVERLAY))
+            assertFalse(api.result().ok, "a download through an escaping symlink is refused")
+            assertTrue(api.postedTars.isEmpty(), "no file outside the session root is posted")
+
+            api.ops.send(RunnerOp.Upload("u2", "workdir/in"))
+            assertTrue(api.result().ok)
+            assertEquals("payload", w.sessionRoot.resolve("artifacts/in.txt").readText())
+
+            api.ops.send(RunnerOp.Close("cl", "done"))
+            run.await()
+        }
+
+    @Test
     fun `losing Homer for the heartbeat timeout kills the running command and ends the worker`() =
         live {
             val w = worker(heartbeat = 500.milliseconds)

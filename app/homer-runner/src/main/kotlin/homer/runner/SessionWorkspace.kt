@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
 import kotlin.io.path.createDirectories
@@ -107,14 +108,22 @@ internal class SessionWorkspace(
     }
 
     /**
-     * Lexical containment only, no realpath: the commands this worker runs execute as the same
-     * UID with code Homer sent, so a symlink resolving outside the session root defends no
-     * boundary that code could not cross directly. Accepted risk.
+     * [remoteRelative] under [sessionRoot], lexically and by realpath, so a symlink a run planted cannot steer a
+     * transfer outside the root (CWE-59); a link swapped in after this check is AR-04 and AR-05.
      */
     private fun contained(remoteRelative: String): Path {
         val candidate = sessionRoot.resolve(remoteRelative).normalize()
-        require(candidate.startsWith(sessionRoot)) { "path '$remoteRelative' escapes the session root" }
+        require(candidate.startsWith(sessionRoot) && realPath(candidate).startsWith(sessionRoot.toRealPath())) {
+            "path '$remoteRelative' escapes the session root"
+        }
         return candidate
+    }
+
+    /** [path]'s realpath, taken at its longest existing ancestor for a part that does not exist yet. */
+    private fun realPath(path: Path): Path {
+        var existing = path
+        while (!Files.exists(existing, LinkOption.NOFOLLOW_LINKS)) existing = existing.parent ?: return path
+        return existing.toRealPath().resolve(existing.relativize(path))
     }
 
     fun deleteTree(path: Path) {
