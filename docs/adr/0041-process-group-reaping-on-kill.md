@@ -163,7 +163,8 @@ signal number, and the sentence in ADR-0032 that the reaping form `exec`s the co
 codes, signals and stdin unchanged. For the SSH runner it also supersedes, for a command killed by
 a signal: the decision driver that reaping must not change the exit code or signal semantics; the
 decision's description of the inner `sh` `exec`ing the real argv in place; the Consequences bullet
-that exit-code, stdin and signal semantics stay identical to before; and the rejection of a `trap`
+that exit-code, stdin and signal semantics stay identical to before; the Decision's claim that
+`setsid -w` lets exit code and signal propagate unchanged; and the rejection of a `trap`
 wrapper that drops the in-place `exec` and turns a signal death into 128 + n.
 
 The new wrapper differs from the rejected ones: those backgrounded the command, which loses its
@@ -179,7 +180,9 @@ Both forms now report 128 + n, as the local runner does:
   subshell resets the caught traps, so the command still receives the signals, and the `exec`
   resolves argv[0] through `PATH`, so a builtin-named argument still runs the program.
 - A signal to the whole group other than INT, TERM or HUP, for example QUIT, still kills the
-  wrapper, so `setsid -w` gives the raw number. Homer's own reapers send only INT and KILL.
+  wrapper, so `setsid -w` gives its raw wait status: the signal number, plus 128 when a core is
+  dumped (QUIT's default action dumps one, so 131 where cores are enabled). Homer's own reapers send
+  only INT and KILL.
 - The shell's own notice on stderr, such as `Killed`, replaces the `setsid: child N did not exit
   normally` line.
 - A TERM or HUP sent to the recorded pid alone no longer reaches the command: that pid is now the
