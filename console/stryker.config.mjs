@@ -14,6 +14,7 @@ const config = {
     'middleware.ts',
     '!**/*.test.*',
     '!components/ui/**',
+    '!lib/monaco/*.worker.ts',
   ],
   reporters: ['html', 'json', 'clear-text', 'progress-append-only'],
   clearTextReporter: { reportTests: false, reportMutants: false },

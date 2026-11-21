@@ -16,8 +16,13 @@ export default defineConfig({
       reporter: ['json', 'text-summary', 'cobertura'],
       reportsDirectory: 'coverage',
       include: ['app/**/*.{ts,tsx}', 'components/**/*.{ts,tsx}', 'lib/**/*.{ts,tsx}', 'middleware.ts'],
-      exclude: ['**/*.test.*', 'components/ui/**', '**/*.d.ts'],
+      // The lib/monaco/*.worker.ts entries are browser-worker side effects (jsdom has no Worker);
+      // setup.test.ts asserts the URL each label builds from them.
+      exclude: ['**/*.test.*', 'components/ui/**', '**/*.d.ts', 'lib/monaco/*.worker.ts'],
     },
+    // yaml.worker.test.ts mocks the worker bootstrap monaco-yaml installs; an
+    // externalized dependency bypasses the module runner, so it stays inline.
+    server: { deps: { inline: ['monaco-yaml'] } },
   },
   resolve: {
     alias: {
