@@ -1,5 +1,6 @@
 package homer.app.infra
 
+import org.slf4j.Logger
 import java.io.IOException
 import java.io.InputStream
 import java.lang.foreign.Arena
@@ -110,7 +111,7 @@ internal data class StatPlatform(
  * Opens a file without blocking and checks the opened descriptor, never the path, for a single-link regular
  * file (CWE-59/CWE-367): a FIFO, device, directory, symlink or hard link swapped in at any time is refused.
  */
-internal object DescriptorOpen {
+object DescriptorOpen {
     private val native: Result<NativeDescriptors> by lazy {
         runCatching {
             val platform =
@@ -120,11 +121,33 @@ internal object DescriptorOpen {
         }
     }
 
+    /**
+     * Logs whether descriptor-checked file reads work in this JVM: once at startup, at ERROR naming the refused reads and
+     * the cause when they do not (ADR-0047, amendment 2026-11-20).
+     */
+    fun logStatus(logger: Logger) = logStatus(logger, native)
+
+    internal fun logStatus(
+        logger: Logger,
+        native: Result<NativeDescriptors>,
+    ) {
+        native
+            .onSuccess { logger.info("Descriptor-checked file reads ready (fstat entry point: {})", it.fstatSymbol) }
+            .onFailure {
+                logger.error(
+                    "Descriptor-checked file open unavailable ({}): artifact downloads, the log tail, the LLM-event stream, " +
+                        "LangGraph run identity reads and continuation results are refused",
+                    it.message,
+                    it,
+                )
+            }
+    }
+
     /** A stream over [path]'s own descriptor; the caller closes it. */
-    fun openRegular(path: Path): InputStream = Channels.newInputStream(openRegularChannel(path))
+    internal fun openRegular(path: Path): InputStream = Channels.newInputStream(openRegularChannel(path))
 
     /** A read-only channel over [path]'s own descriptor whose `size()` follows the file's growth; the caller closes it. */
-    fun openRegularChannel(path: Path): SeekableByteChannel = openRegularChannel(path, native)
+    internal fun openRegularChannel(path: Path): SeekableByteChannel = openRegularChannel(path, native)
 
     /** Fails closed: without [native] the read is refused, never retried as a blocking by-name open. */
     internal fun openRegularChannel(

@@ -2,6 +2,7 @@ package homer.app.di
 
 import homer.app.config.ExecutionConfig
 import homer.app.infra.DefaultTextCompiler
+import homer.app.infra.DescriptorOpen
 import homer.app.infra.FileOperations
 import homer.app.infra.InputSchemaValidator
 import homer.app.infra.LocalFileOperations
@@ -12,6 +13,7 @@ import homer.app.runners.kubernetes.RunnerStateSink
 import homer.app.services.Authorizer
 import homer.app.services.ProcessEventBroadcaster
 import homer.app.services.ProcessManager
+import org.koin.core.parameter.parametersOf
 import org.koin.dsl.module
 import org.slf4j.LoggerFactory
 
@@ -35,8 +37,10 @@ val appModule =
 
         single<TextCompiler> { DefaultTextCompiler() }
 
-        // File Operations
-        single<FileOperations> { LocalFileOperations() }
+        // Eager, so DescriptorOpen's status line is logged at boot (ADR-0047, amendment 2026-11-20).
+        single<FileOperations>(createdAtStart = true) {
+            LocalFileOperations().also { DescriptorOpen.logStatus(get { parametersOf("homer.app.infra.DescriptorOpen") }) }
+        }
 
         single { ProcessEventBroadcaster() }
 

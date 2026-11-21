@@ -11,6 +11,7 @@ import homer.app.executors.ArtifactNameResolver
 import homer.app.executors.CommandExecutorFactory
 import homer.app.executors.ExecutionContext
 import homer.app.infra.DefaultTextCompiler
+import homer.app.infra.DescriptorOpen
 import homer.app.infra.LlmCostResolver
 import homer.app.infra.OtelTelemetryService
 import homer.app.infra.ProcessJobRegistry
@@ -103,7 +104,7 @@ class DebugAgentRunner(
     private fun debugExecutorFactory(): CommandExecutorFactory {
         val telemetryService = OtelTelemetryService(dummyLangfuseConfig, OpenTelemetryExport.LOG)
         val llmTelemetryService = LlmTelemetryService(telemetryService, logger)
-        val fileOperations = DebugFileOperations()
+        val fileOperations = DebugFileOperations().also { DescriptorOpen.logStatus(logger) }
         val langfuseClient = DebugLangfuseClient()
         val skipRunAgentExecutor = SkipRunAgentExecutor()
         val skipLangGraphExecutor = SkipLangGraphExecutor()

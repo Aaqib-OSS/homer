@@ -313,7 +313,9 @@ FIFO or other non-regular file at the final component is refused whenever it was
 open never blocks, so no pool thread stays held; an open that completes after its caller timed out
 is closed. Where no such open is defined (an OS or architecture other than Linux or macOS on x86_64
 or aarch64) or the JVM denies native access, the read is refused, never retried as a blocking
-by-name open.
+by-name open. The server and agentdebug log once at startup whether the open works, at ERROR naming
+the refused reads and the cause. Homer still starts without it, unlike the runner's dumpability
+check (ADR-0078): runs need none of these reads, and each read fails closed on its own.
 
 `ContinuationFireService.extractResult` reads a watched run's stdout into a continuation's resume
 payload the same way. It refuses a symlinked artifacts directory and a recorded stdout path that is
