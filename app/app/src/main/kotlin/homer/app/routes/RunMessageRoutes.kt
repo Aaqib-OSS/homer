@@ -18,7 +18,7 @@ internal fun Route.runMessageRoutes(deps: RunMessageDeps) {
             val processId = call.pathParameter("processId").toIntOrNull() ?: throw QueryParamValidationException("Invalid process ID")
             val info = processManager.getProcessInfo(processId)
             val principal = call.principalName()
-            // Authorize before the body is read or the service is called (§12): a denial is the unknown-id 404.
+            // Authorize before the body is read or the service is called (ADR-0047 rule 3): a denial is the unknown-id 404.
             if (info == null || !authorizer.canControl(principal, info.owner, info.agentName)) {
                 call.respond(HttpStatusCode.NotFound, ErrorResponse(msg = "Process not found"))
                 return@post

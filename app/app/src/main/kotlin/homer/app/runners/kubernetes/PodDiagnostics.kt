@@ -73,7 +73,7 @@ class PodDiagnostics(
     /**
      * The reason and message of the failed container [failed]: its terminated state's, else its waiting state's.
      * A terminated state's message is its termination log, which the agent can write, so its exit code stands
-     * in for it (ADR-0100 § Security).
+     * in for it (ADR-0100).
      */
     private fun failureOf(failed: V1ContainerStatus): Pair<String, String> {
         val t = failed.state?.terminated

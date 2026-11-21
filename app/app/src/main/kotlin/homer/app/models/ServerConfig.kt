@@ -91,11 +91,11 @@ data class Server(
  * See ADR-0092. */
 @Serializable
 data class MaintenanceConfig(
-    /** Starts that may wait at once; a start arriving at the bound is shed with 429. §12 rule 4. */
+    /** Starts that may wait at once; a start arriving at the bound is shed with 429. ADR-0047 rule 4. */
     val maxQueuedStarts: Int = 500,
     /** Starts a single caller may hold in the queue; a start past it is shed with 429. */
     val maxQueuedStartsPerPrincipal: Int = 50,
-    /** Longest a queued start waits before it fails with 503. §12 rule 5. */
+    /** Longest a queued start waits before it fails with 503. ADR-0047 rule 5. */
     val queueWaitSec: Int = 600,
     /** Starts released per moment when the mode goes off, so the release cannot flood runners. */
     val releaseConcurrency: Int = 4,
