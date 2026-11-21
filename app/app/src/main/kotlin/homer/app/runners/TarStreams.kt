@@ -76,6 +76,28 @@ object TarStreams {
         }
     }
 
+    /**
+     * Writes one regular file [name] holding [content] at permission bits [mode] as an uncompressed tar to [out], and
+     * closes [out]. The entry names no owner, so a root `tar` maps it to uid 0, never to a same-named pod user.
+     */
+    fun packFile(
+        out: OutputStream,
+        name: String,
+        content: ByteArray,
+        mode: Int,
+    ) {
+        TarArchiveOutputStream(out).use { tar ->
+            val entry = TarArchiveEntry(name)
+            entry.size = content.size.toLong()
+            entry.mode = mode
+            entry.userName = ""
+            entry.groupName = ""
+            tar.putArchiveEntry(entry)
+            tar.write(content)
+            tar.closeArchiveEntry()
+        }
+    }
+
     // Extracts a gzip'd tar from [input] into [local]; [maxDecompressedBytes] bounds decompressed size
     // (ADR-0047 rule 4, CWE-409). A refused entry leaves only a partial tree, never anything outside [local].
     fun extract(

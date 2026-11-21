@@ -7,18 +7,23 @@ import homer.app.fixtures.TestFixtures
 import homer.app.infra.ShellExecutor
 import homer.app.infra.Workspace
 import homer.app.models.Agent
+import homer.app.models.Command
 import homer.app.models.ExtraUploadSpec
 import homer.app.models.PodPhase
+import homer.app.models.ResultEnvParam
 import homer.app.models.RunnerState
+import homer.app.models.SrcType
 import homer.app.runners.ActiveSessionsRegistry
 import homer.app.runners.DownloadMode
 import homer.app.runners.Runner
 import homer.app.runners.RunnerSession
+import homer.app.runners.RunnerSessionParams
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.just
+import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -71,6 +76,29 @@ class AgentExecutorSessionTest : AgentExecutorTestBase() {
         )
         verify { workspace.appendToEnv(mapOf("HMR_WORK_DIR" to "/remote/w")) }
     }
+
+    @Test
+    fun `the session is opened with every result env name of the agent's steps and onStop steps`() =
+        runTest {
+            val params = slot<RunnerSessionParams>()
+            coEvery { mockRunner.openSession(capture(params)) } throws IllegalStateException("refused by the runner")
+            val agent =
+                AgentFixtures.simpleAgent().copy(
+                    commands =
+                        listOf(
+                            Command.Cmd(cmd = listOf("echo"), resultEnvParam = listOf(ResultEnvParam(SrcType.STD_OUT, "build-id"))),
+                            Command.Cmd(cmd = listOf("true")),
+                        ),
+                    onStop =
+                        listOf(
+                            Command.Cmd(cmd = listOf("true"), resultEnvParam = listOf(ResultEnvParam(SrcType.RESULT_CODE, "STOP_CODE"))),
+                        ),
+                )
+
+            assertThrows<IllegalStateException> { executor(agent = agent, workspace = TestFixtures.mockWorkspace()).execute() }
+
+            assertEquals(setOf("build-id", "STOP_CODE"), params.captured.resultEnvNames)
+        }
 
     @Test
     fun `extraUploads are uploaded after the workspace and agent dir`() {

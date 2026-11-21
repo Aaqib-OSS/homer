@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-08-20
 deciders: Lukáš Vlk
+amended: 2026-11-21
 ---
 # ADR-0045: Secrets reach agents as files rendered by cluster tooling — Homer never resolves them
 
@@ -187,3 +188,14 @@ Two rules make the model hold, and both are constraints on future work:
 - [ADR-0037](0037-grants-authorization.md) — the authorization model
   agents run under; grants gate *who may start* a run, while this ADR
   governs what that run's environment may reach.
+
+## Amendment (2026-11-21): the per-exec env no longer rides the exec request URI
+
+The Context and Decision Drivers above treat the per-exec env as the residual audit surface: values in
+the exec request's `command=` parameters. Since [ADR-0043](0043-k8s-sync-workspaces.md)'s amendment of
+this date, the Kubernetes runner delivers the env in a `0600` file the command's shell sources, so the
+request URI names a path and never a value, and a cluster that audits `pods/exec` no longer stores the
+env. The decision is unchanged: Homer still never resolves store values, rule 2 is still unenforced,
+and file delivery from cluster tooling remains the route for a secret Homer should not hold at all,
+because a value read into a command and hoisted by `resultEnvParam` still passes through Homer and
+its env file. What shrinks is the cost of the exceptions, not the rule.

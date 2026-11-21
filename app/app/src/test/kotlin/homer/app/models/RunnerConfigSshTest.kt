@@ -6,6 +6,7 @@ import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -158,7 +159,7 @@ extraUploads:
 
     @Test
     fun `extraUploads rejects reserved remote paths`() {
-        listOf("workdir", "artifacts", ".homer/agent", ".homer/bin", ".homer/mcp.json").forEach { reserved ->
+        listOf("workdir", "artifacts", ".homer/agent", ".homer/bin", ".homer/mcp.json", ".homer/env").forEach { reserved ->
             assertFailsWith<IllegalArgumentException>("expected '$reserved' to be reserved") {
                 validate(ExtraUploadSpec(local = "/a", remote = reserved))
             }
@@ -174,6 +175,7 @@ extraUploads:
         validate(ExtraUploadSpec(local = "/a", remote = "workdir-tools"))
         validate(ExtraUploadSpec(local = "/a", remote = ".homer/binaries"))
         validate(ExtraUploadSpec(local = "/a", remote = ".homer/scripts"))
+        validate(ExtraUploadSpec(local = "/a", remote = ".homer/envs"))
     }
 
     @Test
@@ -188,6 +190,18 @@ extraUploads:
                 }
             assertTrue(ex.message!!.contains("'.homer/scripts'"))
         }
+    }
+
+    @Test
+    fun `ssh runner refuses an env key or extraUploads env that is not a shell identifier, naming runner and key`() {
+        val withKey = ssh(emptyList()).copy(env = mapOf("OK" to "1", "spring.profiles.active" to "s3cr3t-Ab9-env-value"))
+        val keyError = assertFailsWith<IllegalArgumentException> { withKey.validate("box") }
+        assertTrue(keyError.message!!.contains("runner 'box'") && keyError.message!!.contains("'spring.profiles.active'"))
+        assertFalse(keyError.message!!.contains("s3cr3t-Ab9-env-value"))
+
+        val withUpload = ssh(listOf(ExtraUploadSpec(local = "/a", remote = ".homer/x", env = "SCRIPTS-DIR")))
+        val uploadError = assertFailsWith<IllegalArgumentException> { withUpload.validate("box") }
+        assertTrue(uploadError.message!!.contains("'SCRIPTS-DIR'"))
     }
 
     @Test

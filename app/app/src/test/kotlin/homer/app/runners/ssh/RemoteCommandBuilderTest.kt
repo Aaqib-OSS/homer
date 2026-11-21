@@ -1,77 +1,111 @@
 package homer.app.runners.ssh
 
+import homer.app.runners.RemoteShell
 import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class RemoteCommandBuilderTest {
     @Test
-    fun `single-quotes a plain token`() {
-        assertEquals("'echo'", RemoteCommandBuilder.quote("echo"))
-    }
-
-    @Test
-    fun `escapes embedded single quotes`() {
-        // it's -> 'it'\''s'
-        assertEquals("'it'\\''s'", RemoteCommandBuilder.quote("it's"))
-    }
-
-    @Test
-    fun `builds cd + exec env + escaped argv`() {
+    fun `build sources the env file and carries only its path on the command line`() {
         val cmd =
             RemoteCommandBuilder.build(
                 remoteWorkdir = "/home/homer/ws/p1/workdir",
-                env = linkedMapOf("HMR_WORK_DIR" to "/home/homer/ws/p1/workdir"),
+                envFile = "/home/homer/ws/p1/.homer/env/a1.env",
                 argv = listOf("echo", "hello world"),
             )
         assertEquals(
-            "cd '/home/homer/ws/p1/workdir' && exec env 'HMR_WORK_DIR=/home/homer/ws/p1/workdir' 'echo' 'hello world'",
+            "cd '/home/homer/ws/p1/workdir' && exec sh -c '. \"\$0\" && exec \"\$@\"' " +
+                "'/home/homer/ws/p1/.homer/env/a1.env' 'echo' 'hello world'",
             cmd,
         )
     }
 
     @Test
-    fun `omits env prefix when env is empty`() {
-        val cmd = RemoteCommandBuilder.build("/w", emptyMap(), listOf("ls", "-la"))
+    fun `omits the env file launcher when there is no env file`() {
+        val cmd = RemoteCommandBuilder.build("/w", null, listOf("ls", "-la"))
         assertEquals("cd '/w' && exec 'ls' '-la'", cmd)
     }
 
     @Test
     fun `preserves argv semantics for tokens with spaces and globs`() {
-        val cmd = RemoteCommandBuilder.build("/w", emptyMap(), listOf("grep", "a b", "*.kt"))
+        val cmd = RemoteCommandBuilder.build("/w", null, listOf("grep", "a b", "*.kt"))
         assertEquals("cd '/w' && exec 'grep' 'a b' '*.kt'", cmd)
     }
 
     @Test
-    fun `buildReaping wraps argv in setsid and records the pgid side-file`() {
+    fun `buildReaping records the pgid, then sources the env file inside the setsid group`() {
         val cmd =
             RemoteCommandBuilder.buildReaping(
                 remoteWorkdir = "/w",
-                env = linkedMapOf("FOO" to "bar"),
+                envFile = "/w/.homer/env/a1.env",
                 argv = listOf("echo", "hi"),
                 pgidFile = "/w/.homer/reap/cmd-1.pgid",
             )
         assertEquals(
-            "cd '/w' && exec env 'FOO=bar' setsid -w sh -c " +
-                "'d=\$(dirname \"\$0\"); mkdir -p \"\$d\"; echo \$\$ > \"\$0\"; exec \"\$@\"' " +
-                "'/w/.homer/reap/cmd-1.pgid' 'echo' 'hi'",
+            "cd '/w' && exec setsid -w sh -c " +
+                "'d=\$(dirname \"\$0\"); mkdir -p \"\$d\"; echo \$\$ > \"\$0\"; f=\$1; shift; . \"\$f\" && exec \"\$@\"' " +
+                "'/w/.homer/reap/cmd-1.pgid' '/w/.homer/env/a1.env' 'echo' 'hi'",
             cmd,
         )
     }
 
     @Test
-    fun `buildReaping omits the env prefix when env is empty`() {
-        val cmd = RemoteCommandBuilder.buildReaping("/w", emptyMap(), listOf("ls"), "/w/.homer/reap/cmd-1.pgid")
+    fun `buildReaping without an env file execs the argv directly`() {
+        val cmd = RemoteCommandBuilder.buildReaping("/w", null, listOf("ls"), "/w/.homer/reap/cmd-1.pgid")
         assertEquals(
             "cd '/w' && exec setsid -w sh -c " +
                 "'d=\$(dirname \"\$0\"); mkdir -p \"\$d\"; echo \$\$ > \"\$0\"; exec \"\$@\"' " +
                 "'/w/.homer/reap/cmd-1.pgid' 'ls'",
             cmd,
         )
+    }
+
+    @Test
+    fun `an env that resets PATH still removes the env file and runs an absolute command`(
+        @TempDir tmp: Path,
+    ) {
+        assumeFalse(System.getProperty("os.name").lowercase().contains("win"))
+        val envFile = tmp.resolve("e.env").toString()
+        Path.of(envFile).writeText(RemoteShell.envFileContent(envFile, mapOf("PATH" to "/nonexistent")))
+        val command = RemoteCommandBuilder.build(tmp.toString(), envFile, listOf("/bin/sh", "-c", "printf %s \"\$PATH\""))
+        val (exit, out) = run("/bin/sh", command)
+        assertEquals(0 to "/nonexistent", exit to out)
+        assertFalse(Files.exists(Path.of(envFile)), "the env file outlived the launch")
+    }
+
+    @Test
+    fun `a failing export stops the command under sh and non-posix bash, and the env file is gone`(
+        @TempDir tmp: Path,
+    ) {
+        assumeFalse(System.getProperty("os.name").lowercase().contains("win"))
+        for (shell in listOf("/bin/sh", "/bin/bash").filter { Files.isExecutable(Path.of(it)) }) {
+            val envFile = tmp.resolve("e.env").toString()
+            val lines = RemoteShell.envFileContent(envFile, linkedMapOf("A" to "1", "B" to "2")).lines()
+            // `B` made readonly before its export line: the export fails in every shell.
+            Path.of(envFile).writeText((listOf(lines[0], "readonly B") + lines.drop(1)).joinToString("\n"))
+            val (exit, out) = run(shell, ". '$envFile' && echo RAN")
+            assertTrue(exit != 0, "$shell: the failing export must fail the launch")
+            assertFalse(out.contains("RAN"), "$shell: the command ran with a partial env")
+            assertFalse(Files.exists(Path.of(envFile)), "$shell: the env file outlived the launch")
+        }
+    }
+
+    /** Runs [script] under [shell] `-c`, returning its exit code and combined output. */
+    private fun run(
+        shell: String,
+        script: String,
+    ): Pair<Int, String> {
+        val p = ProcessBuilder(shell, "-c", script).redirectErrorStream(true).start()
+        val out = p.inputStream.readBytes().decodeToString()
+        return p.waitFor() to out
     }
 
     @Test

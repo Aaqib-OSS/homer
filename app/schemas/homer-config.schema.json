@@ -823,7 +823,8 @@
         "env": {
           "type": "object",
           "additionalProperties": { "type": "string" },
-          "description": "Per-runner environment variables, layered between globalEnv and agent env. Values support @SYSENV:VAR. Keys must not be blank or use the reserved HMR_ prefix. Remote runners do not receive the backend's parentEnvAllowlist host env — set per-host values (PATH, LANG, TZ, HOME) here instead."
+          "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+          "description": "Per-runner environment variables, layered between globalEnv and agent env. Values support @SYSENV:VAR. Keys must be shell identifiers (^[A-Za-z_][A-Za-z0-9_]*$) and must not use the reserved HMR_ prefix. Remote runners do not receive the backend's parentEnvAllowlist host env — set per-host values (PATH, LANG, TZ, HOME) here instead."
         },
         "tags": {
           "type": "array",
@@ -878,7 +879,8 @@
         "env": {
           "type": "object",
           "additionalProperties": { "type": "string" },
-          "description": "Per-runner environment variables, layered between globalEnv and agent env. Values support @SYSENV:VAR. Keys must not be blank or use the reserved HMR_ prefix. Remote runners do not receive the backend's parentEnvAllowlist host env — set per-host values (PATH, LANG, TZ; sshd supplies HOME) here instead."
+          "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+          "description": "Per-runner environment variables, layered between globalEnv and agent env. Values support @SYSENV:VAR. Keys must be shell identifiers (^[A-Za-z_][A-Za-z0-9_]*$) and must not use the reserved HMR_ prefix. Remote runners do not receive the backend's parentEnvAllowlist host env — set per-host values (PATH, LANG, TZ; sshd supplies HOME) here instead."
         },
         "tags": {
           "type": "array",
@@ -964,8 +966,8 @@
       "required": ["local", "remote"],
       "properties": {
         "local": { "type": "string", "minLength": 1, "description": "Host file or directory; must exist at startup." },
-        "remote": { "type": "string", "minLength": 1, "description": "Destination relative to the remote projectRoot, in normalized form (no '.', '..', '//', or trailing '/'); must not equal, live under, or be an ancestor of workdir/, artifacts/, .homer/agent, .homer/bin, .homer/mcp.json." },
-        "env": { "type": ["string", "null"], "description": "Workspace env var repointed at the remote copy. Must not start with HMR_." }
+        "remote": { "type": "string", "minLength": 1, "description": "Destination relative to the remote projectRoot, in normalized form (no '.', '..', '//', or trailing '/'); must not equal, live under, or be an ancestor of workdir/, artifacts/, .homer/agent, .homer/bin, .homer/mcp.json, .homer/env." },
+        "env": { "type": ["string", "null"], "description": "Workspace env var repointed at the remote copy. Must not start with HMR_; on the ssh and kubernetes runners it must be a shell identifier (^[A-Za-z_][A-Za-z0-9_]*$)." }
       }
     },
     "SshAuth": {

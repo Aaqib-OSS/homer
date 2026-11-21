@@ -5,6 +5,10 @@
 ### Homer
 
 - **Fixed: an invalid hook target is not echoed in the error** — The agent-load and definition-write error for a malformed `hooks` target no longer repeats the value.
+- **BREAKING: env names on the ssh and Kubernetes runners must be shell identifiers** — Runner `env` and `extraUploads.env` names must match `^[A-Za-z_][A-Za-z0-9_]*$` at startup, and a run fails before it reaches the host or creates a pod on a `globalEnv`, agent `env` or `onStop:` `resultEnvParam` name that does not.
+- **Security: the step env no longer travels on the ssh command line or the Kubernetes exec URI** — Each step's env no longer appears in remote process tables, `execve` audit records or Kubernetes audit logs.
+- **BREAKING: the Kubernetes runner's image needs `sh`** — A step with an env now runs under `sh`, so an image without it fails every such step; add `sh` to the image.
+- **BREAKING: `.homer/env` is a reserved `extraUploads` path** — A runner or external-domain `extraUploads` entry targeting it or a path under it is rejected at startup.
 - **Fixed: `agentdebug run --cmd N` with an out-of-range N** — An index below 0 or at/above the agent's command count now fails before anything runs instead of silently running nothing.
 - **Added: `isErrorExitCode` on `!<claude>` commands** — An `is_error` result returns this exit code instead of failing as malformed, and is not retried.
 - **Added: `GET /api/v1/auth/me` answers a bearer token** — A request carrying a bearer token gets that token's name, role and grants, and the route is mounted whenever a `bearer` or `password` scheme is configured.

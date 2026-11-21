@@ -8,6 +8,7 @@ import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.isDirectory
 import kotlin.io.path.isRegularFile
+import kotlin.time.Duration
 
 /**
  * Workspace transfer into a pod as one gzip'd tar stream per direction over exec (ADR-0043); the image needs `tar` and
@@ -56,6 +57,39 @@ class KubernetesWorkspaceSync(
             )
         }
         awaitZeroExit(proc, stderr, "upload to '$destDir'")
+    }
+
+    /**
+     * Writes [content] to [path] in the pod as a 0600 file in a 0700 directory, refusing a symlinked directory. `tar`
+     * creates the file under `umask 077`, so it never exists with wider bits; the image needs `sh` and `tar`.
+     */
+    fun writePrivateFile(
+        path: String,
+        content: ByteArray,
+    ) {
+        val dir = path.substringBeforeLast('/')
+        val proc = execClient.start(namespace, podName, listOf("sh", "-c", PRIVATE_EXTRACT, PRIVATE_EXTRACT_NAME, dir), stdin = true)
+        val stderr = drain(proc.errorStream)
+        drain(proc.inputStream)
+        try {
+            TarStreams.packFile(proc.outputStream, path.substringAfterLast('/'), content, MODE_0600)
+        } catch (e: Exception) {
+            proc.destroyForcibly()
+            throw IllegalStateException("private file upload to '$dir' failed while streaming: ${e.javaClass.simpleName}", e)
+        }
+        awaitZeroExit(proc, stderr, "private file upload to '$dir'")
+    }
+
+    /** Removes [path] in the pod if it exists, failing when the exec reports no exit status within [timeout]. */
+    fun removeIfExists(
+        path: String,
+        timeout: Duration,
+    ) {
+        val argv = listOf("rm", "-f", "--", path)
+        val proc = execClient.start(namespace, podName, argv, stdin = false)
+        val stderr = drain(proc.errorStream)
+        drain(proc.inputStream)
+        awaitZeroExit(proc, stderr, argv.joinToString(" "), timeout.inWholeSeconds)
     }
 
     fun download(
@@ -138,10 +172,11 @@ class KubernetesWorkspaceSync(
         proc: Process,
         stderr: Drained,
         what: String,
+        timeoutSeconds: Long = EXIT_STATUS_TIMEOUT_SECONDS,
     ) {
-        if (!proc.waitFor(EXIT_STATUS_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+        if (!proc.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
             proc.destroyForcibly()
-            throw IllegalStateException("$what: exec did not report exit status within ${EXIT_STATUS_TIMEOUT_SECONDS}s")
+            throw IllegalStateException("$what: exec did not report exit status within ${timeoutSeconds}s")
         }
         stderr.thread.join(2_000)
         val exit = proc.exitValue()
@@ -176,5 +211,14 @@ class KubernetesWorkspaceSync(
     companion object {
         /** Bounded wait for the pod exec channel to report an exit status (websocket can wedge). */
         private const val EXIT_STATUS_TIMEOUT_SECONDS = 60L
+
+        /** `$0` of the private-file upload's shell. */
+        internal const val PRIVATE_EXTRACT_NAME = "homer-env"
+
+        private const val MODE_0600 = 0b110_000_000
+
+        // `$1` is the directory: tightened to 0700 and re-checked as a real directory before `tar` writes into it.
+        private const val PRIVATE_EXTRACT =
+            "mkdir -p \"\$1\" && [ ! -L \"\$1\" ] && [ -d \"\$1\" ] && chmod 700 \"\$1\" && cd \"\$1\" && umask 077 && exec tar -xf -"
     }
 }

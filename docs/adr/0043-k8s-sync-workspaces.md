@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-08-17
 deciders: Lukáš Vlk
+amended: 2026-11-21
 ---
 # ADR-0043: Sync-mode kubernetes workspaces — tar-over-exec replaces the shared RWX PVC
 
@@ -164,6 +165,50 @@ requirement while reusing existing, already-testable plumbing.
 - Kept-for-debug pods retain workspace content, including any secrets
   agents materialized into files; the existing `keepPodTtlSeconds`
   bound is unchanged.
+
+## Amendment (2026-11-21): the env travels in a sourced file, not the exec request URI
+
+The per-exec `env KEY=VAL … argv` delivery above, and the residual audit-log surface in the
+"Security considerations" first bullet, no longer apply
+([#364](https://github.com/livesport/homer/issues/364)). The exec request URI now carries no env:
+
+- **Format.** For a step with an env, Homer first writes `/homer/workspace/.homer/env/<uuid>.env`
+  through the runner's tar-over-exec: one exec of `tar -xf -` fed a one-entry tar (mode `0600`, no
+  owner names) on stdin, after the directory is created, checked as a real directory and set to
+  `0700`, under `umask 077`. `tar` creates the file with its final mode, so it is never readable by
+  another UID. The file's content and the command shape are the ssh runner's
+  ([ADR-0032](0032-ssh-runner-backend.md), same amendment): the file's first line removes it, the
+  command's `sh` sources it and `exec`s the argv, and the setsid reaping form records its pgid before
+  sourcing. The directory is outside `workdir` and `artifacts`, so no download brings it back.
+- **Lifecycle and cleanup.** Whenever the step fails, times out or is cancelled, the executor removes
+  the file with one more exec before the session decides whether to keep the pod, so a kept-for-debug
+  pod normally holds none. The removal is best effort and only logged when it fails (an exec refused
+  or a dead pod). A container the kubelet killed (OOM, deadline) cannot run that exec, and a Homer
+  process that dies mid-step cannot either; the file stays in the pod's `emptyDir` until the pod is
+  deleted, at once or after `keepPodTtlSeconds` for a kept pod. That is `AR-14` in
+  [`SECURITY.md`](../../SECURITY.md#accepted-risks). The startup sweep needs no `.homer/env/` pattern:
+  it deletes whole pods by label, and the `emptyDir` goes with the pod.
+- **Audit logs.** The request URI holds the path of the file, never a value, so the exposure `AR-10`
+  recorded is gone and the row is removed. `pods/exec` RBAC stays the boundary that matters.
+- **Image: `sh` is required.** Every step with an env runs under `sh` (it already served the kill
+  paths and the `homer-*` helpers). An image without `sh`, which ran plain `Cmd`s before, now fails
+  every step.
+- **One more exec per step** with an env (the upload), plus one `rm` exec when a step fails; exec
+  latency was not measured without a cluster.
+- **BREAKING: env names are shell identifiers**, as on ssh (user decision 2026-11-21): runner `env`
+  keys and `extraUploads.env` names at config load, the composed env and `resultEnvParam` names at run
+  start, before any pod or exec. The bash and zsh readonly-name caveat of the ssh amendment applies
+  where the image's `sh` is one of them.
+- **The in-pod size limit is not lifted.** The final `exec "$@"` still passes the whole env to
+  `execve`, so its `ARG_MAX` and per-string limits cap the env as before. What the file removes is
+  the exec request URI's length as a bound on it.
+- **Reserved path.** `.homer/env` is reserved from `extraUploads`
+  ([ADR-0042](0042-runner-extra-uploads.md)).
+- **`tar` behavior relied on.** GNU tar and BusyBox tar create with `open(O_CREAT|O_EXCL, mode)`
+  and unlink an existing entry first, so neither writes through a planted symlink. The upload was
+  checked in containers with GNU tar 1.35 and BusyBox 1.37, each as uid 0 and uid 1000: a 0600 file
+  in a 0700 directory, values intact, the file gone before the command. The `O_EXCL` and
+  unlink-first behavior is from their sources.
 
 ## Relationship to ADR-0003
 

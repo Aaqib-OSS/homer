@@ -2,6 +2,7 @@ package homer.app.runners.kubernetes
 
 import homer.app.EnvConstants
 import homer.app.infra.KillCause
+import homer.app.runners.RemoteShell
 import org.slf4j.LoggerFactory
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
@@ -34,13 +35,18 @@ internal class PodProcessControl(
     }
 
     /**
-     * [command] wrapped to lead its own process group: under `setsid` an inner `sh` records its pid, the group id, to `$0`
-     * and `exec`s the argv, so the command keeps its pid, exit code, streams and stdin (ADR-0041).
+     * [command] wrapped to lead its own process group: under `setsid` an inner `sh` records its pid, the group id, to
+     * `$0`, sources a non-null [envFile] and `exec`s the argv, so the command keeps its pid, exit code, streams and
+     * stdin (ADR-0041).
      */
     fun setsidLaunch(
         pgidFile: String,
+        envFile: String?,
         command: List<String>,
-    ): List<String> = setsidPrefix.orEmpty() + listOf("sh", "-c", PGID_SCRIPT, pgidFile) + command
+    ): List<String> {
+        val launch = if (envFile != null) "f=\$1; shift; " + RemoteShell.sourceThenExec("\$f") else "exec \"\$@\""
+        return setsidPrefix.orEmpty() + listOf("sh", "-c", PGID_RECORD + launch, pgidFile) + listOfNotNull(envFile) + command
+    }
 
     /**
      * Stops the pod's leftover command. Only on its own timeout, with a grace and a recorded pgid, is its group sent SIGINT
@@ -135,9 +141,9 @@ internal class PodProcessControl(
         /** `setsid` forms to probe, most preferred first. */
         private val SETSID_FORMS = listOf(listOf("setsid", "-w"), listOf("setsid"))
 
-        /** $0 is the pgid file, $@ the argv: record the group leader's pid, then exec the argv in place. */
-        private const val PGID_SCRIPT =
-            "p=\"\$0\"; d=\"\${p%/*}\"; mkdir -p \"\$d\" 2>/dev/null; echo \$\$ > \"\$p\" 2>/dev/null; exec \"\$@\""
+        /** $0 is the pgid file: record the group leader's pid there, before the launch sources or `exec`s anything. */
+        private const val PGID_RECORD =
+            "p=\"\$0\"; d=\"\${p%/*}\"; mkdir -p \"\$d\" 2>/dev/null; echo \$\$ > \"\$p\" 2>/dev/null; "
 
         private val logger = LoggerFactory.getLogger(PodProcessControl::class.java)
     }

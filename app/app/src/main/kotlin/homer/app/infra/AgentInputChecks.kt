@@ -3,6 +3,7 @@ package homer.app.infra
 import homer.app.models.Agent
 import homer.app.models.Command
 import homer.app.models.ParamSource
+import homer.app.models.ShellEnvNames
 import homer.app.models.TagValidation
 import homer.app.models.bypassesPermissionsWithoutToolLimit
 import homer.app.models.templatePlaceholderPattern
@@ -17,7 +18,7 @@ internal class AgentInputChecks(
     private val logger: Logger,
     private val paramValidator: ParamValidator,
 ) {
-    private val envNamePattern = Regex("^[A-Za-z_][A-Za-z0-9_]*$")
+    private val envNamePattern = Regex(ShellEnvNames.PATTERN)
 
     /** Rejects reserved header params and reserved or malformed input envNames; `false` = skip the agent. */
     fun checkInputEnvNames(

@@ -27,14 +27,20 @@ internal class SftpTransferDeadline(
     private val openSftp: (ClientSession) -> SftpClient,
     private val logger: Logger,
 ) {
-    /** Runs [block] on a fresh client opened under the deadline, released under it afterwards. */
+    /**
+     * Runs [block] on a fresh client opened under the deadline, released under it afterwards; [timeout] defaults to
+     * the transfer timeout.
+     */
     @Suppress("SuspendFunInFinallySection") // release() is NonCancellable inside
-    suspend fun <T> withSftp(block: suspend (SftpClient) -> T): T {
-        val sftp = withTransferTimeout { openSftp(session) }
+    suspend fun <T> withSftp(
+        timeout: Duration = transferTimeout,
+        block: suspend (SftpClient) -> T,
+    ): T {
+        val sftp = withTransferTimeout(timeout) { openSftp(session) }
         try {
             return block(sftp)
         } finally {
-            release(sftp)
+            release(sftp, timeout)
         }
     }
 
@@ -43,9 +49,12 @@ internal class SftpTransferDeadline(
      * (CWE-400). A failed or timed-out release is WARN-logged, never thrown over the block's outcome (ADR-0064).
      */
     @Suppress("SuspendFunSwallowedCancellation") // NonCancellable inside: a failure here is the close, not a cancel
-    private suspend fun release(sftp: SftpClient) {
+    private suspend fun release(
+        sftp: SftpClient,
+        timeout: Duration,
+    ) {
         try {
-            withContext(NonCancellable) { withTransferTimeout { sftp.close() } }
+            withContext(NonCancellable) { withTransferTimeout(timeout) { sftp.close() } }
         } catch (e: Exception) {
             // CWE-400: shed the session, whose state is unknown, so no later withSftp strands another channel on
             // it while the run holds its lock and slot (ADR-0047 rule 5, ADR-0064).
@@ -57,16 +66,19 @@ internal class SftpTransferDeadline(
     // withTimeout cannot interrupt a blocked JVM read; watchdog closes
     // the session instead. Invariants and rejected alternatives: See ADR-0064 (SFTP blocking-I/O timeout via a watchdog coroutine).
     @Suppress("SuspendFunSwallowedCancellation") // rethrows the caller's cancellation; maps only the watchdog close
-    suspend fun <T> withTransferTimeout(block: suspend () -> T): T {
+    suspend fun <T> withTransferTimeout(
+        timeout: Duration = transferTimeout,
+        block: suspend () -> T,
+    ): T {
         val timedOut = AtomicBoolean(false)
         try {
             return coroutineScope {
                 // Dispatchers.Default: the caller's dispatcher may be busy inside the blocking copy (ADR-0064).
                 val watchdog =
                     launch(Dispatchers.Default) {
-                        delay(transferTimeout)
+                        delay(timeout)
                         timedOut.set(true)
-                        logger.warn("SFTP transfer exceeded the {} deadline; closing the session to unblock it", transferTimeout)
+                        logger.warn("SFTP transfer exceeded the {} deadline; closing the session to unblock it", timeout)
                         runCatching { session.close(true) }
                     }
                 try {
@@ -78,7 +90,7 @@ internal class SftpTransferDeadline(
         } catch (e: Throwable) {
             // The caller's own cancellation (a killed run) stays a cancellation past the deadline.
             if (e is CancellationException) currentCoroutineContext().ensureActive()
-            if (timedOut.get()) throw IOException("SFTP transfer timed out after $transferTimeout (peer stalled?)", e)
+            if (timedOut.get()) throw IOException("SFTP transfer timed out after $timeout (peer stalled?)", e)
             throw e
         }
     }

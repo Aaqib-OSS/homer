@@ -36,6 +36,12 @@ sealed class RunnerConfig {
     /** Alias-aware shape rules for the per-runner `env` keys. */
     internal fun validateEnv(alias: String) = validateRunnerEnv(alias, env)
 
+    /** Refuses an `env` key or `extraUploads.env` name that is not a shell identifier, for the runners that source a file. */
+    internal fun validateShellEnvNames(alias: String) {
+        val invalid = ShellEnvNames.firstInvalid(env.keys + extraUploads.mapNotNull { it.env })
+        require(invalid == null) { "runner '$alias' env name '$invalid' must be a shell identifier (${ShellEnvNames.PATTERN})" }
+    }
+
     /**
      * Every shape rule of this variant, naming runner [alias], in a fixed order so a config with several
      * violations reports the same first one. Called from AppConfig's init; every variant must call
@@ -84,6 +90,7 @@ sealed class RunnerConfig {
             validateWorkload(alias)
             validateExtraUploads(alias)
             validateEnv(alias)
+            validateShellEnvNames(alias)
             validateQueueFacets(alias)
         }
 
@@ -137,6 +144,7 @@ sealed class RunnerConfig {
             validateExtraUploads(alias)
             validateTransportTiming(alias)
             validateEnv(alias)
+            validateShellEnvNames(alias)
             validateQueueFacets(alias)
             validateRemoteWorkspaceRoot(alias)
         }
@@ -376,10 +384,10 @@ data class ExtraUploadSpec(
     }
 
     companion object {
-        // workdir/artifacts are synced down; .homer/agent, .homer/bin and .homer/mcp.json are uploaded
-        // with the workspace, and an extra landing there would overwrite them.
+        // workdir/artifacts are synced down; .homer/agent, .homer/bin, .homer/mcp.json and .homer/env (the env
+        // files) are uploaded or written by Homer, and an extra landing there would overwrite them.
         private val RESERVED_REMOTE_PATHS =
-            listOf("workdir", "artifacts", ".homer/agent", ".homer/bin", ".homer/mcp.json")
+            listOf("workdir", "artifacts", ".homer/agent", ".homer/bin", ".homer/mcp.json", ".homer/env")
     }
 }
 
