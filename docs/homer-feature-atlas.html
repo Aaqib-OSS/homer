@@ -2701,7 +2701,7 @@ apk add --no-cache tar gzip curl</code></pre>
               <tr><td class="verb">GET</td><td class="path">/api/v1/agents</td><td>List agents, filtered to those you hold a grant on, with inputs, cron state and <code>writable</code>.</td></tr>
               <tr><td class="verb">POST</td><td class="path">/api/v1/agents</td><td>Create a new agent directory.</td></tr>
               <tr><td class="verb">POST</td><td class="path">/api/v1/agents/reload</td><td>Rescan the agents directory (admin).</td></tr>
-              <tr><td class="verb">GET</td><td class="path">/api/v1/agents/load-errors</td><td>The last scan's skipped agent definitions and their reasons, with a <code>truncated</code> count (admin; anyone else gets a body-less <code>404</code>).</td></tr>
+              <tr><td class="verb">GET</td><td class="path">/api/v1/agents/load-errors</td><td>The last published scan's skipped agent definitions and their reasons, with a <code>truncated</code> count (admin; anyone else gets a body-less <code>404</code>).</td></tr>
               <tr><td class="verb">GET</td><td class="path">/api/v1/agents/{name}/langgraph</td><td>Graph topology (nodes and edges) for each LangGraph command.</td></tr>
               <tr><td class="verb">GET</td><td class="path">/api/v1/agents/{name}/files</td><td>List an agent directory (<code>edit</code> grant).</td></tr>
               <tr><td class="verb">GET/PUT/DELETE</td><td class="path">/api/v1/agents/{name}/files/…</td><td>Read, write and delete files in an agent directory; writes are schema-validated.</td></tr>
@@ -3443,7 +3443,7 @@ HOMER_LOG_DIR=/app/workspace</code></pre>
           <h3>Agents list &amp; detail <span class="where">console</span></h3>
           <p>One card per agent with Run and Edit buttons and, for a scheduled agent, its next and last cron run. Reload
             rescans the agents directory and lists what was added, updated, removed or failed; an admin also sees a
-            dismissible "N agents failed to load" panel with the last scan's reasons, a reload bringing it back. An
+            dismissible "N agents failed to load" panel with the last published scan's reasons, a reload bringing it back. An
             <b>All</b> tab plus one
             tab per distinct agent <code>group</code> (sorted by name) narrows the list, the selection living in the URL's
             <code>group</code> param; an agent with no group appears under <b>All</b> only. An agent's page shows its

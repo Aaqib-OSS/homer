@@ -59,7 +59,7 @@
 
 ### Console
 
-- **Added: an agent load-error panel on the Agents page** — An admin sees a dismissible "N agents failed to load" panel listing the last scan's reasons, the startup scan's included, and a reload brings it back.
+- **Added: an agent load-error panel on the Agents page** — An admin sees a dismissible "N agents failed to load" panel listing the last published scan's reasons, the startup scan's included, and a reload brings it back.
 - **Fixed: an expanded step subscribes with its own command index** — The process detail asks the log and LLM-event streams for the command the step ran, so a debug run's single step streams its output instead of the run's first command.
 
 - **Removed: package managers from the console image** — The release image no longer ships the Node.js base image's npm, npx, corepack and yarn, which nothing in it runs; the dev compose overlay builds a `dev` stage that keeps them.

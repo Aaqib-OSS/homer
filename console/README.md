@@ -475,7 +475,7 @@ backend has swept at least once.
 4. Click **Reload** to have the backend re-scan the agents directory; the
    result banner lists agents added, updated, and removed
 5. An **admin** also sees a dismissible "N agents failed to load" panel
-   listing the definitions the last scan skipped, with their reasons
+   listing the definitions the last published scan skipped, with their reasons
    (`GET /api/v1/agents/load-errors`) — including the ones the startup scan
    hit, which the reload banner never shows. Reloading clears a dismissal,
    since a fresh scan is worth reading again. A non-admin sees no panel and
@@ -948,7 +948,7 @@ which records the sandboxed-iframe option to revisit first.
 | `POST /api/v1/agent/:name` | Run an agent |
 | `POST /api/v1/agents` | Create a new agent directory (New agent dialog) |
 | `POST /api/v1/agents/reload` | Re-scan the agents directory |
-| `GET /api/v1/agents/load-errors` | Fetch the last scan's agent load errors (admin-only; the Agents page panel) |
+| `GET /api/v1/agents/load-errors` | Fetch the last published scan's agent load errors (admin-only; the Agents page panel) |
 | `POST /api/v1/agents/:name/cron-run` | Fire an agent as its cron would (Schedules page Run button) |
 | `GET /api/v1/agents/:name/langgraph` | Fetch the LangGraph workflow topology for an agent |
 | `GET/PUT/DELETE /api/v1/agents/:name/files[/:path]` | List, read, write, and delete an agent's files (Edit page) |
