@@ -91,6 +91,9 @@ internal enum class Layer {
                     ),
             )
 
+        /** The [SERVICES] row, read by the rule that requires a test per service, so the row exists once. */
+        val services: Set<String> get() = ROWS.getValue(SERVICES)
+
         private val HTTP_PACKAGES = listOf("homer.app.routes", "homer.app.auth", "homer.app.di")
         private val KERNEL_PACKAGES = listOf("homer.app.models", "homer.app.config", "homer.app.exceptions")
 
