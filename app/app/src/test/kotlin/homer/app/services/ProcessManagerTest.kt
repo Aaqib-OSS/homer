@@ -37,6 +37,8 @@ import java.nio.file.Paths
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -382,8 +384,7 @@ class ProcessManagerTest {
 
             processManager.assignJob(id, job)
 
-            // Job should be assigned - no exception thrown
-            assertTrue(true)
+            assertSame(job, processManager.getProcessInfo(id)!!.job)
         }
 
     @Test
@@ -395,8 +396,7 @@ class ProcessManagerTest {
             processManager.assignJob(id, job)
             processManager.removeJob(id)
 
-            // Should complete normally - no exception thrown
-            assertTrue(true)
+            assertNull(processManager.getProcessInfo(id)!!.job)
         }
 
     @Test
@@ -552,12 +552,8 @@ class ProcessManagerTest {
                 }
             }
 
-            // All IDs should be unique
-            assertEquals(10, ids.size)
-            assertEquals(10, ids.toSet().size)
-
-            // IDs should be the sequential AUTOINCREMENT range 1..10
-            assertEquals((1..10).toSet(), ids.toSet())
+            // The sequential AUTOINCREMENT range, each id handed out once.
+            assertEquals((1..10).toList(), ids.sorted())
         }
 
     @Test
@@ -572,9 +568,7 @@ class ProcessManagerTest {
                 launch { processManager.setProcessStatus(id, ProcessStatus.WORKING) }
             }
 
-            // Should not crash and should have some final status
-            val finalStatus = processManager.getProcessStatus(id)
-            assertTrue(finalStatus == ProcessStatus.WORKING)
+            assertEquals(ProcessStatus.WORKING, processManager.getProcessStatus(id))
         }
 
     @Test
@@ -1490,7 +1484,8 @@ class ProcessManagerTest {
     fun `addCost on unknown processId is a no-op`() =
         runTest {
             processManager.addCost(424242, 5.0, CostSource.CLI)
-            // Just shouldn't throw; nothing to assert beyond that.
+
+            assertNull(processManager.getProcessInfo(424242), "a cost for an unknown run must not create its row")
         }
 
     // ========== Status-hook wiring (ADR-0107) ==========
