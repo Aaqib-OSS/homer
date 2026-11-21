@@ -26,6 +26,7 @@
 - **Fixed: agent reloads racing each other** — A reload that another reload overtakes during its scan rescans instead of publishing its older view, and one overtaken 8 times reports that in `errors` with no agent changes, so it kills no queued runs.
 - **Fixed: the log tail after a restart follows the run's recorded output file** — `GET /api/v1/stream/processes/{processId}/logs` serves the stdout/stderr path the step recorded instead of guessing `cmd_N`, and answers `404` when the step recorded no file or a path that is not a file directly inside the run's artifacts.
 - **Changed: a continuation marks a transformed result too large to deliver** — A resume payload whose result is over the 4 MiB transform cap now carries `resultTooLarge: true`, and `homer_fanout` reports it on stderr. See [ADR-0025](docs/adr/0025-capability-token-result-read.md).
+- **Fixed: a refused ssh exec request is named in the step's error** — A step whose exec request the ssh server refuses (a `ForceCommand`, a restricted shell or a session limit) fails saying the server refused it, instead of only that the channel closed without an exit status.
 - **Fixed: the log streams' `cmd` parameter means the command index everywhere** — `GET /api/v1/stream/processes/{id}/logs` and `/llm-events` serve the step whose command index `cmd` names, on a live run and after a restart, instead of the step at that position in the run's rows — so a run that executes only some of its commands streams each one's own output.
 
 ### Console

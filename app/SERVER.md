@@ -4009,6 +4009,9 @@ it carries: `org.apache.sshd.client.channel.ChannelExec` is pinned to `ERROR`
 and `org.apache.sshd.client.session.ClientSessionImpl` to `INFO`.
 `HOMER_LOG_LEVEL` does not lower either. (`agentdebug` is the exception — it keeps
 slf4j-simple to avoid a double SLF4J binding.)
+A step whose ssh server refuses its exec request fails with `the ssh server refused
+the exec request`; Homer's own wording quotes no part of the command or the env,
+unlike the `ChannelExec` warning the pin above keeps out of the log.
 
 Two log streams:
 
