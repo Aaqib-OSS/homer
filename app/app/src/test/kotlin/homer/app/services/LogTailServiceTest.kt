@@ -2,6 +2,7 @@ package homer.app.services
 
 import homer.app.executors.CommandArtifactPaths
 import homer.app.fixtures.TestFixtures
+import homer.app.infra.DescriptorOpen
 import homer.app.models.ExecutionInfo
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
@@ -602,13 +603,48 @@ class LogTailServiceTest {
 
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
-    fun `tail refuses a FIFO without opening it`(
+    fun `tail refuses a FIFO without blocking on it`(
         @TempDir tmp: Path,
     ) = runTest {
         val dir = artifactsIn(tmp)
         val path = dir.resolve("cmd_0.out")
         TestFixtures.mkfifoOrSkip(path)
         val service = LogTailService(finishedProcess(dir), TestFixtures.mockLogger(), pollIntervalMs = 1L)
+        assertNothingServed(service.tail(1, path, resumeFromOffset = 0L).toList())
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    fun `tail refuses at once a FIFO swapped in after the check`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val dir = artifactsIn(tmp)
+        TestFixtures.mkfifoOrSkip(tmp.resolve("probe.fifo"))
+        val path = dir.resolve("cmd_0.out").also { it.writeText("own output") }
+        val logger = TestFixtures.mockLogger()
+        val service =
+            LogTailService(finishedProcess(dir), logger, pollIntervalMs = 1L) { p ->
+                Files.delete(p)
+                check(ProcessBuilder("mkfifo", p.toString()).start().waitFor() == 0) { "mkfifo failed" }
+                DescriptorOpen.openRegularChannel(p)
+            }
+
+        assertNothingServed(service.tail(1, path, resumeFromOffset = 0L).toList())
+        verify(exactly = 1) { logger.warn(match<String> { "refusing" in it }, 1, "cmd_0.out") }
+    }
+
+    @Test
+    fun `tail refuses a hard link made after the check`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val dir = artifactsIn(tmp)
+        val path = dir.resolve("cmd_0.out").also { it.writeText(secret) }
+        val service =
+            LogTailService(finishedProcess(dir), TestFixtures.mockLogger(), pollIntervalMs = 1L) { p ->
+                Files.createLink(tmp.resolve("elsewhere.txt"), p)
+                DescriptorOpen.openRegularChannel(p)
+            }
+
         assertNothingServed(service.tail(1, path, resumeFromOffset = 0L).toList())
     }
 

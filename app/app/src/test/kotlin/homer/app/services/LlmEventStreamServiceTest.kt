@@ -5,6 +5,7 @@ import homer.app.executors.llm.CodexHarness
 import homer.app.executors.llm.LlmHarness
 import homer.app.executors.llm.OpencodeHarness
 import homer.app.fixtures.TestFixtures
+import homer.app.infra.DescriptorOpen
 import homer.app.infra.SecretRedactor
 import homer.app.models.Command
 import homer.app.models.ExecutionInfo
@@ -1118,13 +1119,48 @@ class LlmEventStreamServiceTest {
 
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
-    fun `a FIFO stdout artifact is refused without being opened`(
+    fun `a FIFO stdout artifact is refused without blocking on it`(
         @TempDir tmp: Path,
     ) = runTest {
         val dir = artifactsIn(tmp)
         val out = dir.resolve("cmd_0.out")
         TestFixtures.mkfifoOrSkip(out)
         val service = LlmEventStreamService(finishedCodex(dir, out), harnesses, TestFixtures.mockLogger(), pollIntervalMs = 10)
+        assertNothingServed(service.streamCommand(1, 0, null).toList())
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    fun `a FIFO swapped in after the check is refused at once`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val dir = artifactsIn(tmp)
+        TestFixtures.mkfifoOrSkip(tmp.resolve("probe.fifo"))
+        val out = dir.resolve("cmd_0.out").also { it.writeText(line("""{"type":"thread.started","thread_id":"t1"}""")) }
+        val logger = TestFixtures.mockLogger()
+        val service =
+            LlmEventStreamService(finishedCodex(dir, out), harnesses, logger, pollIntervalMs = 10) { p ->
+                Files.delete(p)
+                check(ProcessBuilder("mkfifo", p.toString()).start().waitFor() == 0) { "mkfifo failed" }
+                DescriptorOpen.openRegularChannel(p)
+            }
+
+        assertNothingServed(service.streamCommand(1, 0, null).toList())
+        verify(atLeast = 1) { logger.warn(match<String> { "refusing" in it }, 1, 0, 0) }
+    }
+
+    @Test
+    fun `a hard link made after the check is refused`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val dir = artifactsIn(tmp)
+        val out = dir.resolve("cmd_0.out").also { it.writeText(line("""{"type":"thread.started","thread_id":"t1"}""")) }
+        val service =
+            LlmEventStreamService(finishedCodex(dir, out), harnesses, TestFixtures.mockLogger(), pollIntervalMs = 10) { p ->
+                if (!Files.exists(tmp.resolve("elsewhere.txt"))) Files.createLink(tmp.resolve("elsewhere.txt"), p)
+                DescriptorOpen.openRegularChannel(p)
+            }
+
         assertNothingServed(service.streamCommand(1, 0, null).toList())
     }
 

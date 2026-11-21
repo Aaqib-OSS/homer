@@ -9,12 +9,25 @@ import java.lang.foreign.MemoryLayout
 import java.lang.foreign.MemorySegment
 import java.lang.foreign.ValueLayout
 import java.lang.invoke.MethodHandle
+import java.nio.ByteBuffer
+import java.nio.channels.Channels
+import java.nio.channels.ClosedChannelException
+import java.nio.channels.NonWritableChannelException
+import java.nio.channels.SeekableByteChannel
 import java.nio.charset.Charset
 import java.nio.file.AccessDeniedException
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
-import java.util.Objects
 import java.util.concurrent.atomic.AtomicBoolean
+
+/** Reads from [position] into [dst], as `FileChannel.read(dst, position)` does; returns -1 at the end. */
+internal fun SeekableByteChannel.readAt(
+    dst: ByteBuffer,
+    position: Long,
+): Int {
+    position(position)
+    return read(dst)
+}
 
 /** A `struct stat` field: its byte offset and its width (2, 4 or 8 bytes, unsigned). */
 internal data class StatField(
@@ -33,6 +46,7 @@ internal data class StatPlatform(
     val openFlags: Int,
     val mode: StatField,
     val nlink: StatField,
+    val size: StatField,
     val fstatCalls: List<FstatCall>,
 ) {
     companion object {
@@ -64,6 +78,7 @@ internal data class StatPlatform(
                 openFlags = LINUX_O_RDONLY_NONBLOCK_NOCTTY_CLOEXEC or LINUX_X64_O_NOFOLLOW,
                 mode = StatField(offset = 24, width = 4),
                 nlink = StatField(offset = 16, width = 8),
+                size = StatField(offset = 48, width = 8),
                 fstatCalls = listOf(FstatCall("fstat"), FstatCall("__fxstat", version = LINUX_X64_STAT_VER)),
             )
         private val LINUX_ARM64 =
@@ -71,6 +86,7 @@ internal data class StatPlatform(
                 openFlags = LINUX_O_RDONLY_NONBLOCK_NOCTTY_CLOEXEC or LINUX_ARM64_O_NOFOLLOW,
                 mode = StatField(offset = 16, width = 4),
                 nlink = StatField(offset = 20, width = 4),
+                size = StatField(offset = 48, width = 8),
                 fstatCalls = listOf(FstatCall("fstat"), FstatCall("__fxstat", version = LINUX_ARM64_STAT_VER)),
             )
 
@@ -80,6 +96,7 @@ internal data class StatPlatform(
                 openFlags = DARWIN_O_RDONLY_NONBLOCK_NOFOLLOW_NOCTTY_CLOEXEC,
                 mode = StatField(offset = 4, width = 2),
                 nlink = StatField(offset = 6, width = 2),
+                size = StatField(offset = 96, width = 8),
                 fstatCalls = listOf(FstatCall("fstat\$INODE64"), FstatCall("fstat")),
             )
 
@@ -104,19 +121,22 @@ internal object DescriptorOpen {
     }
 
     /** A stream over [path]'s own descriptor; the caller closes it. */
-    fun openRegular(path: Path): InputStream = openRegular(path, native)
+    fun openRegular(path: Path): InputStream = Channels.newInputStream(openRegularChannel(path))
+
+    /** A read-only channel over [path]'s own descriptor whose `size()` follows the file's growth; the caller closes it. */
+    fun openRegularChannel(path: Path): SeekableByteChannel = openRegularChannel(path, native)
 
     /** Fails closed: without [native] the read is refused, never retried as a blocking by-name open. */
-    internal fun openRegular(
+    internal fun openRegularChannel(
         path: Path,
         native: Result<NativeDescriptors>,
-    ): InputStream =
+    ): SeekableByteChannel =
         native
             .getOrElse { throw IOException("Refusing to read $path: no descriptor-checked open on this platform", it) }
             .openRegular(path)
 }
 
-/** FFM downcalls to `open`, `fstat`, `read` and `close`; construction fails where any of them is missing. */
+/** FFM downcalls to `open`, `fstat`, `pread` and `close`; construction fails where any of them is missing. */
 internal class NativeDescriptors(
     private val platform: StatPlatform,
     private val lookup: (String) -> MemorySegment? = {
@@ -155,27 +175,33 @@ internal class NativeDescriptors(
                 FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.ADDRESS),
             )
         }
-    private val readCall =
+    private val preadCall =
         downcall(
-            "read",
-            FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG),
+            "pread",
+            FunctionDescriptor.of(
+                ValueLayout.JAVA_LONG,
+                ValueLayout.JAVA_INT,
+                ValueLayout.ADDRESS,
+                ValueLayout.JAVA_LONG,
+                ValueLayout.JAVA_LONG,
+            ),
             captureErrno,
         )
     private val closeCall = downcall("close", FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_INT))
 
     /** Opens [path] `O_NOFOLLOW | O_NONBLOCK`, then refuses it unless its descriptor is a single-link regular file. */
-    fun openRegular(path: Path): InputStream {
+    fun openRegular(path: Path): SeekableByteChannel {
         val arena = Arena.ofShared()
-        var stream: DescriptorInputStream? = null
+        var channel: DescriptorChannel? = null
         var checked = false
         try {
-            stream = DescriptorInputStream(openFd(path, arena), arena)
-            requireSingleLinkRegular(stream.fd, path, arena)
+            channel = DescriptorChannel(openFd(path, arena), arena)
+            channel.requireSingleLinkRegular(path)
             checked = true
-            return stream
+            return channel
         } finally {
             if (!checked) {
-                if (stream != null) stream.close() else arena.close()
+                if (channel != null) channel.close() else arena.close()
             }
         }
     }
@@ -198,20 +224,6 @@ internal class NativeDescriptors(
         }
     }
 
-    private fun requireSingleLinkRegular(
-        fd: Int,
-        path: Path,
-        arena: Arena,
-    ) {
-        val stat = arena.allocate(STAT_BUFFER_BYTES, Long.SIZE_BYTES.toLong())
-        val rc = fstat.version?.let { fstatCall.invokeWithArguments(it, fd, stat) } ?: fstatCall.invokeWithArguments(fd, stat)
-        if (rc as Int != 0) throw IOException("fstat(2) failed on $path")
-        val regular = stat.unsigned(platform.mode) and S_IFMT == S_IFREG
-        if (!regular || stat.unsigned(platform.nlink) != 1L) {
-            throw IOException("Refusing to read a non-regular or hard-linked file: $path")
-        }
-    }
-
     private fun errno(state: MemorySegment): Int = errnoField.get(state, 0L) as Int
 
     private fun MemorySegment.unsigned(field: StatField): Long =
@@ -230,41 +242,75 @@ internal class NativeDescriptors(
         return linker.downcallHandle(address, descriptor, *options)
     }
 
-    /** Owns [fd] and [arena]: closing the stream closes both. Reads never reopen by path. */
-    private inner class DescriptorInputStream(
-        val fd: Int,
+    /** Owns [fd] and [arena]: closing the channel closes both. Reads are positional and never reopen by path. */
+    private inner class DescriptorChannel(
+        private val fd: Int,
         private val arena: Arena,
-    ) : InputStream() {
+    ) : SeekableByteChannel {
         private val closed = AtomicBoolean(false)
         private val buffer = arena.allocate(READ_CHUNK_BYTES.toLong())
         private val state = arena.allocate(errnoState)
+        private val stat = arena.allocate(STAT_BUFFER_BYTES, Long.SIZE_BYTES.toLong())
+        private var position = 0L
 
-        override fun read(): Int {
-            val one = ByteArray(1)
-            return if (read(one, 0, 1) == -1) -1 else one[0].toInt() and BYTE_MASK
+        fun requireSingleLinkRegular(path: Path) {
+            refreshStat(path)
+            val regular = stat.unsigned(platform.mode) and S_IFMT == S_IFREG
+            if (!regular || stat.unsigned(platform.nlink) != 1L) {
+                throw IOException("Refusing to read a non-regular or hard-linked file: $path")
+            }
         }
 
-        override fun read(
-            b: ByteArray,
-            off: Int,
-            len: Int,
-        ): Int {
-            Objects.checkFromIndexSize(off, len, b.size)
-            if (len == 0) return 0
-            if (closed.get()) throw IOException("Stream closed")
-            val n = readChunk(minOf(len, READ_CHUNK_BYTES))
+        override fun read(dst: ByteBuffer): Int {
+            ensureOpen()
+            if (!dst.hasRemaining()) return 0
+            val n = preadChunk(minOf(dst.remaining(), READ_CHUNK_BYTES))
             if (n == 0) return -1
-            MemorySegment.copy(buffer, ValueLayout.JAVA_BYTE, 0, b, off, n)
+            dst.put(buffer.asSlice(0, n.toLong()).asByteBuffer())
+            position += n
             return n
         }
 
-        private fun readChunk(len: Int): Int {
+        private fun preadChunk(len: Int): Int {
             while (true) {
-                val n = readCall.invokeWithArguments(state, fd, buffer, len.toLong()) as Long
+                val n = preadCall.invokeWithArguments(state, fd, buffer, len.toLong(), position) as Long
                 if (n >= 0) return n.toInt()
                 val errno = errno(state)
-                if (errno != EINTR) throw IOException("read(2) failed with errno $errno")
+                if (errno != EINTR) throw IOException("pread(2) failed with errno $errno")
             }
+        }
+
+        override fun size(): Long {
+            ensureOpen()
+            refreshStat(null)
+            return stat.unsigned(platform.size)
+        }
+
+        private fun refreshStat(path: Path?) {
+            val rc = fstat.version?.let { fstatCall.invokeWithArguments(it, fd, stat) } ?: fstatCall.invokeWithArguments(fd, stat)
+            if (rc as Int != 0) throw IOException("fstat(2) failed${path?.let { " on $it" } ?: ""}")
+        }
+
+        override fun position(): Long {
+            ensureOpen()
+            return position
+        }
+
+        override fun position(newPosition: Long): SeekableByteChannel {
+            require(newPosition >= 0) { "negative position: $newPosition" }
+            ensureOpen()
+            position = newPosition
+            return this
+        }
+
+        override fun write(src: ByteBuffer): Int = throw NonWritableChannelException()
+
+        override fun truncate(size: Long): SeekableByteChannel = throw NonWritableChannelException()
+
+        override fun isOpen(): Boolean = !closed.get()
+
+        private fun ensureOpen() {
+            if (closed.get()) throw ClosedChannelException()
         }
 
         override fun close() {
@@ -284,7 +330,6 @@ internal class NativeDescriptors(
         const val S_IFREG = 0x8000L
         const val STAT_BUFFER_BYTES = 256L
         const val READ_CHUNK_BYTES = 64 * 1024
-        const val BYTE_MASK = 0xFF
 
         // The charset the JDK itself encodes file names with, so the native open names the same file.
         val PATH_CHARSET: Charset =

@@ -325,7 +325,9 @@ The artifact download (`ArtifactService.resolveArtifactPath`, then `streamFile`)
 then `followFile`) refuse a symlinked artifacts directory too, but check it only once, when they
 resolve the path. The download opens the file afterwards, through `streamFile`'s descriptor-checked
 open; each stream opens it at the first poll that finds it, which can be as late as the stream's
-end.
+end, through the same open, and then follows the file through that descriptor alone: positional
+reads, and `fstat` for its size. A FIFO swapped in for a stream's file is refused at once instead of
+blocking a call thread and holding the caller's SSE slot, and a hard link is refused like a symlink.
 
 Three cases remain. Two are races: a symlink swapped in for the artifacts directory between its
 check and the open, because `O_NOFOLLOW` binds only the final component; and, for the two streams,
