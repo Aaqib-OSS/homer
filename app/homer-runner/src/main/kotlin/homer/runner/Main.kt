@@ -23,10 +23,8 @@ import kotlin.time.Duration.Companion.seconds
 private val logger = LoggerFactory.getLogger("homer.runner")
 
 /**
- * `homer-runner`: registers this machine as a pull-mode runner instance and
- * executes the runs it claims. Every option has an `HOMER_RUNNER_*` env var. The
- * token is read only from `HOMER_RUNNER_TOKEN`, never a flag, so it stays out of argv
- * (`ps`, `/proc/<pid>/cmdline`, shell history). CWE-522.
+ * `homer-runner`: registers this machine as a pull-mode runner instance and executes the runs it
+ * claims. The token comes only from `HOMER_RUNNER_TOKEN`, never a flag, keeping it out of argv. CWE-522.
  */
 class HomerRunnerCli(
     // Seams for tests (a test run must not leave a drain hook on its own JVM). Both are
@@ -111,11 +109,8 @@ class HomerRunnerCli(
 }
 
 /**
- * Default instance name: this host's name, shaped so the server accepts it. Homer requires
- * `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$` and rejects the registration otherwise, and a raw
- * hostname need not match it — so a default the operator never typed cannot be what makes
- * the runner refuse to start. An explicit `--name` is passed through untouched and validated
- * by the server.
+ * Default instance name: this host's name shaped to Homer's `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`, so an
+ * untyped default never blocks startup. An explicit `--name` passes through for the server to validate.
  */
 internal fun hostName(): String =
     runCatching { InetAddress.getLocalHost().hostName }

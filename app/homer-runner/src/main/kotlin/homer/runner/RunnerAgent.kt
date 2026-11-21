@@ -49,12 +49,9 @@ class Backoff(
 }
 
 /**
- * The instance lifecycle: register (retrying connection errors and 5xx, failing on 4xx), run
- * `concurrency` claim loops, hand each claim to a [SessionWorker], and on [drain] stop claiming,
- * deregister and give in-flight sessions `drainTimeout` to finish. A `404` on `claim` means Homer
- * dropped the instance (heartbeat expiry); the agent registers again under a new id. A host that
- * fails [healthCheck] never registers or, once running, stops claiming, drains and ends [run]
- * with [RunnerUnhealthyException].
+ * The instance lifecycle: register, run `concurrency` claim loops handing each claim to a [SessionWorker],
+ * and on [drain] stop claiming, deregister and give sessions `drainTimeout`. A `404` on `claim` re-registers;
+ * a host failing [healthCheck] never registers, or drains and ends [run] with [RunnerUnhealthyException].
  */
 class RunnerAgent(
     private val api: RunnerApi,
@@ -156,9 +153,7 @@ class RunnerAgent(
                     throw e
                 } catch (e: Exception) {
                     onClaimFailure(e, id, index)
-                    // Bounded, like every other retry here: a stale claim() answer that keeps
-                    // 404ing after a successful re-register would otherwise spin this loop with
-                    // no delay at all.
+                    // Backed off: a claim() that keeps 404ing after a re-register must not spin.
                     delay(backoff.delayFor(attempt++))
                     continue
                 } ?: continue
@@ -222,9 +217,7 @@ class RunnerAgent(
     private suspend fun drainOnce() {
         logger.info("Draining: no new claims; {} session(s) in flight, waiting up to {}", active.get(), options.drainTimeout)
         instanceId?.let { id ->
-            // Bounded independently of drainTimeout (which could be much longer, or even
-            // shorter than the client's own request timeout): a hung deregister must not eat
-            // into, or blow past, the budget in-flight sessions get below.
+            // Bounded apart from drainTimeout: a hung deregister must not eat into the sessions' budget.
             withTimeoutOrNull(minOf(options.drainTimeout, DEREGISTER_TIMEOUT)) { deregister(id) }
         }
         // Idle loops sit in a claim long-poll. A claim returned before its busy flag is set is

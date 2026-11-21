@@ -42,10 +42,8 @@ internal class SessionWorkspace(
             withContext(Dispatchers.IO) {
                 when (op) {
                     is RunnerOp.CreateWorkspace -> {
-                        // createDirectory, not createDirectories: an existing root is refused, never reused.
-                        // Owner-only, so another local user cannot read a run's files through a shared
-                        // --root; no silent fallback where the mode is unsupported, the op fails instead.
-                        // CWE-732.
+                        // An existing root is refused, never reused. Owner-only, with no fallback where the
+                        // mode is unsupported: another local user must not read a run's files. CWE-732.
                         sessionRoot.parent.createDirectories()
                         Files.createDirectory(sessionRoot, PosixFilePermissions.asFileAttribute(OWNER_ONLY))
                         createdRoot = true

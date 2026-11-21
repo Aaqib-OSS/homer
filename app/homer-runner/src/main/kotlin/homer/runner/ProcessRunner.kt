@@ -24,24 +24,20 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 
 /**
- * Runs one `cmd` op: the process leads its own group (`setsid` where present,
- * ADR-0041) with exactly the given env, stdout and stderr are pumped as chunks
- * to [Handle.await]'s sink in read order, the timeout and `cancel` kill the
- * whole group. Not `LocalShellExecutor`: that writes files, the protocol streams.
+ * Runs one `cmd` op: the process leads its own group (`setsid` where present, ADR-0041) with exactly the
+ * given env, its output reaches [Handle.await]'s sink as ordered chunks, and timeout and `cancel` kill the group.
  */
 object ProcessRunner {
     private const val READ_BUFFER = 64 * 1024
     private const val KILL_GRACE_SEC = 5L
     private val PUMP_JOIN = 5.seconds
 
-    /** How often the post-exit drain re-reads what its pumps are doing (§12 rule 4). */
+    /** How often the post-exit drain re-reads what its pumps are doing (ADR-0047 rule 4). */
     private val DRAIN_POLL = 25.milliseconds
 
     /**
-     * One `cmd` op's outcome. [stdoutChunks] and [stderrChunks] are the chunks each pump
-     * handed to the sink — a chunk the sink gave up on included, so a lost one still shows
-     * up as a stream Homer holds fewer chunks for than this result claims. [cutStreams]
-     * names the streams whose drain was abandoned with chunks still unsent.
+     * One `cmd` op's outcome. The chunk counts include a chunk the sink gave up on, so a lost one shows
+     * as a stream Homer is short of; [cutStreams] names streams whose drain was abandoned with chunks unsent.
      */
     class Exit(
         val code: Int,
@@ -57,8 +53,7 @@ object ProcessRunner {
     class Handle internal constructor(
         private val process: Process,
     ) {
-        // Pumps are not structured children: a grandchild holding the pipe open
-        // would otherwise keep await() from returning after the kill.
+        // Not structured children: a grandchild holding the pipe open would keep await() from returning.
         private val pumps = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
         internal fun isAlive(): Boolean = process.isAlive
@@ -71,12 +66,8 @@ object ProcessRunner {
         }
 
         /**
-         * Stops the command gracefully: SIGINT its process group, wait up to [grace] for it to
-         * exit, then [kill] what is left. Best-effort — a command that exits inside the grace
-         * leaves the kill a no-op, one that ignores SIGINT is killed after the grace, and a host
-         * without `setsid` (no known group) still gets the [kill]. Null skips the wait, not the
-         * SIGINT — the group is signalled either way. The pgid is the process's own group or
-         * nothing, the same guard [kill] uses, so it can never be this runner's group. ADR-0108.
+         * SIGINTs the command's own process group, waits up to [grace] (null: no wait), then [kill]s
+         * what is left; without a known group only the [kill] runs, never signalling the runner's group. ADR-0108.
          */
         fun interrupt(grace: Duration?) {
             if (!process.isAlive) return
@@ -91,14 +82,12 @@ object ProcessRunner {
             interruptGrace: Duration? = null,
             sink: suspend (stream: String, seq: Long, bytes: ByteArray) -> Unit,
         ): Exit {
-            // The op's deadline, not just this call's: the pumps post the tail after the
-            // process is gone, so how long that drain may take is what is left of the timeout.
+            // The pumps post the tail after the process is gone: what is left of the op's timeout bounds that.
             val startedAt = TimeSource.Monotonic.markNow()
             val out = Pump(pumps, process.inputStream, RunnerProtocol.STREAM_STDOUT, sink)
             val err = Pump(pumps, process.errorStream, RunnerProtocol.STREAM_STDERR, sink)
             var finished = false
-            // True only when this call's own timeout expired; an outside cancel leaves it false,
-            // so a deliberate kill stays the immediate SIGKILL it is today (§12, ADR-0108).
+            // Only this call's own timeout sets it; an outside cancel stays an immediate SIGKILL (ADR-0108).
             var timedOut = false
             var cut: Set<String> = emptySet()
             try {
@@ -106,10 +95,8 @@ object ProcessRunner {
                 finished = exited != null
                 timedOut = exited == null
             } finally {
-                // In a finally, not after: withTimeoutOrNull absorbs only its own timeout, so a
-                // cancel from outside (the drain's hard stop) would otherwise skip the kill and
-                // leave the process running in a root that is about to be deleted.
-                // IO: reap blocks in waitFor for up to KILL_GRACE_SEC, which must not pin a Default thread.
+                // In a finally: an outside cancel must not skip the kill and leave a process running in a
+                // root about to be deleted. IO: reap blocks in waitFor for up to KILL_GRACE_SEC.
                 withContext(NonCancellable + Dispatchers.IO) {
                     cut = reap(finished, out, err, timeout - startedAt.elapsedNow(), interruptGrace?.takeIf { timedOut })
                 }
@@ -119,12 +106,8 @@ object ProcessRunner {
         }
 
         /**
-         * Waits for both pumps to hand over what they still hold and returns the streams whose drain
-         * was abandoned with chunks unsent. [remaining] is what the op's timeout has left. The fixed
-         * [PUMP_JOIN] floor comes first: a post already in flight needs it, and a read still in flight
-         * after it is parked on a write end that outlives the step (a grandchild holding the pipe, which
-         * nothing wakes), so it is shed rather than spending the op's budget on it. A pump still posting
-         * gets the rest, so the wait is bounded on every path; a drain that never finishes is shed, not joined (§12 4–5).
+         * Waits for both pumps to hand over what they hold, within [PUMP_JOIN] plus what [remaining] of
+         * the op's timeout allows, and returns the streams abandoned with chunks unsent (ADR-0066).
          */
         private suspend fun reap(
             finished: Boolean,
@@ -134,8 +117,7 @@ object ProcessRunner {
             interruptGrace: Duration?,
         ): Set<String> {
             if (!finished) {
-                // A stop that carries a grace interrupts before it kills (ADR-0108); a deliberate
-                // cancel passes null and keeps today's immediate SIGKILL.
+                // A stop carrying a grace interrupts before it kills; a cancel passes null (ADR-0108).
                 if (interruptGrace != null) interrupt(interruptGrace) else kill()
                 process.waitFor(KILL_GRACE_SEC, TimeUnit.SECONDS)
             }
@@ -147,24 +129,18 @@ object ProcessRunner {
             if (joined == null) {
                 awaitSettled(out, err, remaining - PUMP_JOIN)
             }
-            // Read before the cancel below: a pump still running here is one whose tail this
-            // result does not carry, which is what lets the caller report the loss.
+            // Read before the cancel below: a pump still running is one whose tail this result lacks.
             val cut =
                 buildSet {
                     if (out.cut) add(RunnerProtocol.STREAM_STDOUT)
                     if (err.cut) add(RunnerProtocol.STREAM_STDERR)
                 }
-            // pumps is detached (not a structured child of this call), so on the shed path
-            // above a job is still running and would otherwise keep invoking the caller's
-            // sink for an op that has already returned.
+            // Detached pumps would keep invoking the sink for an op that has already returned.
             pumps.cancel()
             return cut
         }
 
-        /**
-         * Waits out what is left of the op's budget for a pump that is still handing a chunk
-         * over, and gives up on one that has nothing left to hand over (§12 rule 5).
-         */
+        /** Waits out [budget] for a pump still handing a chunk over; one with nothing left to hand over is shed. */
         private suspend fun awaitSettled(
             out: Pump,
             err: Pump,
@@ -184,11 +160,7 @@ object ProcessRunner {
         ) {
             val chunks = AtomicLong()
 
-            /**
-             * Whether a read is in flight. A pump still reading long after the process exited is
-             * parked on a write end that outlives the step — a grandchild holding the pipe — not
-             * on the sink: nothing ends such a read, so the drain must not wait on it.
-             */
+            /** Whether a read is in flight: one parked past the exit is not waited on (ADR-0066). */
             private val reading = AtomicBoolean()
 
             val job: Job =
@@ -206,10 +178,7 @@ object ProcessRunner {
                         if (n == 0) continue
                         val seq = chunks.get()
                         sink(stream, seq, buffer.copyOf(n))
-                        // Counted once the sink returns, a post it gave up on included: the count
-                        // is what this result claims Homer can hold, so a chunk dropped here must
-                        // show up as a stream Homer is short of rather than disappear from the
-                        // count too.
+                        // Counted once the sink returns, a given-up post included, so a drop shows as a shortfall.
                         chunks.set(seq + 1)
                     }
                 }

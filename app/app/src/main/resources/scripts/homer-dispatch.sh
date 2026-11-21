@@ -1,28 +1,6 @@
 #!/bin/sh
-# homer-dispatch — start another agent immediately from a running command.
-#
-# Materialized by Homer into {projectRoot}/.homer/bin (on PATH) for every
-# process. Reads HMR_API_URL and HMR_CALLBACK_TOKEN from the environment at
-# call time. See AGENT.md "Dispatching another agent" and ADR-0022.
-#
-# Usage:
-#   homer-dispatch --agent NAME [--param k=v]...
-#       Starts the named agent fire-and-forget (fresh chain; this process is
-#       recorded only as the referer). The target must opt in with
-#       `dispatch.enabled`. Prints the new process id on stdout and returns
-#       immediately.
-#
-#   homer-dispatch --agent NAME --continue-agent NAME [--continue-thread ID] \
-#       [--continue-param k=v]... [--resume-param NAME] [--result-jsonpath PATH] \
-#       [--ttl SECONDS] [--param k=v]...
-#       As above, plus registers a completion continuation: when the started
-#       sub-process reaches a terminal state, --continue-agent is fired with the
-#       sub's result under --resume-param (default HMR_LG_RESUME). --param go to
-#       the sub; --continue-param go to the continuation run (the resumed
-#       parent). Both agents must opt in with `dispatch.enabled`. See ADR-0023.
-#
-# Exit codes: 0 ok, 2 usage or transport error (e.g. dead origin process,
-# unknown or non-dispatchable agent, Homer unreachable).
+# homer-dispatch — start another agent immediately from a running command (ADR-0022, ADR-0023).
+# Reads HMR_API_URL and HMR_CALLBACK_TOKEN from the environment; usage and exit codes: AGENT.md.
 
 set -u
 

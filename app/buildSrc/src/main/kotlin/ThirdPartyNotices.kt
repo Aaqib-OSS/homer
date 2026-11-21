@@ -4,11 +4,8 @@ import java.nio.file.Files
 
 /**
  * Renders the committed third-party attributions (`NOTICE` and the backend region of
- * `THIRD-PARTY-LICENSES.md`) from the jk1 dependency-license report. Policy: ADR-0056.
- *
- * The rendering functions take already-read text so they stay unit testable; only [render] and
- * [withEmbeddedFiles] touch the filesystem, and the Gradle tasks in `app/app/build.gradle.kts`
- * own the reads and writes of the committed files themselves.
+ * `THIRD-PARTY-LICENSES.md`) from the jk1 license report (ADR-0056). Only [render] and
+ * [withEmbeddedFiles] touch the filesystem; the rest takes already-read text.
  */
 object ThirdPartyNotices {
     /** Heading used for a module the license report left without a named license. */
@@ -24,29 +21,23 @@ object ThirdPartyNotices {
 
     private val LEGAL_FILE_NAME = Regex("""(?i)(LICEN[CS]E|NOTICE|COPYING).*""")
 
-    // An attribution line opens with "Copyright" (optionally behind a (c)/©/Portions marker).
-    // Matching "copyright" anywhere instead pulls in license boilerplate that also carries a
-    // digit — "2. Grant of Copyright License…" from every embedded Apache-2.0 LICENSE — and
-    // those crowd the real holders out of the first MAX_COPYRIGHT_LINES.
+    // Anchored at the line start: "copyright" anywhere also matches "2. Grant of Copyright License"
+    // clauses, which crowd the real holders out of the first MAX_COPYRIGHT_LINES.
     private val COPYRIGHT_LINE = Regex("""(?i)^(\(c\)|©|portions)?\s*copyright\b""")
     private val NAMES_A_HOLDER = Regex("""(?i)\d|\(c\)|©""")
 
     // Everything up to and including the copyright marker, so what remains is the holder.
     private val COPYRIGHT_MARKER = Regex("""(?i)^(\(c\)|©|portions)?\s*copyright\s*(\(c\)|©)?[\s,:;.-]*""")
 
-    // A holder named without a year or marker ("Copyright Eemeli Aro"). Requiring the lowercase
-    // second letter is what still rejects the all-caps warranty boilerplate ("COPYRIGHT HOLDERS
-    // BE LIABLE").
+    // A holder named without a year or marker ("Copyright Eemeli Aro"); the lowercase second letter
+    // rejects the all-caps warranty boilerplate ("COPYRIGHT HOLDERS BE LIABLE").
     private val HOLDER_NAME = Regex("""^[A-Z][a-z]""")
 
-    // A license's "how to apply these terms" template, reproduced inside the license text itself:
-    // <year>, <YEAR>, [yyyy], {yyyy}, [name of copyright owner]. Case-sensitive on purpose — a
-    // placeholder is written all-lowercase or all-caps, so a bracketed holder ("[Ohad Shai]") and
-    // an e-mail or URL in angle brackets are not mistaken for one.
+    // A license's "how to apply" placeholder: <year>, [yyyy], [name of copyright owner]. Case-sensitive,
+    // so a bracketed holder ("[Ohad Shai]") or an e-mail in angle brackets is not mistaken for one.
     private val TEMPLATE_BRACKETS = Regex("""[<\[{](?:[a-z][a-z _-]*|[A-Z][A-Z _-]*)[>\]}]""")
 
-    // The same template written without brackets. Kept apart from [TEMPLATE_BRACKETS] so it can be
-    // case-insensitive — the GPL's own text spells it in caps — without loosening the bracket forms.
+    // The unbracketed template form, kept apart so it can be case-insensitive (the GPL spells it in caps).
     private val TEMPLATE_PHRASE = Regex("""(?i)\byear name of author\b""")
 
     // Steward of a license text, never a holder of the dependency shipping that text.
@@ -87,12 +78,8 @@ object ThirdPartyNotices {
     }
 
     /**
-     * Renders both files from the jk1 report directories of every module that redistributes
-     * dependencies, given the committed inventory document to fill the region of.
-     *
-     * Fails rather than publishing an incomplete attribution: on a module with no named license
-     * (ADR-0056's `checkLicense` should have rejected it) and on a license type the
-     * `## License texts` appendix has no section for.
+     * Renders both files from the jk1 report directories into the committed inventory document. Fails
+     * on a module with no named license and on a license the `## License texts` appendix lacks.
      */
     fun render(
         reportDirs: List<File>,
@@ -128,10 +115,8 @@ object ThirdPartyNotices {
     }
 
     /**
-     * Parses jk1's `project-licenses-for-check-license-task.json`. License entries with no name
-     * are dropped: the plugin emits one per license URL it could not label, and every such entry
-     * seen so far duplicates a named sibling. A module left with no named license renders under
-     * [UNKNOWN_LICENSE], which fails generation.
+     * Parses jk1's `project-licenses-for-check-license-task.json`, dropping unnamed license entries
+     * (each duplicates a named sibling); a module left with none renders under [UNKNOWN_LICENSE].
      */
     fun parseReport(json: String): List<Module> {
         val root = JsonSlurper().parseText(json) as Map<*, *>
@@ -188,18 +173,16 @@ object ThirdPartyNotices {
                 reportDirs
                     .map { it.resolve(module.jarDirName) }
                     .filter { it.isDirectory }
-            // The same jar is extracted under every report dir, so dedupe — but key on the path
-            // inside the jar, not the bare file name: a jar shipping both META-INF/NOTICE and
-            // META-INF/licenses/NOTICE must contribute both, and losing one would be silent.
+            // Deduped by path inside the jar, not file name: META-INF/NOTICE and
+            // META-INF/licenses/NOTICE must both count.
             val legalFiles =
                 jarDirs
                     .flatMap { jarDir -> legalFilesIn(jarDir).map { pathInJar(jarDir, it) to it } }
                     .distinctBy { (pathInJar, _) -> pathInJar }
                     .map { (_, file) -> file }
             val noticeFiles = legalFiles.filter { it.name.startsWith("NOTICE", ignoreCase = true) }
-            // Attributions come from NOTICE files whenever the jar ships one. A LICENSE file is the
-            // license text, and its own headers — the FSF's copyright on the GPL, the GPL's "how to
-            // apply" template — attribute the license, not the dependency quoting it.
+            // Attributions come from NOTICE files when present: a LICENSE file's own headers attribute
+            // the license, not the dependency quoting it.
             module.copy(
                 copyrightLines =
                     copyrightLines(
@@ -232,14 +215,9 @@ object ThirdPartyNotices {
             .toList()
 
     /**
-     * Extracts attribution lines from license/notice file contents: lines opening with `copyright`
-     * that either carry a year or a `(c)`/`©` marker, or name a holder outright, so neither prose
-     * such as "copyright notice" nor a license's own numbered clauses and warranty boilerplate are
-     * mistaken for an attribution. Lines naming no holder at all, and a license template's
-     * `<year>` / `[yyyy]` placeholders, are dropped too.
-     *
-     * Set [fromLicenseText] when the contents are license texts rather than NOTICE files: a
-     * license's steward holds the copyright on the license, not on the dependency quoting it.
+     * Extracts attribution lines from license/notice contents: lines opening with `copyright` that carry
+     * a year, a `(c)`/`©` marker or a holder name; prose, clauses, boilerplate and template placeholders
+     * are dropped. Set [fromLicenseText] for license texts, whose steward is not the dependency's holder.
      */
     fun copyrightLines(
         fileContents: List<String>,
@@ -286,9 +264,8 @@ object ThirdPartyNotices {
         homerHeader: String,
         modules: List<Module>,
     ): String {
-        // Deduped per notice file, not per module: a jar shipping two notices (a shaded library's
-        // plus its own) yields a combined text no standalone notice can match, which reproduces
-        // that standalone notice a second time.
+        // Deduped per notice file, not per module: a combined text of two notices matches no
+        // standalone one, so that notice would print twice.
         val notices =
             modules
                 .sortedBy { it.key }
@@ -333,10 +310,8 @@ object ThirdPartyNotices {
     }
 
     /**
-     * The subset of [licenseNames] that has no `### <name>` heading in [document]'s
-     * [LICENSE_TEXTS_HEADING] appendix. Scoped to the appendix: a `### ` line before it — a future
-     * section heading, or one inside a quoted license text — reproduces no license text, so
-     * counting it would pass coverage for a license the document never carries.
+     * The subset of [licenseNames] with no `### <name>` heading in [document]'s [LICENSE_TEXTS_HEADING]
+     * appendix; a `### ` line before the appendix carries no license text and does not count.
      */
     fun licenseHeadingsMissing(
         document: String,

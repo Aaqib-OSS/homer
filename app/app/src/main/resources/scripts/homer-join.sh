@@ -1,23 +1,6 @@
 #!/bin/sh
-# homer-join — register a parallel fan-out join from a running command.
-#
-# Materialized by Homer into {projectRoot}/.homer/bin (on PATH) for every
-# process. Reads HMR_API_URL and HMR_CALLBACK_TOKEN from the environment at
-# call time. See AGENT.md "Dispatching another agent" and ADR-0026.
-#
-# Usage:
-#   homer-join < body.json
-#       Reads the request JSON body from stdin and POSTs it to
-#       /api/v1/callback/joins. The body has a nested `subs` array, so it is
-#       built by the caller (trivial in the LangGraph runtime, fragile in POSIX
-#       sh) and piped in. Starts every sub at once and registers ONE join
-#       continuation that resumes `continueAgent` a single time once the last
-#       sub reaches a terminal state, carrying all results keyed by interrupt
-#       id. Every agent involved must opt in with `dispatch.enabled`. Prints the
-#       response JSON ({ processIds, continuationId }) on stdout.
-#
-# Exit codes: 0 ok, 2 usage or transport error (e.g. dead origin process,
-# unknown or non-dispatchable agent, Homer unreachable).
+# homer-join — register a parallel fan-out join from a running command; the JSON body comes on stdin (ADR-0026).
+# Reads HMR_API_URL and HMR_CALLBACK_TOKEN from the environment; usage and exit codes: AGENT.md.
 
 set -u
 
