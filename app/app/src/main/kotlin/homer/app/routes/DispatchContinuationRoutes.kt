@@ -28,7 +28,7 @@ internal fun Route.dispatchRoutes(deps: DispatchContinuationDeps) {
                 val query = call.recordListQuery(DispatchStatus.entries)
                 val principal = call.principalName()
                 // Visibility runs in SQL before the limit, so the page and `total` hold only
-                // rows this caller can see (§12, ADR-0039).
+                // rows this caller can see (ADR-0047 rule 3, ADR-0039).
                 val page =
                     dispatchService.page(
                         query.status,
@@ -74,7 +74,7 @@ internal fun Route.continuationRoutes(deps: DispatchContinuationDeps) {
                 val query = call.recordListQuery(ContinuationStatus.entries)
                 val principal = call.principalName()
                 // Visibility runs in SQL before the limit, so the page and `total` hold only
-                // rows this caller can see (§12, ADR-0039).
+                // rows this caller can see (ADR-0047 rule 3, ADR-0039).
                 val page =
                     continuationService.page(
                         query.status,

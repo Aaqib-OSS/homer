@@ -16,12 +16,9 @@ import kotlin.time.Duration.Companion.milliseconds
 private val logger = LoggerFactory.getLogger("homer.app.Application")
 
 /**
- * Shutdown drain: join the application scope's run jobs, bounded by [drainTimeout], then close
- * whatever runner sessions remain. Without it, k8s rolling updates or a SIGTERM cancel mid-flight
- * Claude runs, leaving partial artifacts and billed cost without a result. The scope is **re-read**
- * after every join, not snapshotted once: a run finishing inside the window can start another, which
- * a snapshot would leave killed at exit and `UNKNOWN` at the next boot. [excluded] holds the
- * runner-consumer loops, which must keep claiming queued runs until the drain ends. See ADR-0102.
+ * Joins the application scope's run jobs, re-reading the scope after each join, within [drainTimeout],
+ * then closes the remaining runner sessions. [excluded] runner-consumer loops keep claiming queued
+ * runs until the drain ends. See ADR-0102.
  */
 internal fun drainInFlightJobsThenCloseSessions(
     applicationScope: CoroutineScope,
@@ -67,10 +64,7 @@ internal fun drainInFlightJobsThenCloseSessions(
         )
     }
 
-    // Must run AFTER the join: closing a remote session deletes the pod /
-    // connection out from under a run the drain is waiting for, failing it.
-    // Runs that finish inside the window release their own session in the
-    // executor's finally; only what is still registered here is an orphan.
+    // Only after the join: closing a session fails a run still draining. See ADR-0102.
     activeSessions.closeAll()
 }
 

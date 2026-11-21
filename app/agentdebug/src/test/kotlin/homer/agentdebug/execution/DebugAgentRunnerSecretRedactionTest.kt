@@ -19,12 +19,9 @@ import kotlin.test.assertContains
 import kotlin.test.assertFalse
 
 /**
- * CWE-532 parity with the server: a `globalEnv` value sourced from `@SYSENV:` is a
- * credential the operator pulled out of the host env, so the debug-run stdout sinks
- * this suite captures — `[DRY ]` argv and the `[WHEN]`/`[ESCALATE]` lines — must mask
- * it. The span side of the same redactor is pinned by `WorkspaceConfigFactoryTest`.
- * Regression coverage for the missing `sysEnvBackedGlobalEnvNames` wiring (no
- * `SYSENV` test existed in agentdebug).
+ * CWE-532 parity with the server: a `@SYSENV:`-sourced `globalEnv` value must be masked in the debug-run stdout
+ * sinks this suite captures (`[DRY ]` argv, `[WHEN]`/`[ESCALATE]` lines). Its span side is pinned by
+ * `WorkspaceConfigFactoryTest`.
  */
 class DebugAgentRunnerSecretRedactionTest {
     private val secret = "tok-s3cr3t-token-value"

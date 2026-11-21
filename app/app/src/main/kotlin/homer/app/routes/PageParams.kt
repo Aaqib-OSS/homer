@@ -5,16 +5,13 @@ import io.ktor.server.application.ApplicationCall
 /** Page size a list endpoint returns when the caller names no `limit`. */
 internal const val DEFAULT_PAGE_LIMIT = 100
 
-/** Largest page size a caller may ask for — the page-size bound of every list endpoint (§12 rule 4). */
+/** Largest page size a caller may ask for — the page-size bound of every list endpoint (ADR-0047 rule 4). */
 internal const val MAX_PAGE_LIMIT = 1000
 
 /**
- * The `limit` (default [DEFAULT_PAGE_LIMIT], 1..[MAX_PAGE_LIMIT]) and `offset` (default 0, >= 0)
- * query parameters every paginated list endpoint shares, validated in that order; a missing or
- * non-numeric value falls back to the default. [invalid] builds the calling endpoint's error for a
- * bad field, so each list family keeps its exact exception type and message (`/status/all` its
- * `QueryParamValidationException` wording, the question / dispatch / continuation lists their
- * `ValidationException` with the field set).
+ * The `limit` (default [DEFAULT_PAGE_LIMIT], 1..[MAX_PAGE_LIMIT]) and `offset` (default 0, >= 0) query parameters of
+ * every paginated list, validated in that order; a missing or non-numeric value falls back to the default.
+ * [invalid] builds the calling endpoint's error, so each list family keeps its own exception type and message.
  */
 internal fun ApplicationCall.pageParams(invalid: (field: String, message: String) -> Throwable): Pair<Int, Int> {
     val limit = request.queryParameters["limit"]?.toIntOrNull() ?: DEFAULT_PAGE_LIMIT

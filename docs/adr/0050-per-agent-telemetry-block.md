@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-24
 deciders: Lukáš Vlk, Tomas Hladik
-amended: 2026-10-09, 2026-11-09
+amended: 2026-10-09, 2026-11-09, 2026-11-21
 ---
 # ADR-0050: Per-agent telemetry is one block, and every start path goes through it
 
@@ -213,3 +213,13 @@ exported, so a warning about a truncated export would send an operator hunting
 a payload that was never sent. That is asserted, not assumed: the muted case is
 a test in `AgentRunStarterTelemetryTest`, `RetryTraceAttributesTest` and
 `LangfuseTraceAttributesSpanProcessorTest`.
+
+## Amendment (2026-11-21): export failures never log the endpoint's credentials
+
+`langfuse.serverUrl` is operator-supplied and may carry `user:pass@` or a `?token=` query. The
+endpoint is therefore logged only in sanitized form (`stripUrlSecrets`), while the exporter
+keeps the real URL. OTLP HTTP client exceptions quote the request URL too, so
+`FailureLoggingSpanExporter` logs the exception type and a message with URLs blanked, never the
+raw throwable, and at WARN: a DEBUG log still writes where a deployment runs at DEBUG
+(`docker-compose.dev.yml`). In the container layout `app.log` sits in the workspace an agent can
+read, so a credential logged there crosses a principal boundary (ADR-0047 rule 7).

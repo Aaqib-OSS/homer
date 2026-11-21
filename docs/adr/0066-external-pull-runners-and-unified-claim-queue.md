@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-09-18
-amended: 2026-11-20
+amended: 2026-11-20, 2026-11-21
 deciders: Lukáš Vlk
 ---
 # ADR-0066: External pull-mode runners and the unified claim queue
@@ -234,3 +234,24 @@ A tag-filtered run's queued alias (`tags:...`) has no entry in the workspace con
 per-alias map of `@SYSENV`-backed names. `Process` therefore unions the queued runner's own
 `sysEnvBackedEnvNames`, every candidate's names, into the run's secret env names, so the
 per-runner `env` values that reach the run through `RunnerSession.env` are masked like any other.
+
+## Amendment (2026-11-21): how `homer-runner` keeps a session's waits and output bounded
+
+- **Result delivery and ops.** The session worker posts each result from a background job, because the
+  post is itself a `next` long-poll racing the poller's: posting inline would park the dispatcher for a
+  full poll window with the next op already queued. The op channel is small and bounded, as Homer hands
+  out one op at a time; a hand-off that finds it full means Homer broke that, and the session is dropped
+  rather than an op discarded. A graceful finish waits for pending posts, which Homer answers at once
+  for a closed session. A persistent 5xx counts as Homer being unreachable, against the same heartbeat
+  deadline as a connection error.
+- **Output chunks.** A 5xx or 429 on a chunk post is retried: Homer may already hold an earlier attempt,
+  and dropping the chunk would desync the stream's `seq` so Homer refuses every later chunk of the
+  command. Any other 4xx (404, 409, 413) is a final refusal. A chunk given up on still counts, so the result's counts
+  show the shortfall.
+- **Draining after exit.** The pumps' tail is posted after the process is gone. A fixed 5 s join covers a
+  post already in flight. A read still blocked after it is parked on a pipe a grandchild holds open,
+  which nothing wakes, so it is abandoned rather than waited on. A pump still posting gets what is left
+  of the op's timeout, so the wait is bounded on every path; a stream abandoned with chunks unsent is
+  named in the result and logged by session, op, stream and count only.
+- **HTTP client.** Calls use `prepareX(...).execute { }`, never the `client.get` shortcuts: their SaveBody
+  step reads the whole response body into memory, defeating the bounded read of an error body.

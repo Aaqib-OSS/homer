@@ -1,6 +1,7 @@
 package homer.app.routes
 
 import homer.app.EnvConstants
+import homer.app.HomerHeaders
 import homer.app.apiJson
 import homer.app.fixtures.PersistenceTestSupport
 import homer.app.fixtures.mountCallbackRoutes
@@ -44,7 +45,7 @@ class CallbackWhoamiRoutesTest {
         authorization: String? = null,
     ): HttpResponse =
         get(path) {
-            dedicated?.let { header(EnvConstants.CALLBACK_TOKEN_HEADER, it) }
+            dedicated?.let { header(HomerHeaders.CALLBACK_TOKEN, it) }
             authorization?.let { header(HttpHeaders.Authorization, it) }
         }
 
@@ -55,8 +56,8 @@ class CallbackWhoamiRoutesTest {
     ) {
         assertEquals(HttpStatusCode.OK, response.status)
         assertEquals(WhoamiResponse(processId = processId, agent = agent), apiJson.decodeFromString(response.bodyAsText()))
-        assertEquals(agent, response.headers[EnvConstants.AGENT_HEADER])
-        assertEquals(processId.toString(), response.headers[EnvConstants.PROCESS_ID_HEADER])
+        assertEquals(agent, response.headers[HomerHeaders.AGENT])
+        assertEquals(processId.toString(), response.headers[HomerHeaders.PROCESS_ID])
     }
 
     private suspend fun assertRefused(
@@ -65,8 +66,8 @@ class CallbackWhoamiRoutesTest {
     ) {
         assertEquals(HttpStatusCode.Unauthorized, response.status)
         assertEquals(reference, response.bodyAsText(), "every refusal must look the same")
-        assertNull(response.headers[EnvConstants.AGENT_HEADER])
-        assertNull(response.headers[EnvConstants.PROCESS_ID_HEADER])
+        assertNull(response.headers[HomerHeaders.AGENT])
+        assertNull(response.headers[HomerHeaders.PROCESS_ID])
     }
 
     @Test
@@ -119,7 +120,7 @@ class CallbackWhoamiRoutesTest {
                 val identified =
                     client.request(path) {
                         method = verb
-                        header(EnvConstants.CALLBACK_TOKEN_HEADER, token)
+                        header(HomerHeaders.CALLBACK_TOKEN, token)
                     }
                 assertIdentified(identified, 7, "agent-a")
                 assertRefused(client.request(path) { method = verb }, reference)

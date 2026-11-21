@@ -38,9 +38,7 @@ private fun Route.processListRoute(deps: ProcessRouteDeps) {
     with(deps) {
         get("/status/all") {
             val principal = call.principalName()
-            // Each invalid param throws a 400; the order of checks inside
-            // parseStatusAllParams decides which error wins. The parsed query is
-            // scoped to the caller here, before it is named.
+            // The parse order decides which invalid param's 400 wins; the query is scoped to the caller here.
             val query =
                 parseStatusAllParams(call).copy(
                     visibleOwner = principal,
@@ -52,13 +50,8 @@ private fun Route.processListRoute(deps: ProcessRouteDeps) {
                     screenTags = { info ->
                         screenTags(info.tags, info.inputParams, agentsService.agents[info.agentName], info.secretInputKeys)
                     },
-                    // [information_disclosure / CWE-200] A ?rootProcessId= filter names a
-                    // root the caller may have only guessed: it is honoured only when that
-                    // root row exists and is visible under the same union rule, else the
-                    // page is empty — never "no filter". [sensitive_data_exposure / CWE-200]
-                    // A row's rootProcessId is emitted only when the caller can see the root
-                    // row; a hidden or missing root fails closed to null ("flow root
-                    // unknown"). §12, ADR-0058.
+                    // A ?rootProcessId= filter is honoured only when that root is visible to the caller, else the page
+                    // is empty; a row's rootProcessId is null unless the caller sees the root (CWE-200, ADR-0058).
                     canSeeRoot = { owner, agentName -> authorizer.canSee(principal, owner, agentName) },
                 )
             // Alias is admin-only (CWE-200, fail closed). Same admin gate as the
@@ -97,9 +90,7 @@ private fun Route.processStatusRoute(deps: ProcessRouteDeps) {
             }
 
             val openQuestions = questionsService.openCountByProcess()[processId] ?: 0
-            // [sensitive_data_exposure / CWE-200] Same root-visibility gate as
-            // /status/all: the root id is dropped when its row is not openable by
-            // this caller, so a descendant grant cannot probe a foreign flow root.
+            // Same root-visibility gate as /status/all: a root the caller cannot open is dropped (CWE-200, ADR-0058).
             val rootVisible =
                 processInfo.rootProcessId
                     ?.let { rootId ->
@@ -132,10 +123,8 @@ private fun Route.processStatusRoute(deps: ProcessRouteDeps) {
 }
 
 /**
- * Whether [principal] may open the run a failure reason names as [processInfo]'s blocker (a lock
- * holder), so its id may be appended to the reason. [sensitive_data_exposure / CWE-200] Fail
- * closed, like the root-id gate: a holder that is gone, or one this caller cannot see, withholds
- * the id. See ADR-0058.
+ * Whether [principal] may open the run that [processInfo]'s failure reason names as its blocker (a lock holder),
+ * so its id may be appended; a missing or invisible holder withholds the id (CWE-200, ADR-0098).
  */
 private suspend fun ProcessRouteDeps.holderRunVisible(
     processInfo: ProcessInfo,
@@ -143,9 +132,8 @@ private suspend fun ProcessRouteDeps.holderRunVisible(
 ): Boolean =
     processInfo.failureReasonRunId
         ?.let { holderId ->
-            // Two columns by primary key, not the holder's whole row: this runs on the polled
-            // /status/{id} path, and the holder is a run that was executing, so its row carries
-            // the full execution blobs.
+            // Two columns by primary key: this runs on the polled /status/{id} path and the holder's row
+            // carries the full execution blobs.
             val holder = processManager.getProcessVisibility(holderId)
             holder != null && authorizer.canSee(principal, holder.first, holder.second)
         } ?: false
@@ -208,7 +196,6 @@ private fun Route.artifactRoute(deps: ProcessRouteDeps) {
                 return@get
             }
 
-            // Reject oversized artifacts before opening a stream (audit P1 #18).
             artifactService.checkArtifactSize(artifactPath).onFailure { failure ->
                 respondArtifactSizeFailure(call, failure)
                 return@get
@@ -311,11 +298,8 @@ private fun ProcessRouteDeps.artifactQuery(call: ApplicationCall): Pair<Int, Str
 }
 
 /**
- * Parses and validates the `GET /api/v1/status/all` query parameters. On the
- * first invalid parameter it throws a [QueryParamValidationException] that
- * StatusPages answers `400` with the matching message. The validation order
- * (order → limit → offset → types) must be preserved — it determines which
- * error wins when several params are invalid.
+ * Parses and validates the `GET /api/v1/status/all` query parameters, throwing [QueryParamValidationException]
+ * (400) on the first invalid one; the check order (order, limit, offset, types) decides which error wins.
  */
 private fun parseStatusAllParams(call: ApplicationCall): ProcessListQuery {
     val orderParam = call.request.queryParameters["order"]?.lowercase() ?: "desc"
@@ -411,10 +395,8 @@ private fun parseRootsParam(call: ApplicationCall): Boolean {
 }
 
 /**
- * Repeated `?tag=` params AND together (ADR-0058). Cap the count locally so a
- * caller cannot force an arbitrarily wide IN (...) / GROUP BY tag query — the
- * bound lives in this handler, not in the repository (§12 rule 4). De-dup here
- * so `tag=a&tag=a` is one predicate, not two.
+ * Repeated `?tag=` params AND together and are de-duplicated (ADR-0060); their count is capped here, in the
+ * handler, so a caller cannot force an arbitrarily wide query (ADR-0047 rule 4).
  */
 private fun parseTagFilters(call: ApplicationCall): List<String> {
     val tags =
@@ -427,10 +409,8 @@ private fun parseTagFilters(call: ApplicationCall): List<String> {
     if (tags.size > TagValidation.MAX_TAG_QUERY_PARAMS) {
         throw QueryParamValidationException("At most ${TagValidation.MAX_TAG_QUERY_PARAMS} tag filters are allowed")
     }
-    // [denial_of_service / CWE-400] Bound each value's length too: the count cap alone
-    // still lets a caller bind 10 arbitrarily long strings that can never match a stored
-    // tag (at most MAX_TAG_QUERY_LENGTH chars). Reject over-long values here, in the
-    // handler, before they reach the DB bind (§12 rule 4).
+    // Bound each value's length too, here before the DB bind: the count cap alone still lets a caller
+    // bind long strings that never match a stored tag (CWE-400, ADR-0047 rule 4).
     if (tags.any { it.length > TagValidation.MAX_TAG_QUERY_LENGTH }) {
         throw QueryParamValidationException("A tag filter may be at most ${TagValidation.MAX_TAG_QUERY_LENGTH} characters")
     }

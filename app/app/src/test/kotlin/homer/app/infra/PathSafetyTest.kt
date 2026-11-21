@@ -155,6 +155,20 @@ class PathSafetyTest {
     }
 
     @Test
+    fun `a path through a dangling link is refused with DanglingLinkException, an escape is not`(
+        @TempDir root: Path,
+    ) {
+        Files.createSymbolicLink(root.resolve("dangling"), root.resolve("nowhere"))
+        val real = root.toRealPath()
+
+        assertFailsWith<DanglingLinkException> {
+            PathSafety.assertContainedUnder(root, real, root.resolve("dangling/child"), failOnDanglingLink = true)
+        }
+        val escape = assertFailsWith<SecurityException> { PathSafety.assertContainedUnder(root, real, root.resolve("../x")) }
+        assertFalse(escape is DanglingLinkException)
+    }
+
+    @Test
     fun `isLinkedOrSpecial refuses symlinks, dangling links, hard links and directories, not a plain file`(
         @TempDir root: Path,
     ) {
@@ -287,5 +301,52 @@ class PathSafetyTest {
     ) {
         PathSafety.assertDanglingLinkContained(root, root.resolve("missing.txt"))
         PathSafety.assertDanglingLinkContained(root, Files.createFile(root.resolve("present.txt")))
+    }
+
+    @Test
+    fun `assertContainedUnder holds the pinned real root, so a root swapped for a symlink is refused`(
+        @TempDir parent: Path,
+        @TempDir outside: Path,
+    ) {
+        val root = Files.createDirectory(parent.resolve("root"))
+        val pinned = root.toRealPath()
+        Files.move(root, parent.resolve("moved"))
+        Files.createSymbolicLink(root, outside)
+        Files.createFile(outside.resolve("host.txt"))
+
+        assertFailsWith<SecurityException> { PathSafety.assertContainedUnder(root, pinned, root.resolve("host.txt")) }
+    }
+
+    @Test
+    fun `failOnDanglingLink refuses a dangling link at the candidate or at an ancestor`(
+        @TempDir root: Path,
+    ) {
+        val link = Files.createSymbolicLink(root.resolve("dangling"), root.resolve("absent"))
+
+        for (candidate in listOf(link, link.resolve("child.txt"))) {
+            assertFailsWith<SecurityException> {
+                PathSafety.assertContainedUnder(root, root.toRealPath(), candidate, failOnDanglingLink = true)
+            }
+        }
+    }
+
+    @Test
+    fun `failOnDanglingLink still allows a not-yet-existing path under a canonicalized root`(
+        @TempDir root: Path,
+    ) {
+        val candidate = root.resolve("new/dir/file.txt")
+
+        val resolved = PathSafety.assertContainedUnder(root, root.toRealPath(), candidate, failOnDanglingLink = true)
+
+        assertEquals(candidate.toAbsolutePath().normalize(), resolved)
+    }
+
+    @Test
+    fun `assertContained resolves past an in-root dangling link, leaving it to assertDanglingLinkContained`(
+        @TempDir root: Path,
+    ) {
+        val link = Files.createSymbolicLink(root.resolve("dangling"), root.resolve("absent"))
+
+        assertEquals(link.resolve("child.txt"), PathSafety.assertContained(root, link.resolve("child.txt")))
     }
 }

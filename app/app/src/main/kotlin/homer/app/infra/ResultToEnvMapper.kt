@@ -28,10 +28,8 @@ class ResultToEnvMapper internal constructor(
 
     fun mapToEnv(resultEnvParams: List<ResultEnvParam>): Map<String, String> =
         buildMap {
-            // Same shed-then-skip contract as the `!<agent>` queryParams transformer: after
-            // one regex param is shed, later Regex params are omitted without being
-            // evaluated, so the worst-case stall is one bounded match, not one per param.
-            // §12 rule 4.
+            // After one regex param is shed, later ones are skipped unevaluated: the stall is one bounded match,
+            // not one per param (ADR-0047 rule 4).
             var regexShed = false
             resultEnvParams.forEach { param ->
                 if (regexShed && param.transformer is ResultTransformer.Regex) return@forEach
@@ -83,11 +81,8 @@ class ResultToEnvMapper internal constructor(
         transformer: ResultTransformer.Regex,
         onShed: () -> Unit,
     ): String? {
-        // Bounded match: the pattern is author-supplied and the content is
-        // attacker-influenceable, so a catastrophic backtracker is a ReDoS
-        // vector. On timeout (or an uncompilable pattern) the value is omitted
-        // rather than pinning a CPU or failing the run. Shared with the
-        // `!<agent>` queryParams transformer so the two cannot diverge. §12 rule 4.
+        // An author-supplied pattern over attacker-influenceable content is a ReDoS vector, so the match is bounded;
+        // a timeout or uncompilable pattern omits the value (ADR-0047 rule 4).
         val match = BoundedRegex.findOrOmit(transformer.regex, srcContent(param), param.envName, logger, onShed)
         return match?.let { matchResult ->
             if (transformer.group != null) {
@@ -99,18 +94,13 @@ class ResultToEnvMapper internal constructor(
     }
 
     /**
-     * Builds a JsonPath document from a command's stdout/stderr. Plain
-     * single-document JSON is handed to JsonPath as-is; Claude's
-     * `--output-format stream-json` stdout is NDJSON (one object per line), so
-     * those lines are re-assembled into a JSON array for `jsonPath` transformers
-     * to evaluate against the whole event stream. Returns null when neither
-     * interpretation parses, so extraction degrades gracefully.
+     * Builds a JsonPath document from a command's stdout/stderr: single-document JSON as-is, or NDJSON lines
+     * (Claude's `stream-json`) re-assembled into one array. Returns null when neither parses.
      */
     private fun parseJsonPathDocument(content: String): DocumentContext? {
         if (content.isBlank()) return null
-        // A single JSON value (possibly pretty-printed across lines) parses
-        // strictly; NDJSON does not — strict parsing rejects the trailing data
-        // after the first line's value, which is how we distinguish the two.
+        // A single JSON value parses strictly; NDJSON fails on the data after its first line's value, which
+        // tells the two apart.
         if (runCatching { Json.parseToJsonElement(content) }.isSuccess) {
             return runCatching { JsonPath.parse(content) }.getOrNull()
         }

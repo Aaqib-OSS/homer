@@ -506,6 +506,113 @@ class SessionWorkerTest {
         }
 
     @Test
+    fun `a transfer through a symlink leading outside the session root is refused, one staying inside is not`() =
+        live {
+            val outside = tmp.resolve("outside").createDirectories()
+            outside.resolve("host.txt").writeText("host secret")
+            val src = tmp.resolve("src").createDirectories()
+            src.resolve("in.txt").writeText("payload")
+            api.tarToServe = ByteArrayOutputStream().also { TarStreams.pack(it, src) }.toByteArray()
+
+            val w = worker()
+            val run = async { w.run() }
+            api.ops.send(RunnerOp.CreateWorkspace("cw"))
+            api.result()
+            Files.createSymbolicLink(w.sessionRoot.resolve("workdir/out"), outside)
+            Files.createSymbolicLink(w.sessionRoot.resolve("workdir/in"), w.sessionRoot.resolve("artifacts"))
+
+            api.ops.send(RunnerOp.Upload("u1", "workdir/out"))
+            val escaped = api.result()
+            assertFalse(escaped.ok, "an upload through an escaping symlink is refused")
+            assertEquals("path 'workdir/out' refused: escapes the session root", escaped.error)
+            assertFalse(outside.resolve("in.txt").exists(), "nothing is written outside the session root")
+
+            api.ops.send(RunnerOp.Download("d1", "workdir/out/host.txt", DownloadMode.OVERLAY))
+            assertFalse(api.result().ok, "a download through an escaping symlink is refused")
+            assertTrue(api.postedTars.isEmpty(), "no file outside the session root is posted")
+
+            api.ops.send(RunnerOp.Upload("u2", "workdir/in"))
+            assertTrue(api.result().ok)
+            assertEquals("payload", w.sessionRoot.resolve("artifacts/in.txt").readText())
+
+            api.ops.send(RunnerOp.Close("cl", "done"))
+            run.await()
+        }
+
+    @Test
+    fun `a transfer after the session root itself was swapped for a symlink is refused`() =
+        live {
+            val outside = tmp.resolve("outside").createDirectories()
+            outside.resolve("workdir").createDirectories()
+            outside.resolve("workdir/host.txt").writeText("host secret")
+            val src = tmp.resolve("src").createDirectories()
+            src.resolve("in.txt").writeText("payload")
+            api.tarToServe = ByteArrayOutputStream().also { TarStreams.pack(it, src) }.toByteArray()
+
+            val w = worker()
+            val run = async { w.run() }
+            api.ops.send(RunnerOp.CreateWorkspace("cw"))
+            api.result()
+            Files.move(w.sessionRoot, tmp.resolve("moved-root"))
+            Files.createSymbolicLink(w.sessionRoot, outside)
+
+            api.ops.send(RunnerOp.Upload("u1", "workdir"))
+            assertFalse(api.result().ok, "an upload through a swapped root is refused")
+            assertFalse(outside.resolve("workdir/in.txt").exists(), "nothing is written outside the session root")
+
+            api.ops.send(RunnerOp.Download("d1", "workdir/host.txt", DownloadMode.OVERLAY))
+            assertFalse(api.result().ok, "a download through a swapped root is refused")
+            assertTrue(api.postedTars.isEmpty(), "no file outside the session root is posted")
+
+            Files.delete(w.sessionRoot)
+            api.ops.send(RunnerOp.Close("cl", "done"))
+            run.await()
+        }
+
+    @Test
+    fun `a transfer through a dangling symlink fails closed instead of resolving past it`() =
+        live {
+            val outside = tmp.resolve("outside").createDirectories()
+            val w = worker()
+            val run = async { w.run() }
+            api.ops.send(RunnerOp.CreateWorkspace("cw"))
+            api.result()
+            Files.createSymbolicLink(w.sessionRoot.resolve("workdir/dangling"), outside.resolve("absent"))
+
+            api.ops.send(RunnerOp.Download("d1", "workdir/dangling", DownloadMode.OVERLAY))
+            val dangling = api.result()
+            assertFalse(dangling.ok, "a download through a dangling link is refused, not reported missing")
+            assertEquals("path 'workdir/dangling' refused: passes through a dangling symlink", dangling.error)
+
+            api.ops.send(RunnerOp.Download("d2", "workdir/dangling/child.txt", DownloadMode.OVERLAY))
+            assertFalse(api.result().ok, "a path below a dangling link is refused")
+
+            api.ops.send(RunnerOp.Close("cl", "done"))
+            run.await()
+        }
+
+    @Test
+    fun `a transfer before the workspace exists is refused because the session root has no resolved path`() =
+        live {
+            val w = worker()
+            val run = async { w.run() }
+
+            api.ops.send(RunnerOp.Upload("u1", "workdir"))
+            val upload = api.result()
+            assertFalse(upload.ok, "an upload before CreateWorkspace is refused")
+            assertEquals("path 'workdir' refused: the session root has no resolved path", upload.error)
+
+            api.ops.send(RunnerOp.Download("d1", "workdir", DownloadMode.OVERLAY))
+            val download = api.result()
+            assertFalse(download.ok, "a download before CreateWorkspace is refused, not reported missing")
+            assertEquals("path 'workdir' refused: the session root has no resolved path", download.error)
+            assertTrue(api.postedTars.isEmpty())
+
+            api.ops.send(RunnerOp.Close("cl", "done"))
+            run.await()
+        }
+
+    @Test
     fun `losing Homer for the heartbeat timeout kills the running command and ends the worker`() =
         live {
             val w = worker(heartbeat = 500.milliseconds)

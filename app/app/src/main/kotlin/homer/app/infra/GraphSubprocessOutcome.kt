@@ -48,7 +48,10 @@ internal sealed interface GraphSubprocessOutcome {
     ) : GraphSubprocessOutcome
 }
 
-/** Runs `<python> -m homer_langgraph [args]` with [graphSubprocessEnv] of [serverEnv] and the agent's [env], both streams piped and drained, holding at most [MAX_GRAPH_STDOUT_BYTES] + [MAX_GRAPH_STDERR_BYTES] (+1 each) in memory and writing nothing to disk. Stdout past the cap kills the process group at once; stderr past its cap is drained and discarded. CWE-770. See ADR-0073. */
+/**
+ * Runs `<python> -m homer_langgraph [args]` with [graphSubprocessEnv], holding at most the two stream caps
+ * in memory. Stdout past its cap kills the process group; stderr past its cap is discarded. CWE-770, ADR-0073.
+ */
 @Suppress("SuspendFunSwallowedCancellation") // reaps the child (NonCancellable) and rethrows
 internal suspend fun runBoundedGraphSubprocess(
     python: String,
@@ -67,13 +70,10 @@ internal suspend fun runBoundedGraphSubprocess(
                 return@withContext GraphSubprocessOutcome.LaunchFailed(e.message ?: "failed to launch python")
             }
 
-        // Readers live in their own scope: one blocked on a pipe that a detached
-        // grandchild still holds open can outlive this call, and structured
-        // concurrency would then await it forever.
+        // Own scope: a reader blocked on a pipe a detached grandchild holds open must not be awaited forever.
         val readers = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-        // Record the group id while the leader is alive: the overflow path may reap the
-        // group after the leader exits, when /proc/<pid>/stat is gone. Capture non-cancellably (CWE-772) or a cancelled caller leaks the child and its group.
+        // Capture the group id while the leader lives, non-cancellably, or a cancelled caller leaks it (CWE-772).
         var groupId: Long? = null
         try {
             groupId = withContext(NonCancellable) { captureOwnProcessGroupId(process) }
@@ -82,8 +82,7 @@ internal suspend fun runBoundedGraphSubprocess(
             val stderrJob = readers.readGraphStderr(process)
             awaitGraphOutcome(process, groupId, stdoutJob, stderrJob, timeout)
         } catch (e: Throwable) {
-            // CWE-772: any unwind after start() must not leave the interpreter and its
-            // group behind; the captured pgid reaches a reparented grandchild.
+            // Any unwind after start() must reap the child and its group (CWE-772).
             runCatching { reapGraphProcess(process, groupId) }
             throw e
         } finally {
@@ -92,7 +91,7 @@ internal suspend fun runBoundedGraphSubprocess(
         }
     }
 
-/** Server env names a `homer_langgraph` subprocess keeps, matched exactly; every other server variable is dropped. See the ADR-0027 amendment of 2026-11-20. */
+/** Server env names a `homer_langgraph` subprocess keeps, matched exactly; the rest are dropped (ADR-0027). */
 internal val GRAPH_SERVER_ENV_ALLOWLIST: Set<String> =
     setOf(
         "PATH",
@@ -116,7 +115,7 @@ internal val GRAPH_SERVER_ENV_ALLOWLIST: Set<String> =
         "PYTHONHOME",
     )
 
-/** The [GRAPH_SERVER_ENV_ALLOWLIST] entries of [serverEnv], overlaid by the agent's [agentEnv]; `PYTHONWARNINGS` defaults to `ignore`. */
+/** The allowlisted entries of [serverEnv] overlaid by the agent's [agentEnv]; `PYTHONWARNINGS` defaults to `ignore`. */
 internal fun graphSubprocessEnv(
     serverEnv: Map<String, String>,
     agentEnv: Map<String, String>,
@@ -198,16 +197,15 @@ private suspend fun awaitGraphOutcome(
     return GraphSubprocessOutcome.Exited(process.exitValue(), stdout, stderrJob.getCompletedOrNull() ?: "")
 }
 
-/** CWE-772: honour readWhole/readHead's "caller owns input" contract on every exit path, not the JDK's process-completion handler; the outcome is produced before this runs. */
+/** Closes the process streams on every exit path, as readWhole/readHead leave them to the caller (CWE-772). */
 private fun closeGraphStreams(process: java.lang.Process) {
     runCatching { process.inputStream.close() }
     runCatching { process.errorStream.close() }
-    // The child's stdin write end is never written to; close it so the pipe is released
-    // here and a child reading stdin sees EOF instead of blocking forever.
+    // A child reading stdin must see EOF, not block forever.
     runCatching { process.outputStream.close() }
 }
 
-/** Reads [process]'s own process-group id, retrying briefly so the child has run `setsid(2)`; called while the leader is alive, since after it exits `ownProcessGroupId` finds no `/proc` entry. */
+/** Reads [process]'s own process-group id, retrying until the child has run `setsid(2)`; needs the leader alive. */
 private suspend fun captureOwnProcessGroupId(process: java.lang.Process): Long? {
     if (ProcessGroupSupport.setsidPath == null) return null
     repeat(GRAPH_PGID_CAPTURE_ATTEMPTS) {
@@ -218,7 +216,10 @@ private suspend fun captureOwnProcessGroupId(process: java.lang.Process): Long? 
     return null
 }
 
-/** Kills [process] and, where `setsid` made it a group leader, its whole group. The pgid is re-read at kill time, not launch (the child may not have run `setsid(2)` yet); [capturedGroupId] covers a leader that has since exited. See ADR-0041. */
+/**
+ * Kills [process] and, where `setsid` made it a group leader, its whole group; [capturedGroupId] covers
+ * a leader that has since exited. See ADR-0041.
+ */
 private suspend fun reapGraphProcess(
     process: java.lang.Process,
     capturedGroupId: Long?,
@@ -235,7 +236,7 @@ private suspend fun reapGraphProcess(
     }
 }
 
-/** Waits at most [GRAPH_READER_JOIN_MS] for [jobs]; past that, close the streams — `withTimeout` alone cannot bound a blocking read (app/CLAUDE.md Gotchas). */
+/** Waits at most [GRAPH_READER_JOIN_MS] for [jobs], then closes the streams: a blocking read ignores `withTimeout`. */
 private suspend fun joinGraphReaders(
     jobs: List<Job>,
     process: java.lang.Process,

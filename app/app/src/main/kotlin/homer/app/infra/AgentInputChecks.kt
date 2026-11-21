@@ -10,11 +10,9 @@ import homer.app.models.templatePlaceholderPattern
 import org.slf4j.Logger
 
 /**
- * The load-time checks `AgentsService` runs on an agent's inputs and on what its commands
- * bind them to: reserved and malformed envNames, tags (ADR-0060), duplicate and invalid
- * input declarations, result-capture envNames and input-chosen executables — plus the
- * warn-only deprecation, run-identity-steering and uncontained-tool notes. Each `check*`
- * reports its own failure into `errors` and returns `false` to skip the agent.
+ * Load-time checks on an agent's inputs and their command bindings (envNames, tags, duplicates, result
+ * captures, input-chosen executables), plus warn-only notes. A failing `check*` reports into `errors`
+ * and returns `false` to skip the agent.
  */
 internal class AgentInputChecks(
     private val logger: Logger,
@@ -83,16 +81,12 @@ internal class AgentInputChecks(
         errors: MutableList<String>,
     ): Boolean = checkFromInputTags(agent, errors) && checkRuntimeTags(agent, errors)
 
-    /** Validates tags.fromInputs and its deprecated telemetry.traceTags alias; `false` = skip the agent. */
+    /** Validates tags.fromInputs and its telemetry.traceTags alias; `false` = skip the agent. */
     private fun checkFromInputTags(
         agent: Agent,
         errors: MutableList<String>,
     ): Boolean {
-        // tags.fromInputs (and the deprecated telemetry.traceTags alias it unions with)
-        // name inputs by paramName. Validating here rather than per-input is what the
-        // indirection costs: a renamed input must fail loudly at load, not silently stop
-        // tagging. Three ways a fromInputs entry can be wrong:
-        @Suppress("DEPRECATION") // reads the deprecated traceTags alias on purpose, to warn about it
+        @Suppress("DEPRECATION") // reads the traceTags alias on purpose, to warn about it
         if (agent.telemetry.traceTags.isNotEmpty()) {
             logger.warn(
                 "Agent '{}': telemetry.traceTags is deprecated; use the top-level tags.fromInputs block instead.",
@@ -128,10 +122,7 @@ internal class AgentInputChecks(
                     "names the secret input '$name'; a run tag is exported in the clear"
                 }
 
-                // [denial_of_service / CWE-400] The paramName becomes the stored tag
-                // key, so it must fit the key charset and bound: an off-charset or
-                // over-long name would mint tags no `?tag=` query can ever match, on
-                // every run. paramName is otherwise unconstrained (headers).
+                // The paramName becomes the stored tag key, so it must fit the key charset (CWE-400).
                 !TagValidation.KEY_PATTERN.matches(name) -> {
                     "names input '$name', whose paramName is not ^[A-Za-z0-9._-]{1,64}\$ and cannot be a tag key"
                 }
@@ -148,10 +139,6 @@ internal class AgentInputChecks(
         agent: Agent,
         errors: MutableList<String>,
     ): Boolean {
-        // A tags.runtime key is filled at run time via the callback route, so it is
-        // validated for its charset only. It must also be disjoint from the fromInputs
-        // keys: a key in both would let a run add a second, contradictory value for its
-        // own subject (re-pointing what it ran over). See ADR-0060.
         val badRuntimeKey = agent.tags.runtime.firstOrNull { !TagValidation.KEY_PATTERN.matches(it) }
         if (badRuntimeKey != null) {
             logger.error(
@@ -162,6 +149,7 @@ internal class AgentInputChecks(
             errors.add("Agent '${agent.name}': tags.runtime key '$badRuntimeKey' is not ^[A-Za-z0-9._-]{1,64}\$")
             return false
         }
+        // A runtime key may not also be a fromInputs key: it could shadow an input-derived tag (ADR-0060).
         val overlappingKey = agent.tags.runtime.firstOrNull { it in agent.effectiveFromInputTags }
         if (overlappingKey != null) {
             logger.error(
@@ -241,8 +229,8 @@ internal class AgentInputChecks(
         // the phase it runs in does not weaken (ADR-0047, ADR-0108).
         val steps = agent.commands.map { "command" to it } + agent.onStop.map { "onStop step" to it }
 
-        // A captured *value* is attacker-influenceable and merges into the env that later commands
-        // and onStop steps consume, so both get the same reserved/malformed env-name guard (ADR-0047).
+        // Captured output is attacker-influenceable and merged into later commands' and onStop steps'
+        // env, so it gets the same reserved-name guard as inputs (ADR-0047 rule 2).
         val invalidResultEnvName =
             steps
                 .flatMap { (kind, cmd) -> cmd.resultEnvParam.map { Triple(kind, cmd, it) } }
@@ -265,9 +253,7 @@ internal class AgentInputChecks(
             return false
         }
 
-        // An LLM command's `cmd` is argv[0]: an input reference there lets the
-        // caller choose the host executable Homer runs. Unlike the steering
-        // warnings below, this is never legitimate. See AGENT.md security notes.
+        // An input in an LLM command's `cmd` (argv[0]) would let a caller choose the host executable.
         val inputEnvNames =
             agent.effectiveInputs
                 .orEmpty()
@@ -296,10 +282,8 @@ internal class AgentInputChecks(
         return true
     }
 
-    /** WARNs on deprecated param types and the deprecated `queryParams` alias. */
+    /** WARNs once per agent on the STRING/NUMBER/ANY param types and the `queryParams` alias. */
     fun warnOnDeprecatedInputs(agent: Agent) {
-        // One WARN per agent, not per param: `type` defaults to STRING, so
-        // per-param warnings would spam every agent that never set a type.
         if (agent.effectiveInputs.orEmpty().any { it.type.isLegacy }) {
             logger.warn(
                 "Agent '{}' uses deprecated param types (STRING/NUMBER/ANY); " +
@@ -307,7 +291,7 @@ internal class AgentInputChecks(
                 agent.name,
             )
         }
-        @Suppress("DEPRECATION") // reads the deprecated queryParams alias on purpose, to warn about it
+        @Suppress("DEPRECATION") // reads the queryParams alias on purpose, to warn about it
         if (agent.queryParams != null) {
             logger.warn(
                 "Agent '{}' uses the deprecated 'queryParams' alias; rename it to 'inputs'.",
@@ -317,11 +301,9 @@ internal class AgentInputChecks(
     }
 
     /**
-     * WARN when caller-supplied inputs can steer run identity: an input-bound
-     * envName referenced from the workspace path, the lock key, the cooldown key,
-     * or a RunAgent target template lets a caller pick another run's directory /
-     * lock / target / pacing window. Legitimate (e.g. per-tenant lock keys) —
-     * hence a warning, not an error.
+     * WARNs when an input-bound envName feeds the workspace path, lock key, cooldown key or a RunAgent
+     * target, letting a caller pick another run's directory, lock, pacing window or target agent.
+     * Legitimate, so only a warning.
      */
     fun warnOnInputSteering(agent: Agent) {
         val inputEnvNames =
@@ -336,15 +318,11 @@ internal class AgentInputChecks(
             buildList {
                 refs(agent.workspace.path).forEach { add("workspace.path uses input '{{$it}}'") }
                 refs(agent.lockStrategy.key).forEach { add("lockStrategy.key uses input '{{$it}}'") }
-                // The rendered cooldown key decides which pacing window a run lands in, so a
-                // caller-chosen value chooses the subject — the same identity-steering class
-                // as the lock key.
                 agent.cooldown?.key?.let { key -> refs(key).forEach { add("cooldown.key uses input '{{$it}}'") } }
                 agent.commands.filterIsInstance<Command.RunAgent>().forEach { cmd ->
                     refs(cmd.agentName).forEach { add("agent command '${cmd.label}' target uses input '{{$it}}'") }
                 }
-                // Claude path/mode options grant filesystem, config, or permission
-                // power; a caller-steered value here is an execution-control surface.
+                // Claude path/mode options grant filesystem or permission power.
                 agent.commands.filterIsInstance<Command.Claude>().forEach { cmd ->
                     val o = cmd.options
 
@@ -383,10 +361,8 @@ internal class AgentInputChecks(
     }
 
     /**
-     * WARN per Claude step that skips permissions while `allowedTools` is its only
-     * tool setting: the step reads as scoped, but `allowedTools` pre-approves without
-     * removing anything, so it can still write, run commands and spawn subagents.
-     * Warn-only — existing agents keep loading.
+     * WARNs per Claude step that skips permissions with `allowedTools` as its only tool setting:
+     * `allowedTools` pre-approves without removing tools, so the step is not contained.
      */
     fun warnOnUncontainedClaudeTools(agent: Agent) {
         // Phase-tagged like checkCommandBindings: a stop step reported as a "command" sends

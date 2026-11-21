@@ -16,12 +16,9 @@ import homer.agentdebug.commands.ShowCommandsCommand
 import homer.agentdebug.commands.ValidateCommand
 
 /**
- * Root Clikt command. Parses --config/--env and delegates to subcommands.
- * Usage:
- *   agentdebug --config server/config.yaml [--env vars.env] list
- *   agentdebug --config server/config.yaml [--env vars.env] validate <agentname>
- *   agentdebug --config server/config.yaml [--env vars.env] show-commands <agentname>
- *   agentdebug --config server/config.yaml [--env vars.env] run <agentname> [--input input.env] [--dry-run] [--cmd N] [--keep-workspace]
+ * Root Clikt command: parses --config/--env and delegates to subcommands.
+ * Usage: agentdebug --config server/config.yaml [--env vars.env] <list|validate|show-commands|run> [args];
+ * `--help` on a subcommand lists its options.
  */
 class AgentdebugCli : CliktCommand(name = "agentdebug") {
     override fun help(context: Context) =

@@ -1,21 +1,8 @@
 #!/bin/sh
-# homer-result — fetch a large continuation result by reference.
-#
-# Materialized by Homer into {projectRoot}/.homer/bin (on PATH) for every
-# process. Reads HMR_API_URL, HMR_CALLBACK_TOKEN and HMR_RESULT_TOKEN from the
-# environment at call time. See AGENT.md "Dispatching another agent" and ADR-0025.
-#
-# Usage:
-#   HMR_RESULT_TOKEN=$TOKEN homer-result [--out FILE]
-#       Fetches the (transformed) result behind the resultRef capability token
-#       in HMR_RESULT_TOKEN, minted when a fan-out sub's result exceeded the
-#       inline cap. Without --out the body is written to stdout; with --out it
-#       is written to FILE.
-#   homer-result --token TOKEN [--out FILE]
-#       Deprecated (the token shows on the command line); removed in 1.45.0.
-#
-# Exit codes: 0 ok, 2 usage or transport error (e.g. invalid/expired token,
-# artifact gone, oversized, or Homer unreachable).
+# homer-result — fetch a large continuation result by reference (ADR-0025).
+# Exits 0 on success, 2 on a usage or transport error (invalid or expired token, artifact gone, oversized).
+
+# Reads HMR_API_URL, HMR_CALLBACK_TOKEN and HMR_RESULT_TOKEN from the environment; usage: AGENT.md.
 
 set -u
 

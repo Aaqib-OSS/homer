@@ -3,6 +3,7 @@ status: accepted
 date: 2026-10-26
 deciders: Lukáš Vlk
 consulted: ADR-0047, ADR-0066
+amended: 2026-11-21
 ---
 
 # ADR-0096: Unhealthy runners stop claiming, and idle consumers take turns
@@ -102,3 +103,13 @@ Chosen option: **a runner self-check, plus a least-recently-claimed handoff**.
 
 - Issue #73. Threat model: [ADR-0047](0047-security-by-design-and-threat-model.md).
   Claim queue and pull runners: [ADR-0066](0066-external-pull-runners-and-unified-claim-queue.md).
+
+## Amendment (2026-11-21): a drain can cancel a claim already in flight
+
+The drain cancels every runner loop that is idle, that is, whose busy flag is unset. A loop is
+exposed from the moment Homer assigns it a claim until it sets the busy flag: a cancel while the claim
+response is in transit, or in the instructions before the flag, surfaces as a cancellation of the
+claim call and the claim is never run. Homer then fails that run at the heartbeat TTL instead of the
+runner finishing it. Closing the window would need the claim and the busy flag to change together
+with the claim response, which the claim call does not give today. The cost is one run failed
+visibly, and only when a drain starts inside the window.

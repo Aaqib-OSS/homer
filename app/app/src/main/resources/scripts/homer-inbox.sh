@@ -1,23 +1,6 @@
 #!/bin/sh
-# homer-inbox — take the operator messages queued for the running command's own run.
-#
-# Materialized by Homer into {projectRoot}/.homer/bin (on PATH) for every
-# process. Reads HMR_API_URL and HMR_CALLBACK_TOKEN from the environment at
-# call time. The run is identified by the callback token alone. Each message is
-# returned once: taking it marks it delivered. See AGENT.md "Messages from the
-# operator" and ADR-0097.
-#
-# Usage:
-#   homer-inbox
-#       Prints {"messages":[{"id","text","createdAt"},...]}, oldest first;
-#       the list is empty when nothing was queued. Returns immediately.
-#   homer-inbox --hook post-tool-use|stop
-#       For a Claude Code hook: prints the hook JSON for that event when
-#       messages were queued, nothing otherwise. Does not read stdin.
-#
-# Exit codes: 0 ok. On any failure (usage, transport, or the run is no longer
-# accepting messages): 2, or 1 with --hook — a non-blocking hook error, since
-# exit 2 would make Claude Code treat the failure as a blocking decision.
+# homer-inbox — take the operator messages queued for the running command's own run (ADR-0097).
+# Reads HMR_API_URL and HMR_CALLBACK_TOKEN from the environment; usage and exit codes: AGENT.md.
 
 set -u
 
@@ -49,6 +32,7 @@ EOF
 
 QUERY=""
 if [ "${1:-}" = "--hook" ]; then
+    # Exit 1, not 2: Claude Code reads a hook's exit 2 as a blocking decision.
     FAIL_EXIT=1
     [ $# -eq 2 ] || die "$USAGE"
     case "$2" in

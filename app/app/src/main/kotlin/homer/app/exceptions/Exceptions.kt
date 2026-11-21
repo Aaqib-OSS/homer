@@ -36,9 +36,8 @@ class ValidationException(
         },
     )
 
-// Blocks the drive-by CSRF surface for `session:` auth: browsers auto-attach the cookie cross-site
-// but cannot set a custom header cross-origin. Maps to 403; token/HMAC callers are exempt (their
-// credential is not browser-ambient). See ADR-0016.
+// A `session:` auth request lacks the CSRF header; token/HMAC callers are exempt. Maps to 403.
+// See ADR-0016.
 class CsrfValidationException(
     message: String,
 ) : HomerException(message)
@@ -140,9 +139,8 @@ class MalformedLlmOutputException(
     cause: Throwable? = null,
 ) : HomerException("LLM output validation failed: $reason", cause)
 
-// [server.requireClaudeCodeVersion] pinned and the reported claude_code_version differs or is
-// absent. Distinct from [MalformedLlmOutputException]: retrying cannot change the CLI version, so
-// the executor rethrows immediately without consuming retry attempts.
+// The pinned [server.requireClaudeCodeVersion] differs from the reported one, or none was reported;
+// the executor rethrows without consuming retry attempts.
 class ClaudeCliVersionMismatchException(
     val expected: String,
     val actual: String?,
@@ -162,8 +160,7 @@ class CooldownActiveException(
     )
 
 // A `cooldown.key` that does not resolve, or renders empty, too long or outside its charset.
-// Fail closed: never fall back to a shared or per-agent key, which would widen the bound to
-// every subject. §12 rule 7, ADR-0106.
+// Fails closed: no shared-key or no-key fallback. See ADR-0106.
 class CooldownKeyInvalidException(
     val agentName: String,
     reason: String,
@@ -196,7 +193,7 @@ class PayloadSchemaValidationException(
 ) : HomerException(message)
 
 // A question id that does not exist; a question of another process maps here too, on purpose, so
-// ids cannot be probed. Maps to 404. §12 rule 3.
+// ids cannot be probed. Maps to 404. See ADR-0047 rule 3.
 class QuestionNotFoundException(
     val questionId: String,
 ) : HomerException("Question '$questionId' not found")
@@ -295,9 +292,8 @@ class TooManyPendingContinuationsException(
     val maxPending: Int,
 ) : HomerException("Already at the maximum of $maxPending pending continuations")
 
-// No runner claimed the run within its claim TTL. [publicReason] is [reason] without the runner
-// alias: the alias is admin-only (ADR-0077) and the reason rides the run's stored failure reason,
-// so both are required and a call site cannot default into storing the alias. See ADR-0066.
+// No runner claimed the run within its claim TTL. [publicReason] is [reason] without the
+// admin-only runner alias (ADR-0077); both are required. See ADR-0066.
 class RunnerClaimTimeoutException(
     val timeout: Duration,
     val filter: RunnerFilter,
@@ -305,27 +301,26 @@ class RunnerClaimTimeoutException(
     val publicReason: String,
 ) : HomerException("No runner claimed the run within ${timeout.inWholeSeconds} s (${filter.describe()}): $reason")
 
-/** Raised when the claim queue is at `server.maxPendingRunnerClaims`; the run fails without waiting. §12 rule 4. */
+/** The claim queue is at `server.maxPendingRunnerClaims`; the run fails without waiting. See ADR-0047 rule 4. */
 class ClaimQueueFullException(
     val maxPending: Int,
 ) : HomerException("Runner claim queue is full ($maxPending pending claims)")
 
 // The maintenance start queue is at a bound; the start is shed rather than accumulated.
-// [perPrincipal] says which bound tripped (the total cap or this caller's share). §12 rules 4–5, ADR-0092.
+// [perPrincipal] says which bound tripped (the total cap or this caller's share). See ADR-0047 rules 4-5, ADR-0092.
 class MaintenanceQueueFullException(
     val bound: Int,
     val perPrincipal: Boolean = false,
 ) : HomerException("Maintenance mode is on and the start queue is full (bound: $bound queued starts)")
 
 // A queued start waited past `server.maintenance.queueWaitSec`, or the queue was released on
-// shutdown. Maps to 503. §12 rule 5, ADR-0092.
+// shutdown. Maps to 503. See ADR-0047 rule 5, ADR-0092.
 class MaintenanceWaitTimeoutException(
     timeout: Duration,
 ) : HomerException("Maintenance mode is on and the start did not leave the queue within ${timeout.inWholeSeconds} s")
 
-// A start that is not part of work the drain already admitted; a new top-level start is shed
-// rather than queued, since a parked start could only end UNKNOWN. Maps to 503. §12 rule 5,
-// ADR-0047 rule 5, ADR-0102.
+// A start outside the work the drain already admitted is shed, not queued. Maps to 503.
+// See ADR-0047 rule 5, ADR-0102.
 class ServerDrainingException : HomerException("Server is shutting down and is not accepting new runs")
 
 /** A pull-mode runner instance announced something the domain does not accept (tag shape, `allowedTags`, `concurrency` cap). Maps to 422. */
@@ -370,7 +365,7 @@ class RunnerTransferTooLargeException(
 ) : HomerException("Transfer exceeds the domain limit of $maxBytes bytes")
 
 // A transfer handler outran the domain's `transferTimeoutSec`. The handler owns this bound; the
-// one in `ExternalRunnerSession.await` is a different component's (§12 rule 4). Maps to 408.
+// one in `ExternalRunnerSession.await` is a different component's (ADR-0047 rule 4). Maps to 408.
 class RunnerTransferTimeoutException(
     domain: String,
     timeoutSec: Long,

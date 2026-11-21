@@ -8,10 +8,8 @@ import kotlin.io.path.isRegularFile
 import kotlin.streams.toList
 
 /**
- * Prunes a run's workspace down to its declared retained artifacts: deletes
- * everything under the project root except artifact files matching the run's
- * `workspace.retain.artifacts` globs, which stay in place so the artifact
- * routes keep resolving them. See ADR-0053.
+ * Prunes a run's workspace to the files matching its `workspace.retain.artifacts` globs, which stay
+ * in place for the artifact routes. See ADR-0053.
  */
 internal object ArtifactRetention {
     const val MAX_PRUNE_WALK_ENTRIES = 10_000
@@ -27,9 +25,9 @@ internal object ArtifactRetention {
         globs: List<String>,
         maxBytes: Long,
         maxWalkEntries: Int = MAX_PRUNE_WALK_ENTRIES,
+        beforeDeleteWalk: () -> Unit = {},
     ): PruneResult {
-        // Normalize first: the dir comes from a DB round-trip, and a '.'-suffixed
-        // form would defeat the fileName sibling comparison in deleteSiblings.
+        // Normalize first: a redundant segment would defeat the fileName comparison in deleteSiblings.
         val dir = artifactsDir.normalize()
         val projectRoot = dir.parent ?: return PruneResult(0, false)
         PathSafety.assertContained(workspaceRoot, projectRoot)
@@ -37,20 +35,17 @@ internal object ArtifactRetention {
             PathSafety.deleteContainedRecursively(workspaceRoot, projectRoot)
             return PruneResult(0, false)
         }
-        // Bound the walk over agent-written structure (§12.4):
-        // count raw entries (dirs included) so deep nesting can't dodge the cap.
+        // The walk over agent-written structure is bounded and counts directories too (ADR-0047 rule 4).
         val entries =
             Files.walk(dir).use { stream ->
                 stream.limit(maxWalkEntries + 1L).toList()
             }
         if (entries.size > maxWalkEntries) {
-            // Fail closed: a tree this large is not a curated retained set.
-            // Retain nothing and flag the truncation — never silent.
+            // Fail closed: retain nothing and flag the truncation (ADR-0053).
             PathSafety.deleteContainedRecursively(workspaceRoot, projectRoot)
             return PruneResult(0, true)
         }
-        // NOFOLLOW + regular-files-only: everything here is agent-written, and a
-        // symlink must not smuggle a host file into a long-lived, downloadable set.
+        // NOFOLLOW and regular files only: a symlink must not pull a host file into the set (ADR-0053).
         val candidates = entries.filter { it.isRegularFile(LinkOption.NOFOLLOW_LINKS) }
         val (kept, truncated) = fitWithin(matchedFiles(dir, candidates, globs), maxBytes)
         if (kept.isEmpty()) {
@@ -58,7 +53,11 @@ internal object ArtifactRetention {
             return PruneResult(0, truncated)
         }
         deleteSiblings(workspaceRoot, projectRoot, dir)
-        deleteUnkept(dir, kept)
+        beforeDeleteWalk()
+        if (!deleteUnkept(dir, kept, maxWalkEntries)) {
+            PathSafety.deleteContainedRecursively(workspaceRoot, projectRoot)
+            return PruneResult(0, true)
+        }
         return PruneResult(kept.size, truncated)
     }
 
@@ -84,8 +83,6 @@ internal object ArtifactRetention {
         matched: Set<Path>,
         maxBytes: Long,
     ): Pair<Set<Path>, Boolean> {
-        // Declared-glob order decides who fits under the cap; overflow is flagged,
-        // never silent.
         var budget = maxBytes
         val kept = LinkedHashSet<Path>()
         var truncated = false
@@ -101,9 +98,7 @@ internal object ArtifactRetention {
         return kept to truncated
     }
 
-    // Siblings of the artifacts dir (workdir, .homer, ...) can be arbitrarily
-    // large and hold no retained files — stream-delete them instead of
-    // materializing them into the reverse-order walk.
+    /** Stream-deletes the artifacts dir's siblings, which hold no retained files, without walking them. */
     private fun deleteSiblings(
         workspaceRoot: Path,
         projectRoot: Path,
@@ -111,12 +106,7 @@ internal object ArtifactRetention {
     ) {
         Files.newDirectoryStream(projectRoot).use { children ->
             children.forEach { child ->
-                // Compare file names, not full paths: Path.equals is structural, and
-                // artifactsDir (a DB round-trip in production) can carry a redundant
-                // segment (e.g. a trailing slash or "./") that DirectoryStream's freshly
-                // constructed `child` never would — a mismatch here would stream-delete
-                // the retained set itself. child's parent is projectRoot by construction,
-                // so the file name alone is enough to identify it.
+                // File names, not paths: a structural mismatch would stream-delete the retained set itself.
                 if (child.fileName != dir.fileName) {
                     PathSafety.deleteContainedRecursively(workspaceRoot, child)
                 }
@@ -124,33 +114,32 @@ internal object ArtifactRetention {
         }
     }
 
-    /** Deletes everything under [dir] but the [kept] files and the directories holding them. */
-    private fun deleteUnkept(
+    /**
+     * Deletes everything under [dir] but the [kept] files and the directories holding them; false, deleting
+     * nothing, when the tree has grown past [maxWalkEntries] entries since the candidate walk.
+     */
+    internal fun deleteUnkept(
         dir: Path,
         kept: Set<Path>,
-    ) {
+        maxWalkEntries: Int,
+    ): Boolean {
         val keepDirs =
             kept
                 .flatMap { file ->
                     generateSequence(file.parent) { it.parent }.takeWhile { it.startsWith(dir) }.toList()
                 }.toSet() + dir
-        // Reverse-order walk deletes children before parents; a dir holding a kept
-        // file is in keepDirs and survives, an emptied dir is deleted. This walk is
-        // unbounded (no maxWalkEntries re-check): prune only runs on terminal,
-        // non-shared workspaces, so there is no live writer left to grow the tree
-        // between the capped candidate walk and here. A future caller invoking prune
-        // on a non-terminal workspace must not assume that still holds.
-        Files.walk(dir).use { stream ->
-            stream.sorted(Comparator.reverseOrder()).forEach { path ->
-                if (path in keepDirs) return@forEach
-                // Re-check regular-file-under-NOFOLLOW at delete time, not just membership
-                // in `kept`: the artifacts dir is agent-writable, so a matched regular file
-                // could have been swapped for a symlink between the candidate walk and here.
-                val stillKept = path in kept && path.isRegularFile(LinkOption.NOFOLLOW_LINKS)
-                if (!stillKept) {
-                    Files.deleteIfExists(path)
-                }
+        val entries = Files.walk(dir).use { stream -> stream.limit(maxWalkEntries + 1L).toList() }
+        if (entries.size > maxWalkEntries) return false
+        // Reverse order deletes children before parents.
+        entries.sortedDescending().forEach { path ->
+            if (path in keepDirs) return@forEach
+            // The artifacts dir is agent-writable: a kept file may since have been swapped for a
+            // symlink, so keep it only while it is still a NOFOLLOW regular file.
+            val stillKept = path in kept && path.isRegularFile(LinkOption.NOFOLLOW_LINKS)
+            if (!stillKept) {
+                Files.deleteIfExists(path)
             }
         }
+        return true
     }
 }

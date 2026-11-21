@@ -83,6 +83,7 @@ private fun public(
 private const val VISIBLE = "visible: admin, owner or READ"
 private const val CONTROL = "control: admin, owner or visible + CONTROL"
 private const val ANY_AUTHENTICATED = "any authenticated"
+private const val EDIT_FILES = "EDIT on agent; 404 without any grant"
 private const val CALLBACK_TOKEN = "callback token (own run)"
 private const val HOP = "callback token; dispatch hop + dispatch.enabled; 404 like an unknown agent"
 private const val OWN_INSTANCE = "runner domain token; instance of own domain"
@@ -157,10 +158,10 @@ internal val ROUTE_AUTHZ: List<RouteAuthz> =
         operator("GET /api/v1/agents", "rows filtered to agents with any grant", 200, listFiltered = true),
         operator("POST /api/v1/agents/reload", "admin", 403),
         operator("POST /api/v1/agents", "EDIT on the body's name", 403, body = """{"name":"{agentName}"}"""),
-        operator("GET /api/v1/agents/{agentName}/files", "EDIT on agent", 403),
-        operator("GET /api/v1/agents/{agentName}/files/{...}", "EDIT on agent", 403),
-        operator("PUT /api/v1/agents/{agentName}/files/{...}", "EDIT on agent", 403, body = """{"content":"x"}"""),
-        operator("DELETE /api/v1/agents/{agentName}/files/{...}", "EDIT on agent", 403),
+        operator("GET /api/v1/agents/{agentName}/files", EDIT_FILES, 404),
+        operator("GET /api/v1/agents/{agentName}/files/{...}", EDIT_FILES, 404),
+        operator("PUT /api/v1/agents/{agentName}/files/{...}", EDIT_FILES, 404, body = """{"content":"x"}"""),
+        operator("DELETE /api/v1/agents/{agentName}/files/{...}", EDIT_FILES, 404),
         operator("GET /api/v1/agents/{agentName}/langgraph", "any grant on agent", 404),
         operator("POST /api/v1/agents/{agentName}/debug", "DEBUG on agent; 404 without any grant", 404),
         operator("POST /api/v1/agents/{agentName}/cron-run", "admin; 404 like an unknown agent", 404),

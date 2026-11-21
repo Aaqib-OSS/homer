@@ -36,11 +36,9 @@ import org.koin.core.qualifier.named
 import org.koin.dsl.module
 
 /**
- * The Execution layer's wiring: the workspace factory, the lock and slot gates, the runner
- * registry and its startup sweep, and the process/command executors. Split out of [appModule] so
- * each subject's bindings stay in one file (root CLAUDE.md §2); the boot loads it beside the
- * other subject modules. The load-bearing comments on the cycle-breaking lambdas and on the
- * `applicationScope` are moved with their definitions (ADR-0023, ADR-0030).
+ * The Execution layer's wiring: workspace factory, lock and slot gates, runner registry and its startup sweep,
+ * process and command executors. Split out of [appModule] so each subject's bindings stay in one file; the
+ * cycle-breaking lambdas and `applicationScope` carry their own comments (ADR-0023, ADR-0030).
  */
 internal val executionModule =
     module {
@@ -80,12 +78,8 @@ internal val executionModule =
             val appConfig = get<AppConfig>()
             val stateSink = get<RunnerStateSink>()
             val tracer = get<TelemetryService>().tracer
-            // Stable per-instance id scopes the k8s startup sweep to this instance's
-            // pods. Resolved once, only when a kubernetes runner is configured, so a
-            // non-k8s deployment never touches server_meta. configureServer calls
-            // migrate() before the first injection, and building this registry is
-            // reachable from the AgentsService scan — the first injection — so the
-            // read is safe however early the registry is built. See ADR-0020.
+            // Stable per-instance id scoping the k8s startup sweep; read from server_meta only when a
+            // kubernetes runner is configured, safe however early because migrate() runs first. See ADR-0020.
             val k8sInstanceId =
                 if (appConfig.runners.values.any { it is RunnerConfig.Kubernetes }) {
                     get<ServerMetaRepository>().getOrCreateInstanceId()
@@ -130,11 +124,8 @@ internal val executionModule =
         }
 
         single<CoroutineScope>(named("applicationScope")) {
-            // Shared scope for all background coroutines that must drain on
-            // shutdown (ProcessExecutor.coroutineScope.launch jobs and the LLM
-            // cost settlements of ADR-0089).
-            // SupervisorJob so one failed child doesn't cancel its siblings.
-            // Audit P0 #3.
+            // Background coroutines that must drain on shutdown (process jobs, ADR-0089 cost settlements);
+            // SupervisorJob keeps one failed child from cancelling its siblings.
             CoroutineScope(SupervisorJob() + Dispatchers.Default)
         }
 
@@ -156,9 +147,8 @@ internal val executionModule =
             RunAgentExecutor(
                 subRuns =
                     AgentSubRunStarter(
-                        // Resolved lazily — breaks the DI cycle RunAgentExecutor →
-                        // AgentRunStarter → ProcessFactory → CommandExecutorFactory →
-                        // RunAgentExecutor. See ADR-0030.
+                        // Lazy: breaks the DI cycle RunAgentExecutor → AgentRunStarter → ProcessFactory →
+                        // CommandExecutorFactory → RunAgentExecutor. See ADR-0030.
                         agentRunStarter = { get() },
                         agentsService = get(),
                         authorizer = get(),

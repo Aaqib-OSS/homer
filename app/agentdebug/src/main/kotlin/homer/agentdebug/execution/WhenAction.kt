@@ -4,11 +4,9 @@ import homer.app.infra.SecretRedactor
 import homer.app.infra.WhenEvaluator
 
 /**
- * Maps a [WhenEvaluator.Result] to the action that [DebugAgentRunner]'s
- * loop should take, plus the human-readable line to print before taking
- * it. Pulled out of the runner so the message formatting and the
- * Run/Skip/Abort decision are unit-testable without spinning up the
- * whole agent execution stack.
+ * Maps a [WhenEvaluator.Result] to the Run/Skip/Abort action [DebugAgentRunner]'s loop takes, plus the line to
+ * print first. Separate from the runner so the decision and message are unit-testable without the execution
+ * stack.
  */
 internal sealed class WhenAction {
     data object Run : WhenAction()

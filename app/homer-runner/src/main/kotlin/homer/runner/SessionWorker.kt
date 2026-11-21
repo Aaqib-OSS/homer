@@ -23,12 +23,9 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Drives one claimed session: a poller keeps one `next` long-poll open so `cancel` and `close` arrive
- * while a command runs; the dispatcher executes ops in order, handing each result to a background
- * delivery job, not inline — posting is itself a `next` long-poll racing the poller's, so running it
- * on the dispatcher's coroutine would park it a full poll window though the op is already queued; a
- * delivery job keeps it free to pick that op up at once, and any op received back joins the queue.
- * Unreachable for [heartbeatTimeout] means Homer dropped this instance: kill what runs and stop (ADR-0066).
+ * Drives one claimed session: a poller keeps a `next` long-poll open for `cancel` and `close`, the
+ * dispatcher runs ops in order and posts each result from a background job (ADR-0066). Homer
+ * unreachable for [heartbeatTimeout] means it dropped this instance: kill what runs and stop.
  */
 class SessionWorker(
     private val api: RunnerApi,
@@ -37,9 +34,8 @@ class SessionWorker(
     private val heartbeatTimeout: Duration,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
-    // Fresh per session, never derived from the process id alone: ids repeat after a Homer
-    // database reset, and a --root volume outlives the container, so a reused path would hand
-    // one run another's files. CWE-200.
+    // Random per session, never the process id alone: ids repeat after a database reset, and a reused
+    // path under a surviving --root volume would hand one run another's files. CWE-200.
     val sessionRoot: Path = root.toAbsolutePath().normalize().resolve("${claim.processId}-${UUID.randomUUID()}")
 
     @Volatile
@@ -49,32 +45,18 @@ class SessionWorker(
     // The session root's lifecycle — create or refuse, transfers, delete — lives in SessionWorkspace.
     private val workspace = SessionWorkspace(api, claim.sessionId, sessionRoot)
 
-    // Bounded, not UNLIMITED: Homer answers one op per `next` call and awaits that
-    // op's result before handing out more, so a handful of in-flight ops is the
-    // normal case; a small bound (instead of an unbounded buffer) is what makes a
-    // misbehaving server's flood of ops apply backpressure instead of piling up.
+    // Bounded: Homer hands out one op at a time, so a flood of ops applies backpressure instead of piling up.
     private val ops = Channel<RunnerOp>(OPS_CAPACITY)
     private val running = ConcurrentHashMap<String, ProcessRunner.Handle>()
 
-    // The grace each running cmd was started with, so an Interrupt — which carries only the cmd's
-    // id — can stop it gracefully. Absent = the cmd carried no grace; a null-grace interrupt then
-    // ends in the normal kill path, which is all a best-effort interrupt promises (ADR-0108).
+    // The grace each running cmd started with, for an Interrupt, which carries only the cmd's id (ADR-0108).
     private val interruptGraces = ConcurrentHashMap<String, Duration>()
 
-    // opIds cancelled before `runCmd` had a chance to register the process in
-    // [running]: `dispatchLoop` launches a `cmd` op's handling without waiting for
-    // it to start, so a `Cancel` for the same op can be dispatched first. `runCmd`
-    // consults this right after registering so that race can't leave the process
-    // running to its full timeout. See fix-round-1 item 3.
+    // opIds cancelled before `runCmd` registered the process: `dispatchLoop` does not wait for a `cmd` to start.
     private val cancelledOps = ConcurrentHashMap.newKeySet<String>()
 
-    // Delivery jobs (see `deliver`) run on this scope, not on dispatchLoop's own
-    // coroutineScope: that keeps a result-carrying `next` call — which can lose its race
-    // with the poller and sit parked for a full poll window — from being awaited by
-    // dispatchLoop before it can return. lost() cancels these directly; a graceful finish
-    // (dispatchLoop returning after Close) waits for them like any other structured child,
-    // which is fine because Homer answers a result-carrying `next` for an already-closed
-    // session at once instead of holding it open.
+    // Delivery jobs run here, not in dispatchLoop's scope, so a parked result-carrying `next` never holds
+    // dispatchLoop back; lost() cancels them, a graceful finish waits for them (ADR-0066).
     private lateinit var workerScope: CoroutineScope
     private val deliveryJobs = ConcurrentHashMap.newKeySet<Job>()
 
@@ -88,9 +70,8 @@ class SessionWorker(
             } finally {
                 poller.cancel()
                 killAll()
-                // Every exit reclaims the root, a lost session included: each session gets a fresh
-                // one, so a root left here would never be reused or cleaned (§12 rule 4). Only a
-                // root this session created: a refused pre-existing one is not ours to delete.
+                // Every exit reclaims the root, a lost session included (ADR-0047 rule 4); a refused
+                // pre-existing root is not ours to delete.
                 if (workspace.createdRoot) {
                     withContext(NonCancellable + Dispatchers.IO) {
                         runCatching { workspace.deleteTree(sessionRoot) }
@@ -118,11 +99,8 @@ class SessionWorker(
             } catch (e: CancellationException) {
                 throw e
             } catch (_: ClosedSendChannelException) {
-                // `ops` was already closed (lost() ran concurrently, from this very failure
-                // path or another one): the session is ending regardless, so this must never
-                // be routed into the generic retry-then-heartbeat-check path below, which
-                // would keep calling `next()` successfully (refreshing lastOkAt so the
-                // heartbeat deadline never trips) while endlessly re-failing this send.
+                // `ops` is closed, so the session is ending: the retry path below would keep refreshing
+                // lastOkAt while re-failing this send, and the heartbeat deadline would never trip.
                 return
             } catch (e: Exception) {
                 when (val verdict = pollFailureVerdict(e, claim.sessionId, clock() - lastOkAt, heartbeatTimeout)) {
@@ -147,9 +125,7 @@ class SessionWorker(
         when {
             op != null -> ops.send(op)
 
-            // A 204 that comes back well under the server's long-poll window means
-            // Homer isn't actually holding the poll open (misbehaving or misconfigured
-            // proxy) — without this, that turns into a tight busy-loop against it.
+            // A 204 well under the long-poll window means Homer is not holding the poll open: pace it, no busy-loop.
             clock() - startedAt < FAST_POLL_THRESHOLD.inWholeMilliseconds -> delay(FAST_POLL_DELAY)
         }
     }
@@ -162,16 +138,9 @@ class SessionWorker(
             reason,
         )
         lost = true
-        // Killed here, not left to run()'s finally: dispatchLoop's coroutineScope won't
-        // return while a launched `cmd` job is still awaiting a live process, so closing
-        // `ops` alone would strand that job (and this function) until the process exits
-        // on its own.
+        // Killed here, not in run()'s finally: closing `ops` alone strands a `cmd` job awaiting a live process.
         killAll()
-        // Same reasoning for delivery jobs: closing `ops` doesn't touch a job already
-        // parked inside `postResult`'s `next` call or its retry `delay`, and run()'s
-        // coroutineScope won't return while one is still active. Cancel them directly
-        // instead of waiting out a poll window (or the retry budget) against a session
-        // that's already gone.
+        // Likewise cancelled directly: closing `ops` leaves a job parked in `postResult` against a gone session.
         deliveryJobs.forEach { it.cancel() }
         ops.close()
     }
@@ -192,9 +161,7 @@ class SessionWorker(
                     }
 
                     is RunnerOp.Interrupt -> {
-                        // Off the dispatcher's thread: the interrupt waits out the grace, so
-                        // running it here would park the loop (and Cancel/Close) for that long.
-                        // A command that is gone, or that no longer runs, makes it a no-op.
+                        // Off the dispatcher: the interrupt waits out the grace and would park Cancel and Close.
                         running[op.opId]?.let { handle ->
                             val grace = interruptGraces[op.opId]
                             launch(Dispatchers.IO) { handle.interrupt(grace) }
@@ -213,12 +180,8 @@ class SessionWorker(
         }
 
     /**
-     * Posts [result] on a new child coroutine of [workerScope] — never on the caller's own
-     * coroutine — so a `next` call that loses its race with the poller and sits parked for a
-     * full poll window never keeps the caller from moving on. The job is tracked in
-     * [deliveryJobs] so [lost] can cancel a call that would otherwise time out (or exhaust its
-     * retry budget) against a session that's already gone. Skips posting entirely once [lost]
-     * is already set: a delivery scheduled after the session is lost has nothing to report.
+     * Posts [result] on a [workerScope] child tracked in [deliveryJobs], so the caller never waits on a
+     * parked `next`. Does nothing once [lost] is set.
      */
     private fun deliver(result: OpResult) {
         if (lost) return
@@ -228,10 +191,8 @@ class SessionWorker(
     }
 
     /**
-     * Posts [result] to Homer, retrying transient failures; returns the op Homer hands back,
-     * or null when there is none, delivery had to give up, or the session was marked lost
-     * along the way. Deliberately does not touch [ops] itself — see [handOff] for why that
-     * has to be a separate, non-suspending step.
+     * Posts [result] to Homer, retrying transient failures; returns the op Homer hands back, or null
+     * when there is none, delivery gave up or the session was lost. Leaves [ops] to [handOff].
      */
     private suspend fun postResult(result: OpResult): RunnerOp? {
         var attempt = 0
@@ -255,12 +216,8 @@ class SessionWorker(
     }
 
     /**
-     * Hands [op] to the dispatcher without ever suspending: a suspending `send` would wedge the
-     * delivery job on a full channel that is never expected to drain on its own. A closed channel
-     * means the session is already ending (`lost()` ran concurrently); nothing to do. A full
-     * buffer means Homer handed out another op before this one was acknowledged, breaking the
-     * one-op-in-flight assumption `ops`'s bound relies on — treated as fatal (drop the session)
-     * rather than silently discarding an op.
+     * Hands [op] to the dispatcher without suspending. A closed channel means the session is ending; a
+     * full one breaks the one-op-in-flight assumption of `ops`'s bound, so the session is dropped.
      */
     private fun handOff(op: RunnerOp) {
         val result = ops.trySend(op)
@@ -280,15 +237,10 @@ class SessionWorker(
                 return OpResult(op.opId, ok = false, error = "failed to start: ${e.message}")
             }
         running[op.opId] = handle
-        // Peer-supplied grace (RunnerProtocol.Cmd.interruptGraceSeconds): the wire peer is a
-        // separate trust boundary (§12 rule 4) — an unclamped value would pin the reap below
-        // for that long.
+        // The peer-supplied grace is clamped: an unbounded value would pin the reap (ADR-0047 rule 4).
         val grace = clampInterruptGrace(op.interruptGraceSeconds)
         grace?.let { interruptGraces[op.opId] = it }
-        // A Cancel dispatched before this coroutine got to run (dispatchLoop's `launch`
-        // for `cmd` doesn't wait for the process to start) lands in cancelledOps instead
-        // of finding a handle in `running`; check it immediately after registering so
-        // that race can't leave the process running to its full timeout.
+        // A Cancel that raced ahead sits in cancelledOps; honour it now or the process runs to its timeout.
         if (op.opId in cancelledOps) handle.kill()
         try {
             val exit =
@@ -322,10 +274,8 @@ class SessionWorker(
                     logger.warn("Session {}: output chunk {}#{} refused: {}", claim.sessionId, stream, seq, e.message)
                     return
                 }
-                // A 5xx is transient like a connection error, not a refusal, and so is a 429:
-                // Homer still holds an earlier attempt of this chunk (a post that timed out here).
-                // Retrying is safe and necessary — dropping the chunk would desync the per-stream
-                // seq and make Homer 409 every later chunk of this stream for the rest of the command.
+                // 5xx and 429 are retried: dropping the chunk would desync the stream's seq, and Homer
+                // would 409 every later chunk of the command (ADR-0066).
                 if (++attempt > MAX_RETRIES) {
                     logger.warn(
                         "Session {}: dropping output chunk {}#{} after {} attempts: {}",
@@ -357,12 +307,8 @@ class SessionWorker(
 }
 
 /**
- * The `cmd` result for [opId], warning once per stream whose drain [exit] abandoned with chunks
- * still unsent — otherwise the tail of a step's output vanishes with nothing in the log to
- * explain it. Session, op, stream and chunk count only: the chunks may hold secrets (§12 rule 7),
- * and [ProcessRunner.Handle] has neither id, so this is the first place that can name them.
- *
- * File scope, not a member: the file-level [logger] below is what a file-level function can see.
+ * The `cmd` result for [opId], warning once per stream whose drain [exit] abandoned unsent chunks.
+ * Logs ids and counts only, never chunk contents, which may hold secrets (ADR-0047 rule 7).
  */
 private fun cmdResult(
     sessionId: String,
@@ -403,10 +349,8 @@ internal sealed interface PollVerdict {
 }
 
 /**
- * Judges a failed `next` poll of session [sessionId], [unreachableMs] after the last
- * successful one: a 404 means Homer dropped the session; any other 4xx is retried and
- * logged; a 5xx or a connection error is retried until Homer has been unreachable for
- * longer than [heartbeatTimeout] (ADR-0066 "Liveness").
+ * Judges a failed `next` poll of [sessionId], [unreachableMs] after the last success: 404 loses the
+ * session, another 4xx is retried and logged, a 5xx or connection error is retried until past [heartbeatTimeout].
  */
 internal fun pollFailureVerdict(
     e: Exception,
@@ -423,10 +367,7 @@ internal fun pollFailureVerdict(
             PollVerdict.Retry(e.message)
         }
 
-        // A persistent 5xx (e.g. a proxy in front of Homer) is exactly the same "Homer is
-        // unreachable" condition as a connection error, and must be judged against the same
-        // heartbeat deadline — otherwise it retries forever and the worker (and its child
-        // process) never stops.
+        // A persistent 5xx is the same unreachable condition as a connection error: same heartbeat deadline.
         unreachableMs > heartbeatTimeout.inWholeMilliseconds -> {
             PollVerdict.Lost("Homer unreachable for ${heartbeatTimeout.inWholeSeconds} s (${e.message})")
         }
@@ -440,10 +381,7 @@ internal fun pollFailureVerdict(
 internal const val MAX_INTERRUPT_GRACE_SECONDS = 600L
 
 /**
- * The peer-supplied grace [seconds], clamped to the runner's own `0..[MAX_INTERRUPT_GRACE_SECONDS]`
- * bound — the same bound Homer's agent validator applies on its side. File scope like
- * [pollFailureVerdict] so a unit test can pin both edges of the clamp: a negative value would
- * throw out of the reap's `Process.waitFor`, a huge one would pin the reap for that long
- * (§12 rule 4).
+ * The peer-supplied grace [seconds] clamped to `0..[MAX_INTERRUPT_GRACE_SECONDS]`: a negative value would
+ * throw out of the reap's `waitFor`, a huge one would pin it (ADR-0047 rule 4).
  */
 internal fun clampInterruptGrace(seconds: Long?): Duration? = seconds?.coerceIn(0, MAX_INTERRUPT_GRACE_SECONDS)?.seconds

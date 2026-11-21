@@ -21,9 +21,8 @@ import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Accepts `when` as a scalar string (shorthand for `{all: [<string>]}`) or an object with exactly
- * one of `all` / `any`, each a non-empty list of strings; always serializes back to the structured
- * form (`{all|any: [...]}`). Uses a CONTEXTUAL descriptor so kaml does not pre-validate the shape
- * before delegating here, mirroring `CmdArgsSerializer`.
+ * one of `all` / `any`, each a non-empty list of strings; always serializes as `{all|any: [...]}`.
+ * Its CONTEXTUAL descriptor stops kaml pre-validating the shape.
  */
 object WhenSerializer : KSerializer<When> {
     @Serializable
@@ -139,10 +138,8 @@ object WhenSerializer : KSerializer<When> {
         }
 
     /**
-     * kaml normalizes quoted and unquoted YAML scalars to the same [YamlScalar.content] string, so
-     * `when: 42` and `when: "42"` are indistinguishable after parsing. Reject typed YAML primitives
-     * (bool/int/float) so the user gets an early error instead of a runtime bash-eval failure; a
-     * real bash predicate is never a bare numeric or boolean literal.
+     * Rejects a bool/int/float scalar at load rather than as a runtime bash-eval failure; kaml
+     * parses `when: 42` and `when: "42"` to the same content, so any numeric text is refused.
      */
     private fun rejectTypedScalar(content: String) {
         val isBool = content in BOOL_LITERALS
