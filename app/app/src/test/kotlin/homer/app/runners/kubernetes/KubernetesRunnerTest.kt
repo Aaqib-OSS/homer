@@ -132,10 +132,8 @@ class KubernetesRunnerTest {
 
             val session = runner.openSession(params)
 
-            // config.env is already layered into the workspace env by WorkspaceConfigFactory
-            // via runner.runnerEnv; it must NOT appear in session.env a second time or
-            // AgentExecutor's appendToEnv would let it override agent env (wrong precedence).
-            // Only the backend-derived HMR_API_URL belongs here. See ADR-0065.
+            // config.env is layered into the workspace env via runner.runnerEnv; repeating it in session.env would let
+            // it override agent env in appendToEnv. Only the derived HMR_API_URL belongs here. See ADR-0065.
             assertFalse("MY_RUNNER_VAR" in session.env, "runner config env must not appear in session.env")
             assertEquals("http://homer.svc:8080", session.env[homer.app.EnvConstants.API_URL])
             assertTrue(

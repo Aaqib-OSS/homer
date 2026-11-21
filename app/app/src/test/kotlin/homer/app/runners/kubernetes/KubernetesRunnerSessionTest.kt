@@ -112,9 +112,8 @@ class KubernetesRunnerSessionTest {
             s.upload(Path.of("/local/p1"), ".")
             s.upload(Path.of("/app/scripts"), ".homer/scripts")
             s.download("artifacts", Path.of("/local/p1/artifacts"), mode = DownloadMode.OVERLAY)
-            // Project-root upload also omits the reserved workdir directory entry (its
-            // contents still upload — kept workspaces need them retained between runs);
-            // a non-root upload passes no omissions. See ADR-0054.
+            // Project-root upload omits the reserved workdir entry but still uploads its contents (kept workspaces need
+            // them). A non-root upload passes no omissions. See ADR-0054.
             verify { sync.upload(Path.of("/local/p1"), "/homer/workspace", listOf(".git"), setOf("workdir")) }
             verify { sync.upload(Path.of("/app/scripts"), "/homer/workspace/.homer/scripts", listOf(".git"), emptySet()) }
             verify { sync.download("/homer/workspace/artifacts", Path.of("/local/p1/artifacts"), mode = DownloadMode.OVERLAY) }
@@ -130,9 +129,8 @@ class KubernetesRunnerSessionTest {
 
     @Test
     fun `markFailed with keepPodOnFailure keeps the pod via TTL patch instead of delete`() {
-        // Real api over a short-circuited HTTP layer: the keep patch goes through
-        // PatchUtils, not the mockable fluent execute(). Patch-content assertions
-        // (kept label, add-not-replace ops, Content-Type) live in PodCleanupTest.
+        // Real api over a short-circuited HTTP layer: the keep patch goes through PatchUtils, not the mockable
+        // execute(). Patch-content assertions live in PodCleanupTest.
         val seen = mutableListOf<Request>()
         val s = session(api = interceptedCoreV1Api(seen), keepPodOnFailure = true)
         s.markFailed()
@@ -187,7 +185,7 @@ class KubernetesRunnerSessionTest {
     @Test
     fun `a skewed pod startTime cannot extend the deadline`() {
         // The pod's own report is outside Homer's trust boundary: it may shorten the deadline, never
-        // push it past the createdAt Homer recorded when it created the pod (§12 rule 2).
+        // push it past the createdAt Homer recorded when it created the pod (ADR-0047 rule 2).
         val api = podStartApi(OffsetDateTime.ofInstant(Instant.ofEpochSecond(9_999), ZoneOffset.UTC))
 
         val s = session(api = api, maxRunSeconds = 300, gracefulStopSeconds = 60, podCreatedAtEpochSec = 1_000)
@@ -347,12 +345,8 @@ class KubernetesRunnerSessionTest {
 
     @Test
     fun `close span is dropped when the run is muted`() {
-        // Real SdkTracerProvider, not a mock: the mechanism under test is the SDK's
-        // default ParentBased sampler dropping children of an unsampled parent, and a
-        // mock would only assert the code we wrote. close() runs after the run's scope
-        // has unwound, so if it does not carry the run's context explicitly it starts a
-        // NEW ROOT — sampled on its own merits, and `telemetry.export: OFF` leaks pod
-        // name, namespace and cleanup mode despite the agent being muted.
+        // Real SdkTracerProvider: the SDK's ParentBased sampler drops children of an unsampled parent.
+        // close() must carry the run's context, else a sampled new root leaks pod details despite the mute.
         val exporter = CollectingExporter()
         val provider = SdkTracerProvider.builder().addSpanProcessor(SimpleSpanProcessor.create(exporter)).build()
         val tracer = provider.get("test")

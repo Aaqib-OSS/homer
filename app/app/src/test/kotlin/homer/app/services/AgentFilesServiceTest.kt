@@ -142,10 +142,9 @@ class AgentFilesServiceTest {
     }
 
     /**
-     * CWE-285: a definition write bootstraps a new
-     * agent into the global namespace via the reload() the write triggers, so it
-     * needs the create-agent grant (EDIT on the DECLARED name), not only EDIT on
-     * the parent. Denied as not-found, hiding the declared agent's existence.
+     * CWE-285: a definition write bootstraps a new agent into the global namespace via the reload() it triggers, so it
+     * needs the create-agent grant (EDIT on the DECLARED name), not only EDIT on the parent. Denied as not-found,
+     * hiding the declared agent's existence.
      */
     @Test
     fun `write of a definition declaring an ungranted name is denied as not-found (CWE-285)`() {
@@ -176,11 +175,9 @@ class AgentFilesServiceTest {
     }
 
     /**
-     * CWE-285, fail closed: an unparsable
-     * definition-named file declares nothing, so the create-grant check cannot key
-     * on a name — the write is denied outright. Gating on "declared a name" alone
-     * let the write through to plant the boundary directory on disk, which the
-     * file API then denies as not-found and no grant can remove (§12 rule 3).
+     * CWE-285, fail closed (ADR-0047 rule 3): an unparsable definition-named file declares no name for the create-grant
+     * check to key on, so the write is denied outright; gating on "declared a name" let it plant a boundary directory
+     * that the file API denies as not-found and no grant can remove.
      */
     @Test
     fun `write of an unparsable definition-named file is denied as not-found (CWE-285)`() {
@@ -207,10 +204,8 @@ class AgentFilesServiceTest {
     }
 
     /**
-     * CWE-400: a PUT with more than the path-segment cap
-     * builds a directory chain `createDirectories` happily materializes, and every
-     * later discovery walk pays for it out of a budget other agents share. Denied
-     * before any disk touch (§12 rule 4, ADR-0068).
+     * CWE-400: a PUT with more than the path-segment cap builds a directory chain every later discovery walk pays for
+     * out of a shared budget. Denied before any disk touch (ADR-0047 rule 4, ADR-0068).
      */
     @Test
     fun `write of an over-deep path is denied and creates nothing`() {
@@ -230,16 +225,9 @@ class AgentFilesServiceTest {
     }
 
     /**
-     * CWE-400: a definition the walk never reaches is still a
-     * nested-agent boundary, so writing one leaves a subtree the file API answers
-     * `404` for — including the definition itself. Prevention is the fix: the
-     * refusal below stops the write before any disk touch. Removing a boundary
-     * that is already on disk (planted out-of-band, or before this gate shipped)
-     * is an operator action — a nested definition is another agent's subtree
-     * (ADR-0047), so its delete is answered `404` before the denial-path check
-     * here is ever reached. The segment cap above is two segments looser than the
-     * walk's depth stop, so it did not close this. A non-definition file at the
-     * same places stays writable (§12 rule 4, ADR-0068).
+     * CWE-400: a definition the walk never reaches is still a nested-agent boundary, leaving a subtree the file API
+     * answers `404` for, so the write is refused before any disk touch; a non-definition file there stays writable
+     * (ADR-0047 rule 4, ADR-0068). Removing a boundary already on disk is an operator action, answered `404` here.
      */
     @Test
     fun `write of an over-deep or hidden definition is denied and creates nothing (CWE-400)`() {
@@ -361,10 +349,9 @@ class AgentFilesServiceTest {
     // ========== ADR-0004: a permission change racing the write/delete/create ==========
 
     /**
-     * ADR-0004: a permission change between the `writable` probe and the syscall
-     * makes the filesystem call throw `AccessDeniedException`. The service must map
-     * it to `Forbidden` (403) — never let it escape as an unhandled 500 — and a
-     * denied write must not reload.
+     * ADR-0004: a permission change between the `writable` probe and the syscall makes it throw
+     * `AccessDeniedException`; the service must map that to `Forbidden` (403), not an unhandled 500, and a denied
+     * write must not reload.
      */
     @Test
     fun `write of a target made read-only after the check is Forbidden and does not reload (ADR-0004)`() {
@@ -409,12 +396,9 @@ class AgentFilesServiceTest {
     }
 
     /**
-     * ADR-0004: a denied `write()` must take back the directory chain its own
-     * `createDirectories` built — a leftover directory is one every later
-     * discovery walk pays for and the file API cannot remove. The write is denied
-     * through the `createDirectoriesAndWrite` seam: once `createDirectories` has
-     * run, the built chain is owner-writable, so no POSIX bit combination produces
-     * this row.
+     * ADR-0004: a denied `write()` must take back the directory chain its own `createDirectories` built, which every
+     * later discovery walk would pay for and the file API cannot remove. Denied through the `createDirectoriesAndWrite`
+     * seam, since once built the chain is owner-writable and no POSIX bit combination produces this row.
      */
     @Test
     fun `write whose parent chain is built but whose write is denied removes the built directory (ADR-0004)`() {
@@ -454,10 +438,9 @@ class AgentFilesServiceTest {
     }
 
     /**
-     * ADR-0004 symmetric case: `create()` probes `isWritable(root)` then writes, so
-     * a search path that becomes unwritable in that window is a 403. A path that is
-     * writable but not searchable (`rw-r--r--`) passes the probe yet fails the
-     * syscall — the fixed message must not carry the path (§12 rule 7).
+     * ADR-0004 symmetric case: `create()` probes `isWritable(root)` then writes, so a search path that turns unwritable
+     * in that window is a 403. A writable but not searchable path (`rw-r--r--`) passes the probe yet fails the syscall;
+     * the fixed message must not carry the path (ADR-0047 rule 7).
      */
     @Test
     fun `create when the search path becomes unwritable is Forbidden without leaking the path (ADR-0004)`() {
@@ -476,12 +459,9 @@ class AgentFilesServiceTest {
     }
 
     /**
-     * ADR-0004: a denied `create()` must take back the directory its own
-     * `createDirectories` built. A definition-less directory wedges the name — every
-     * retry returns `409` on `dir.exists()` and the file API refuses to delete
-     * directories. The template write is denied through the
-     * `createDirectoriesAndTemplate` seam: once `createDirectories` has run, the new
-     * directory is owner-writable, so no POSIX bit combination produces this row.
+     * ADR-0004: a denied `create()` must take back the directory its own `createDirectories` built: a definition-less
+     * directory wedges the name (retries return `409`, the file API refuses to delete directories). Denied through the
+     * `createDirectoriesAndTemplate` seam, since the new directory is owner-writable once built.
      */
     @Test
     fun `create whose template write is denied leaves no directory behind (ADR-0004)`() {
@@ -727,11 +707,9 @@ class AgentFilesServiceTest {
     }
 
     /**
-     * CWE-59: the nested-agent deny must run on the
-     * RESOLVED path, not the lexical candidate. A parent-relative symlink stats
-     * as its own name, so a lexical gate misses it and hands the child's file to
-     * read/write/delete. One denial row per symlink placement, each asserting the
-     * child's file is untouched.
+     * CWE-59: the nested-agent deny must run on the RESOLVED path: a parent-relative symlink stats as its own name, so
+     * a lexical gate misses it and hands the child's file to read/write/delete. One denial row per symlink placement,
+     * each asserting the child's file is untouched.
      */
     @Test
     fun `symlink at the child's definition is denied as not found (CWE-59)`() {
@@ -749,10 +727,9 @@ class AgentFilesServiceTest {
     }
 
     /**
-     * CWE-59: the definition-file checks key on the
-     * path a request lands on, not the alias it named. A symlink inside the agent
-     * dir pointing at the root definition, or at a definition that does not exist
-     * yet, must get the same schema, grant and delete rules as the direct path.
+     * CWE-59: definition-file checks key on the path a request lands on, not the alias it named: a symlink in the
+     * agent dir to the root definition, or to one that does not exist yet, gets the direct path's schema, grant and
+     * delete rules.
      */
     @Test
     fun `a symlink alias to a definition gets the definition's checks (CWE-59)`() {
@@ -793,12 +770,9 @@ class AgentFilesServiceTest {
     }
 
     /**
-     * CWE-59: a write to a path that does not exist
-     * yet follows a dangling symlink at the candidate, and the containment check
-     * only saw the link's lexical name — so a link inside the parent could steer a
-     * new file, or a whole definition, into a nested agent's subtree with no grant
-     * on the child. One denial row per link placement, each asserting the child's
-     * subtree is unchanged (the live-link variants live in the two tests above).
+     * CWE-59: a write to a missing path follows a dangling symlink, and containment saw only the link's lexical name,
+     * so a link in the parent could steer a new file or definition into a nested agent's subtree with no grant on the
+     * child. One denial row per link placement, each asserting the child's subtree is unchanged.
      */
     @Test
     fun `a dangling symlink into a nested agent's subtree is denied for new files (CWE-59)`() {
@@ -866,8 +840,6 @@ class AgentFilesServiceTest {
         val res = service.create("my_agent")
         assertIs<AgentFilesService.FileOpResult.Conflict>(res)
     }
-
-    // ========== Config-File Size Cap Tests (audit P1 #14) ==========
 
     @Test
     fun `write rejects payloads larger than maxConfigFileBytes with BadRequest`() {

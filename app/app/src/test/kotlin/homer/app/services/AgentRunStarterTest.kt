@@ -218,9 +218,8 @@ class AgentRunStarterTest {
 
     @Test
     fun `a currently-secret input is never tagged, even if traceTags names it`() {
-        // Agent load rejects this combination, so reaching it means the definition was
-        // edited underneath a live run. Belt and braces: the tag builder refuses too,
-        // rather than trusting that the only way in was closed.
+        // Agent load rejects this combination, so reaching it means the definition was edited under a live run;
+        // the tag builder refuses too rather than trust that the only way in was closed.
         val tags =
             startAndCaptureTags(
                 traceTags = listOf("token"),
@@ -514,9 +513,8 @@ class AgentRunStarterTest {
     @Test
     fun `a keyed cooldown is checked after the inputs are resolved, and its key reaches the row`() =
         runBlocking {
-            // The key is a template over the inputs, so the cooldown check cannot run before they
-            // are resolved — but it must still run before `create`, so a refused or unrenderable
-            // start leaves no process row behind. See ADR-0106.
+            // The key is a template over the inputs, so the cooldown check runs after they resolve, but before `create`
+            // so a refused or unrenderable start leaves no process row. See ADR-0106.
             val order = mutableListOf<String>()
             val processExecutor = mockk<ProcessExecutor>(relaxed = true)
             coEvery { processExecutor.execute(any(), any()) } returns ProcessCreationResult(processId = 7)
@@ -630,9 +628,8 @@ class AgentRunStarterTest {
     @Test
     fun `a key naming a stored-secret input fails the replay and creates no run`() =
         runBlocking {
-            // A dispatch or continuation fire replays stored inputs with their source run's
-            // secret snapshot: a key naming an input that was secret then is refused before
-            // any row exists, instead of storing the value in `cooldown_key`. See ADR-0106.
+            // A dispatch or continuation fire replays stored inputs with the source run's secret snapshot: a key naming
+            // a then-secret input is refused before any row exists, not stored in `cooldown_key`. See ADR-0106.
             val processExecutor = mockk<ProcessExecutor>(relaxed = true)
             val processFactory = mockk<ProcessFactory>(relaxed = true)
             val starter =
@@ -943,9 +940,8 @@ class AgentRunStarterTest {
     @Test
     fun `a server-derived start whose parent is still WORKING runs during the drain`() =
         runBlocking {
-            // A `!<agent>` hop, a dispatch or a continuation fire made by a run that is still
-            // WORKING is part of the drain's own work: refusing it would leave that run unable
-            // to finish, which is exactly what the drain is waiting for.
+            // A `!<agent>` hop, dispatch or continuation fire from a still-WORKING run is part of the drain's own work:
+            // refusing it would leave that run unable to finish, which the drain waits for.
             val processExecutor = mockk<ProcessExecutor>(relaxed = true)
             coEvery { processExecutor.execute(any(), any()) } returns ProcessCreationResult(processId = 7)
             val gate = drainingGate()
@@ -999,7 +995,7 @@ class AgentRunStarterTest {
     fun `a caller-supplied parent is refused by the drain without probing its row`() =
         runBlocking {
             // The flag short-circuits before the read, so naming a parent admits no start and
-            // probes no row the caller cannot see (root §12 rule 3).
+            // probes no row the caller cannot see (ADR-0047 rule 3).
             val processExecutor = mockk<ProcessExecutor>(relaxed = true)
             val gate = drainingGate()
             val processReads =

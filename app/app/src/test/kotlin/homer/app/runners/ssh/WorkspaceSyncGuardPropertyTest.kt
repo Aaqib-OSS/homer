@@ -19,11 +19,9 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
- * [WorkspaceSync.containedChild]'s name guard over generated names (ADR-0047):
- * every remote-supplied name that is not one plain segment is refused, and every
- * name it lets through resolves to a direct child of the base. The example cases
- * live in `WorkspaceSyncTest`; these properties cover the names an editor would
- * not think of.
+ * [WorkspaceSync.containedChild]'s name guard over generated names (ADR-0047): every remote-supplied name that is not
+ * one plain segment is refused, and every name it lets through resolves to a direct child of the base.
+ * The example cases live in `WorkspaceSyncTest`.
  */
 class WorkspaceSyncGuardPropertyTest {
     /** The separators a remote-supplied name can carry, plus NUL, which `Path.resolve` refuses outright. */
@@ -65,9 +63,8 @@ class WorkspaceSyncGuardPropertyTest {
     fun `every name that would resolve outside the base is still refused`(
         @TempDir base: Path,
     ) = runTest {
-        // `../x` and `/x` are what the containment check exists for, and the name
-        // guard is the layer that refuses them (the composed order is what
-        // `containedChild` pins); the check behind it is unreachable meanwhile.
+        // `../x` and `/x` are what containment exists for; the name guard refuses them (`containedChild` pins the
+        // order), so the check behind it is unreachable meanwhile.
         checkAll(escapingNames) { name ->
             val refusal = assertFailsWith<SecurityException> { WorkspaceSync.containedChild(base, name) }
             assertTrue(
