@@ -329,6 +329,49 @@ test('consoleBuild reports an error and skips eslint and tsc when next typegen f
   }
 });
 
+test('consoleBuild reports findings without an error when eslint and tsc exit non-zero having found errors', () => {
+  const { ctx, reported } = consoleBuildContext();
+  consoleBuild(ctx, {
+    exists: (p) => p.endsWith('next-env.d.ts'),
+    tool: (dir, name) => ({
+      name,
+      status: 1,
+      stdout:
+        name === 'eslint'
+          ? JSON.stringify([{ filePath: '/repo/console/lib/a.ts', messages: [{ severity: 2, line: 3, ruleId: 'no-undef', message: "'x' is not defined." }] }])
+          : 'lib/a.ts(7,5): error TS2322: Type `string` is not assignable to type `number`.\n',
+    }),
+  });
+  assert.deepEqual(reported.map(([check, findings]) => findings.map((f) => `${f.path}:${f.line} ${f.message}`)), [
+    ['console/lib/a.ts:3 eslint: no-undef: ' + "'x' is not defined.", 'console/lib/a.ts:7 tsc: TS2322: Type `string` is not assignable to type `number`.'],
+  ]);
+  assert.equal(reported[0][2], undefined);
+});
+
+test('consoleBuild reports a tool exiting non-zero with no findings as broken, per tool', () => {
+  for (const broken of ['eslint', 'tsc']) {
+    const { ctx, reported } = consoleBuildContext();
+    consoleBuild(ctx, {
+      exists: (p) => p.endsWith('next-env.d.ts'),
+      tool: (dir, name) => ({ name, status: name === broken ? 1 : 0, stdout: name === 'eslint' ? '[]' : '' }),
+    });
+    assert.equal(reported.length, 1, broken);
+    assert.deepEqual(reported[0].slice(0, 2), ['build', []]);
+    assert.match(reported[0][2], new RegExp(`^${broken} exited 1; see reports/quality/changed/${broken}\\.log$`));
+  }
+});
+
+test('consoleBuild keeps a non-zero tsc that found its own errors out of the broken list', () => {
+  const { ctx, reported } = consoleBuildContext();
+  consoleBuild(ctx, {
+    exists: (p) => p.endsWith('next-env.d.ts'),
+    tool: (dir, name) => ({ name, status: name === 'tsc' ? 1 : 0, stdout: name === 'tsc' ? 'lib/a.ts(7,5): error TS6133: `y` is declared but its value is never read.\n' : '[]' }),
+  });
+  assert.deepEqual(reported, [
+    ['build', [{ path: 'console/lib/a.ts', line: 7, message: 'tsc: TS6133: `y` is declared but its value is never read.', severity: 'major' }], undefined],
+  ]);
+});
+
 test('formatFindings prints path:line, a bare path for line 0, the outside marker and errors', () => {
   const rows = [
     { name: 'build', list: [{ path: ':app:test', line: 0, message: 'FooTest > bar() failed' }] },
