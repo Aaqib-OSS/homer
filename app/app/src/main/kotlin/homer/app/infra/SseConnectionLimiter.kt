@@ -4,9 +4,9 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Bounds the concurrent SSE / long-poll streams one caller (an authenticated principal, or the client host when
- * unsecured) may hold open, so streams cannot exhaust server resources. In-memory and single-node, like the
- * streams themselves (ADR-0014).
+ * Bounds the concurrent SSE / long-poll streams one caller may hold open, so streams cannot exhaust server
+ * resources. The caller key is the authenticated principal, or the client host when unsecured (ADR-0014).
+ * In-memory and single-node, like the streams themselves.
  */
 class SseConnectionLimiter(
     private val maxPerCaller: Int = DEFAULT_MAX_PER_CALLER,

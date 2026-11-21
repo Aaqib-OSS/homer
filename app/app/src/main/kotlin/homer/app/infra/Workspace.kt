@@ -184,7 +184,7 @@ private class BoundedDeleteVisitor(
             deleted++
         } catch (_: IOException) {
             // Deliberately swallowed: the entry stays on disk for the purge sweep, and the
-            // message would carry a path from the attacker's tree into the log (§12 rule 7).
+            // message would carry a path from the attacker's tree into the log (ADR-0048).
             failed++
         }
     }

@@ -11,8 +11,9 @@ import kotlin.io.path.setPosixFilePermissions
 import kotlin.io.path.writeText
 
 /**
- * Materializes the `homer-*` shell helpers (and their `PATH` entry) and, when the MCP server is enabled,
- * `.homer/mcp.json` into a process workspace; deleted with the run when `cleanAfterFinish`. See ADR-0019.
+ * Materializes the `homer-*` shell helpers (with a `PATH` entry only when the env defines PATH) and, when the MCP
+ * server is enabled, `.homer/mcp.json` into a process workspace; deleted with the run when `cleanAfterFinish`.
+ * See ADR-0019.
  */
 class QuestionsWorkspaceSetup(
     private val mcpEnabled: Boolean,

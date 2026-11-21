@@ -152,7 +152,7 @@ class WorkspaceConfigFactory(
                 )
             }
         // Strict descent: a template normalizing to the server root would let a purge wipe every run (ADR-0053).
-        // Both forms are compared: serverRoot is never canonicalized, so behind a symlinked root one alone misses.
+        // serverRoot is never canonicalized, so behind a symlinked root the canonical comparison alone misses.
         val normalizedServerRoot = serverRoot.toAbsolutePath().normalize()
         if (projectRoot == normalizedServerRoot || requestedRoot.toAbsolutePath().normalize() == normalizedServerRoot) {
             throw WorkspaceException(

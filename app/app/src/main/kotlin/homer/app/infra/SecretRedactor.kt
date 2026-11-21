@@ -35,7 +35,7 @@ class SecretRedactor private constructor(
             minNeedleLength: Int = 1,
         ): SecretRedactor {
             // Env first, host second: a workspace key shadows a same-named host
-            // variable, and the workspace value is the one the child can echo.
+            // variable, and the workspace value is the one the child can echo (ADR-0047).
             val values = secretEnvNames.mapNotNull { env[it] ?: hostEnv(it) }.filter { it.length >= minNeedleLength }
             if (values.isEmpty()) return NONE
             // Callers redact JSON-encoded text, where a secret with \n, " or \ appears escaped: match those forms
