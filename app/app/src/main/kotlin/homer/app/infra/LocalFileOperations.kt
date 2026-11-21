@@ -4,24 +4,23 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import java.io.IOException
+import java.io.InputStream
 import java.io.OutputStream
-import java.nio.channels.Channels
-import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
-import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.BasicFileAttributes
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.ExecutorService
+import java.util.concurrent.Future
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.io.path.exists
-import kotlin.io.path.inputStream
 import kotlin.io.path.isDirectory
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.readText
@@ -33,10 +32,11 @@ import kotlin.io.path.readText
 class LocalFileOperations internal constructor(
     private val openTimeoutMs: Long,
     private val executor: ExecutorService = OPEN_EXECUTOR,
+    private val openRegular: (Path) -> InputStream = DescriptorOpen::openRegular,
     private val beforeOpen: (Path) -> Unit,
 ) : FileOperations {
-    // Test seam: [beforeOpen] runs on the pool thread before every readTextBounded open; [executor] is its pool.
-    constructor() : this(OPEN_TIMEOUT_MS, OPEN_EXECUTOR, {})
+    // Test seams: [beforeOpen] runs on the pool thread before every [openRegular]; [executor] is its pool.
+    constructor() : this(OPEN_TIMEOUT_MS, OPEN_EXECUTOR, DescriptorOpen::openRegular, {})
 
     private val logger = LoggerFactory.getLogger(LocalFileOperations::class.java)
 
@@ -53,12 +53,10 @@ class LocalFileOperations internal constructor(
         maxBytes: Long,
     ): String? {
         if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) return null
-        // CWE-367/CWE-400: open and read run on the bounded, timed pool, so a FIFO swapped in after the
-        // check cannot pin the caller; a hard link renamed in after it still wins (AR-12).
         var failure: IOException? = null
         val text =
             try {
-                if (PathSafety.isLinkedOrSpecial(path)) null else submitBounded(path, "read") { readCapped(path, maxBytes) }
+                submitBounded(path, "read") { openChecked(path).use { readWhole(it, maxBytes) } }
             } catch (e: IOException) {
                 failure = e
                 null
@@ -67,14 +65,9 @@ class LocalFileOperations internal constructor(
         return text
     }
 
-    private fun readCapped(
-        path: Path,
-        maxBytes: Long,
-    ): String? {
+    private fun openChecked(path: Path): InputStream {
         beforeOpen(path)
-        return FileChannel.open(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS).use {
-            readWhole(Channels.newInputStream(it), maxBytes)
-        }
+        return openRegular(path)
     }
 
     override fun fileExists(path: Path): Boolean = path.exists()
@@ -85,17 +78,7 @@ class LocalFileOperations internal constructor(
         bufferSize: Int,
     ) {
         withContext(Dispatchers.IO) {
-            // Closes the resolve-vs-open window on a hard link: ArtifactService (and
-            // callers like it) check isLinkedOrSpecial once at resolve, but nlink isn't
-            // covered by O_NOFOLLOW, so re-check it here too, immediately before the
-            // open. Residual: a link planted between this check and the open(2) below
-            // still wins that race — same-UID, ADR-0047. CWE-59.
-            if (PathSafety.isLinkedOrSpecial(path)) {
-                throw IOException("Refusing to read non-regular file: $path")
-            }
-            // The open itself is O_NOFOLLOW — a symlink swapped in after the
-            // pre-check fails the open instead of being followed.
-            openBounded(path) { path.inputStream(LinkOption.NOFOLLOW_LINKS) }.use { input ->
+            submitBounded(path, "open", InputStream::close) { openChecked(path) }.use { input ->
                 val buffer = ByteArray(bufferSize)
                 var bytesRead: Int
                 while (input.read(buffer).also { bytesRead = it } != -1) {
@@ -132,59 +115,56 @@ class LocalFileOperations internal constructor(
             .epochSecond
 
     /**
-     * Opens [path] for reading: re-assert a regular file (NOFOLLOW) before the open, then run the
-     * blocking `open(2)` on a **bounded** daemon pool capped at [openTimeoutMs] per open. The [open]
-     * lambda opens with `LinkOption.NOFOLLOW_LINKS`, so the symlink check is atomic with the open; the
-     * pre-check and pool also catch a same-UID swap to a FIFO/device, which `O_NOFOLLOW` misses. A
-     * blocked open cannot exhaust threads: the pool ([MAX_OPEN_THREADS], synchronous handoff) bounds
-     * leaked threads, and once saturated further opens fail fast ([RejectedExecutionException] → IOException).
-     */
-    private fun <T : AutoCloseable> openBounded(
-        path: Path,
-        open: () -> T,
-    ): T {
-        if (Files.exists(path, LinkOption.NOFOLLOW_LINKS) && !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
-            throw IOException("Refusing to read non-regular file: $path")
-        }
-        return submitBounded(path, "open", open)
-    }
-
-    /**
-     * Runs [task] on the bounded pool and waits at most [openTimeoutMs]; a full pool, a timeout
-     * (the task is then interrupted) and a task failure all surface as an [IOException].
+     * Runs [task] on the bounded pool and waits at most [openTimeoutMs]; a full pool, a timeout and a task
+     * failure all surface as an [IOException]. A result the task produces after the wait gave up is [discard]ed.
      */
     @Suppress("SwallowedException") // unwraps the ExecutionException to the task's own failure
     private fun <T> submitBounded(
         path: Path,
         what: String,
+        discard: (T) -> Unit = {},
         task: () -> T,
     ): T {
+        // Whichever side flips it first owns the result: the waiting caller, or the task once the caller gave up.
+        val claimed = AtomicBoolean(false)
         val future =
             try {
-                executor.submit(Callable { task() })
+                executor.submit(Callable { task().also { if (!claimed.compareAndSet(false, true)) discard(it) } })
             } catch (_: RejectedExecutionException) {
                 throw IOException("Artifact reader pool saturated; refusing to $what $path")
             }
         return try {
             future.get(openTimeoutMs, TimeUnit.MILLISECONDS)
         } catch (_: TimeoutException) {
-            future.cancel(true)
-            throw IOException("Timed out trying to $what artifact (possible non-regular file): $path")
+            abandon(future, claimed, discard)
+            throw IOException("Timed out trying to $what $path")
+        } catch (_: InterruptedException) {
+            abandon(future, claimed, discard)
+            Thread.currentThread().interrupt()
+            throw IOException("Interrupted while trying to $what $path")
         } catch (e: ExecutionException) {
             throw (e.cause as? IOException ?: IOException("Failed to $what $path", e.cause))
         }
     }
 
-    private companion object {
-        const val OPEN_TIMEOUT_MS = 10_000L
+    /** Gives up on [future]: cancels it if it has not produced yet, else [discard]s the result nobody will take. */
+    private fun <T> abandon(
+        future: Future<T>,
+        claimed: AtomicBoolean,
+        discard: (T) -> Unit,
+    ) {
+        if (claimed.compareAndSet(false, true)) future.cancel(true) else discard(future.get())
+    }
+
+    internal companion object {
+        private const val OPEN_TIMEOUT_MS = 10_000L
         private const val MAX_OPEN_THREADS = 8
 
-        // Bounded: a SynchronousQueue with max MAX_OPEN_THREADS means a submit is
-        // accepted only if a thread is immediately free or one can still be spawned
-        // under the cap, else it is rejected. Idle threads are reaped after 30s, so
-        // normal load holds none; only opens blocked on a FIFO retain a slot, and
-        // they can never exceed the cap.
-        private val OPEN_EXECUTOR: ExecutorService =
+        /**
+         * A pool configured like the production one: a SynchronousQueue under [MAX_OPEN_THREADS] rejects a submit
+         * when no thread is free or spawnable, and idle threads are reaped after 30 s.
+         */
+        fun newOpenPool(): ExecutorService =
             ThreadPoolExecutor(
                 0,
                 MAX_OPEN_THREADS,
@@ -192,5 +172,7 @@ class LocalFileOperations internal constructor(
                 TimeUnit.SECONDS,
                 SynchronousQueue(),
             ) { r -> Thread(r, "artifact-open").apply { isDaemon = true } }
+
+        private val OPEN_EXECUTOR: ExecutorService = newOpenPool()
     }
 }

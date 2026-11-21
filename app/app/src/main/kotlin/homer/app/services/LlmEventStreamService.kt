@@ -2,9 +2,11 @@ package homer.app.services
 
 import homer.app.executors.CommandArtifactPaths
 import homer.app.executors.llm.LlmHarness
+import homer.app.infra.DescriptorOpen
 import homer.app.infra.LlmOutputJson
 import homer.app.infra.PathSafety
 import homer.app.infra.SecretRedactor
+import homer.app.infra.readAt
 import homer.app.models.LlmEvent
 import homer.app.models.LlmEventJson
 import homer.app.models.ProcessInfo
@@ -21,11 +23,10 @@ import org.slf4j.Logger
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.nio.ByteBuffer
-import java.nio.channels.FileChannel
+import java.nio.channels.SeekableByteChannel
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
-import java.nio.file.StandardOpenOption
 
 /**
  * SSE resume position: the [eventIndex]-th event translated from the stdout line that
@@ -116,9 +117,7 @@ class LlmEventStreamService(
     private val harnesses: Map<String, LlmHarness<*>>,
     private val logger: Logger,
     private val pollIntervalMs: Long = DEFAULT_POLL_MS,
-    private val channelFactory: (Path) -> FileChannel = {
-        FileChannel.open(it, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)
-    },
+    private val channelFactory: (Path) -> SeekableByteChannel = DescriptorOpen::openRegularChannel,
 ) {
     private val terminal =
         setOf(
@@ -292,7 +291,7 @@ class LlmEventStreamService(
         stopWhen: suspend () -> Boolean = { false },
     ): Long {
         val tail = LineTail(processId, cmdIndex, artifact, startOffset, skipThroughEventIndex)
-        var file: FileChannel? = null
+        var file: SeekableByteChannel? = null
         // A refused file stays refused: the follow then only waits for its usual end.
         var refused = false
         val openIfPresent = {
@@ -319,19 +318,17 @@ class LlmEventStreamService(
         }
     }
 
-    // CWE-22/CWE-59 (ADR-0070): the file may appear after resolve, so re-check at open; NOFOLLOW_LINKS
-    // on the open fails a symlink swapped in after the check instead of following it.
+    // CWE-22/CWE-59 (ADR-0070): the file may be swapped after resolve, so the open checks the descriptor itself and
+    // refuses a symlink, hard link, FIFO or other non-regular file without blocking.
     private fun open(
         processId: Int,
         cmdIndex: Int,
         artifact: LlmArtifact,
-    ): FileChannel? {
-        if (!PathSafety.isLinkedOrSpecial(artifact.path)) {
-            try {
-                return channelFactory(artifact.path)
-            } catch (_: IOException) {
-                // Falls through to the refusal below.
-            }
+    ): SeekableByteChannel? {
+        try {
+            return channelFactory(artifact.path)
+        } catch (_: IOException) {
+            // Falls through to the refusal below.
         }
         logger.warn(
             "llm stream refusing a linked or non-regular stdout artifact (process {} cmd {} attempt {})",
@@ -371,13 +368,13 @@ class LlmEventStreamService(
 
         suspend fun drain(
             collector: FlowCollector<LlmStreamEvent>,
-            file: FileChannel,
+            file: SeekableByteChannel,
         ) {
             while (true) {
                 val length = file.size()
                 if (length <= readPos) return
                 val buf = ByteBuffer.allocate(minOf(length - readPos, MAX_READ_BYTES).toInt())
-                while (buf.hasRemaining() && file.read(buf, readPos + buf.position()) >= 0) {}
+                while (buf.hasRemaining() && file.readAt(buf, readPos + buf.position()) >= 0) {}
                 // Truncated under us: nothing more to read until it grows again.
                 if (buf.position() == 0) return
                 val chunkStart = readPos
