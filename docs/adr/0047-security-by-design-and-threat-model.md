@@ -315,9 +315,7 @@ once all 8 are held every file read through the pool fails at once for every cal
 `ContinuationFireService.extractResult` reads a watched run's stdout into a continuation's resume
 payload the same way. It refuses a symlinked artifacts directory and a recorded stdout path that is
 not a direct child of it, then reads at most the 64 KiB inline-result cap through
-`readTextBounded`, so a FIFO planted at `cmd_N.out` can no longer block the fire. The by-reference
-result fetch (`GET /callback/results/{token}`) reads that stdout through
-`ArtifactService.resolveArtifactPath`, then `readTextBounded` at the 4 MiB transform cap.
+`readTextBounded`, so a FIFO planted at `cmd_N.out` can no longer block the fire.
 
 The artifact download (`ArtifactService.resolveArtifactPath`, then `streamFile`), the log tail
 (`LogTailService.resolve`, then `tail`) and the LLM-event stream (`LlmEventStreamService.resolve`,
@@ -326,14 +324,13 @@ resolve the path. The download opens the file afterwards; each stream opens it a
 that finds it, which can be as late as the stream's end.
 
 Four cases remain. Three are races: a hard link renamed into place between the link check and the
-open, in `readTextBounded` and in the check `streamFile` repeats before its open, because
-`NOFOLLOW_LINKS` ignores the link count; a symlink swapped in for the artifacts
+open, because `NOFOLLOW_LINKS` ignores the link count; a symlink swapped in for the artifacts
 directory between its check and the open; and, for the two streams, the same swap at any time
 between `resolve` and the poll that opens the file. The fourth needs no race: a symlink
 at the run root or a directory above it is followed by every one of these reads. Each makes Homer
 read a different regular file: for an identity, at most 64 KiB whose fields it reports and whose
 thread a resume continues; for a continuation, at most 64 KiB it delivers as the watched run's
-result, and for a result fetch at most 4 MiB; for a download or stream, a file it serves to the caller (CWE-59/CWE-367).
+result; for a download or stream, a file it serves to the caller (CWE-59/CWE-367).
 
 **Accepted, not fixed**, like the tar walks above. Each case needs a local writer holding Homer's
 own UID, and that writer can already read any file the swap could lead to and copy its content
@@ -407,7 +404,8 @@ remote subresource; a future HTML surface needs an explicit policy override befo
 ## Amendment (2026-11-21): reads of a run's own files check the opened descriptor
 
 Every read the 2026-11-20 amendment above lists — `LocalFileOperations.readTextBounded` for a
-LangGraph identity and a continuation's result, `LocalFileOperations.streamFile` for an artifact
+LangGraph identity, a continuation's result and the by-reference result fetch
+(`GET /api/v1/callback/results/{token}`, at the 4 MiB transform cap), `LocalFileOperations.streamFile` for an artifact
 download, `LogTailService.tail` and `LlmEventStreamService.followFile` — no longer checks the path
 and then opens it by name. `DescriptorOpen` opens the file through the Foreign Function & Memory API
 with `O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_NOCTTY | O_CLOEXEC`, runs `fstat` on the returned
