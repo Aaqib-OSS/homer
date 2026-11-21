@@ -2165,7 +2165,8 @@ the agent's runs, on any runner. The names
 allowed are the ones listed here **plus** every host variable `globalEnv`
 already references with `@SYSENV:` — a variable the operator already hands to
 every agent stays usable from an agent's own `env`. The `globalEnv` keys do not
-count, only the host variables their values name. Default: none, so an agent
+count, only the host variables their values name, and runner `env` references
+do not count either. Default: none, so an agent
 `env` may reference only what `globalEnv` references.
 
 An agent naming any other variable fails to load: it is skipped with a load
