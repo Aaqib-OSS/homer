@@ -185,7 +185,7 @@ The per-exec `env KEY=VAL … argv` delivery above, and the residual audit-log s
   pod normally holds none. The removal is best effort and only logged when it fails (an exec refused
   or a dead pod). A container the kubelet killed (OOM, deadline) cannot run that exec, and a Homer
   process that dies mid-step cannot either; the file stays in the pod's `emptyDir` until the pod is
-  deleted, at once or after `keepPodTtlSeconds` for a kept pod. That is `AR-13` in
+  deleted, at once or after `keepPodTtlSeconds` for a kept pod. That is `AR-14` in
   [`SECURITY.md`](../../SECURITY.md#accepted-risks). The startup sweep needs no `.homer/env/` pattern:
   it deletes whole pods by label, and the `emptyDir` goes with the pod.
 - **Audit logs.** The request URI holds the path of the file, never a value, so the exposure `AR-10`

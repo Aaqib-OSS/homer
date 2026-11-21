@@ -195,9 +195,9 @@ file ([#364](https://github.com/livesport/homer/issues/364)):
   `0600` in the `0700` directory, until the session's workspace removal deletes the project root
   ([ADR-0067](0067-ssh-cleanup-via-rm-rf.md)). That removal runs only when `cleanAfterFinish` is true,
   so with `false` the file stays until an operator removes the project root. There is no startup
-  sweep, and none would need an `.homer/env/` name pattern. That residual is `AR-13`
+  sweep, and none would need an `.homer/env/` name pattern. That residual is `AR-14`
   in [`SECURITY.md`](../../SECURITY.md#accepted-risks). The same-UID swap of the env directory between
-  `ensurePrivateDir`'s checks is `AR-14`.
+  `ensurePrivateDir`'s checks is `AR-15`.
 - **Exposure removed.** The values are on no command line and in no `execve` argv, so `AR-09` (the
   interim record of the old exposure) is removed. The new design is the rule 7 shape
   ([ADR-0047](0047-security-by-design-and-threat-model.md)) the 2026-11-20 amendment named.

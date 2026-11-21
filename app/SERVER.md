@@ -3369,7 +3369,7 @@ The residual exposure surface is narrower still:
   readable only by the container's UID, by root on the node, or by an
   ephemeral debug container that mounts the volume — until the pod is
   deleted, at once or after `keepPodTtlSeconds` for a kept pod. See
-  `AR-13` in [`SECURITY.md`](../SECURITY.md#accepted-risks).
+  `AR-14` in [`SECURITY.md`](../SECURITY.md#accepted-risks).
 - **`pods/exec` RBAC remains the boundary that matters** — anyone who
   can `create` (SPDY) **or `get`** (WebSocket) on `pods/exec` in the
   runner's namespace can start their own exec session against a
@@ -3641,7 +3641,7 @@ auth: !<key>
     the upload and the command's start) stays, readable only by the
     ssh user, until the workspace is removed — never, with
     `cleanAfterFinish: false`, until you remove the project root; see
-    `AR-13` in [`SECURITY.md`](../SECURITY.md#accepted-risks).
+    `AR-14` in [`SECURITY.md`](../SECURITY.md#accepted-risks).
   - The remote `execve` limits still bound the env: the command
     receives it as its environment, so `ARG_MAX` and the per-string
     limit (128 KiB on Linux) apply. The file only keeps the env out of
