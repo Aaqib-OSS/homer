@@ -34,8 +34,9 @@ object RemoteCommandBuilder {
     }
 
     /**
-     * The `export` script [build] and [buildReaping] source from [envFile]: its first line removes the file, before
-     * any export can change the `PATH` that `rm` resolves on. Fails on a key that is not a POSIX shell identifier.
+     * The `export` script [build] and [buildReaping] source from [envFile]: its first line removes the file before any
+     * export can change the `PATH` that `rm` resolves on. Fails on a key that is not a POSIX shell identifier and on a
+     * value holding a NUL byte.
      */
     fun envFileContent(
         envFile: String,
@@ -43,6 +44,8 @@ object RemoteCommandBuilder {
     ): String {
         val invalid = env.keys.firstOrNull { !SHELL_IDENTIFIER.matches(it) }
         require(invalid == null) { "env name '$invalid' is not a POSIX shell identifier, which the ssh runner can export" }
+        val withNul = env.entries.firstOrNull { '\u0000' in it.value }?.key
+        require(withNul == null) { "env value of '$withNul' contains a NUL byte, which no process environment can hold" }
         return buildString {
             append("rm -f -- ").append(quote(envFile)).append(" || exit 1\n")
             env.forEach { (k, v) ->

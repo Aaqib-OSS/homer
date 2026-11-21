@@ -99,6 +99,16 @@ class RemoteCommandBuilderTest {
     }
 
     @Test
+    fun `envFileContent refuses a value holding a NUL byte, naming the key and no value`() {
+        val e =
+            assertThrows<IllegalArgumentException> {
+                RemoteCommandBuilder.envFileContent("/w/e.env", mapOf("OK" to "v", "STEP_VALUE" to "s3cr3t-Ab9\u0000-env-value"))
+            }
+        assertContains(e.message.orEmpty(), "'STEP_VALUE'")
+        assertFalse(e.message.orEmpty().contains("s3cr3t-Ab9"))
+    }
+
+    @Test
     fun `buildReapKill numerically guards the pgid before kill`() {
         assertEquals(
             "p=\$(cat '/w/.homer/reap/cmd-1.pgid' 2>/dev/null); case \"\$p\" in ''|*[!0-9]*) exit 0;; esac; " +
