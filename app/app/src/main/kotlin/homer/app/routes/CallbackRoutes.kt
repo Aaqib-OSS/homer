@@ -275,7 +275,7 @@ private fun Route.callbackResultRoutes(deps: CallbackDeps) {
             // the capability token in the path scopes the read to one (watched
             // process, artifact), and the caller's agent must match the token's
             // audience (the continuation's target) so a leaked token is useless to
-            // any other agent. The transformer, if any, is applied server-side at
+            // any other agent. The transformer is applied server-side at
             // fetch. Reusable within the token's TTL by any process running the
             // target agent (each resume segment is a fresh such process). See ADR-0025.
             get("/{token}") {
