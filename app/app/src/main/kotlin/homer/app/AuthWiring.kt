@@ -43,10 +43,8 @@ internal class AuthSetup(
 )
 
 /**
- * Wires a single [Bearer] scheme as the `auth-bearer` provider. Validation:
- * presence → constant-time token match, each failure mapped to the same
- * challenge/status as before extraction. Authenticates only — authorization
- * (grants) is enforced at the route, not here. See ADR-0037.
+ * Wires a single [Bearer] scheme as the `auth-bearer` provider: presence, then constant-time token match.
+ * Authenticates only; grants are enforced at the route. See ADR-0037.
  */
 internal fun io.ktor.server.auth.AuthenticationConfig.buildBearerProvider(scheme: Bearer) {
     provider("auth-bearer") {
@@ -78,10 +76,9 @@ internal fun io.ktor.server.auth.AuthenticationConfig.buildBearerProvider(scheme
 }
 
 /**
- * Wires a single [AuthConfig.Hmac] scheme as the `auth-hmac` provider. Reads
- * the request body captured under [hmacBodyKey] (empty if absent) and verifies
- * via [hmacVerifier]. Authenticates only — authorization (grants) is enforced
- * at the route, not here. See ADR-0037.
+ * Wires a single [AuthConfig.Hmac] scheme as the `auth-hmac` provider: verifies the body captured under
+ * [hmacBodyKey] (empty if absent) via [hmacVerifier]. Authenticates only; grants are enforced at the route.
+ * See ADR-0037.
  */
 internal fun io.ktor.server.auth.AuthenticationConfig.buildHmacProvider(
     scheme: AuthConfig.Hmac,
@@ -118,19 +115,15 @@ internal fun io.ktor.server.auth.AuthenticationConfig.buildHmacProvider(
 }
 
 /**
- * The `HmacBodyCapture` application plugin: reads the body of every
- * body-carrying request (except runner-protocol paths) under [hmacBodyKey] for
- * the `auth-hmac` provider. Needs DoubleReceive installed before it, and both
- * BEFORE Authentication (see [configureAuth]).
+ * The `HmacBodyCapture` plugin reads the body of every body-carrying request (except runner-protocol paths)
+ * under [hmacBodyKey] for `auth-hmac`. Needs DoubleReceive and itself installed BEFORE Authentication
+ * (see [configureAuth]).
  */
 internal fun hmacBodyCapturePlugin(hmacBodyKey: AttributeKey<ByteArray>) =
     createApplicationPlugin(name = "HmacBodyCapture") {
         onCall { call ->
-            // Runner-protocol routes are mounted OUTSIDE authenticate(...) (ADR-0066)
-            // and can never be satisfied by an HMAC provider, so capturing their body
-            // here is pure waste — and a costly one: the lifted body limit on the tar
-            // routes lets an anonymous POST buffer up to maxTransferBytes into heap
-            // before routing even runs. Skip them.
+            // Runner-protocol routes sit outside authenticate(...) (ADR-0066): no HMAC provider can satisfy them, and
+            // capturing their body would let an anonymous POST buffer up to maxTransferBytes into heap. Skip them.
             if (call.request.path().startsWith("/api/v1/runner/")) return@onCall
             val m = call.request.httpMethod
             val hasBody =
@@ -149,20 +142,16 @@ internal fun hmacBodyCapturePlugin(hmacBodyKey: AttributeKey<ByteArray>) =
     }
 
 /**
- * Installs Sessions (when a Password scheme is present), the HMAC body-capture plugins
- * (when an Hmac scheme is present), and the Authentication plugin with one provider per
- * configured scheme.
- * Install order is load-bearing: Sessions and DoubleReceive + HmacBodyCapture BEFORE
- * Authentication (each provider reads what those install). Returns the provider names in
- * registration order plus the Password and Bearer schemes and the HMAC body key.
+ * Installs Sessions (Password scheme), the HMAC body-capture plugins (Hmac scheme) and Authentication with one
+ * provider per scheme. Order is load-bearing: Sessions, DoubleReceive and HmacBodyCapture BEFORE Authentication.
+ * Returns provider names in registration order, the Password and Bearer schemes and the HMAC body key.
  */
 internal fun Application.configureAuth(
     schemes: List<AuthConfig>,
     passwordVerifier: PasswordVerifier,
 ): AuthSetup {
-    // Sessions must be installed BEFORE Authentication so the auth-session
-    // provider can read call.sessions.get<HomerSession>(). Combined.init
-    // guarantees at most one Password scheme. ADR-0011.
+    // Sessions BEFORE Authentication: the auth-session provider reads call.sessions. Combined.init guarantees at
+    // most one Password scheme. ADR-0011.
     val passwordScheme = schemes.filterIsInstance<AuthConfig.Password>().singleOrNull()
     val bearerScheme = schemes.filterIsInstance<AuthConfig.Bearer>().singleOrNull()
     installPasswordAuthSessions(passwordScheme, passwordVerifier)
@@ -189,16 +178,11 @@ private fun Application.installPasswordAuthSessions(
 ) {
     if (passwordScheme != null) {
         installPasswordSessions(passwordScheme)
-        // Pre-warm the dummy hash at the configured cost so the first
-        // unknown-user login doesn't pay an initial hash-then-verify cost
-        // while subsequent ones pay only verify. Keeps the unknown-user
-        // path timing-stable from the very first request.
+        // Pre-warm the dummy hash at the configured cost, so the first unknown-user login is as
+        // timing-stable as later ones.
         passwordVerifier.dummyHashAtCost(passwordScheme.bcryptCost)
-        // Operationally-fragile bcryptCost: with the per-IP login limiter at
-        // its default 5/min, costs above ~13 (≈ 8 s/verify) tie up CPU long
-        // enough that a burst of attempts blocks legitimate logins for over a
-        // minute. ADR-0011
-        // permits 4..15 for forward compatibility, but warn loudly above 13.
+        // Per-IP login limiter defaults to 5/min, so a bcryptCost above ~13 (about 8 s/verify) lets a burst block
+        // legitimate logins for over a minute; ADR-0011 permits 4..15, so warn above 13.
         if (passwordScheme.bcryptCost > 13) {
             logger.warn(
                 "AuthConfig.Password.bcryptCost = {} is operationally fragile: each verify takes seconds, " +

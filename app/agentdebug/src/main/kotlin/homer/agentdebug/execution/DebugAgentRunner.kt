@@ -108,11 +108,8 @@ class DebugAgentRunner(
         val skipRunAgentExecutor = SkipRunAgentExecutor()
         val skipLangGraphExecutor = SkipLangGraphExecutor()
         val skipRunnerCmdExecutor = SkipRunnerCmdExecutor()
-        // ExecutionContext.processId stays -1 and agentName stays "" in debug runs, so
-        // cost reporting and cap checks are no-ops; ProcessManager and CostMeter are only
-        // here to satisfy the factory contract. Both are now SQLite-backed, so back them
-        // with a throwaway temp database whose schema exists (the -1 writes are no-op
-        // UPDATEs against it, and the empty agentName never accrues real cost entries).
+        // processId stays -1 and agentName "", so cost and cap checks are no-ops; ProcessManager and CostMeter
+        // need a throwaway temp database that has the schema.
         val dbFile = Files.createTempFile("agentdebug-", ".db")
         // WAL mode writes -wal/-shm sidecars next to the main file; delete all three on exit.
         listOf("", "-wal", "-shm").forEach { java.io.File("$dbFile$it").deleteOnExit() }
@@ -155,9 +152,8 @@ class DebugAgentRunner(
                 lockKeyTemplate = agent.lockStrategy.key,
                 queryParams = inputMap,
                 workspaceAgentConfig = agent.workspace.copy(cleanAfterFinish = !keepWorkspace),
-                // Same union the run path seeds (`Process.execute`), so the redactor built
-                // from this config screens the agent's declared `secret: true` inputs and
-                // its `@SYSENV:`-sourced env values. CWE-532.
+                // Same union as the run path (`Process.execute`): declared `secret: true` inputs and `@SYSENV:`-sourced
+                // env values are screened. CWE-532.
                 secretEnvNames = agent.secretEnvNames + agent.sysEnvBackedEnvNames,
             )
 
