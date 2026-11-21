@@ -14,6 +14,7 @@ A modern, self-hosted web application for monitoring and managing Homer processe
 - **Custom themes**: add your own look to the console without rebuilding it — drop a stylesheet into `console/public/themes/` and name it in `CONSOLE_THEMES`; it joins the theme dropdown and its tokens apply like a built-in theme's. Name one light and one dark theme in `CONSOLE_THEME_MODES` and they replace the built-ins entirely. See [Custom themes](#custom-themes).
 - **Runners**: Read-only admin view of configured runners, registered pull-mode instances and the claim queue
 - **Maintenance banner**: A red alert bar across every dashboard page while the backend's maintenance mode is on — scheduled runs are skipped and new runs wait in a queue until an admin turns it off. See [Maintenance banner](#maintenance-banner).
+- **Version badge**: A fixed badge in the bottom-right corner of every dashboard page showing the console's build version next to the backend's reported Homer version. The console version comes from the `CONSOLE_VERSION` build arg (baked into `NEXT_PUBLIC_CONSOLE_VERSION` at image build time — see [`DEPLOYMENT.md` § Build the Image](DEPLOYMENT.md#build-the-image)); the Homer version comes from the heartbeat.
 - **Collapsible sidebar**: A toggle at the bottom of the sidebar collapses it to icons only (the name stays as a tooltip and `aria-label`) so the page gets more room; the choice is saved in `localStorage` and restored on the next visit. The Questions and Continuations badges stay visible on the icon when collapsed.
 - **Responsive Design**: Works on desktop, tablet, and mobile devices
 - **Resilient Error Handling**: A render error in one dashboard page shows a recoverable error card in the content area while the header and sidebar stay usable; a last-resort boundary catches anything that would otherwise blank the whole app. When the API query a page renders from fails (the process list and detail, the Questions inbox), the page shows an alert naming the cause instead of loading forever or showing an empty list: the API rejected the request (sign in, or check the auth configuration); the API could not be reached (down, or its `corsAllowedOrigins` does not allow this console's origin), did not answer in time, or sent a response the console cannot read; the process was not found; or the HTTP status of any other failure.
@@ -188,7 +189,12 @@ The list opens as the flat list of **all runs**. **Root runs** / **All
 runs** buttons switch to the **roots view** (`view=roots` in the URL): one
 row per flow, each showing the flow's run count (its descendants below the
 root), their total cost and the flow's aggregate state — running, waiting
-on a question, failed, or finished. The choice is kept in the URL like the
+on a question, failed, or finished. Only the first 20 rows of a page fetch
+that summary; every later row shows a dash, because each summary is one
+backend request. The count is the flow's full descendant total, while the
+cost and the aggregate state cover at most 100 descendants — a summary cut
+short there is marked **partial**, so it is not read as a cheaper, smaller
+flow. The choice is kept in the URL like the
 other filters. A **Children of #id** filter drops the roots filter and its
 Flow column; **Root runs** clears it and returns to the flow view.
 
@@ -222,6 +228,10 @@ it; hover for the full sentence, which the run's own page shows in full.
   `X-Homer-Parent-Process-Id` header), the header links to that parent;
   a retry or resume keeps the source run's parent. Beside it, **Root
   run #N** links to the first run of the flow, when one is recorded
+- **Langfuse trace**: When the backend has Langfuse configured
+  (`langfuse.serverUrl` and `langfuse.projectId`) and the run has a trace,
+  the header shows a **Langfuse trace** link that opens that run's trace in
+  a new tab. Runs without one — or a backend without Langfuse — show no link
 - **Failed before it started**: A run that ended `FAILED` without running a
   single command shows a **Failed before it started** box under the header with
   the stored reason — a claim timeout, a `SKIP_CURRENT` lock collision, a
@@ -482,10 +492,9 @@ backend has swept at least once.
    - Description (displayed below the agent name when provided)
    - Required and optional parameters
    - Parameter types (legacy `STRING`/`NUMBER`/`ANY`, or typed `string`/`integer`/`number`/`boolean`)
-   - Transformer details:
-     - **Direct pass-through**
-     - **Extract JSON path: `{path}`**
-     - **Regex match: `{pattern}` (group N)**
+   - Transformer details — one of the two parameter transformers:
+     - **Direct pass-through** (`pass`)
+     - **Extract JSON path: `{path}`** (`jsonPath`)
    - **Workflow graph** — for agents with a `!<langgraph>` command, the detail page
      renders the workflow from its `topology` (nodes and edges), fetched from
      `GET /api/v1/agents/{name}/langgraph`, in a collapsible section that is
@@ -616,7 +625,13 @@ active one (one active at a time — not a merged dashboard).
   a **Change** disclosure); expand it to point at a different backend and pick
   the auth mode (Password ↔ Token). On submit the console upserts the instance,
   makes it active, and runs the normal login. An https console warns inline if
-  you enter an `http://` endpoint (the browser blocks mixed content).
+  you enter an `http://` endpoint (the browser blocks mixed content). A link
+  carrying `?endpoint=<url>` pre-fills the field with that backend; when it is
+  not one of your saved instances the form unfolds, says the endpoint came from
+  the page link, and blocks sign-in until you tick **I trust this endpoint** —
+  credentials go wherever the link points (ADR-0011). A login the backend
+  rate-limits (HTTP 429) disables the button and counts the wait down in place:
+  **Try again in Ns**.
 - **Instance picker** — the server icon in the header lists known instances,
   switches the active one (resetting cached data and re-probing auth), offers
   "Add instance" (routes to the login screen), and removes an instance from its
@@ -924,7 +939,9 @@ committing code to `console/`.
   can write there — an agent workspace, a shared volume, a build step taking
   untrusted input — can take over the console.
 - A plugin that calls a non-Homer origin needs that origin in
-  `CONSOLE_ALLOWED_API_ORIGINS`, which pins `connect-src`.
+  `CONSOLE_ALLOWED_API_ORIGINS` — but only when that allowlist is set. Unset,
+  `connect-src` is `'self' https: http:`, which already admits any origin;
+  setting it pins `connect-src` to the origins you list.
 
 If you need plugins from authors who should *not* hold the operator's session,
 this mechanism is the wrong tool — see
@@ -950,8 +967,8 @@ which records the sandboxed-iframe option to revisit first.
 | `POST /api/v1/agents/:name/debug` | Run a single agent command for debugging |
 | `GET /api/v1/schemas/agent` | Fetch the agent JSON schema (Edit page validation) |
 | `DELETE /api/v1/kill/:id` | Kill a process |
-| `GET /api/v1/heartbeat` | Validate authentication token |
-| `GET /api/v1/health` | Runner/health status (used for the orphan-pod-sweep banner) |
+| `GET /api/v1/heartbeat` | Validate the authentication token and read the backend's Homer version (the version badge, and the runners page's version-mismatch flag) |
+| `GET /api/v1/health` | Runner/health status, maintenance mode and the orphan-pod sweep (the maintenance and sweep banners) |
 | `POST /api/v1/auth/login` | Mint a session cookie (cookie auth mode) |
 | `POST /api/v1/auth/logout` | Clear the session cookie (idempotent) |
 | `GET /api/v1/auth/me` | Return `{ username, role, grants }` for the session cookie or bearer token |

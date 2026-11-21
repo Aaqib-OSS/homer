@@ -44,15 +44,20 @@ request (ADR-0084).
 ### Quality reports
 
 ```bash
-npm run quality:report          # ESLint warnings, dependency-cruiser layering, knip unused code
+npm run quality:report          # ESLint warnings, dependency-cruiser layering, knip unused code, file/function size, DTO extract
 npm run mutation                # Stryker over the whole coverage scope (hours; a manual CI job)
 MUTATE_BASE=origin/main npm run mutation:changed  # only the lines changed since that commit
 ```
 
+`quality:report` chains `quality:eslint`, `quality:architecture`,
+`quality:unused`, `quality:size` and `quality:dto-types`.
+
 All of them are report-only ([ADR-0082](../docs/adr/0082-quality-reports-report-first.md)):
 they exit 0 whatever they find and write `<check>-summary.txt`,
 `<check>-report.txt` and `gl-code-quality-<check>.json` under
-`reports/quality/<check>/`. `mutation:changed` mutates the lines added or
+`reports/quality/<check>/` — except the `quality:dto-types` extract, which
+writes `reports/dto-contract/console-dtos.json` for the root
+`tools/quality/dto-contract.mjs` check to read. `mutation:changed` mutates the lines added or
 changed since `MUTATE_BASE` in files of the coverage scope; with `MUTATE_WORKTREE=1`
 it takes them from the working tree, uncommitted and untracked files included, as the
 diff mode (`node tools/quality/changed.mjs --only mutation-console`) runs it (a file whose path
@@ -332,7 +337,6 @@ when you fix it.
 - [ ] Verify transformer details are shown correctly:
   - Pass through: "Direct pass-through"
   - JSONPath: "Extract JSON path: $.path.to.value"
-  - Regex: "Regex match: pattern (group N)"
 - [ ] Verify environment variable names are shown (if different from param name)
 
 #### Search Functionality
