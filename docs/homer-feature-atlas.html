@@ -2144,7 +2144,7 @@ curl -X DELETE "$HOMER/api/v1/continuations/7"</code></pre>
             (<code>maxGroupSize</code>) and how long settled records are kept
             (<code>settledRetentionSec</code>, 7 days by default).</p>
           <pre><code>server:
-  dispatch: { maxPending: 100, defaultTtlSec: 86400,   # default: none
+  dispatch: { maxPending: 100, defaultTtlSec: 86400,   # default: 604800
               resultTokenTtlSec: 3600, maxJoinSubs: 32,
               maxGroupSize: 8,
               settledRetentionSec: 604800 }</code></pre>
