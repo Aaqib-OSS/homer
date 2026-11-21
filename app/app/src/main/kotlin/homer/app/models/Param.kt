@@ -5,9 +5,8 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 enum class ParamType {
-    // Legacy generation — deprecated (load-time WARN in AgentsService). Semantics
-    // are frozen until the removal release: STRING rejects values containing a
-    // space, NUMBER accepts only Int-parseable values. See ADR-0031.
+    // Legacy generation, deprecated and frozen until removal: STRING rejects a space or a control
+    // character, NUMBER accepts only Int values, ANY nothing. See ADR-0031.
     STRING,
     NUMBER,
     ANY,

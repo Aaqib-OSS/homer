@@ -60,10 +60,7 @@ class ParamValidator {
         value: String,
         param: Param,
     ): ParamValidation =
-        // Legacy STRING historically rejected only spaces. Also reject control
-        // characters (newlines, etc.): a newline in a value templated into a
-        // `when` bash predicate can inject a second predicate line. ANY stays
-        // unsanitized by definition (documented in AGENT.md).
+        // Control characters are rejected as well as spaces: a newline can inject a predicate line (ADR-0031).
         if (value.contains(" ") || value.any { it.isISOControl() }) {
             legacyInvalid(param)
         } else {
