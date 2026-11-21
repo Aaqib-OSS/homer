@@ -1,0 +1,37 @@
+# Ignore rules for the nightly image scan (ADR-0113), read from the checkout root. Each rule names one
+# advisory, the exact package version and the binary it sits in, so a rebuilt package stops matching it.
+ignore:
+  # AR-16: Go modules compiled into Alpine's glab 1.100.0-r2; no Alpine glab for 3.24 is built with the fixes.
+  - vulnerability: GHSA-89gr-r52h-f8rx
+    reason: AR-16
+    package: &glab-x-crypto
+      name: golang.org/x/crypto
+      version: v0.51.0
+      type: go-module
+      location: /usr/bin/glab
+  - vulnerability: GHSA-rm3j-f69w-wqmq
+    reason: AR-16
+    package: *glab-x-crypto
+  - vulnerability: GHSA-q4h4-gmj2-qvw2
+    reason: AR-16
+    package: *glab-x-crypto
+  - vulnerability: GHSA-w879-237q-wc7r
+    reason: AR-16
+    package: *glab-x-crypto
+  - vulnerability: GO-2026-5026
+    reason: AR-16
+    package: &glab-x-net
+      name: golang.org/x/net
+      version: v0.54.0
+      type: go-module
+      location: /usr/bin/glab
+  - vulnerability: GO-2026-6860
+    reason: AR-16
+    package: *glab-x-net
+  - vulnerability: GO-2026-5970
+    reason: AR-16
+    package:
+      name: golang.org/x/text
+      version: v0.37.0
+      type: go-module
+      location: /usr/bin/glab
