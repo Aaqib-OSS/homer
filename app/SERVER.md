@@ -1017,7 +1017,7 @@ delegate one agent's dispatches to reach another.
 
 **Denials hide agent existence.** A caller holding no grant at all on an
 agent gets the same `404 Agent not found` as for an agent that does not
-exist — on run, debug, and LangGraph inspect alike — so a probe cannot
+exist — on run, debug, the agent file routes and LangGraph inspect alike — so a probe cannot
 enumerate agents. A caller who holds some grant on the agent (and so already
 sees it in `GET /api/v1/agents`) gets `403` for an action it lacks. See
 [ADR-0047](../docs/adr/0047-security-by-design-and-threat-model.md) rule 3.

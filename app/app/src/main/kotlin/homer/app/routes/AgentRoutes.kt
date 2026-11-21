@@ -15,6 +15,7 @@ import homer.app.models.CronInfo
 import homer.app.models.ErrorResponse
 import homer.app.models.SchemaErrorResponse
 import homer.app.services.AgentFilesService
+import homer.app.services.Authorizer
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
@@ -110,9 +111,7 @@ private fun Route.agentFileReadRoutes(deps: AgentRouteDeps) {
     with(deps) {
         get("/agents/{agentName}/files") {
             val name = call.pathParameter("agentName")
-            if (!authorizer.hasAction(call.principalName(), Action.EDIT, name)) {
-                return@get call.respond(HttpStatusCode.Forbidden, ErrorResponse(msg = "Not permitted to edit '$name'"))
-            }
+            if (!call.mayEditAgentFiles(authorizer, name)) return@get
             respondFileOpResult(call, agentFilesService.list(name), schemaInvalidMsg = "Invalid") { r ->
                 call.respond(
                     AgentFileListResponse(
@@ -133,9 +132,7 @@ private fun Route.agentFileReadRoutes(deps: AgentRouteDeps) {
         get("/agents/{agentName}/files/{path...}") {
             val name = call.pathParameter("agentName")
             val path = call.parameters.getAll("path")?.joinToString("/") ?: ""
-            if (!authorizer.hasAction(call.principalName(), Action.EDIT, name)) {
-                return@get call.respond(HttpStatusCode.Forbidden, ErrorResponse(msg = "Not permitted to edit '$name'"))
-            }
+            if (!call.mayEditAgentFiles(authorizer, name)) return@get
             respondFileOpResult(call, agentFilesService.read(name, path), schemaInvalidMsg = "Invalid") { r ->
                 call.respond(AgentFileContentResponse(path = path, content = r.value))
             }
@@ -149,9 +146,7 @@ private fun Route.agentFileWriteRoutes(deps: AgentRouteDeps) {
         put("/agents/{agentName}/files/{path...}") {
             val name = call.pathParameter("agentName")
             val path = call.parameters.getAll("path")?.joinToString("/") ?: ""
-            if (!authorizer.hasAction(call.principalName(), Action.EDIT, name)) {
-                return@put call.respond(HttpStatusCode.Forbidden, ErrorResponse(msg = "Not permitted to edit '$name'"))
-            }
+            if (!call.mayEditAgentFiles(authorizer, name)) return@put
             val body = call.receiveOr400<AgentFileWriteRequest>("Invalid JSON body: expected { content }")
             respondFileOpResult(
                 call,
@@ -170,9 +165,7 @@ private fun Route.agentFileWriteRoutes(deps: AgentRouteDeps) {
         delete("/agents/{agentName}/files/{path...}") {
             val name = call.pathParameter("agentName")
             val path = call.parameters.getAll("path")?.joinToString("/") ?: ""
-            if (!authorizer.hasAction(call.principalName(), Action.EDIT, name)) {
-                return@delete call.respond(HttpStatusCode.Forbidden, ErrorResponse(msg = "Not permitted to edit '$name'"))
-            }
+            if (!call.mayEditAgentFiles(authorizer, name)) return@delete
             respondFileOpResult(call, agentFilesService.delete(name, path), schemaInvalidMsg = "Invalid") {
                 call.respond(HttpStatusCode.NoContent)
             }
@@ -223,6 +216,26 @@ private fun Route.agentToolingRoutes(deps: AgentRouteDeps) {
             call.respond(HttpStatusCode.NoContent)
         }
     }
+}
+
+/**
+ * Whether the caller may edit [name]'s files: else a `404` identical to an unknown agent's when it holds no
+ * grant on [name] (ADR-0047 rule 3), or a `403` when it holds another grant but not EDIT.
+ */
+private suspend fun ApplicationCall.mayEditAgentFiles(
+    authorizer: Authorizer,
+    name: String,
+): Boolean {
+    val principal = principalName()
+    if (!authorizer.anyGrant(principal, name)) {
+        respond(HttpStatusCode.NotFound, ErrorResponse(msg = "Agent '$name' not found"))
+        return false
+    }
+    if (!authorizer.hasAction(principal, Action.EDIT, name)) {
+        respond(HttpStatusCode.Forbidden, ErrorResponse(msg = "Not permitted to edit '$name'"))
+        return false
+    }
+    return true
 }
 
 /**

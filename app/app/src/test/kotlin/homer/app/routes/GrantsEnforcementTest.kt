@@ -62,9 +62,11 @@ import io.ktor.server.testing.testApplication
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.serialization.encodeToString
 import org.junit.jupiter.api.Test
 import java.nio.file.Files
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -262,6 +264,35 @@ class GrantsEnforcementTest {
 
             val allowed = client.get("/api/v1/agents/echo/files") { header(HttpHeaders.Authorization, "Bearer edit-token") }
             assertFalse(allowed.status == HttpStatusCode.Forbidden, "expected authorization to pass, got ${allowed.status}")
+        }
+
+    @Test
+    fun `agent file routes answer a caller with no grant on the agent the unknown-agent 404`() =
+        testApplication {
+            val otherEditor = TokenConfig(token = "other-token", grants = listOf(Grant(listOf("other"), listOf(Action.EDIT))))
+            val tokens = mapOf("other-editor" to otherEditor)
+            val agentFilesService = mockk<AgentFilesService>(relaxed = true)
+            application { installGrantsApp(tokens, deps(authorizerFor(tokens), agentFilesService = agentFilesService)) }
+
+            for (agent in listOf("echo", "ghost")) {
+                val answers =
+                    listOf(
+                        client.get("/api/v1/agents/$agent/files") { header(HttpHeaders.Authorization, "Bearer other-token") },
+                        client.get("/api/v1/agents/$agent/files/notes.md") { header(HttpHeaders.Authorization, "Bearer other-token") },
+                        client.put("/api/v1/agents/$agent/files/notes.md") {
+                            header(HttpHeaders.Authorization, "Bearer other-token")
+                            contentType(ContentType.Application.Json)
+                            setBody("""{"content":"hi"}""")
+                        },
+                        client.delete("/api/v1/agents/$agent/files/notes.md") { header(HttpHeaders.Authorization, "Bearer other-token") },
+                    )
+                answers.forEach {
+                    assertEquals(HttpStatusCode.NotFound, it.status)
+                    assertContains(it.bodyAsText(), "Agent '$agent' not found")
+                }
+            }
+            verify(exactly = 0) { agentFilesService.list(any()) }
+            verify(exactly = 0) { agentFilesService.write(any(), any(), any(), any()) }
         }
 
     @Test
