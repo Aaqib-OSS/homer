@@ -65,26 +65,67 @@ class LoadStartupConfigTest {
         assertNull(loadStartupConfig(arrayOf(File(dir, "absent.json").absolutePath), hardenJvm = {}))
     }
 
-    @Test
-    fun `startup applies the HOMER_LOG_LEVELS override to the logger system property`() {
-        val config = file("config.json", """{"agentsSearchPath": "a", "workspaceRootPath": "w", "databasePath": "d"}""")
-        val key = "org.slf4j.simpleLogger.log.homer.app.services"
-        val pinned = System.getProperty(key)
+    private val servicesLogKey = "org.slf4j.simpleLogger.log.homer.app.services"
+    private val ktorLogKey = "org.slf4j.simpleLogger.log.io.ktor"
 
+    private fun logConfig(): String = file("config.json", """{"agentsSearchPath": "a", "workspaceRootPath": "w", "databasePath": "d"}""")
+
+    private fun <T> preservingLogProperties(
+        vararg keys: String,
+        block: () -> T,
+    ): T {
+        val pinned = keys.associateWith { System.getProperty(it) }
         try {
+            return block()
+        } finally {
+            pinned.forEach { (key, value) -> if (value == null) System.clearProperty(key) else System.setProperty(key, value) }
+        }
+    }
+
+    @Test
+    fun `startup applies the HOMER_LOG_LEVELS override to the logger system property`() =
+        preservingLogProperties(servicesLogKey) {
             assertNotNull(
                 loadStartupConfig(
-                    arrayOf(config),
+                    arrayOf(logConfig()),
                     env = mapOf("HOMER_LOG_LEVELS" to "homer.app.services=debug"),
                     hardenJvm = {},
                 ),
             )
 
-            assertEquals("debug", System.getProperty(key))
-        } finally {
-            if (pinned == null) System.clearProperty(key) else System.setProperty(key, pinned)
+            assertEquals("debug", System.getProperty(servicesLogKey))
         }
-    }
+
+    @Test
+    fun `startup applies every HOMER_LOG_LEVELS pair to its own logger property`() =
+        preservingLogProperties(servicesLogKey, ktorLogKey) {
+            assertNotNull(
+                loadStartupConfig(
+                    arrayOf(logConfig()),
+                    env = mapOf("HOMER_LOG_LEVELS" to "homer.app.services=debug,io.ktor=warn"),
+                    hardenJvm = {},
+                ),
+            )
+
+            assertEquals("debug", System.getProperty(servicesLogKey))
+            assertEquals("warn", System.getProperty(ktorLogKey))
+        }
+
+    @Test
+    fun `startup keeps a logger level the operator pinned with -D`() =
+        preservingLogProperties(servicesLogKey) {
+            System.setProperty(servicesLogKey, "info")
+
+            assertNotNull(
+                loadStartupConfig(
+                    arrayOf(logConfig()),
+                    env = mapOf("HOMER_LOG_LEVELS" to "homer.app.services=debug"),
+                    hardenJvm = {},
+                ),
+            )
+
+            assertEquals("info", System.getProperty(servicesLogKey))
+        }
 
     @Test
     fun `a config file over the 1 MiB bootstrap cap refuses to start without parsing it`() {
