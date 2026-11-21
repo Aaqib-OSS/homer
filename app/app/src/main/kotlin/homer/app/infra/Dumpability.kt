@@ -1,4 +1,4 @@
-package homer.runner
+package homer.app.infra
 
 import java.lang.foreign.FunctionDescriptor
 import java.lang.foreign.Linker
@@ -6,8 +6,8 @@ import java.lang.foreign.ValueLayout
 import java.lang.invoke.MethodHandle
 
 /**
- * Denies same-uid `/proc` inspection of this JVM via `prctl(PR_SET_DUMPABLE, 0)`.
- * See ADR-0078.
+ * Denies same-uid `/proc` inspection of this JVM via `prctl(PR_SET_DUMPABLE, 0)`; the server and the
+ * runner both call it. See ADR-0078.
  */
 object Dumpability {
     private const val PR_GET_DUMPABLE = 3
@@ -52,7 +52,7 @@ object Dumpability {
     }
 
     /** `PR_GET_DUMPABLE`: 1 when dumpable, 0 when not, negative on error. */
-    internal fun dumpableState(): Int = prctl(PR_GET_DUMPABLE, 0L)
+    fun dumpableState(): Int = prctl(PR_GET_DUMPABLE, 0L)
 
     private val prctlHandle: MethodHandle by lazy {
         val linker = Linker.nativeLinker()

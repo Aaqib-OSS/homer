@@ -36,7 +36,7 @@
     },
     "env": {
       "type": "object",
-      "description": "Per-agent environment. Values support @SYSENV:VAR_NAME references.",
+      "description": "Per-agent environment. Values support @SYSENV:VAR_NAME references to host variables the server config allows (agentSysEnvAllowlist, or a name globalEnv references with @SYSENV:); any other name fails the agent's load.",
       "additionalProperties": { "type": "string" }
     },
     "inputs": {

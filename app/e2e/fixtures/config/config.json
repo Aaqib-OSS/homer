@@ -51,6 +51,7 @@
   "workspaceRootPath": "/app/workspace/runs",
   "databasePath": "/app/workspace/homer.db",
   "costTrackedTagKeys": ["mr"],
+  "agentSysEnvAllowlist": ["CONFIG_PATH"],
   "globalEnv": {
     "PATH": "/usr/local/bin:/usr/bin:/bin"
   },

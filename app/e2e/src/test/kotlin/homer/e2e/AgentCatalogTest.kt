@@ -24,6 +24,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -269,6 +270,31 @@ class AgentCatalogTest : E2eTestBase() {
             assertEquals("FINISHED", info.status)
             assertTrue(HomerApi.artifact(processId, "cmd_0.out").bodyAsText().contains("created-agent-ran"))
         }
+
+    @Test
+    fun `files API refuses a definition naming an unlisted host variable and runs one naming a listed one`() =
+        runBlocking {
+            val name = uniqueAgentName("sysenv")
+            assertEquals(HttpStatusCode.Created, createAgent(name).status)
+
+            // JAVA_OPTS is set on the backend but not in the fixture config's agentSysEnvAllowlist.
+            val refused = putFile(name, "agent.yaml", hostRefDefinition(name, "JAVA_OPTS"))
+            assertEquals(HttpStatusCode.UnprocessableEntity, refused.status)
+            val errors = E2e.json.decodeFromString<SchemaErrorBody>(refused.bodyAsText()).errors
+            assertTrue(errors.any { "'JAVA_OPTS'" in it }, "the refusal must name the variable: $errors")
+            assertFalse(errors.any { "-Xmx" in it }, "the refusal must not carry the variable's value: $errors")
+
+            val listed = putFile(name, "agent.yaml", hostRefDefinition(name, "CONFIG_PATH"))
+            assertEquals(HttpStatusCode.OK, listed.status)
+            val processId = HomerApi.startRun(name)
+            assertEquals("FINISHED", Awaits.awaitTerminal(processId).status)
+            assertTrue(HomerApi.artifact(processId, "cmd_0.out").bodyAsText().contains("config/config.json"))
+        }
+
+    private fun hostRefDefinition(
+        name: String,
+        variable: String,
+    ) = "name: $name\nenv:\n  HOST_VALUE: \"@SYSENV:$variable\"\ncommands:\n  - !<script>\n    content: printenv HOST_VALUE\n"
 
     private var counter = 0
 

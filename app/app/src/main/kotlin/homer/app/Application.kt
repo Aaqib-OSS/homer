@@ -83,7 +83,7 @@ fun main(args: Array<String>) {
         if (System.getProperty(key) == null) System.setProperty(key, value)
     }
 
-    val resolvedConfig = loadStartupConfig(args) ?: return
+    val resolvedConfig = loadStartupConfig(args, hardenJvm = ::hardenServerJvm) ?: return
 
     logger.info(
         "Starting server on port {} with workspace: {}",
@@ -98,16 +98,14 @@ fun main(args: Array<String>) {
 }
 
 /**
- * Reads, parses and `@SYSENV`-resolves the config file named by `args[0]`. Returns `null`
- * after logging and printing why startup cannot continue.
+ * Reads and parses the config file named by `args[0]`, runs [hardenJvm], then `@SYSENV`-resolves it.
+ * Returns `null` after logging and printing why startup cannot continue.
  */
 internal fun loadStartupConfig(
     args: Array<String>,
     sysEnvResolver: SysEnvResolver = SysEnvResolver(),
-): AppConfig? {
-    val config = readStartupConfig(args) ?: return null
-    return resolveStartupConfig(config, sysEnvResolver)
-}
+    hardenJvm: () -> Unit,
+): AppConfig? = readStartupConfig(args)?.also { hardenJvm() }?.let { resolveStartupConfig(it, sysEnvResolver) }
 
 /** Loads the config file named by `args[0]`, capped at the bootstrap size; `null` = refused. */
 private fun readStartupConfig(args: Array<String>): AppConfig? {
@@ -183,10 +181,10 @@ private fun resolveStartupConfig(
             )
         config.copy(
             globalEnv = resolvedGlobalEnv,
-            // Computed from the RAW globalEnv: after resolveMapValues the
-            // placeholders are gone. Marks host-sourced values as secret so
-            // they are masked in telemetry (ADR-0047 §7).
+            // Both from the RAW globalEnv, whose placeholders resolveMapValues erases; host-sourced
+            // values are secret so telemetry masks them (ADR-0047 §7), and agents may name them (ADR-0037).
             sysEnvBackedGlobalEnvNames = sysEnvResolver.secretNamesFor(config.globalEnv),
+            globalEnvSysEnvNames = SysEnvResolver.referencedNames(config.globalEnv),
             // Same resolution + secrecy contract as globalEnv, per runner: a
             // runner-env value pulled from the host env is a credential too.
             runners = resolveRunnerEnvs(config.runners, sysEnvResolver),

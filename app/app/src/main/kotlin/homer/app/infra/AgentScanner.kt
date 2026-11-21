@@ -21,6 +21,7 @@ internal class AgentScanner(
     private val agentsSearchPath: String,
     private val logger: Logger,
     private val sysEnvResolver: SysEnvResolver,
+    private val sysEnvAllowlist: AgentSysEnvAllowlist,
     private val maxConfigFileBytes: Long,
     private val validator: AgentDefinitionValidator,
     private val inputChecks: AgentInputChecks,
@@ -95,8 +96,9 @@ internal class AgentScanner(
 
         try {
             val agent = readAgent(agentPath, rel, errors) ?: return
-            val validatedName = validator.checkAgentName(agent, rel, errors) ?: return
-            val cronDisabled = validator.checkDefinition(agent, rel, errors) ?: return
+            // Before any `@SYSENV:` resolution: a refused name is never read, and the refusal
+            // does not reveal whether it is set (ADR-0037).
+            val (validatedName, cronDisabled) = checkAgent(agent, rel, errors) ?: return
 
             // HMR_AGENT_DIR is a Homer-owned system var (the agent's own config
             // directory), injected last so it wins over any author-set value.
@@ -129,6 +131,24 @@ internal class AgentScanner(
             logger.error("Error loading agent from {}: {}", rel, e.message, e)
             errors.add("Error loading agent from $rel: ${e.message}")
         }
+    }
+
+    /**
+     * The name, definition and `@SYSENV:` checks, in order: [agent]'s validated name and whether its cron
+     * schedule is disabled, or `null` at the first failure, which reported itself into [errors].
+     */
+    private fun checkAgent(
+        agent: Agent,
+        rel: String,
+        errors: MutableList<String>,
+    ): Pair<String, Boolean>? {
+        val validatedName = validator.checkAgentName(agent, rel, errors) ?: return null
+        val cronDisabled = validator.checkDefinition(agent, rel, errors) ?: return null
+        val refusal = sysEnvAllowlist.refusal(agent.env) ?: return validatedName to cronDisabled
+        val msg = "Agent '${agent.name}' in $rel $refusal; the agent is skipped."
+        logger.error(msg)
+        errors.add(msg)
+        return null
     }
 
     /** Reads and decodes [agentPath], refusing a file over the size cap; `null` = skip it. */

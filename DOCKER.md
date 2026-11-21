@@ -356,7 +356,7 @@ docker run -p 3000:3000 \
 | `BACKEND_PORT` | 8080 | Host port for the backend (published on `127.0.0.1` only) |
 | `HOMER_ADMIN_TOKEN` | _(required)_ | Admin API bearer token; resolved by `@SYSENV` in the example config. Startup fails if empty or unset. |
 | `FRONTEND_PORT` | 3000 | Compose passes the console's port to the backend too: the example configs allow the console origin `http://localhost:<FRONTEND_PORT>` (and `127.0.0.1`) via `@SYSENV:FRONTEND_PORT`. Startup fails if unset |
-| `JAVA_OPTS` | `-Xmx512m -Xms256m` | JVM options. The image puts `-XX:-UseBASE64Intrinsics` (CVE-2026-114938, Java4Shell; W-020 in [`docs/workarounds.md`](docs/workarounds.md)) before them, so setting `JAVA_OPTS` keeps it |
+| `JAVA_OPTS` | `-Xmx512m -Xms256m` | JVM options. The image puts `-XX:-UseBASE64Intrinsics` (CVE-2026-114938, Java4Shell; W-020 in [`docs/workarounds.md`](docs/workarounds.md)) before them, so setting `JAVA_OPTS` keeps it, and adds `--enable-native-access=ALL-UNNAMED` after them for the non-dumpable hardening ([`app/SERVER.md`](app/SERVER.md#server-process-hardening)) |
 | `CONFIG_PATH` | `config/config.json` | Path to config file in container |
 
 ### Build Arguments
@@ -728,6 +728,17 @@ Increase resource limits in `docker-compose.prod.yml` or adjust `JAVA_OPTS`:
 export JAVA_OPTS="-Xmx1024m -Xms512m"
 docker compose up -d
 ```
+
+### A diagnostic tool cannot attach to the backend
+
+On Linux the backend JVM is non-dumpable, so a tool you add to the container
+(`jcmd`, `jstack`, a profiler, `gdb`; the image ships a JRE without them) may be
+refused when it attaches, even as root: root in a default Docker container
+lacks `CAP_SYS_PTRACE`. No core dump is written either. For a thread dump,
+`docker exec homer-backend kill -3 1` prints one to the container log. For an
+attaching tool, start the backend with `--cap-add SYS_PTRACE` (`cap_add:
+[SYS_PTRACE]` in compose, or `--privileged`) and run it as root. Why, and what
+else it changes: [`app/SERVER.md`](app/SERVER.md#server-process-hardening).
 
 ## Maintenance
 

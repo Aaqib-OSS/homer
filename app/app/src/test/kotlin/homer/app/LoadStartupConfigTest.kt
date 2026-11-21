@@ -10,6 +10,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.fail
 
 /** The startup half of `main`: read, size-cap, parse and `@SYSENV`-resolve the config file. */
 class LoadStartupConfigTest {
@@ -25,12 +26,43 @@ class LoadStartupConfigTest {
 
     @Test
     fun `no config path argument refuses to start`() {
-        assertNull(loadStartupConfig(emptyArray()))
+        assertNull(loadStartupConfig(emptyArray(), hardenJvm = {}))
+    }
+
+    @Test
+    fun `a config that does not load never hardens the JVM`() {
+        assertNull(loadStartupConfig(emptyArray(), hardenJvm = { fail("hardened without a config") }))
+        assertNull(loadStartupConfig(arrayOf(file("config.json", "{ not json")), hardenJvm = { fail("hardened a broken config") }))
+    }
+
+    @Test
+    fun `a loaded config hardens the JVM once, before any @SYSENV reference is read`() {
+        val events = mutableListOf<String>()
+        val config =
+            file(
+                "config.json",
+                """{"agentsSearchPath": "a", "workspaceRootPath": "w", "databasePath": "@SYSENV:DB_PATH"}""",
+            )
+
+        val resolved =
+            loadStartupConfig(
+                arrayOf(config),
+                SysEnvResolver { name -> events.add("read $name").let { "homer.db" } },
+                hardenJvm = { events.add("harden") },
+            )
+
+        assertEquals("homer.db", assertNotNull(resolved).databasePath)
+        assertEquals(listOf("harden", "read DB_PATH"), events)
+    }
+
+    @Test
+    fun `main without a config path returns before hardening the JVM or serving`() {
+        main(emptyArray())
     }
 
     @Test
     fun `a missing config file refuses to start`() {
-        assertNull(loadStartupConfig(arrayOf(File(dir, "absent.json").absolutePath)))
+        assertNull(loadStartupConfig(arrayOf(File(dir, "absent.json").absolutePath), hardenJvm = {}))
     }
 
     @Test
@@ -38,19 +70,19 @@ class LoadStartupConfigTest {
         val pad = "x".repeat(1024 * 1024)
         // Valid apart from its size, so only the cap can refuse it.
         val big = file("big.json", """{"agentsSearchPath":"a","workspaceRootPath":"w","databasePath":"d","globalEnv":{"PAD":"$pad"}}""")
-        assertNull(loadStartupConfig(arrayOf(big)))
+        assertNull(loadStartupConfig(arrayOf(big), hardenJvm = {}))
     }
 
     @Test
     fun `an unknown config file extension fails startup with an UnknownError`() {
         // An Error, so the parse-failure catch (Exception) does not turn it into a clean refusal.
-        val error = assertFailsWith<UnknownError> { loadStartupConfig(arrayOf(file("config.txt", "agentsSearchPath: a"))) }
+        val error = assertFailsWith<UnknownError> { loadStartupConfig(arrayOf(file("config.txt", "agentsSearchPath: a")), hardenJvm = {}) }
         assertEquals("Cant parse configuration file type txt", error.message)
     }
 
     @Test
     fun `a config file that does not parse refuses to start`() {
-        assertNull(loadStartupConfig(arrayOf(file("config.json", "{ not json"))))
+        assertNull(loadStartupConfig(arrayOf(file("config.json", "{ not json")), hardenJvm = {}))
     }
 
     @Test
@@ -76,7 +108,7 @@ class LoadStartupConfigTest {
                 """.trimIndent(),
             )
 
-        val resolved = assertNotNull(loadStartupConfig(arrayOf(config)))
+        val resolved = assertNotNull(loadStartupConfig(arrayOf(config), hardenJvm = {}))
 
         assertEquals(serverId, resolved.globalEnv[EnvConstants.SERVER_ID])
         assertEquals(path, resolved.globalEnv["HOST_PATH"])
@@ -93,6 +125,40 @@ class LoadStartupConfigTest {
     }
 
     @Test
+    fun `agent @SYSENV names are the configured allowlist plus the host variables globalEnv references, not its keys`() {
+        val config =
+            file(
+                "config.json",
+                """
+                {
+                  "agentsSearchPath": "agents", "workspaceRootPath": "ws", "databasePath": "homer.db",
+                  "agentSysEnvAllowlist": ["EXTRA_NAME"],
+                  "globalEnv": {"HOST_PATH": "Bearer @SYSENV:PATH", "PLAIN": "literal"}
+                }
+                """.trimIndent(),
+            )
+
+        val resolved = assertNotNull(loadStartupConfig(arrayOf(config), hardenJvm = {}))
+
+        assertEquals(setOf("PATH"), resolved.globalEnvSysEnvNames)
+        assertEquals(setOf("EXTRA_NAME", "PATH"), resolved.agentSysEnvNames)
+    }
+
+    @Test
+    fun `an agentSysEnvAllowlist entry that is not a variable name refuses to start`() {
+        val config =
+            file(
+                "config.json",
+                """
+                {"agentsSearchPath": "agents", "workspaceRootPath": "ws", "databasePath": "homer.db",
+                 "agentSysEnvAllowlist": ["@SYSENV:TOKEN"]}
+                """.trimIndent(),
+            )
+
+        assertNull(loadStartupConfig(arrayOf(config), hardenJvm = {}))
+    }
+
+    @Test
     fun `a yaml config is parsed too`() {
         val config =
             file(
@@ -104,7 +170,7 @@ class LoadStartupConfigTest {
                 """.trimIndent(),
             )
 
-        val resolved = assertNotNull(loadStartupConfig(arrayOf(config)))
+        val resolved = assertNotNull(loadStartupConfig(arrayOf(config), hardenJvm = {}))
 
         assertEquals("agents", resolved.agentsSearchPath)
         assertEquals("homer.db", resolved.databasePath)
@@ -122,7 +188,7 @@ class LoadStartupConfigTest {
                 """.trimIndent(),
             )
 
-        assertNull(loadStartupConfig(arrayOf(config)))
+        assertNull(loadStartupConfig(arrayOf(config), hardenJvm = {}))
     }
 
     private fun corsConfig(vararg origins: String): String =
@@ -138,7 +204,7 @@ class LoadStartupConfigTest {
     fun `a SYSENV placeholder inside a CORS origin is resolved at startup`() {
         val config = corsConfig("http://localhost:@SYSENV:FRONTEND_PORT", "https://console.example.com")
 
-        val resolved = assertNotNull(loadStartupConfig(arrayOf(config), frontendPortEnv))
+        val resolved = assertNotNull(loadStartupConfig(arrayOf(config), frontendPortEnv, hardenJvm = {}))
 
         assertEquals(listOf("http://localhost:13000", "https://console.example.com"), resolved.server.corsAllowedOrigins)
         assertTrue(resolved.sysEnvBackedGlobalEnvNames.none { it == "FRONTEND_PORT" }, "a CORS origin is not a secret")
@@ -148,7 +214,7 @@ class LoadStartupConfigTest {
     fun `a CORS origin referencing an unset variable refuses to start`() {
         val config = corsConfig("http://localhost:@SYSENV:HOMER_TEST_VARIABLE_THAT_IS_NEVER_SET")
 
-        assertNull(loadStartupConfig(arrayOf(config), frontendPortEnv))
+        assertNull(loadStartupConfig(arrayOf(config), frontendPortEnv, hardenJvm = {}))
     }
 
     @Test
@@ -156,6 +222,6 @@ class LoadStartupConfigTest {
         // The variable would turn localhost into userinfo and evil.example into the allowed host.
         val config = corsConfig("http://localhost:@SYSENV:NOT_A_PORT")
 
-        assertNull(loadStartupConfig(arrayOf(config), frontendPortEnv))
+        assertNull(loadStartupConfig(arrayOf(config), frontendPortEnv, hardenJvm = {}))
     }
 }

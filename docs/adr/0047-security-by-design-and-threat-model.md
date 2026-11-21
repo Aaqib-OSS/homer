@@ -405,6 +405,15 @@ Alternatives considered for checking the opened file, and rejected:
 
 `SECURITY.md` carries what remains as AR-12.
 
+## Amendment (2026-11-21): an agent definition names only allowed host variables
+
+Rule 2 counts agent-declared env as attacker-controlled, and an `edit` holder is a principal
+distinct from the operator. A definition's `@SYSENV:NAME` therefore reaches only the host variables
+the operator allowed (`agentSysEnvAllowlist` plus those `globalEnv` references), checked where the
+reference is resolved, at load, and again at the agent-file write. The refusal names the variable,
+never its value, and is decided before anything is read, so it does not reveal whether the variable
+exists either. The decision and its residual are in ADR-0037's amendment of the same date.
+
 ## Pros and Cons of the Options
 
 ### Option A — SAST plus review, no written model

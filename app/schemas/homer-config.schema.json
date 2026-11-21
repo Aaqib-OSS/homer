@@ -32,6 +32,12 @@
       "items": { "type": "string" },
       "default": ["PATH", "HOME", "LANG", "TZ"]
     },
+    "agentSysEnvAllowlist": {
+      "type": "array",
+      "description": "Host environment variable names an agent definition's env may reference with @SYSENV:, beside the names globalEnv already references with @SYSENV:. An agent naming any other variable fails to load with an error naming the variable, never its value. Default: none. Each entry must be a variable name.",
+      "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+      "default": []
+    },
     "openTelemetryExport": {
       "type": "string",
       "enum": ["LANGFUSE", "LOG"],

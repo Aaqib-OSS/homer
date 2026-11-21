@@ -1,5 +1,6 @@
 package homer.runner
 
+import homer.app.infra.Dumpability
 import homer.app.infra.ProcessGroupSupport
 import homer.app.runners.external.RunnerProtocol
 import kotlinx.coroutines.Dispatchers
