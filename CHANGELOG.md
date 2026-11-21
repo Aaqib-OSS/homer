@@ -4,6 +4,7 @@
 
 ### Homer
 
+- **Added: `isErrorExitCode` on `!<claude>` commands** — An `is_error` result returns this exit code instead of failing as malformed, and is not retried.
 - **Added: `GET /api/v1/auth/me` answers a bearer token** — A request carrying a bearer token gets that token's name, role and grants, and the route is mounted whenever a `bearer` or `password` scheme is configured.
 - **BREAKING: the LangGraph runtime needs Python 3.12** — A runner host that runs `!<langgraph>` commands needs Python 3.12 or newer to install `homer_langgraph`.
 - **BREAKING: the optional Artifactory build path is removed** — Gradle builds and the backend and E2E image builds no longer read `ARTIFACTORY_URL`, `ARTIFACTORY_USER` or `ARTIFACTORY_TOKEN` and resolve from Maven Central and the Gradle Plugin Portal, so an operator whose network reaches dependencies only through Artifactory must provide another route to them.

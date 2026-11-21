@@ -52,11 +52,12 @@ interface LlmHarness<C> where C : Command, C : Command.LlmCommand {
     /** Whether a [translator] carries state across lines, so a stream resumed from a cursor must translate the lines before it. */
     val translatorKeepsState: Boolean get() = false
 
-    /** Judges an attempt; [raw] carries the checks the canonical model does not. Consulted on exit 0, and on a non-zero exit where only [Inspection.Terminal] is honoured. */
+    /** Judges an attempt; [raw] carries the checks the canonical model does not. Consulted on exit 0, and on a non-zero exit where only [Inspection.Terminal] is honoured. [exitCode] is the attempt's own exit code, so a verdict tied to exit 0 stays off the non-zero path. */
     fun inspect(
         events: List<LlmEvent>,
         raw: List<JsonObject>,
         command: C,
+        exitCode: Int,
     ): Inspection
 }
 
@@ -67,9 +68,13 @@ sealed interface Inspection {
         val reason: String,
     ) : Inspection
 
-    /** A terminal, recoverable stop the agent opted into; returned with this exit code, never retried. */
+    /**
+     * A terminal, recoverable stop the agent opted into; returned with this exit code, never retried. [stopAttribute] is
+     * the span attribute the stop sets, so a trace tells which opt-in produced it.
+     */
     data class Terminal(
         val exitCode: Int,
+        val stopAttribute: String,
     ) : Inspection
 }
 

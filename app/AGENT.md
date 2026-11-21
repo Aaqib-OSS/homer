@@ -696,7 +696,7 @@ commands:
 
 #### Claude Retry
 
-The optional `retry` block wraps the entire CLI invocation (stdin, env, and stdout validation). Retries fire when an attempt finishes with a non-zero exit code — except a stop at `maxTurns` with `maxTurnsExitCode` set, which is never retried — OR when its stdout fails JSON-event-stream validation (`MalformedLlmOutputException`). Other exceptions (timeouts, cancellation) propagate immediately. Backoff is exponential with full jitter: `min(maxDelayMs, baseDelayMs * 2^(n-1) + random(0, baseDelayMs))` for the n-th retry (n = 1 for the first). With the default `attempts: 1` no retry happens.
+The optional `retry` block wraps the entire CLI invocation (stdin, env, and stdout validation). Retries fire when an attempt finishes with a non-zero exit code — except a stop at `maxTurns` with `maxTurnsExitCode` set, which is never retried — OR when its stdout fails JSON-event-stream validation (`MalformedLlmOutputException`) — except an `is_error` result with `isErrorExitCode` set, which is likewise never retried. Other exceptions (timeouts, cancellation) propagate immediately. Backoff is exponential with full jitter: `min(maxDelayMs, baseDelayMs * 2^(n-1) + random(0, baseDelayMs))` for the n-th retry (n = 1 for the first). With the default `attempts: 1` no retry happens.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
@@ -721,7 +721,7 @@ The optional `escalate` list runs the step on a cheaper model first and reruns i
 
 | Variable | Value |
 |----------|-------|
-| `HMR_LLM_OUTCOME` | `success`, `failed` (non-zero exit after retries), `capped` (stopped at `maxTurns` with `maxTurnsExitCode` set) or `malformed` (output the harness could not use) |
+| `HMR_LLM_OUTCOME` | `success`, `failed` (non-zero exit after retries), `capped` (stopped at a terminal cap the step opted into: `maxTurns` with `maxTurnsExitCode`, or an `is_error` result with `isErrorExitCode`) or `malformed` (output the harness could not use) |
 | `HMR_LLM_EXIT_CODE` | That tier's exit code; `-1` for `malformed` |
 
 True runs the tier: the same compiled prompt with the step's options, except `model` and — when the tier sets it — the raw CLI `options` list. Whatever the previous tier left in the workspace stays. False stops escalating and the step returns what it has.
@@ -841,16 +841,20 @@ on an error it reported in place of a model response: a model refusal (`stop_rea
 deferred tool that was unavailable on resume, or a terminal API error (`terminal_reason`,
 `api_error_status`).
 
-Such a result fails the step, with the CLI's own diagnosis as the reason — for example
+By default the step fails on such a result, with the CLI's own diagnosis as the reason — for example
 `is_error (stop_reason=refusal)` or `is_error (terminal_reason=api_error, api_error_status=529)`. The
 `result` text of such a turn is an error string and never enters that reason.
 
-- `retry` retries the attempt like any other failed one, and `escalate` judges it `malformed` with
-  `HMR_LLM_EXIT_CODE` `-1`, so a stronger tier can take the step over.
-- Cost and usage from the result are still recorded, and the step is charged as usual.
-- `continueIfFail` does **not** catch it: the malformed verdict fails the run before that flag is
+- Default (`isErrorExitCode` unset): `retry` retries the attempt like any other failed one, and
+  `escalate` judges it `malformed` with `HMR_LLM_EXIT_CODE` `-1`, so a stronger tier can take the step
+  over. `continueIfFail` does **not** catch it: the malformed verdict fails the run before that flag is
   consulted, so `retry` and `escalate` are the only levers. An agent that treats a refusal as a valid
   answer (a classifier, say) has to escalate to a model that answers instead.
+- Opt-in (`isErrorExitCode` set, see the `ClaudeCmdOptions` field table below): the step instead ends
+  with that exit code. The verdict is judged `capped` (`HMR_LLM_OUTCOME`) with `HMR_LLM_EXIT_CODE` set to
+  the configured code, the attempt is never retried, and `continueIfFail: true` catches it, so the
+  agent's later steps run instead of the run ending `FAILED`.
+- Cost and usage from the result are still recorded, and the step is charged as usual either way.
 
 Results without `is_error` (older CLI releases) are unchanged, as are every `error_*` subtype, a
 non-zero exit and a stdout without a `result` event.
@@ -1730,6 +1734,7 @@ options:
   includeHookEvents: true
   maxTurns: 50
   maxTurnsExitCode: 75
+  isErrorExitCode: 76
 ```
 
 <details>
@@ -1749,11 +1754,24 @@ options:
     "pluginDir": ["/srv/plugins/a", "/srv/plugins/b"],
     "includeHookEvents": true,
     "maxTurns": 50,
-    "maxTurnsExitCode": 75
+    "maxTurnsExitCode": 75,
+    "isErrorExitCode": 76
   }
 }
 ```
 </details>
+
+Both exit-code options only rewrite the step's exit code, so pair them with `continueIfFail: true` on the step
+when the agent should carry on instead of ending `FAILED`:
+
+```yaml
+- !<claude>
+  prompt: "Review the diff."
+  options:
+    maxTurnsExitCode: 75
+    isErrorExitCode: 76
+  continueIfFail: true
+```
 
 ### ClaudeCmdOptions Fields
 
@@ -1763,6 +1781,7 @@ options:
 | `agents` | `Map<String, ClaudeSubagent>` | No | `null` | Inline subagent definitions; serialized to `--agents` as a JSON object |
 | `maxTurns` | `Int` | No | `40` | Maximum agentic turns |
 | `maxTurnsExitCode` | `Int` | No | `null` | Opt-in: when Claude stops at `maxTurns` (result subtype `error_max_turns`), the command returns this exit code instead of failing the run — whatever exit code the CLI itself ended that stop with, `0` or non-zero. Must be in `1..255` (a value outside that range, e.g. `0`, is rejected at load time so a max-turns failure cannot masquerade as success). Combine with `continueIfFail: true` and a `resultEnvParam` with `src: RESULT_CODE` so a later deterministic step can push or discard the partial work. A non-zero exit whose output holds no readable `error_max_turns` result stays a failure. Cost is charged as usual; the attempt is not retried. |
+| `isErrorExitCode` | `Int` | No | `null` | Opt-in: when the CLI exits `0` with a `result` event that is a `success` subtype carrying `is_error` (a refusal, a gateway `429`/`529` error, a missing deferred tool), the command returns this exit code instead of failing the run as malformed output. Must be in `1..255` (a value outside that range, e.g. `0`, is rejected at load time so an error result cannot masquerade as success). Combine with `continueIfFail: true` and a `resultEnvParam` with `src: RESULT_CODE` so a later deterministic step can push or discard the partial work. Any other subtype, and a stream with no readable `result` event, stays a failure; a non-zero exit is never remapped, it stays the failure its exit code already is. The `result` text stays out of the step error and the logs; cost is charged as usual and the attempt is not retried. |
 | `maxMcpOutputTokens` | `Int` | No | `null` | Maximum MCP output tokens (`MAX_MCP_OUTPUT_TOKENS` env var) |
 | `model` | `String` | No | `null` | Claude model to use (`sonnet`, `opus`, `haiku`) |
 | `fallbackModel` | `String` | No | `null` | Fallback model if the primary is overloaded |

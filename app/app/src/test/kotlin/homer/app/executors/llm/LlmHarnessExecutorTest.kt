@@ -431,8 +431,9 @@ class LlmHarnessExecutorTest {
             events: List<LlmEvent>,
             raw: List<JsonObject>,
             command: Command.Claude,
+            exitCode: Int,
         ): Inspection {
-            val inspection = super.inspect(events, raw, command)
+            val inspection = super.inspect(events, raw, command, exitCode)
             trash()
             return inspection
         }
@@ -508,6 +509,7 @@ class LlmHarnessExecutorTest {
                         events: List<LlmEvent>,
                         raw: List<JsonObject>,
                         command: Command.Claude,
+                        exitCode: Int,
                     ): Inspection = throw PinMismatch()
                 }
 
@@ -1974,6 +1976,68 @@ class LlmHarnessExecutorTest {
             coVerify(exactly = 1) { context.shell.cmd(any(), any(), any(), any(), any(), any(), any()) }
             // Accounting is unchanged by the exit code: the attempt is charged exactly once.
             coVerify(exactly = 1) { processManager.addCost(7, 1.5, CostSource.CLI) }
+        }
+
+    @Test
+    fun `an is_error result with isErrorExitCode returns the configured exit code and is not retried`() =
+        runTest {
+            stdOut.writeText(
+                """{"type":"result","subtype":"success","is_error":true,"stop_reason":"refusal","session_id":"s","total_cost_usd":1.5}""" +
+                    "\n",
+            )
+            stubShellExit(0)
+
+            val result =
+                newExecutor(ClaudeHarness())
+                    .execute(
+                        claude(
+                            options = ClaudeCmdOptions(isErrorExitCode = 76),
+                            retry = LlmRetry(attempts = 3, baseDelayMs = 0, maxDelayMs = 0),
+                        ),
+                        context.copy(processId = 7, agentName = "demo"),
+                        span,
+                    )
+
+            assertEquals(76, result.exitCode)
+            verify { span.setAttribute("claude.is_error_stop", true) }
+            verify(exactly = 0) { span.setAttribute("claude.max_turns_stop", any<Boolean>()) }
+            verify { span.setAttribute("retry.attempts.used", 1L) }
+            coVerify(exactly = 1) { context.shell.cmd(any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 1) { processManager.addCost(7, 1.5, CostSource.CLI) }
+        }
+
+    @Test
+    fun `an is_error stop is capped for an escalate predicate, so a malformed-only tier does not take it`() =
+        runTest {
+            // The mapped stop is the terminal-cap outcome, not malformed: the predicate sees `capped`
+            // with the configured exit code and the step ends on it instead of throwing (ADR-0079).
+            val llmCalls = mutableListOf<Call>()
+            val predicateCalls = mutableListOf<Call>()
+            scriptShell(
+                llm = listOf("""{"type":"result","subtype":"success","is_error":true,"stop_reason":"refusal","session_id":"s"}""" to 0),
+                predicateExits = listOf(1),
+                llmCalls = llmCalls,
+                predicateCalls = predicateCalls,
+            )
+
+            val result =
+                newExecutor(ClaudeHarness())
+                    .execute(
+                        Command.Claude(
+                            prompt = LlmPrompt.Prompt("hi"),
+                            options = ClaudeCmdOptions(model = "cheap", isErrorExitCode = 76),
+                            retry = LlmRetry(attempts = 3, baseDelayMs = 0, maxDelayMs = 0),
+                            escalate = listOf(tier("strong", "[ \"\$HMR_LLM_OUTCOME\" = malformed ]")),
+                        ),
+                        context,
+                        span,
+                    )
+
+            assertEquals(76, result.exitCode)
+            assertEquals(1, llmCalls.size)
+            verify { span.setAttribute("retry.attempts.used", 1L) }
+            assertEquals("capped", predicateCalls.single().env[EnvConstants.LLM_OUTCOME])
+            assertEquals("76", predicateCalls.single().env[EnvConstants.LLM_EXIT_CODE])
         }
 
     @Test

@@ -39,7 +39,7 @@ internal class LlmAttemptOutput<C>(
             } catch (e: MalformedLlmOutputException) {
                 return RetryOutcome.MalformedFailure(e)
             }
-        return when (val inspection = harness.inspect(stream.events, stream.raw, command)) {
+        return when (val inspection = harness.inspect(stream.events, stream.raw, command, exitCode = 0)) {
             Inspection.Success -> {
                 RetryOutcome.Success(result.copy(llmAccounting = accounting), attemptIndex, stream)
             }
@@ -74,12 +74,12 @@ internal class LlmAttemptOutput<C>(
             runCatching { readLeniently(attemptOut, span) }.getOrNull()
                 ?: return RetryOutcome.OtherFailure(result.copy(llmAccounting = accounting))
         val terminal =
-            runCatching { harness.inspect(stream.events, stream.raw, command) as? Inspection.Terminal }.getOrNull()
+            runCatching { harness.inspect(stream.events, stream.raw, command, result.exitCode) as? Inspection.Terminal }.getOrNull()
                 ?: return RetryOutcome.OtherFailure(result.copy(llmAccounting = accounting), stream)
         return cappedStop(result, accounting, terminal, stream, span)
     }
 
-    /** The terminal cap both exit paths share: the configured exit code, its stream, never retried. */
+    /** The terminal stop both exit paths share: the configured exit code, its stream, never retried. */
     private fun cappedStop(
         result: CommandResult,
         accounting: LlmAccounting,
@@ -89,7 +89,7 @@ internal class LlmAttemptOutput<C>(
     ): RetryOutcome.CappedStop {
         // Not retried — a fresh attempt would spend the same budget the same way.
         logger.warn("{} stopped at a terminal cap; returning exit code {}", harness.id, inspection.exitCode)
-        span.setAttribute("claude.max_turns_stop", true)
+        span.setAttribute(inspection.stopAttribute, true)
         return RetryOutcome.CappedStop(result.copy(exitCode = inspection.exitCode, llmAccounting = accounting), stream)
     }
 

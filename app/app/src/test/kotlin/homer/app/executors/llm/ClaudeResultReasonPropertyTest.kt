@@ -1,7 +1,10 @@
 package homer.app.executors.llm
 
+import homer.app.models.ClaudeCmdOptions
+import homer.app.models.Command
 import homer.app.models.FAILURE_REASON_TRUNCATION_MARKER
 import homer.app.models.LlmEvent
+import homer.app.models.LlmPrompt
 import homer.app.models.MAX_FAILURE_REASON_LENGTH
 import homer.app.models.Translation
 import homer.app.models.TurnStatus
@@ -95,6 +98,33 @@ class ClaudeResultReasonPropertyTest {
         assertEquals(MAX_FAILURE_REASON_LENGTH, reason.length)
         assertTrue(reason.endsWith(FAILURE_REASON_TRUNCATION_MARKER), "no truncation marker in: $reason")
     }
+
+    @Test
+    fun `a mapped is_error stop carries no part of the result text`() =
+        runTest {
+            // The opt-in exit code rewrites the verdict, and the verdict is all the step, its error and its
+            // logs carry: the `result` text the CLI echoed must not reach any of them (§12 rule 7).
+            val command =
+                Command.Claude(prompt = LlmPrompt.Prompt("hi"), options = ClaudeCmdOptions(isErrorExitCode = 76))
+
+            checkAll(cliText) { secret ->
+                val line =
+                    buildJsonObject {
+                        put("type", "result")
+                        put("subtype", "success")
+                        put("is_error", true)
+                        put("result", secret)
+                        put("total_cost_usd", 0.25)
+                    }
+                val events = (harness.translate(line) as Translation.Events).events
+
+                val terminal = assertIs<Inspection.Terminal>(harness.inspect(events, listOf(line), command, exitCode = 0))
+
+                assertEquals(76, terminal.exitCode)
+                assertTrue(!terminal.stopAttribute.contains(secret), "the verdict carried the result text")
+                assertTrue(!terminal.toString().contains(secret), "the verdict carried the result text")
+            }
+        }
 
     @Test
     fun `a result that is not an error stays successful whatever the diagnosis holds`() =

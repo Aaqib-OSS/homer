@@ -28,6 +28,9 @@ class LlmAttemptOutputTest {
 
     /** The same step, opted into the turn cap whose exit code a terminal stop is rewritten to. */
     private val cappedCommand = Command.Claude(prompt = LlmPrompt.Prompt("hi"), options = ClaudeCmdOptions(maxTurnsExitCode = 75))
+
+    /** The same step, opted into the exit code an `is_error` result is rewritten to. */
+    private val isErrorCommand = Command.Claude(prompt = LlmPrompt.Prompt("hi"), options = ClaudeCmdOptions(isErrorExitCode = 76))
     private val accounting = LlmAccounting(sessionId = "s", costUsd = 0.0, source = CostSource.CLI)
 
     private val claudeOutput = LlmAttemptOutput(ClaudeHarness(), LoggerFactory.getLogger(LlmAttemptOutputTest::class.java))
@@ -90,6 +93,84 @@ class LlmAttemptOutputTest {
         assertEquals(75, capped.result.exitCode)
         assertEquals(accounting, capped.result.llmAccounting)
         verify { span.setAttribute("claude.max_turns_stop", true) }
+    }
+
+    @Test
+    fun `an exit-0 is_error result is the is_error stop, with its own span attribute`(
+        @TempDir dir: Path,
+    ) {
+        // The is_error opt-in rides the same terminal-stop shape as maxTurnsExitCode — an is_error
+        // result arrives at exit 0 — and sets its own span attribute (ADR-0070).
+        val out =
+            dir.resolve("out").also {
+                it.writeText("""{"type":"result","subtype":"success","is_error":true,"stop_reason":"refusal","session_id":"s"}""" + "\n")
+            }
+        val span = TestFixtures.mockSpan()
+
+        val atZero =
+            assertIs<RetryOutcome.CappedStop>(
+                claudeOutput.exitZeroOutcome(
+                    isErrorCommand,
+                    TestFixtures.mockCommandResult(exitCode = 0, stdOut = out),
+                    accounting,
+                    out,
+                    attemptIndex = 0,
+                    span = span,
+                ),
+            )
+        assertEquals(76, atZero.result.exitCode)
+        assertEquals(accounting, atZero.result.llmAccounting)
+
+        verify { span.setAttribute("claude.is_error_stop", true) }
+        verify(exactly = 0) { span.setAttribute("claude.max_turns_stop", any<Boolean>()) }
+    }
+
+    @Test
+    fun `an is_error option leaves a non-zero exit its own verdict, unread`(
+        @TempDir dir: Path,
+    ) {
+        // terminalStopConfigured still gates non-zero-exit inspection on maxTurnsExitCode alone, so the
+        // is_error option never flips that behaviour (ADR-0070).
+        val out = dir.resolve("out").also { it.writeText("""{"type":"result","subtype":"success","is_error":true}""" + "\n") }
+
+        for (cmd in listOf(command, isErrorCommand)) {
+            val failure =
+                assertIs<RetryOutcome.OtherFailure>(
+                    claudeOutput.nonZeroOutcome(
+                        cmd,
+                        TestFixtures.mockCommandResult(exitCode = 1, stdOut = out),
+                        accounting,
+                        out,
+                        TestFixtures.mockSpan(),
+                    ),
+                )
+
+            assertEquals(1, failure.result.exitCode)
+            assertNull(failure.stream)
+        }
+    }
+
+    @Test
+    fun `with both options set a non-zero exit carrying an is_error result keeps the exit's own failure`(
+        @TempDir dir: Path,
+    ) {
+        // The is_error mapping rides the exit-0 inspect path only: even with both exit-code options
+        // set, a non-zero exit is never rewritten to the is_error code (ADR-0070).
+        val both =
+            Command.Claude(prompt = LlmPrompt.Prompt("hi"), options = ClaudeCmdOptions(maxTurnsExitCode = 75, isErrorExitCode = 76))
+        val out =
+            dir.resolve("out").also {
+                it.writeText("""{"type":"result","subtype":"success","is_error":true,"stop_reason":"refusal"}""" + "\n")
+            }
+        val span = TestFixtures.mockSpan()
+
+        val failure =
+            assertIs<RetryOutcome.OtherFailure>(
+                claudeOutput.nonZeroOutcome(both, TestFixtures.mockCommandResult(exitCode = 1, stdOut = out), accounting, out, span),
+            )
+
+        assertEquals(1, failure.result.exitCode)
+        verify(exactly = 0) { span.setAttribute("claude.is_error_stop", any<Boolean>()) }
     }
 
     @Test

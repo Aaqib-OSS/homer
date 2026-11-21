@@ -433,7 +433,7 @@
     "LlmRetry": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Retry policy for an LLM command (claude, codex or opencode). Retries fire on non-zero exit OR on output validation failure (MalformedLlmOutputException); a terminal cap stop the command opted into (Claude's maxTurnsExitCode) is never retried. Other exceptions propagate immediately.",
+      "description": "Retry policy for an LLM command (claude, codex or opencode). Retries fire on non-zero exit OR on output validation failure (MalformedLlmOutputException); a terminal stop the command opted into (Claude's maxTurnsExitCode or isErrorExitCode) is never retried. Other exceptions propagate immediately.",
       "properties": {
         "attempts": {
           "type": "integer",
@@ -710,6 +710,7 @@
         },
         "maxTurns": { "type": "integer", "minimum": 1, "default": 40 },
         "maxTurnsExitCode": { "type": ["integer", "null"], "minimum": 1, "maximum": 255, "default": null, "description": "Opt-in: return this exit code when Claude stops at maxTurns (result subtype error_max_turns) instead of failing the run; combine with continueIfFail and a RESULT_CODE resultEnvParam so a later step can decide." },
+        "isErrorExitCode": { "type": ["integer", "null"], "minimum": 1, "maximum": 255, "default": null, "description": "Opt-in: return this exit code when the result event is a success subtype carrying is_error (a refusal, a terminal API error, a missing deferred tool) instead of failing the run as malformed output; the attempt is not retried. Unset keeps the fail-closed behaviour." },
         "maxMcpOutputTokens": { "type": ["integer", "null"] },
         "model": { "type": ["string", "null"] },
         "fallbackModel": { "type": ["string", "null"] },

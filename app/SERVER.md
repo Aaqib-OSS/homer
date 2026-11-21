@@ -1971,6 +1971,7 @@ egress note above.
 | `!<claude>` / `!<codex>` / `!<opencode>` | `llm.usage.*` | Token usage the CLI reported, summed over every turn end of the attempt: `input`, `output`, `cache_read`, `cache_write`, `reasoning` |
 | `!<claude>` | `llm.cost.parse_failed` | `true` when result events carried no parseable, non-negative cost (a CLI schema-drift signal) |
 | `!<claude>` | `claude.max_turns_stop` | `true` when the attempt stopped at `maxTurns` and `maxTurnsExitCode` applied |
+| `!<claude>` | `claude.is_error_stop` | `true` when the `result` event carried `is_error` and `isErrorExitCode` applied |
 | `!<claude>` | `claude.dropped_system_events` | Events removed by `server.claudeDropSystemSubtypes` |
 | `!<claude>` / `!<codex>` / `!<opencode>` | `retry.attempts`, `retry.attempts.used` | Configured attempts, and how many were spent |
 | `!<claude>` / `!<codex>` / `!<opencode>` | `llm.escalation.tier` | Highest `escalate` tier the step ran; absent when only tier 0 ran. See [ADR-0079](../docs/adr/0079-llm-steps-escalate-to-another-model-on-a-bad-outcome.md) |

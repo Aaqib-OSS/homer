@@ -70,6 +70,7 @@ class CodexHarness(
         events: List<LlmEvent>,
         raw: List<JsonObject>,
         command: Command.Codex,
+        exitCode: Int,
     ): Inspection =
         inspectTurns(
             events,

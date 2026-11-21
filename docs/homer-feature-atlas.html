@@ -1006,8 +1006,9 @@ onStop:
         <article class="f">
           <h3><code>!&lt;claude&gt;</code> — Claude Code CLI <span class="where">command</span></h3>
           <p>Pipes a prompt into the <code>claude</code> CLI headlessly and captures its NDJSON event stream. Validated
-            fail-closed: needs a <code>result</code> event with <code>subtype: "success"</code> and no <code>is_error</code>.
-            Cost is metered per attempt — one charge, split across its generations when it ends more than one turn — from
+            fail-closed by default: needs a <code>result</code> event with <code>subtype: "success"</code> and no
+            <code>is_error</code> — unless <code>isErrorExitCode</code> maps an <code>is_error</code> result to an exit
+            code instead. Cost is metered per attempt — one charge, split across its generations when it ends more than one turn — from
             your spend API when <code>llmPrice.sessionSpend</code> is configured, else from the CLI's own estimate.</p>
           <pre><code>- !&lt;claude&gt;
   prompt: !&lt;prompt&gt; { prompt: "Review {{FILE}} for bugs" }
@@ -1170,10 +1171,13 @@ onStop:
           <h3>Budget, turns and effort <span class="where">claude</span></h3>
           <p>Bound a single Claude run from inside the agent, independent of the server-side cost caps. Hitting
             <code>maxTurns</code> fails the step unless <code>maxTurnsExitCode</code> turns it into an ordinary exit
-            code, so a later step (or a parent graph) can decide what to do with the partial work.</p>
+            code, so a later step (or a parent graph) can decide what to do with the partial work. An
+            <code>is_error</code> result (a refusal, a terminal API error) fails it the same way unless
+            <code>isErrorExitCode</code> maps it to an exit code.</p>
           <pre><code>options:
   maxTurns: 50
   maxTurnsExitCode: 75   # optional, 1–255; unset = max_turns fails the run
+  isErrorExitCode: 76    # optional, 1–255; unset = an is_error result fails the run
   maxBudgetUsd: 2.5
   effort: high           # low | medium | high | xhigh | max</code></pre>
         </article>
@@ -1210,7 +1214,8 @@ cmd: "/opt/claude/bin/claude"   # default: claude / codex / opencode</code></pre
         <article class="f">
           <h3>Retry on transient LLM failure <span class="where">claude · codex · opencode</span></h3>
           <p>Retries a non-zero exit or malformed event stream with exponential backoff and full jitter — except a
-            terminal cap stop the command opted into (Claude's <code>maxTurnsExitCode</code>), which is never retried.
+            terminal cap stop the command opted into (Claude's <code>maxTurnsExitCode</code> or
+            <code>isErrorExitCode</code>), which is never retried.
             Other errors (timeouts, cancellation) propagate immediately. Every attempt writes to the same artifact stem
             unless the agent's <code>artifactNameTemplate</code> carries <code>{{HMR_CMD_ATTEMPT}}</code>, which keeps a
             failed attempt's output inspectable.</p>
