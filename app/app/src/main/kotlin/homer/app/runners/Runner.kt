@@ -44,4 +44,9 @@ data class RunnerSessionParams(
      * `runnerAffinity` keys its memory on it. Null for a run with no flow root.
      */
     val rootProcessId: Int? = null,
+    /**
+     * The `resultEnvParam` names the run's steps can add to later steps' env. A remote runner refuses a name that is not
+     * a shell identifier up front, as it does for [env]'s names.
+     */
+    val resultEnvNames: Set<String> = emptySet(),
 )

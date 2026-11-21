@@ -1,8 +1,10 @@
 package homer.app.runners.ssh
 
+import homer.app.runners.TarStreams
 import org.apache.sshd.sftp.client.SftpClient
 import org.apache.sshd.sftp.common.SftpConstants
 import org.apache.sshd.sftp.common.SftpException
+import java.nio.file.attribute.PosixFilePermissions
 
 /** Whether [path] exists on the peer; any failure other than no-such-file/path propagates. */
 internal fun remoteExists(
@@ -36,3 +38,80 @@ internal fun SftpClient.mkdirsIdempotent(path: String) {
         }
     }
 }
+
+/**
+ * Makes [dir] an owner-only (0700) directory, creating it when missing, so no other user can open a file in it.
+ * A path that exists as anything but a directory, a symlink included, is refused.
+ */
+internal fun SftpClient.ensurePrivateDir(dir: String) {
+    // Checked again after the create: mkdirsIdempotent accepts a symlink to a directory swapped in meanwhile.
+    val attrs =
+        lstatOrNull(dir) ?: run {
+            mkdirsIdempotent(dir)
+            lstatOrNull(dir)
+        }
+    if (attrs == null || !attrs.isDirectory) throw SecurityException("remote path '$dir' is not a directory")
+    if (attrs.permissions and GROUP_OTHER_BITS != 0) setStat(dir, SftpClient.Attributes().perms(OWNER_ONLY_DIR))
+}
+
+/**
+ * Creates [path] new, never over an existing entry, and makes it owner-only (0600) before writing [content]; a
+ * server that leaves the file readable by others fails the write. Any failure after the create removes the file.
+ */
+internal fun SftpClient.createPrivateFile(
+    path: String,
+    content: ByteArray,
+) {
+    // A failed open created nothing, so an entry already at [path] is never removed.
+    val handle = open(path, SftpClient.OpenMode.Write, SftpClient.OpenMode.Create, SftpClient.OpenMode.Exclusive)
+    try {
+        handle.use {
+            setStat(it, SftpClient.Attributes().perms(OWNER_ONLY_FILE))
+            if (stat(it).permissions and GROUP_OTHER_BITS != 0) throw SecurityException("remote file '$path' did not become owner-only")
+            writeAll(it, content)
+        }
+    } catch (e: Throwable) {
+        runCatching { remove(path) }
+        throw e
+    }
+}
+
+/** Removes the file at [path]; a missing file is not an error. */
+internal fun SftpClient.removeIfExists(path: String) {
+    try {
+        remove(path)
+    } catch (e: SftpException) {
+        if (!e.isNoSuchFile()) throw e
+    }
+}
+
+private fun SftpClient.writeAll(
+    handle: SftpClient.Handle,
+    content: ByteArray,
+) {
+    var offset = 0
+    while (offset < content.size) {
+        val length = minOf(WRITE_CHUNK_BYTES, content.size - offset)
+        write(handle, offset.toLong(), content, offset, length)
+        offset += length
+    }
+}
+
+/** `lstat`, or null when [path] does not exist; any other failure propagates. */
+private fun SftpClient.lstatOrNull(path: String): SftpClient.Attributes? =
+    try {
+        lstat(path)
+    } catch (e: SftpException) {
+        if (!e.isNoSuchFile()) throw e
+        null
+    }
+
+private fun SftpException.isNoSuchFile(): Boolean =
+    status == SftpConstants.SSH_FX_NO_SUCH_FILE || status == SftpConstants.SSH_FX_NO_SUCH_PATH
+
+private val OWNER_ONLY_FILE = TarStreams.posixToMode(PosixFilePermissions.fromString("rw-------"))
+private val OWNER_ONLY_DIR = TarStreams.posixToMode(PosixFilePermissions.fromString("rwx------"))
+private val GROUP_OTHER_BITS = TarStreams.posixToMode(PosixFilePermissions.fromString("---rwxrwx"))
+
+/** One SSH_FXP_WRITE each; below every server's packet limit. */
+private const val WRITE_CHUNK_BYTES = 32 * 1024

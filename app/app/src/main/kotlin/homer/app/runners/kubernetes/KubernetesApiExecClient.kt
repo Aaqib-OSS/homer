@@ -22,7 +22,7 @@ class KubernetesApiExecClient(
             .setStdin(stdin)
             .setTty(false)
             // The client's default prints the stack trace, whose text can quote the exec URL (ADR-0047 rule 7).
-            .setOnUnhandledError { logger.warn("Exec channel to pod {} failed: {}", podName, unhandledErrorLine(argv, it)) }
+            .setOnUnhandledError { logger.warn("Exec channel to pod {} failed: {}", podName, unhandledErrorLine(it)) }
             .execute()
 
     private companion object {
@@ -30,13 +30,6 @@ class KubernetesApiExecClient(
     }
 }
 
-/** [error]'s class and one-line message, without the exec URL and with the argv's leading `env K=V…` values masked. */
-internal fun unhandledErrorLine(
-    argv: List<String>,
-    error: Throwable,
-): String {
-    val assignments = if (argv.firstOrNull() == "env") argv.drop(1).takeWhile { '=' in it } else emptyList()
-    val env = assignments.withIndex().associate { (i, assignment) -> "$i" to assignment.substringAfter('=') }
-    val message = withoutExecUrl(error.message.orEmpty())
-    return execUrlRedactor(env).redact("${error.javaClass.simpleName}: $message").toOneLine()
-}
+/** [error]'s class and one-line message, without the exec URL. */
+internal fun unhandledErrorLine(error: Throwable): String =
+    "${error.javaClass.simpleName}: ${withoutExecUrl(error.message.orEmpty())}".toOneLine()

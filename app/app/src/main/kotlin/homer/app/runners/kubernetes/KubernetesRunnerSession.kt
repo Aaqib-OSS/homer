@@ -180,5 +180,8 @@ class KubernetesRunnerSession(
         // Fixed in-pod workspace root; pod-per-run means no collisions (ADR-0043).
         const val REMOTE_PROJECT_ROOT = "/homer/workspace"
         const val REMOTE_WORKDIR = "$REMOTE_PROJECT_ROOT/workdir"
+
+        // Outside workdir and artifacts, so no download brings a step's env file back to the server.
+        const val REMOTE_ENV_DIR = "$REMOTE_PROJECT_ROOT/.homer/env"
     }
 }

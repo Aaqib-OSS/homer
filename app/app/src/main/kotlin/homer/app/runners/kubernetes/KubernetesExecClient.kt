@@ -22,8 +22,8 @@ fun interface KubernetesExecClient {
 }
 
 /**
- * Masks every credential-length value of [env] raw and in the query-encoded form the exec URL gives it, since
- * that URL carries the argv (ADR-0047 rule 7).
+ * Masks every credential-length value of [env], raw and query-encoded, in text that may quote it. The exec URL no
+ * longer carries env values, so this is defence in depth (ADR-0047 rule 7).
  */
 internal fun execUrlRedactor(env: Map<String, String>): SecretRedactor =
     SecretRedactor.from(env, env.keys, minNeedleLength = MIN_SCREENED_SECRET_LENGTH) +

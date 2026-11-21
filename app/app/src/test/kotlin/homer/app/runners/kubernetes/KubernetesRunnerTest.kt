@@ -78,6 +78,49 @@ class KubernetesRunnerTest {
         }
 
     @Test
+    fun `openSession refuses an env name that is not a shell identifier before any pod or exec, naming the key only`() =
+        runTest {
+            val api = mockk<CoreV1Api>(relaxed = true)
+            var execs = 0
+            val execClient =
+                KubernetesExecClient { _, _, _, _ ->
+                    execs++
+                    mockk(relaxed = true)
+                }
+            val runner = KubernetesRunner("k8s-dev", config, api, execClient, clock = { 0L })
+            val bad = params.copy(env = mapOf("OK" to "1", "spring.profiles.active" to "s3cr3t-Ab9-env-value"))
+
+            val error = assertThrows<IllegalArgumentException> { runner.openSession(bad) }
+
+            assertTrue(error.message!!.contains("'spring.profiles.active'") && error.message!!.contains("'k8s-dev'"), error.message)
+            assertFalse(error.message!!.contains("s3cr3t-Ab9-env-value"), "the error must quote no env value")
+            verify(exactly = 0) { api.createNamespacedPod(any(), any()) }
+            assertEquals(0, execs, "no exec, and so no pod-side effect, before the refusal")
+        }
+
+    @Test
+    fun `openSession refuses a result env name that is not a shell identifier before any pod or exec`() =
+        runTest {
+            val api = mockk<CoreV1Api>(relaxed = true)
+            var execs = 0
+            val execClient =
+                KubernetesExecClient { _, _, _, _ ->
+                    execs++
+                    mockk(relaxed = true)
+                }
+            val runner = KubernetesRunner("k8s-dev", config, api, execClient, clock = { 0L })
+
+            val error =
+                assertThrows<IllegalArgumentException> {
+                    runner.openSession(params.copy(resultEnvNames = setOf("BUILD_ID", "build-id")))
+                }
+
+            assertTrue(error.message!!.contains("'build-id'") && error.message!!.contains("'k8s-dev'"), error.message)
+            verify(exactly = 0) { api.createNamespacedPod(any(), any()) }
+            assertEquals(0, execs, "no exec before the refusal")
+        }
+
+    @Test
     fun `openSession session env contains only HMR_API_URL, not runner config env`() =
         runTest {
             val api = mockk<CoreV1Api>(relaxed = true)

@@ -2,6 +2,7 @@ package homer.app.runners.ssh
 
 import homer.app.EnvConstants
 import homer.app.models.RunnerConfig
+import homer.app.models.ShellEnvNames
 import homer.app.models.SshAuth
 import homer.app.runners.RemotePathTranslator
 import homer.app.runners.Runner
@@ -40,6 +41,9 @@ class SshRunner(
 
     override suspend fun openSession(params: RunnerSessionParams): RunnerSession =
         withContext(Dispatchers.IO) {
+            // Before any remote effect: every step sources the env from a shell file (ADR-0032).
+            val invalid = ShellEnvNames.firstInvalid(params.env.keys + params.resultEnvNames)
+            require(invalid == null) { "env name '$invalid' must be a shell identifier (${ShellEnvNames.PATTERN}) on ssh runner '$alias'" }
             val ws = params.workspace
             val relative = ws.serverRoot.relativize(ws.projectRoot).toString()
             val remoteProjectRoot = "${config.remoteWorkspaceRoot.trimEnd('/')}/$relative"
@@ -61,6 +65,7 @@ class SshRunner(
                 // util-linux). Where absent, fall back to close(true)-only teardown.
                 val reapCapable = canReapProcessGroup(session)
                 val reapDir = if (reapCapable) "$remoteProjectRoot/.homer/reap" else null
+                val sync = WorkspaceSync(session, config.sftpTransferTimeoutSeconds.seconds)
 
                 SshRunnerSession(
                     session = session,
@@ -68,11 +73,13 @@ class SshRunner(
                         SshShellExecutor(
                             session = session,
                             remoteWorkdir = remoteWorkdir,
+                            sync = sync,
+                            envDir = "$remoteProjectRoot/.homer/env",
                             maxOutputBytes = ws.maxOutputBytes,
                             reapProcessGroup = reapCapable,
                             reapDir = reapDir,
                         ),
-                    sync = WorkspaceSync(session, config.sftpTransferTimeoutSeconds.seconds),
+                    sync = sync,
                     remoteWorkspaceRoot = config.remoteWorkspaceRoot,
                     remoteProjectRoot = remoteProjectRoot,
                     remoteWorkdir = remoteWorkdir,

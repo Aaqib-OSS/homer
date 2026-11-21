@@ -38,6 +38,12 @@ sealed class RunnerConfig {
     /** Alias-aware shape rules for the per-runner `env` keys. */
     internal fun validateEnv(alias: String) = validateRunnerEnv(alias, env)
 
+    /** Refuses an `env` key or `extraUploads.env` name that is not a shell identifier, for the runners that source a file. */
+    internal fun validateShellEnvNames(alias: String) {
+        val invalid = ShellEnvNames.firstInvalid(env.keys + extraUploads.mapNotNull { it.env })
+        require(invalid == null) { "runner '$alias' env name '$invalid' must be a shell identifier (${ShellEnvNames.PATTERN})" }
+    }
+
     /**
      * Every shape rule this variant has, naming the runner [alias], in the order the rules fired
      * before they were reached through this member, so a config with several violations still
@@ -91,6 +97,7 @@ sealed class RunnerConfig {
             validateWorkload(alias)
             validateExtraUploads(alias)
             validateEnv(alias)
+            validateShellEnvNames(alias)
             validateQueueFacets(alias)
         }
 
@@ -144,6 +151,7 @@ sealed class RunnerConfig {
             validateExtraUploads(alias)
             validateTransportTiming(alias)
             validateEnv(alias)
+            validateShellEnvNames(alias)
             validateQueueFacets(alias)
             validateRemoteWorkspaceRoot(alias)
         }
@@ -393,9 +401,9 @@ data class ExtraUploadSpec(
     companion object {
         // workdir/artifacts are synced down; .homer/agent is the uploaded agent
         // dir; .homer/bin + .homer/mcp.json are the question tooling uploaded
-        // with the workspace — an extra landing there would overwrite it.
+        // with the workspace; .homer/env holds the ssh and Kubernetes runners' env files.
         private val RESERVED_REMOTE_PATHS =
-            listOf("workdir", "artifacts", ".homer/agent", ".homer/bin", ".homer/mcp.json")
+            listOf("workdir", "artifacts", ".homer/agent", ".homer/bin", ".homer/mcp.json", ".homer/env")
     }
 }
 

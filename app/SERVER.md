@@ -192,7 +192,7 @@ llmPrice:
 | `workspaceRootPath` | `String` | Yes | - | Root directory for process workspaces |
 | `databasePath` | `String` | Yes | - | Path to the SQLite database for durable process + question state (created if absent). Supports `@SYSENV:VAR_NAME`. |
 | `langfuse` | `LangfuseConfig` | No | empty | Langfuse integration configuration |
-| `globalEnv` | `Map<String, String>` | No | `{}` | Global environment variables for all processes |
+| `globalEnv` | `Map<String, String>` | No | `{}` | Global environment variables for all processes; a run on an `ssh` or `kubernetes` runner fails on a key that is not a shell identifier (`^[A-Za-z_][A-Za-z0-9_]*$`) |
 | `parentEnvAllowlist` | `List<String>` | No | `["PATH","HOME","LANG","TZ"]` | Host JVM env keys layered under `globalEnv` for the `local` runner only — remote runners never receive them — see [`parentEnvAllowlist`](#parentenvallowlist) |
 | `agentSysEnvAllowlist` | `List<String>` | No | `[]` | Host variable names an agent's `env` may reference with `@SYSENV:`, beside the names `globalEnv` already references; an agent naming any other variable fails to load — see [`agentSysEnvAllowlist`](#agentsysenvallowlist) |
 | `openTelemetryExport` | `OpenTelemetryExport` | No | `LANGFUSE` | OpenTelemetry export destination |
@@ -2991,14 +2991,14 @@ started in-process by Homer ([ADR-0030](../docs/adr/0030-runagent-in-process-dis
 | `gracefulStopSeconds` | `Long?` | No | `null` | Opt-in soft deadline: this many seconds before the pod's `maxRunSeconds` hard deadline, Homer interrupts the step that is running so the agent's `onStop:` steps can save state before Kubernetes kills the pod. `>= 1` and smaller than `maxRunSeconds`; `null` (default) = no soft deadline, and no extra Kubernetes read. The pod's `activeDeadlineSeconds` is unchanged, so a stop phase that overruns still ends with the pod. See [Job workload](#job-workload) and [AGENT.md → Graceful stop](AGENT.md#graceful-stop). |
 | `jobTtlSecondsAfterFinished` | `Long?` | No | `null` | Seconds a finished Job is kept before the cluster deletes it, `>= 0`; only valid with `workload: Job`; `null` = `3600` — see [Job workload](#job-workload). |
 | `homerApiUrl` | `String?` | No | `null` | Cluster-internal Homer URL; exposed in-pod as `HMR_API_URL` so the `homer-*` helpers and MCP question tools can reach Homer from inside the pod. |
-| `env` | `Map<String, String>` | No | `{}` | Per-runner environment variables, layered between `globalEnv` and agent `env` — the place for values describing *this* runner's host/image (`PATH` with `/opt/homebrew/bin` on a macOS ssh box, `JAVA_HOME`, `HOME` for a uid with no passwd entry). Values support `@SYSENV:VAR` (fail-fast at startup, and the resolved names join the telemetry redaction set exactly like `@SYSENV` in `globalEnv`); keys must not be blank or use the reserved `HMR_` prefix. Remote runners receive no `parentEnvAllowlist` host env, so this is also where a value the image must still see goes. Like agent `env`, values ride the per-exec `env K=V…` delivery — **visible in the remote process list (`ps`)** on multi-tenant hosts; forward credentials via `@SYSENV:` and prefer file delivery where possible. For a run that selected this runner via `runnerTags` rather than by alias, these keys are instead merged **above** agent `env` when the run is claimed — see [Runner claim queue](#runner-claim-queue). |
+| `env` | `Map<String, String>` | No | `{}` | Per-runner environment variables, layered between `globalEnv` and agent `env` — the place for values describing *this* runner's host/image (`PATH` with `/opt/homebrew/bin` on a macOS ssh box, `JAVA_HOME`, `HOME` for a uid with no passwd entry). Values support `@SYSENV:VAR` (fail-fast at startup, and the resolved names join the telemetry redaction set exactly like `@SYSENV` in `globalEnv`); keys must be shell identifiers (`^[A-Za-z_][A-Za-z0-9_]*$`) and must not use the reserved `HMR_` prefix. Remote runners receive no `parentEnvAllowlist` host env, so this is also where a value the image must still see goes. Like agent `env`, values reach each command through a 0600 env file in the pod's workspace that the command's shell sources and removes before it starts, never through the exec request. For a run that selected this runner via `runnerTags` rather than by alias, these keys are instead merged **above** agent `env` when the run is claimed — see [Runner claim queue](#runner-claim-queue). |
 | `tags` | `List<String>` | No | `[]` | Tags this runner serves for agents that select a runner with `runnerTags` (every requested tag must be present). Empty = reachable by alias only. Shape `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`, at most 32. See [Runner claim queue](#runner-claim-queue). |
 | `concurrency` | `Int` | No | `10` | Runs this runner serves at once, `>= 1`. A run addressed to a saturated runner waits in the claim queue and fails at the claim TTL. |
 | `imagePullSecrets` | `List<String>` | No | `[]` | Pull secrets referenced by name. |
 | `serviceAccountName` | `String?` | No | `null` | ServiceAccount for the pod. |
 | `securityContext` | `SecurityContextSpec?` | No | `null` | Pod- and container-level security context. Required when the namespace enforces Pod Security Admission `restricted` or otherwise sets `runAsNonRoot: true` — see below. |
 | `syncExcludes` | `List<String>` | No | `[]` | Directory-entry names excluded from upload (applied during sync-up only). A bare name (e.g. `build`) matches that entry at every directory level; a leading `/` (e.g. `/build`) anchors the match to the upload root only, so a path-shaped entry like `build/tmp` matches nothing unless anchored (`/build/tmp`). |
-| `extraUploads` | `List<ExtraUploadSpec>` | No | `[]` | Host files/folders uploaded into every pod workspace on this runner (`{local, remote, env?}`); `remote` is projectRoot-relative in normalized form (no `.`, `//`, or trailing `/`) and may not target `workdir/`, `artifacts/`, `.homer/agent`, `.homer/bin`, or `.homer/mcp.json` — nor an ancestor of them like `.homer`; `env` (optional, non-`HMR_`) is repointed at the pod-local copy. `local` must exist at startup. See ADR-0042/0043. |
+| `extraUploads` | `List<ExtraUploadSpec>` | No | `[]` | Host files/folders uploaded into every pod workspace on this runner (`{local, remote, env?}`); `remote` is projectRoot-relative in normalized form (no `.`, `//`, or trailing `/`) and may not target `workdir/`, `artifacts/`, `.homer/agent`, `.homer/bin`, `.homer/mcp.json`, or `.homer/env` — nor an ancestor of them like `.homer`; `env` (optional, non-`HMR_`, a shell identifier) is repointed at the pod-local copy. `local` must exist at startup. See ADR-0042/0043. |
 
 **`VolumeSpec`** (each `volumes` entry; also mountable by name from an init container):
 
@@ -3316,7 +3316,8 @@ commands expect:
   Busybox's versions suffice; this is the same requirement `kubectl
   cp` already imposes, so it holds in effectively every build image.
 - `Cmd` — the binary named by `cmd[0]` must be on `PATH` or given by
-  absolute path (`env(1)` is assumed present).
+  absolute path (`sh` is assumed present: it sources each command's env
+  file before it `exec`s the argv).
 - `Script` — the configured `shell` must exist at its path.
 - `Claude` — the `claude` CLI must be installed; Homer compiles the
   prompt host-side and pipes it via stdin.
@@ -3387,26 +3388,50 @@ this rule in the same Role; Pod mode does not:
 Pod specs carry **no** agent environment at all — the main container
 is started with `sleep infinity` and nothing else. Every command's
 merged env (declared `secret` inputs, `@SYSENV` values, agent `env`,
-`resultEnvParam` values from earlier commands, everything) travels
-per-exec as `env KEY=VAL … argv` over the API-server exec websocket
-(TLS), the same channel the command's stdio uses — it is never
-written into a stored Kubernetes object. `kubectl get pod -o yaml` in
-the runner's namespace no longer discloses agent secrets, and a
-manual `kubectl exec` shell into a kept-for-debug pod sees no agent
+`resultEnvParam` values from earlier commands, everything) reaches it
+through a file: before each command with an env, Homer writes
+`/homer/workspace/.homer/env/<uuid>.env` into the pod through the
+tar-over-exec channel (the bytes travel on stdin, over TLS, like the
+command's stdio), as mode `0600` in a `0700` directory, and the
+command's `sh` sources it and removes it as its first line before it
+`exec`s the argv. The exec request URI carries only the file's path,
+never a value, so nothing is written into a stored Kubernetes object
+and a cluster auditing `pods/exec` records no env. `kubectl get pod -o
+yaml` in the runner's namespace no longer discloses agent secrets, and
+a manual `kubectl exec` shell into a kept-for-debug pod sees no agent
 env either — only the exec sessions Homer itself starts carry it.
 
-The residual exposure surface is narrower but not zero:
+The file lives outside `workdir` and `artifacts`, so no download brings
+it back, and `.homer/env` is a reserved `extraUploads` path. The
+rules this adds for operators:
 
-- **API audit logs.** The exec client passes the full merged env as
-  repeated `env KEY=VAL …` arguments in the exec request's `command=`
-  query parameters — part of the request URI, not the body. Kubernetes
-  audit events record `requestURI` at **every** audit level, including
-  the `Metadata` level most clusters default to for `pods/exec` — so
-  any cluster auditing exec calls at all captures the full per-exec env
-  in its audit log, not just at `RequestResponse`. Operators should
-  scope the audit policy for `pods/exec` accordingly (e.g. exclude it,
-  or treat the audit backend as holding the same secrets the pod spec
-  used to).
+- **Env names must be shell identifiers**
+  (`^[A-Za-z_][A-Za-z0-9_]*$`): the file `export`s each name. A runner
+  `env` key or `extraUploads.env` name that is not one fails at
+  startup; a run whose composed env or `resultEnvParam` names hold one
+  fails before any pod exists. A name the image's `sh` treats as
+  readonly or special still fails the step: under bash that includes
+  `UID`, `EUID`, `PPID`, `SHELLOPTS` and `BASHOPTS`.
+- **`sh` must be in the image** (see
+  [Image requirements](#image-requirements)).
+- **Each command with an env costs one more exec** (the upload), and a
+  failed command one more to remove the file.
+- **The env is still bounded by the container's `execve` limits.** The
+  command receives the whole env as its environment, so the kernel's
+  `ARG_MAX` for argv plus env and its per-string limit (128 KiB on
+  Linux) apply to it as before. The file removes the exec request URI
+  as a bound, not these.
+
+The residual exposure surface is narrower still:
+
+- **A leftover env file.** When a step fails, times out or is
+  cancelled, Homer removes its file before it decides whether to keep
+  the pod, best effort: a failed removal is only logged. If the kubelet kills the container first (OOM, deadline) or
+  Homer itself dies mid-step, the file stays in the pod's `emptyDir` —
+  readable only by the container's UID, by root on the node, or by an
+  ephemeral debug container that mounts the volume — until the pod is
+  deleted, at once or after `keepPodTtlSeconds` for a kept pod. See
+  `AR-14` in [`SECURITY.md`](../SECURITY.md#accepted-risks).
 - **`pods/exec` RBAC remains the boundary that matters** — anyone who
   can `create` (SPDY) **or `get`** (WebSocket) on `pods/exec` in the
   runner's namespace can start their own exec session against a
@@ -3447,9 +3472,10 @@ agent's command reads it there.
 Prefer **file** delivery (the sidecar writes `/vault/secrets/db`) over
 having the agent shell out to a CLI. Reading a secret through a command
 puts its value on that command's stdout, and hoisting it into a later
-command with `resultEnvParam` then routes it through the per-exec env
-described [above](#env-delivery-over-exec-not-the-pod-spec) — which is
-exactly the audit-log surface file delivery avoids. Read the rendered
+command with `resultEnvParam` then makes it a Homer-held value that
+travels in a later command's [env
+file](#env-delivery-over-exec-not-the-pod-spec) — and lands in Homer's
+own run state and logs, which file delivery avoids. Read the rendered
 file in the command that consumes it.
 
 Homer never resolves values from the store itself: it holds no store
@@ -3555,7 +3581,7 @@ discriminator instead:
 | `strictHostKeyChecking` | `Boolean` | No | `true` | `true` verifies the remote host key against `knownHostsPath` and rejects unknown/mismatched keys; `false` accepts any host key (opt-in, insecure — only for trusted networks/testing). |
 | `remoteWorkspaceRoot` | `String` | Yes | - | Remote directory the synced workspace is written under; combined with the run's relative workspace path to compute the remote project root. Must be an absolute, normalized path (no empty, `.` or `..` segments) other than `/` — config load rejects anything else, because `cleanAfterFinish` hands the project root under it to `rm -rf` ([ADR-0067](../docs/adr/0067-ssh-cleanup-via-rm-rf.md)). |
 | `homerApiUrl` | `String?` | No | `null` | Homer URL reachable from the remote host; overrides `HMR_API_URL` remotely (like the kubernetes runner's `homerApiUrl`) so the `homer-*` helpers and MCP question tools reach Homer instead of `127.0.0.1`. |
-| `env` | `Map<String, String>` | No | `{}` | Per-runner environment variables for this remote host, layered between `globalEnv` and agent `env` — e.g. `PATH` with `/opt/homebrew/bin`, `JAVA_HOME`, `CI`. Values support `@SYSENV:VAR` (fail-fast at startup, and the resolved names join the telemetry redaction set exactly like `@SYSENV` in `globalEnv`); keys must not be blank or use the reserved `HMR_` prefix. The ssh target's own login shell supplies `HOME`/`PATH`/`LANG`/`TZ` unless overridden here, because remote runners receive no `parentEnvAllowlist` host env — see [Remote runners](#remote-runners). Like agent `env`, values ride the per-exec `env K=V…` delivery and are **visible in the remote process list (`ps`)** on multi-tenant hosts (see Security posture below). For a run that selected this runner via `runnerTags` rather than by alias, these keys are instead merged **above** agent `env` when the run is claimed — see [Runner claim queue](#runner-claim-queue). |
+| `env` | `Map<String, String>` | No | `{}` | Per-runner environment variables for this remote host, layered between `globalEnv` and agent `env` — e.g. `PATH` with `/opt/homebrew/bin`, `JAVA_HOME`, `CI`. Values support `@SYSENV:VAR` (fail-fast at startup, and the resolved names join the telemetry redaction set exactly like `@SYSENV` in `globalEnv`); keys must be shell identifiers (`^[A-Za-z_][A-Za-z0-9_]*$`) and must not use the reserved `HMR_` prefix. The ssh target's own login shell supplies `HOME`/`PATH`/`LANG`/`TZ` unless overridden here, because remote runners receive no `parentEnvAllowlist` host env — see [Remote runners](#remote-runners). Like agent `env`, values reach each command through a `0600` env file the command's shell sources and removes, never its command line (see Security posture below). For a run that selected this runner via `runnerTags` rather than by alias, these keys are instead merged **above** agent `env` when the run is claimed — see [Runner claim queue](#runner-claim-queue). |
 | `tags` | `List<String>` | No | `[]` | Tags this runner serves for agents that select a runner with `runnerTags` (every requested tag must be present). Empty = reachable by alias only. Shape `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`, at most 32. See [Runner claim queue](#runner-claim-queue). |
 | `concurrency` | `Int` | No | `10` | Runs this runner serves at once, `>= 1`. A run addressed to a saturated runner waits in the claim queue and fails at the claim TTL. |
 | `shell` | `String` | No | `/bin/sh` | Shell used for `Script` commands on the remote host. |
@@ -3564,7 +3590,7 @@ discriminator instead:
 | `heartbeatIntervalSeconds` | `Long?` | No | `30` | SSH keepalive interval in seconds; `null` disables keepalives. Heartbeats keep NAT/proxy idle timers on the path alive and let the client detect a dead link while the idle timeout is off. |
 | `sftpTransferTimeoutSeconds` | `Long` | No | `300` | Per-operation SFTP transfer deadline in seconds, `>= 1`. Each blocking SFTP round trip (file copy, directory listing, stat, mkdir, the SFTP subsystem handshake, and the client close) must complete within this time or the SSH session is closed and the transfer fails — a peer answering keepalives while stalling SFTP data cannot hold a run slot and the workspace lock indefinitely; a timed-out or failed close is the exception: it is logged and swallowed and does not fail the operation. Bounds SFTP operations only, not remote commands. |
 | `syncExcludes` | `List<String>` | No | `[]` | Directory-entry names excluded from upload (applied during sync-up only). A bare name (e.g. `build`) matches that entry at every directory level; a leading `/` (e.g. `/build`) anchors the match to the upload root only, so a path-shaped entry like `build/tmp` matches nothing unless anchored (`/build/tmp`). |
-| `extraUploads` | `List<ExtraUploadSpec>` | No | `[]` | Host files/folders uploaded into every remote workspace on this runner (`{local, remote, env?}`); `remote` is projectRoot-relative in normalized form (no `.`, `//`, or trailing `/`) and may not target `workdir/`, `artifacts/`, `.homer/agent`, `.homer/bin`, or `.homer/mcp.json` — nor an ancestor of them like `.homer`; `env` (optional, non-`HMR_`) is repointed at the remote copy. `local` must exist at startup. See ADR-0042. |
+| `extraUploads` | `List<ExtraUploadSpec>` | No | `[]` | Host files/folders uploaded into every remote workspace on this runner (`{local, remote, env?}`); `remote` is projectRoot-relative in normalized form (no `.`, `//`, or trailing `/`) and may not target `workdir/`, `artifacts/`, `.homer/agent`, `.homer/bin`, `.homer/mcp.json`, or `.homer/env` — nor an ancestor of them like `.homer`; `env` (optional, non-`HMR_`, a shell identifier) is repointed at the remote copy. `local` must exist at startup. See ADR-0042. |
 
 **No idle disconnect.** The SSH client's idle timeout is disabled by
 default: a session is never closed for lack of output. A remote command
@@ -3656,16 +3682,34 @@ auth: !<key>
   `remoteWorkspaceRoot`, and no component below `remoteWorkspaceRoot`
   may be a symlink — otherwise the sweep is refused (logged as a cleanup
   failure) rather than widened. See [ADR-0067](../docs/adr/0067-ssh-cleanup-via-rm-rf.md).
-- **Env values are visible in the remote process list.** Commands are
-  sent as `cd <workdir> && exec env K=V… <argv…>` over the SSH exec
-  channel (many sshd configs reject `SendEnv`/`AcceptEnv`), so any
-  secret passed via `env` is visible to other users on the remote host
-  via `ps` while the command starts: the shell `exec`s `env`, which
-  `exec`s the command, after which the values sit only in its
-  environment. An `execve` audit record on the host keeps them for as
-  long as the host retains it. Avoid putting secrets in `env` on
-  multi-tenant remote hosts. See `AR-09` in
-  [`SECURITY.md`](../SECURITY.md#accepted-risks).
+- **The env travels in a file, not on the command line.** Before each
+  command with an env, Homer writes `<remoteProjectRoot>/.homer/env/<uuid>.env`
+  over SFTP (created exclusively, mode `0600`, in a `0700` directory),
+  and sends `cd <workdir> && exec sh -c '. "$0" && exec "$@"' <file> <argv…>`
+  over the SSH exec channel. The file's first line removes it, so it is
+  gone before the command starts and no value appears in the remote
+  process table or in an `execve` audit record. The directory sits
+  outside `workdir` and `artifacts` (no download brings it back), and
+  `.homer/env` is a reserved `extraUploads` path.
+  - Env names must be shell identifiers (`^[A-Za-z_][A-Za-z0-9_]*$`),
+    checked at config load for runner `env` and `extraUploads.env` and
+    at run start for the composed env and `resultEnvParam` names. A name
+    the remote `sh` treats as readonly or special still fails the step:
+    under bash that includes `UID`, `EUID`, `PPID`, `SHELLOPTS` and
+    `BASHOPTS`.
+  - A step that fails, times out or is cancelled has its file removed
+    over SFTP, best effort: a lost session makes the removal fail and
+    it is only logged. A leftover file (also when Homer dies between
+    the upload and the command's start) stays, readable only by the
+    ssh user, until the workspace is removed — never, with
+    `cleanAfterFinish: false`, until you remove the project root; see
+    `AR-14` in [`SECURITY.md`](../SECURITY.md#accepted-risks).
+  - The remote `execve` limits still bound the env: the command
+    receives it as its environment, so `ARG_MAX` and the per-string
+    limit (128 KiB on Linux) apply. The file only keeps the env out of
+    the command string.
+  - Each command with an env costs one SFTP write and an extra `sh`
+    and `rm` process (about 23 ms on a macOS test host).
 
 #### Workspace sync
 
@@ -3970,7 +4014,7 @@ register, so this entry has neither.
 | `maxConcurrencyPerInstance` | `Int` | No | `16` | Cap on the `concurrency` an instance may announce (`422` above it). |
 | `transferTimeoutSec` | `Long` | No | `300` | Deadline for one tar transfer (workspace upload to the instance, artifacts/workdir download from it), enforced both on the waiting run and on the transfer request itself, and for each output-chunk request. A posted tar or chunk past it is `408`; a fetched tar is cut off mid-stream, its `200` already sent. |
 | `maxTransferBytes` | `Long` | No | `1073741824` | Largest tar an instance may post for one download, applied to both the compressed body and the bytes it decompresses to, so a gzip bomb is refused at the same ceiling; over it the post is `413` and the run fails. |
-| `env` | `Map<String, String>` | No | `{}` | Per-domain environment variables for runs on any instance of this domain; same rules and layering as the ssh/kubernetes `env`. |
+| `env` | `Map<String, String>` | No | `{}` | Per-domain environment variables for runs on any instance of this domain; same layering and `@SYSENV:` support as the ssh/kubernetes `env`, and keys must not be blank or use the reserved `HMR_` prefix. Unlike there, keys need not be shell identifiers: the runner instance hands each command its env directly, not through a sourced shell file. |
 | `extraUploads` | `List<ExtraUploadSpec>` | No | `[]` | Host files/folders uploaded into every workspace on whichever instance claims the run, after the agent dir; same shape rules, reserved paths and startup check as the ssh runner's `extraUploads`, but always uploaded in full (a domain has no `syncExcludes`), and `env` (optional, non-`HMR_`) is repointed at the instance's copy under its session root. Every instance of the domain receives them, so the ssh runner's security contract applies: no secrets in declared folders. See ADR-0042. |
 
 #### Operator endpoints

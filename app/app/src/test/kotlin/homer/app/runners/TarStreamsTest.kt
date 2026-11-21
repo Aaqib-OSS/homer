@@ -4,6 +4,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import homer.app.exceptions.RunnerTransferTooLargeException
 import homer.app.fixtures.TestFixtures
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -35,6 +36,22 @@ import kotlin.test.assertTrue
 import ch.qos.logback.classic.Logger as LogbackLogger
 
 class TarStreamsTest {
+    @Test
+    fun `packFile writes one regular entry at the given mode with no owner name`() {
+        val out = ByteArrayOutputStream()
+        TarStreams.packFile(out, "a.env", "export A='1'\n".toByteArray(), 0b110_000_000)
+
+        TarArchiveInputStream(ByteArrayInputStream(out.toByteArray())).use { tar ->
+            val entry = tar.nextEntry
+            assertEquals("a.env", entry.name)
+            assertTrue(entry.isFile)
+            assertEquals("600", Integer.toOctalString(entry.mode and 0b111_111_111))
+            assertEquals("" to "", entry.userName to entry.groupName)
+            assertEquals("export A='1'\n", tar.readAllBytes().toString(Charsets.UTF_8))
+            assertEquals(null, tar.nextEntry)
+        }
+    }
+
     @TempDir
     lateinit var tmp: Path
 

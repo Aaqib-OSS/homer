@@ -1,6 +1,7 @@
 package homer.app.runners.ssh
 
 import homer.app.EnvConstants
+import homer.app.exceptions.SshExecRefusedException
 import homer.app.infra.WorkspaceConfig
 import homer.app.models.ExtraUploadSpec
 import homer.app.models.RunnerConfig
@@ -21,12 +22,14 @@ import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
+import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 class SshRunnerTest {
     private lateinit var server: EmbeddedSshServer
@@ -169,9 +172,8 @@ class SshRunnerTest {
     ) = runTest {
         // Env composition happens before the session (WorkspaceConfigFactory with
         // includeParentEnv=false for a remote runner); this asserts what the ssh
-        // runner actually delivers over the exec channel: the `env K=V` prefix
-        // carries runner/agent-supplied values, and no allowlisted host key unless
-        // someone set it explicitly.
+        // runner actually delivers: the sourced env file carries runner/agent-supplied
+        // values, and no allowlisted host key unless someone set it explicitly.
         val projectRoot = serverRoot.resolve("p1")
         projectRoot.resolve("workdir").createDirectories()
         projectRoot.resolve("artifacts").createDirectories()
@@ -241,6 +243,121 @@ class SshRunnerTest {
         } finally {
             session.close()
         }
+    }
+
+    @Test
+    fun `a refused step leaves no env file behind in a kept workspace`(
+        @TempDir serverRoot: Path,
+    ) = runTest {
+        // The exec is refused after the env file was uploaded, so the command never sources it; no cleanWorkspace runs.
+        val refusing = EmbeddedSshServer(refuseExec = true).also { it.start() }
+        try {
+            val projectRoot = serverRoot.resolve("p1")
+            val ws =
+                WorkspaceConfig(
+                    serverRoot = serverRoot,
+                    projectRoot = projectRoot,
+                    artifacts = projectRoot.resolve("artifacts").createDirectories(),
+                    workdir = projectRoot.resolve("workdir").createDirectories(),
+                    env = mapOf("STEP_VALUE" to "s3cr3t-Ab9-env-value"),
+                    clearAfterFinish = false,
+                    lockKey = "k",
+                    maxOutputBytes = Long.MAX_VALUE,
+                )
+            val runner =
+                SshRunner(
+                    alias = "ssh-box",
+                    config = cfg().copy(host = refusing.host, remoteWorkspaceRoot = refusing.rootDir.resolve("remote").toString()),
+                    client = client,
+                    sessionFactory = { refusing.newClientSession(client) },
+                )
+            val session = runner.openSession(RunnerSessionParams(1, "demo", ws, ws.env, Context.root()))
+            try {
+                session.createWorkspace()
+                assertThrows<SshExecRefusedException> {
+                    session.shell.cmd(listOf("true"), serverRoot.resolve("o"), serverRoot.resolve("e"), null, ws.env, 30.seconds)
+                }
+                val envDir = refusing.rootDir.resolve("remote/p1/.homer/env")
+                assertTrue(envDir.exists(), "the step uploaded its env file")
+                val left = Files.list(envDir).use { it.toList() }
+                assertEquals(emptyList(), left, "the refused step left its env file")
+            } finally {
+                session.close()
+            }
+        } finally {
+            refusing.close()
+        }
+    }
+
+    @Test
+    fun `openSession refuses an env name that is not a shell identifier before connecting, naming the key only`(
+        @TempDir serverRoot: Path,
+    ) = runTest {
+        val projectRoot = serverRoot.resolve("p1")
+        val ws =
+            WorkspaceConfig(
+                serverRoot = serverRoot,
+                projectRoot = projectRoot,
+                artifacts = projectRoot.resolve("artifacts"),
+                workdir = projectRoot.resolve("workdir"),
+                env = mapOf("OK" to "1", "spring.profiles.active" to "s3cr3t-Ab9-env-value"),
+                clearAfterFinish = true,
+                lockKey = "k",
+                maxOutputBytes = Long.MAX_VALUE,
+            )
+        var connects = 0
+        val runner =
+            SshRunner(
+                alias = "ssh-box",
+                config = cfg(),
+                client = client,
+                sessionFactory = {
+                    connects++
+                    server.newClientSession(client)
+                },
+            )
+        val error =
+            assertThrows<IllegalArgumentException> {
+                runner.openSession(RunnerSessionParams(1, "demo", ws, ws.env, Context.root()))
+            }
+        assertTrue(error.message!!.contains("'spring.profiles.active'") && error.message!!.contains("'ssh-box'"), error.message)
+        assertTrue(!error.message!!.contains("s3cr3t-Ab9-env-value"), "the error must quote no env value")
+        assertEquals(0, connects, "no connection, and so no remote effect, before the refusal")
+    }
+
+    @Test
+    fun `openSession refuses a result env name that is not a shell identifier before connecting`(
+        @TempDir serverRoot: Path,
+    ) = runTest {
+        val projectRoot = serverRoot.resolve("p1")
+        val ws =
+            WorkspaceConfig(
+                serverRoot = serverRoot,
+                projectRoot = projectRoot,
+                artifacts = projectRoot.resolve("artifacts"),
+                workdir = projectRoot.resolve("workdir"),
+                env = mapOf("OK" to "1"),
+                clearAfterFinish = true,
+                lockKey = "k",
+                maxOutputBytes = Long.MAX_VALUE,
+            )
+        var connects = 0
+        val runner =
+            SshRunner(
+                alias = "ssh-box",
+                config = cfg(),
+                client = client,
+                sessionFactory = {
+                    connects++
+                    server.newClientSession(client)
+                },
+            )
+        val error =
+            assertThrows<IllegalArgumentException> {
+                runner.openSession(RunnerSessionParams(1, "demo", ws, ws.env, Context.root(), resultEnvNames = setOf("build-id")))
+            }
+        assertTrue(error.message!!.contains("'build-id'") && error.message!!.contains("'ssh-box'"), error.message)
+        assertEquals(0, connects, "no connection, and so no remote effect, before the refusal")
     }
 
     @Test

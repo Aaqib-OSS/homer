@@ -9,6 +9,7 @@ import homer.app.infra.OutputLineFilter
 import homer.app.infra.ShellExecutor
 import homer.app.infra.appendKillNotices
 import homer.app.models.CommandResult
+import homer.app.runners.RemoteEnvFile
 import homer.app.runners.exceedsOutputCap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -30,13 +31,15 @@ import kotlin.io.path.outputStream
 import kotlin.time.Duration
 
 /**
- * Runs each command in its own SSH exec channel, argv kept by [RemoteCommandBuilder], under KubernetesShellExecutor's
- * timeout, cancellation and output-cap contract. With [reapProcessGroup] the command leads its own remote process
- * group, which a kill or timeout kills over a control channel before the exec channel closes (ADR-0041).
+ * Runs each command in its own SSH exec channel, argv kept by [RemoteCommandBuilder] and env in a file under [envDir]
+ * written over [sync], under KubernetesShellExecutor's timeout, cancellation and output-cap contract. With
+ * [reapProcessGroup] the command leads its own remote process group, killed over a control channel first (ADR-0041).
  */
 class SshShellExecutor(
     private val session: ClientSession,
     private val remoteWorkdir: String,
+    private val sync: WorkspaceSync,
+    private val envDir: String,
     private val maxOutputBytes: Long = Long.MAX_VALUE,
     private val reapProcessGroup: Boolean = false,
     private val reapDir: String? = null,
@@ -59,52 +62,82 @@ class SshShellExecutor(
             // jscpd:ignore-end
             // Non-null exactly when the command reaps its process group.
             val pgidFile = if (reapProcessGroup && reapDir != null) "$reapDir/cmd-${reapCounter.incrementAndGet()}.pgid" else null
-            val remoteCmd = remoteCommand(command, env, pgidFile)
-            val channel = session.createExecChannel(remoteCmd)
-            // use{} closes the channel on every path; the catch below closes it forcibly first, and the
-            // graceful close after that is idempotent.
-            channel.use {
-                val rawOut: OutputStream = stdOut.outputStream()
-                val filteredOut: OutputStream = if (stdOutFilter != null) LineFilteringOutputStream(rawOut, stdOutFilter) else rawOut
-                filteredOut.use { out ->
-                    stdErr.outputStream().use { err ->
-                        channel.setOut(out)
-                        channel.setErr(err)
-                        if (stdIn != null) {
-                            channel.setIn(ByteArrayInputStream(stdIn.toByteArray(Charsets.UTF_8)))
-                        }
-                        openChannel(channel)
+            val envFile = if (env.isNotEmpty()) RemoteEnvFile.render(envDir, env) else null
+            RemoteEnvFile.removingUnlessSucceeded(envFile?.path, ::removeEnvFile) {
+                envFile?.let { sync.writePrivateFile(it.path, it.content) }
+                execOnChannel(
+                    remoteCommand(command, envFile?.path, pgidFile),
+                    stdOut,
+                    stdErr,
+                    stdIn,
+                    timeout,
+                    stdOutFilter,
+                    interruptGrace,
+                    pgidFile,
+                )
+            }
+        }
 
-                        val kill = KillCause()
-                        try {
-                            awaitClose(channel, stdOut, stdErr, timeout, kill)
-                        } catch (e: Throwable) {
-                            withContext(NonCancellable) {
-                                // Reap the command's own group before closing the channel: neither the close nor an
-                                // SSH signal reaches a group outside the session's own (ADR-0041).
-                                reapOnStop(pgidFile, kill, interruptGrace)
-                                runCatching { channel.close(true) }
-                                appendKillNotices(stdErr, kill, timeout, maxOutputBytes)
-                            }
-                            throw e
-                        }
-
-                        commandResult(channel, stdOut, stdErr)
+    /** Runs [remoteCmd] on a new exec channel; a timeout, cap or cancellation reaps [pgidFile]'s group first. */
+    private suspend fun execOnChannel(
+        remoteCmd: String,
+        stdOut: Path,
+        stdErr: Path,
+        stdIn: String?,
+        timeout: Duration,
+        stdOutFilter: OutputLineFilter?,
+        interruptGrace: Duration?,
+        pgidFile: String?,
+    ): CommandResult {
+        val channel = session.createExecChannel(remoteCmd)
+        // use{} closes the channel on every path; the catch below closes it forcibly first, and the
+        // graceful close after that is idempotent.
+        return channel.use {
+            val rawOut: OutputStream = stdOut.outputStream()
+            val filteredOut: OutputStream = if (stdOutFilter != null) LineFilteringOutputStream(rawOut, stdOutFilter) else rawOut
+            filteredOut.use { out ->
+                stdErr.outputStream().use { err ->
+                    channel.setOut(out)
+                    channel.setErr(err)
+                    if (stdIn != null) {
+                        channel.setIn(ByteArrayInputStream(stdIn.toByteArray(Charsets.UTF_8)))
                     }
+                    openChannel(channel)
+
+                    val kill = KillCause()
+                    try {
+                        awaitClose(channel, stdOut, stdErr, timeout, kill)
+                    } catch (e: Throwable) {
+                        withContext(NonCancellable) {
+                            // Reap the command's own group before closing the channel: neither the close nor an
+                            // SSH signal reaches a group outside the session's own (ADR-0041).
+                            reapOnStop(pgidFile, kill, interruptGrace)
+                            runCatching { channel.close(true) }
+                            appendKillNotices(stdErr, kill, timeout, maxOutputBytes)
+                        }
+                        throw e
+                    }
+
+                    commandResult(channel, stdOut, stdErr)
                 }
             }
         }
+    }
+
+    private suspend fun removeEnvFile(envFile: String) {
+        sync.removeIfExists(envFile, RemoteEnvFile.REMOVE_TIMEOUT)
+    }
 
     /** The remote argv for [command]: the reaping launcher when the command reports its own group. */
     private fun remoteCommand(
         command: List<String>,
-        env: Map<String, String>,
+        envFile: String?,
         pgidFile: String?,
     ): String =
         if (pgidFile != null) {
-            RemoteCommandBuilder.buildReaping(remoteWorkdir, env, command, pgidFile)
+            RemoteCommandBuilder.buildReaping(remoteWorkdir, envFile, command, pgidFile)
         } else {
-            RemoteCommandBuilder.build(remoteWorkdir, env, command)
+            RemoteCommandBuilder.build(remoteWorkdir, envFile, command)
         }
 
     /** The channel's exit status as the result; a channel closed without one fails the step ([noExitStatus]). */

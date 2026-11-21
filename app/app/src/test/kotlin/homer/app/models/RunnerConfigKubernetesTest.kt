@@ -21,6 +21,16 @@ class RunnerConfigKubernetesTest {
     )
 
     @Test
+    fun `kubernetes runner refuses an env key or extraUploads env that is not a shell identifier, naming runner and key`() {
+        val keyError = assertFailsWith<IllegalArgumentException> { k8s().copy(env = mapOf("FOO-BAR" to "1")).validate("pods") }
+        assertTrue(keyError.message!!.contains("runner 'pods'") && keyError.message!!.contains("'FOO-BAR'"))
+
+        val withUpload = k8s(extras = listOf(ExtraUploadSpec(local = "/a", remote = ".homer/x", env = "1DIR")))
+        val uploadError = assertFailsWith<IllegalArgumentException> { withUpload.validate("pods") }
+        assertTrue(uploadError.message!!.contains("'1DIR'"))
+    }
+
+    @Test
     fun `syncExcludes and extraUploads default empty and yaml round-trip`() {
         val cfg =
             yaml.decodeFromString(

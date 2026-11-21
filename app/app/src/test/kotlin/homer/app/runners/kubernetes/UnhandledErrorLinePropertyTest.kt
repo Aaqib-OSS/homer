@@ -1,6 +1,5 @@
 package homer.app.runners.kubernetes
 
-import homer.app.models.MIN_SCREENED_SECRET_LENGTH
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.Codepoint
 import io.kotest.property.arbitrary.alphanumeric
@@ -19,16 +18,14 @@ import kotlin.random.Random
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** `unhandledErrorLine`'s contract: no exec URL, no env value of [MIN_SCREENED_SECRET_LENGTH] or more, one bounded line. */
+/** `unhandledErrorLine`'s contract: no exec URL, one bounded line. */
 class UnhandledErrorLinePropertyTest {
-    // Values hold no letters, `*`, `&`, brackets or whitespace, so one can appear in the line only by leaking,
-    // not inside the class name, `***`, `[exec URL]` or another value's `%XX` form. `/+=` exercise the encoding.
     private val values = Arb.string(1..40, Arb.element("0123456789/+=_".toList()).map { Codepoint(it.code) })
     private val filler = Arb.string(0..12, Codepoint.alphanumeric()).map { it.filter(Char::isLetter) }
     private val separators = Arb.element(" ", "\n", "\t ", " : ")
 
     @Test
-    fun `the output is one line of at most 512 chars without the exec URL or a covered env value raw or encoded`() =
+    fun `the output is one line of at most 512 chars without the exec URL`() =
         runTest {
             val cases =
                 Arb.bind(Arb.list(values, 1..5), Arb.list(filler, 0..6), separators, Arb.long()) { env, words, separator, seed ->
@@ -41,18 +38,12 @@ class UnhandledErrorLinePropertyTest {
                         env.indices.joinToString("&") { "command=" + URLEncoder.encode("K$it=${env[it]}", StandardCharsets.UTF_8) } +
                         "&command=true"
                 val parts = (words + env + encoded + url).shuffled(Random(seed))
-                val argv = listOf("env") + env.mapIndexed { i, v -> "K$i=$v" } + listOf("sh", "-c", "true")
 
-                val line = unhandledErrorLine(argv, IllegalStateException(parts.joinToString(separator)))
+                val line = unhandledErrorLine(IllegalStateException(parts.joinToString(separator)))
 
                 assertFalse(line.contains("command="), "the exec URL must not survive: $line")
                 assertTrue(line.length <= TERMINATION_MESSAGE_MAX_CHARS, "the line is bounded: ${line.length}")
                 assertFalse(line.any { it == '\n' || it == '\r' }, "the output is one line: $line")
-                env.filter { it.length >= MIN_SCREENED_SECRET_LENGTH }.forEach { value ->
-                    assertFalse(line.contains(value), "covered value '$value' leaked raw: $line")
-                    val form = URLEncoder.encode(value, StandardCharsets.UTF_8)
-                    assertFalse(line.contains(form), "covered value '$value' leaked encoded: $line")
-                }
             }
         }
 

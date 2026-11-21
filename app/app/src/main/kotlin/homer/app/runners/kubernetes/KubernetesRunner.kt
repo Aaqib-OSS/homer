@@ -5,6 +5,7 @@ import homer.app.SpanAttributes
 import homer.app.exceptions.PodStartupException
 import homer.app.models.KubernetesWorkload
 import homer.app.models.RunnerConfig
+import homer.app.models.ShellEnvNames
 import homer.app.runners.RemotePathTranslator
 import homer.app.runners.Runner
 import homer.app.runners.RunnerSession
@@ -57,6 +58,10 @@ class KubernetesRunner(
     @Suppress("SuspendFunSwallowedCancellation") // records the span error and rethrows
     override suspend fun openSession(params: RunnerSessionParams): RunnerSession =
         withContext(Dispatchers.IO) {
+            val invalid = ShellEnvNames.firstInvalid(params.env.keys + params.resultEnvNames)
+            require(invalid == null) {
+                "env name '$invalid' must be a shell identifier (${ShellEnvNames.PATTERN}) on kubernetes runner '$alias'"
+            }
             // Names the pod in Pod mode and the Job in Job mode, where the Job controller names the pod.
             val name = generatePodName(params.processId)
             val jobName = name.takeIf { config.workload == KubernetesWorkload.Job }

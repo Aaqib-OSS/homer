@@ -140,8 +140,8 @@ class AccessLoggingTest {
     ) {
         val appLog =
             logThroughProductionConfig(tmp, ChannelExec::class.java.name, LogbackLevel.ERROR) { channel ->
-                channel.warn("handleFailure(ch) pending since=0, command={}", SSH_COMMAND)
-                channel.debug("doOpen(ch) send SSH_MSG_CHANNEL_REQUEST exec command={}", SSH_COMMAND)
+                channel.warn("handleFailure(ch) pending since=0, command={}", SECRET_BEARING_TEXT)
+                channel.debug("doOpen(ch) send SSH_MSG_CHANNEL_REQUEST exec command={}", SECRET_BEARING_TEXT)
             }
 
         assertFalse(appLog.contains(SSH_SECRET), "the remote command must not reach app.log")
@@ -153,8 +153,8 @@ class AccessLoggingTest {
     ) {
         val appLog =
             logThroughProductionConfig(tmp, ClientSessionImpl::class.java.name, LogbackLevel.INFO) { session ->
-                session.debug("createExecChannel({})[{}] created id={} - PTY={}", "session", SSH_COMMAND, 0, null)
-                session.trace("encode(session) packet #7 {}", SSH_COMMAND)
+                session.debug("createExecChannel({})[{}] created id={} - PTY={}", "session", SECRET_BEARING_TEXT, 0, null)
+                session.trace("encode(session) packet #7 {}", SECRET_BEARING_TEXT)
                 session.warn("exceptionCaught(session) session-warning")
             }
 
@@ -229,6 +229,6 @@ class AccessLoggingTest {
 
     private companion object {
         const val SSH_SECRET = "s3cr3t-value"
-        const val SSH_COMMAND = "cd '/w' && exec env 'TOKEN=$SSH_SECRET' 'true'"
+        const val SECRET_BEARING_TEXT = "export TOKEN='$SSH_SECRET' || exit 1"
     }
 }

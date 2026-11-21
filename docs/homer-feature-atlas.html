@@ -2371,7 +2371,7 @@ commands: [ !&lt;langgraph&gt; { module: g.flow, inputEnv: GRAPH_INPUT } ]</code
 
       <figure class="diagram">
         <svg viewBox="0 0 1160 560" role="img"
-             aria-label="How a remote run is synced. Homer's host holds the authoritative workspace — workdir, artifacts and the .homer tooling directory. The target, a Kubernetes pod, an SSH host or an external runner instance, holds an ephemeral copy at a rewritten root, plus a .homer/agent copy of the agent directory. Five phases run in order: open the session; sync the whole workspace, then the agent directory, then extraUploads up, filtered by syncExcludes on SSH and Kubernetes (an external instance receives them unfiltered); execute commands with the environment delivered per exec rather than in the pod spec while stdout and stderr stream back live; sync down, where artifacts always return as an additive overlay and the workdir returns as a mirror only when cleanAfterFinish is false, best-effort; and sweep: SSH removes the remote root only with cleanAfterFinish (otherwise it is left for inspection), Kubernetes deletes the pod, and the external instance always deletes its session root. Content moves over the same filesystem locally, SFTP over SSH, one gzipped tar stream per direction on Kubernetes, and one gzipped tar per transfer over the runner protocol for an external instance.">
+             aria-label="How a remote run is synced. Homer's host holds the authoritative workspace — workdir, artifacts and the .homer tooling directory. The target, a Kubernetes pod, an SSH host or an external runner instance, holds an ephemeral copy at a rewritten root, plus a .homer/agent copy of the agent directory. Five phases run in order: open the session; sync the whole workspace, then the agent directory, then extraUploads up, filtered by syncExcludes on SSH and Kubernetes (an external instance receives them unfiltered); execute commands, on SSH and Kubernetes each with its environment in a 0600 file its shell sources and removes, never on a command line, in an exec request or in the pod spec, while stdout and stderr stream back live; sync down, where artifacts always return as an additive overlay and the workdir returns as a mirror only when cleanAfterFinish is false, best-effort; and sweep: SSH removes the remote root only with cleanAfterFinish (otherwise it is left for inspection), Kubernetes deletes the pod, and the external instance always deletes its session root. Content moves over the same filesystem locally, SFTP over SSH, one gzipped tar stream per direction on Kubernetes, and one gzipped tar per transfer over the runner protocol for an external instance.">
           <defs>
             <marker id="sy-arrow" viewBox="0 0 10 10" refX="9" refY="5"
                     markerWidth="6" markerHeight="6" orient="auto-start-reverse">
@@ -2424,7 +2424,7 @@ commands: [ !&lt;langgraph&gt; { module: g.flow, inputEnv: GRAPH_INPUT } ]</code
 
           <text class="d-name" x="356" y="372">03 · execute</text>
           <path class="d-line" d="M354,384 H752" marker-start="url(#sy-arrow)" marker-end="url(#sy-arrow)" />
-          <text class="d-cap" x="356" y="400">env travels per exec, never inside the pod spec ·</text>
+          <text class="d-cap" x="356" y="400">env in a sourced 0600 file, never in argv or pod spec ·</text>
           <text class="d-cap" x="356" y="414">stdout and stderr stream back live into cmd_N.out / .err</text>
 
           <text class="d-name" x="356" y="430">04 · sync down</text>
@@ -2492,7 +2492,12 @@ sftpTransferTimeoutSeconds: 60 # per-operation SFTP deadline (default 300)</code
             <code>env</code>; values support <code>@SYSENV:</code> and join the telemetry redaction set. For a run
             selected via <code>runnerTags</code>, the serving runner's <code>env</code> is instead merged above agent
             <code>env</code> once the run is claimed — see the claim queue above. On ssh, sshd
-            and the login shell already supply <code>HOME</code>/<code>PATH</code> — override only what must differ.</p>
+            and the login shell already supply <code>HOME</code>/<code>PATH</code> — override only what must differ.
+            On ssh and Kubernetes each step sources its env from a 0600 file, so env names there must be shell
+            identifiers (<code>^[A-Za-z_][A-Za-z0-9_]*$</code>): a runner <code>env</code> or <code>extraUploads.env</code>
+            name fails startup, and a <code>globalEnv</code>, agent <code>env</code> or <code>resultEnvParam</code> name
+            fails the run before it reaches the host or creates a pod. External runners keep the general key rules
+            (non-blank, no <code>HMR_</code> prefix) but need no shell identifiers.</p>
           <pre><code>runners:
   macos-ios: !&lt;ssh&gt;
     # ...
@@ -2504,7 +2509,7 @@ sftpTransferTimeoutSeconds: 60 # per-operation SFTP deadline (default 300)</code
         <article class="f">
           <h3>Kubernetes runner <span class="where">server config</span></h3>
           <p>One ephemeral pod per run with a pod-local <code>emptyDir</code> workspace; content moves as gzip'd tar over
-            the exec channel. The image must ship <code>tar</code> and <code>gzip</code>. <code>maxRunSeconds</code> (default 24 h) is a
+            the exec channel. The image must ship <code>sh</code>, <code>tar</code> and <code>gzip</code>. <code>maxRunSeconds</code> (default 24 h) is a
             hard run limit Kubernetes enforces on the pod, even while Homer is down; opt-in <code>gracefulStopSeconds</code>
             puts a soft deadline in front of it, interrupting the running step so the agent's <code>onStop:</code> steps can
             save state before the pod goes; opt-in <code>workload: Job</code> runs

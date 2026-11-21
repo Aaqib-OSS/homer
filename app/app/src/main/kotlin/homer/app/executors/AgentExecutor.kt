@@ -100,6 +100,7 @@ class AgentExecutor(
             env = workspace.config.env,
             parentContext = parentContext,
             rootProcessId = rootProcessId,
+            resultEnvNames = (agent.commands + agent.onStop).flatMap { it.resultEnvParam }.map { it.envName }.toSet(),
         )
 
     /** Runs the agent's selected steps in order, recording the step in flight on [inFlight]. */
