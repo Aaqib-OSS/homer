@@ -219,30 +219,39 @@ internal class AgentInputChecks(
         return true
     }
 
+    /** The agent's commands and onStop steps, each tagged with the phase name the messages use (ADR-0108). */
+    private val Agent.phaseTaggedSteps: List<Pair<String, Command>>
+        get() = commands.map { "command" to it } + onStop.map { "onStop step" to it }
+
     /** Rejects result captures into invalid envNames and input-chosen LLM executables; `false` = skip the agent. */
     fun checkCommandBindings(
         agent: Agent,
         errors: MutableList<String>,
     ): Boolean {
-        // Captured output is attacker-influenceable and merged into later commands' env, so it gets the
-        // same reserved-name guard as inputs (ADR-0047 rule 2).
+        // Both binding guards sweep the stop phase too — a stop step cannot opt out of a
+        // check the phase it runs in does not weaken (ADR-0047, ADR-0108).
+        val steps = agent.phaseTaggedSteps
+
+        // Captured output is attacker-influenceable and merged into later commands' and onStop steps'
+        // env, so it gets the same reserved-name guard as inputs (ADR-0047 rule 2).
         val invalidResultEnvName =
-            agent.commands
-                .flatMap { cmd -> cmd.resultEnvParam.map { cmd to it } }
-                .firstOrNull { (_, param) ->
+            steps
+                .flatMap { (kind, cmd) -> cmd.resultEnvParam.map { Triple(kind, cmd, it) } }
+                .firstOrNull { (_, _, param) ->
                     ReservedEnvNames.isReserved(param.envName) || !envNamePattern.matches(param.envName)
                 }
         if (invalidResultEnvName != null) {
-            val (cmd, param) = invalidResultEnvName
+            val (kind, cmd, param) = invalidResultEnvName
             logger.error(
-                "Agent '{}': command '{}' captures a result into invalid envName '{}' " +
+                "Agent '{}': {} '{}' captures a result into invalid envName '{}' " +
                     "(reserved Homer/host name, or not matching ^[A-Za-z_][A-Za-z0-9_]*$). Skipping.",
                 agent.name,
+                kind,
                 cmd.label,
                 param.envName,
             )
             errors.add(
-                "Agent '${agent.name}': command '${cmd.label}' captures a result into invalid envName '${param.envName}'",
+                "Agent '${agent.name}': $kind '${cmd.label}' captures a result into invalid envName '${param.envName}'",
             )
             return false
         }
@@ -254,19 +263,19 @@ internal class AgentInputChecks(
                 .map { it.envName }
                 .toSet()
         val inputBoundExecutable =
-            agent.commands
-                .filterIsInstance<Command.LlmCommand>()
-                .firstNotNullOfOrNull { cmd ->
+            steps
+                .mapNotNull { (kind, cmd) -> (cmd as? Command.LlmCommand)?.let { kind to cmd } }
+                .firstNotNullOfOrNull { (kind, cmd) ->
                     templatePlaceholderPattern
                         .findAll(cmd.cmd)
                         .map { it.groupValues[1] }
                         .firstOrNull { it in inputEnvNames }
-                        ?.let { cmd to it }
+                        ?.let { Triple(kind, cmd, it) }
                 }
         if (inputBoundExecutable != null) {
-            val (cmd, input) = inputBoundExecutable
+            val (kind, cmd, input) = inputBoundExecutable
             val msg =
-                "Agent '${agent.name}': command '${cmd.label}' cmd references input '{{$input}}'; " +
+                "Agent '${agent.name}': $kind '${cmd.label}' cmd references input '{{$input}}'; " +
                     "an input must not choose the executable"
             logger.error("{}. Skipping.", msg)
             errors.add(msg)
@@ -355,20 +364,24 @@ internal class AgentInputChecks(
     }
 
     /**
-     * WARNs per Claude command that skips permissions with `allowedTools` as its only tool setting:
+     * WARNs per Claude step that skips permissions with `allowedTools` as its only tool setting:
      * `allowedTools` pre-approves without removing tools, so the step is not contained.
      */
     fun warnOnUncontainedClaudeTools(agent: Agent) {
-        agent.commands.filterIsInstance<Command.Claude>().forEach { cmd ->
-            if (cmd.options.bypassesPermissionsWithoutToolLimit()) {
+        // Phase-tagged so a stop step is never reported as a "command" (ADR-0108).
+        val steps = agent.phaseTaggedSteps
+        steps
+            .mapNotNull { (kind, cmd) -> (cmd as? Command.Claude)?.let { kind to it } }
+            .filter { (_, cmd) -> cmd.options.bypassesPermissionsWithoutToolLimit() }
+            .forEach { (kind, cmd) ->
                 logger.warn(
-                    "Agent '{}': claude command '{}' skips permissions and sets only 'allowedTools', " +
+                    "Agent '{}': claude {} '{}' skips permissions and sets only 'allowedTools', " +
                         "which pre-approves tools without removing any. Contain the step with 'tools' " +
                         "or 'disallowedTools: [Agent, Task]' (see AGENT.md).",
                     agent.name,
+                    kind,
                     cmd.label,
                 )
             }
-        }
     }
 }

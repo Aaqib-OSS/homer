@@ -10,6 +10,8 @@ import homer.app.models.MAX_INTERRUPT_GRACE_SECONDS
 import homer.app.models.MAX_ON_STOP_STEPS
 import homer.app.models.OnTimeout
 import homer.app.models.Param
+import homer.app.models.ResultEnvParam
+import homer.app.models.SrcType
 import io.mockk.verify
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
@@ -68,7 +70,7 @@ class AgentDefinitionValidatorTest {
 
         assertEquals(false, validator.checkDefinition(agent, "dir", errors))
         assertEquals(emptyList(), errors)
-        verify { logger.warn(match<String> { it.contains("allowedTools") }, "a", "claude") }
+        verify { logger.warn(match<String> { it.contains("allowedTools") }, "a", "command", "claude") }
     }
 
     // ========== Graceful-stop policy (ADR-0108) ==========
@@ -116,6 +118,24 @@ class AgentDefinitionValidatorTest {
 
         assertNull(validator.checkDefinition(agent, "dir", errors))
         assertTrue(errors.single().contains("on an onStop step"), errors.single())
+    }
+
+    @Test
+    fun `an onStop step capturing into a reserved envName is refused at load`() {
+        val agent =
+            stoppableAgent(
+                onStop =
+                    listOf(
+                        Command.Cmd(
+                            cmd = listOf("save"),
+                            timeout = 30,
+                            resultEnvParam = listOf(ResultEnvParam(src = SrcType.STD_OUT, envName = "PATH")),
+                        ),
+                    ),
+            )
+
+        assertNull(validator.checkDefinition(agent, "dir", errors))
+        assertTrue(errors.single().contains("onStop step 'cmd' captures a result into invalid envName 'PATH'"), errors.single())
     }
 
     @Test
