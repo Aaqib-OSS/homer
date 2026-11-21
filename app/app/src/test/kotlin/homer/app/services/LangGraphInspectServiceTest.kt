@@ -10,6 +10,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.max
 import kotlin.test.Test
@@ -18,6 +19,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 class LangGraphInspectServiceTest {
     private val langGraphCmd = Command.LangGraph(module = "pkg.mod")
@@ -156,7 +158,7 @@ class LangGraphInspectServiceTest {
 
             val occupier = launch(Dispatchers.Default) { service.inspect(agent) }
             holding.await()
-            val shed = service.inspect(agent)
+            val shed = withTimeout(5.seconds) { service.inspect(agent) }
             release.complete(Unit)
             occupier.join()
 

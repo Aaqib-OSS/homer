@@ -41,6 +41,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicInteger
@@ -1377,7 +1378,7 @@ class LangGraphRunStatusServiceTest {
 
             val occupier = launch(Dispatchers.Default) { service.status(processInfo(), agent, includeGraph = true) }
             holding.await()
-            val shed = service.status(processInfo(), agent, includeGraph = true)
+            val shed = withTimeout(5.seconds) { service.status(processInfo(), agent, includeGraph = true) }
             release.complete(Unit)
             occupier.join()
 
@@ -1414,7 +1415,7 @@ class LangGraphRunStatusServiceTest {
 
             val occupier = launch(Dispatchers.Default) { service.status(processInfo(), agent, includeGraph = true) }
             holding.await()
-            val shed = service.status(processInfo(), agent, includeGraph = true)
+            val shed = withTimeout(5.seconds) { service.status(processInfo(), agent, includeGraph = true) }
             release.complete(Unit)
             occupier.join()
 
