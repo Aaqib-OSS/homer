@@ -37,7 +37,7 @@ val appModule =
 
         single<TextCompiler> { DefaultTextCompiler() }
 
-        // Eager, so DescriptorOpen's status line is logged at boot (ADR-0047, amendment 2026-11-20).
+        // Eager, so DescriptorOpen's status line is logged at boot (ADR-0047, amendment 2026-11-21).
         single<FileOperations>(createdAtStart = true) {
             LocalFileOperations().also { DescriptorOpen.logStatus(get { parametersOf("homer.app.infra.DescriptorOpen") }) }
         }

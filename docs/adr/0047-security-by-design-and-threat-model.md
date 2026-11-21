@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-21
 deciders: Lukáš Vlk
-amended: 2026-09-23, 2026-09-30, 2026-10-06, 2026-10-16, 2026-11-05, 2026-11-20
+amended: 2026-09-23, 2026-09-30, 2026-10-06, 2026-10-16, 2026-11-05, 2026-11-20, 2026-11-21
 ---
 # ADR-0047: Security is a design input, and these are the boundaries it defends
 
@@ -301,59 +301,51 @@ claims a guarantee it does not give, and both branches look the mode view up the
 
 ## Amendment (2026-11-20): reads of a run's own files keep a link-swap residual
 
-`LocalFileOperations.readTextBounded` reads a LangGraph run's agent-written `langgraph.json` for
-`LangGraphRunStatusService.identity`, whose two callers are `GET /processes/{id}/langgraph`, which
-reports the thread, and `POST /processes/{id}/resume`, which continues it in a new run. `identity`
-first refuses an artifacts directory that is a symlink, because a run can replace the directory it
-is handed at any time and `NOFOLLOW_LINKS` binds only the final component. `readTextBounded` then
-opens the file on the bounded, timed open pool with `O_NOFOLLOW | O_NONBLOCK` through the Foreign
-Function & Memory API, refuses it unless `fstat` on the opened descriptor reports a single-link
-regular file, reads from that descriptor and stops at `MAX_IDENTITY_BYTES`. A symlink, hard link,
-FIFO or other non-regular file at the final component is refused whenever it was swapped in, and the
-open never blocks, so no pool thread stays held; an open that completes after its caller timed out
-is closed. Where no such open is defined (an OS or architecture other than Linux or macOS on x86_64
-or aarch64) or the JVM denies native access, the read is refused, never retried as a blocking
-by-name open. The server and agentdebug log once at startup whether the open works, at ERROR naming
-the refused reads and the cause. Homer still starts without it, unlike the runner's dumpability
-check (ADR-0078): commands still run and no run's own output is lost, but every one of these reads
-is refused, so artifacts, logs and LLM events cannot be served, a LangGraph run reports no thread
-and cannot be resumed, and a continuation's target run resumes without the watched run's result.
+`LocalFileOperations.readTextBounded` reads a LangGraph run's agent-written `langgraph.json`
+for `LangGraphRunStatusService.identity`, whose two callers are `GET /processes/{id}/langgraph`,
+which reports the thread, and `POST /processes/{id}/resume`, which continues it in a new run.
+`identity` first refuses an artifacts directory that is a symlink, because a run can replace the
+directory it is handed at any time and `NOFOLLOW_LINKS` binds only the final component.
+`readTextBounded` then refuses a symlink, a hard-linked or a non-regular file, opens the file by
+name with `NOFOLLOW_LINKS` on the bounded, timed open pool, and reads at most
+`MAX_IDENTITY_BYTES`. A final-component symlink swapped in after the check fails the open. A FIFO
+swapped in bounds only the caller's wait: the blocked open keeps one of the pool's 8 threads, and
+once all 8 are held every file read through the pool fails at once for every caller.
 
 `ContinuationFireService.extractResult` reads a watched run's stdout into a continuation's resume
 payload the same way. It refuses a symlinked artifacts directory and a recorded stdout path that is
-not a direct child of it, then reads at most the 64 KiB inline-result cap through `readTextBounded`,
-so a FIFO planted at `cmd_N.out` can no longer block the fire.
+not a direct child of it, then reads at most the 64 KiB inline-result cap through
+`readTextBounded`, so a FIFO planted at `cmd_N.out` can no longer block the fire.
 
 The artifact download (`ArtifactService.resolveArtifactPath`, then `streamFile`), the log tail
 (`LogTailService.resolve`, then `tail`) and the LLM-event stream (`LlmEventStreamService.resolve`,
 then `followFile`) refuse a symlinked artifacts directory too, but check it only once, when they
-resolve the path. The download opens the file afterwards, through `streamFile`'s descriptor-checked
-open; each stream opens it at the first poll that finds it, which can be as late as the stream's
-end, through the same open, and then follows the file through that descriptor alone: positional
-reads, and `fstat` for its size. A FIFO swapped in for a stream's file is refused at once instead of
-blocking a call thread and holding the caller's SSE slot, and a hard link is refused like a symlink.
+resolve the path. The download opens the file afterwards; each stream opens it at the first poll
+that finds it, which can be as late as the stream's end.
 
-Three cases remain. Two are races: a symlink swapped in for the artifacts directory between its
-check and the open, because `O_NOFOLLOW` binds only the final component; and, for the two streams,
-the same swap at any time between `resolve` and the poll that opens the file. The third needs no
-race: a symlink at the run root or a directory above it is followed by every one of these reads.
-Each makes Homer read a different regular file: for an identity, at most 64 KiB whose fields it
-reports and whose thread a resume continues; for a continuation, at most 64 KiB it delivers as the
-watched run's result; for a download or stream, a file it serves to the caller (CWE-59/CWE-367).
+Four cases remain. Three are races: a hard link renamed into place between the link check and the
+open, because `NOFOLLOW_LINKS` ignores the link count; a symlink swapped in for the artifacts
+directory between its check and the open; and, for the two streams, the same swap at any time
+between `resolve` and the poll that opens the file. The fourth needs no race: a symlink
+at the run root or a directory above it is followed by every one of these reads. Each makes Homer
+read a different regular file: for an identity, at most 64 KiB whose fields it reports and whose
+thread a resume continues; for a continuation, at most 64 KiB it delivers as the watched run's
+result; for a download or stream, a file it serves to the caller (CWE-59/CWE-367).
 
 **Accepted, not fixed**, like the tar walks above. Each case needs a local writer holding Homer's
-own UID, and that writer can already read any file the swap could lead to and copy its content into
-the run's own files directly, so the swap crosses no principal and gains nothing. Rule 2 already
-treats those files' content as attacker-chosen; a swap only changes where it comes from. Homer does
-act on the read, which this ADR counts as an escalation even for readable data, but both identity
-callers keep the thread id inside the run owner's checkpoint store, so neither the report nor the
-resumed run reaches another principal's checkpoints (ADR-0046). A continuation's result is the
-watched run's own output, which that run could have written anyway, and a download or stream answers
-only a caller who may already see the run. Closing the directory swaps needs an `openat`-style walk
-from a descriptor on the checked directory; re-checking the directory at each poll would only narrow
-the streams' window. Checking the run root and above needs the configured workspace root, which an
-operator may reach through a symlink (`/tmp` on macOS), so a stored artifacts path cannot be
-compared with it lexically. `SECURITY.md` carries the row as AR-12.
+own UID, and that writer can already read any file the swap could lead to and copy its content
+into the run's own files directly, so the swap crosses no principal and gains nothing. Rule 2
+already treats those files' content as attacker-chosen; a swap only changes where it comes from.
+Homer does act on the read, which this ADR counts as an escalation even for readable data, but
+both identity callers keep the thread id inside the run owner's checkpoint store, so neither the
+report nor the resumed run reaches another principal's checkpoints (ADR-0046). A continuation's
+result is the watched run's own output, which that run could have written anyway, and a download
+or stream answers only a caller who may already see the run. Closing the races needs an `fstat`
+on the opened handle and an `openat`-style walk, which `java.nio` does not expose portably;
+re-checking the directory at each poll would only narrow the streams' window. Checking the run
+root and above needs the configured workspace root, which an operator may reach through a symlink
+(`/tmp` on macOS), so a stored artifacts path cannot be compared with it lexically. `SECURITY.md`
+carries the row as AR-12.
 
 ## Amendment (2026-11-20): the console's post-sign-in return path is path-only
 
@@ -366,6 +358,52 @@ could abuse an `endpoint=` or `mode=` ride-along, and both producers pass
 `usePathname()`, which never carries a query, so query state does not survive a
 sign-in round trip. Accepting a query would need a second validation shape per
 target; landing on the destination's default view is the accepted cost.
+
+## Amendment (2026-11-21): reads of a run's own files check the opened descriptor
+
+Every read the 2026-11-20 amendment above lists — `LocalFileOperations.readTextBounded` for a
+LangGraph identity and a continuation's result, `LocalFileOperations.streamFile` for an artifact
+download, `LogTailService.tail` and `LlmEventStreamService.followFile` — no longer checks the path
+and then opens it by name. `DescriptorOpen` opens the file through the Foreign Function & Memory API
+with `O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_NOCTTY | O_CLOEXEC`, runs `fstat` on the returned
+descriptor, refuses anything but a single-link regular file and reads from that descriptor alone;
+the two streams follow the file through it with `pread` and `fstat`'s `st_size`. The open flags and
+the `struct stat` offsets are defined per OS and architecture (Linux and macOS on x86_64 and
+aarch64), with glibc's `__fxstat` as the entry point where glibc older than 2.33 exports no `fstat`.
+`readTextBounded` and `streamFile` keep the bounded, timed open pool, and a result that arrives
+after its caller gave up is closed.
+
+This closes two of the 2026-11-20 cases for every listed read: a hard link renamed into place
+between the link check and the open is refused at the descriptor, and a FIFO swapped in is refused
+without blocking, so it holds no open-pool thread, no call thread and no SSE slot. A final-component
+symlink is refused by `O_NOFOLLOW` as before. What remains is accepted with the 2026-11-20
+reasoning: a symlink swapped in for the artifacts directory between its check and the open; for the
+two streams, the same swap at any time before the poll that opens the file; and a symlink at the run
+root or a directory above it. Closing these needs an `openat`-style walk from a descriptor held on
+the checked directory, which this change does not add.
+
+Where no descriptor-checked open is defined, or the JVM denies native access, these reads are
+refused and never retried as a blocking by-name open. The server and agentdebug log once at startup
+whether the open works, at ERROR naming the refused reads and the cause. Homer still starts without
+it, unlike the runner's dumpability check (ADR-0078): commands still run and no run's own output is
+lost, but every one of these reads is refused, so artifacts, logs and LLM events cannot be served, a
+LangGraph run reports no thread and cannot be resumed, and a continuation's target run resumes
+without the watched run's result.
+
+Alternatives considered for checking the opened file, and rejected:
+
+- `Files.readAttributes` on the path (`isRegularFile`, `unix:nlink`), the check these reads made
+  before: it describes the name, not the file the open returns, so a swap between the two wins, and
+  `java.nio` has no `O_NONBLOCK`, so the open of a swapped-in FIFO still blocks.
+- Inspecting the descriptor through `/proc/self/fd/N` or `/dev/fd/N`: those are paths, so the kernel
+  resolves them again; `java.nio` hands out no descriptor number without reflection into JDK
+  internals; `/proc` is Linux-only; and the by-name open before it would still block on a FIFO.
+- A JNI library for the same calls: a native artifact to build, ship and load per platform, and a
+  JNI loading surface, for four libc calls the JDK 25 FFM API reaches with nothing to ship. The cost
+  FFM keeps is the explicit per-platform layout, which the descriptor tests check on every platform
+  CI runs.
+
+`SECURITY.md` carries what remains as AR-12.
 
 ## Pros and Cons of the Options
 

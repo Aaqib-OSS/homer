@@ -252,7 +252,7 @@ field.
 | SSE slots per caller | `withSseSlot`, unchanged | existing test extended to the new route |
 | Cost charged exactly once per attempt under cancellation | generic executor, moved verbatim | existing ADR-0061 tests, run against the generic executor |
 
-> **Amendment (2026-11-21) —** The row's opens no longer check the path: `/artifacts` (`LocalFileOperations.streamFile`), `/logs` (`LogTailService`) and `/llm-events` (`LlmEventStreamService`) open the file `O_NOFOLLOW | O_NONBLOCK` and refuse it unless `fstat` on the opened descriptor reports a single-link regular file ([ADR-0047](0047-security-by-design-and-threat-model.md), amendment 2026-11-20); the streams then follow that descriptor alone. The row's hard-link race is closed, and a FIFO swapped in is refused at once instead of blocking the subscriber's open.
+> **Amendment (2026-11-21) —** The row's opens no longer check the path: `/artifacts` (`LocalFileOperations.streamFile`), `/logs` (`LogTailService`) and `/llm-events` (`LlmEventStreamService`) open the file `O_NOFOLLOW | O_NONBLOCK` and refuse it unless `fstat` on the opened descriptor reports a single-link regular file ([ADR-0047](0047-security-by-design-and-threat-model.md), amendment 2026-11-21); the streams then follow that descriptor alone. The row's hard-link race is closed, and a FIFO swapped in is refused at once instead of blocking the subscriber's open.
 
 `/llm-events` redaction uses the run's in-memory `SecretRedactor` and, after
 a restart, one rebuilt from the process's stored secret-input keys

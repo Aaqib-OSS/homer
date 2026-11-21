@@ -123,7 +123,7 @@ object DescriptorOpen {
 
     /**
      * Logs whether descriptor-checked file reads work in this JVM: once at startup, at ERROR naming the refused reads and
-     * the cause when they do not (ADR-0047, amendment 2026-11-20).
+     * the cause when they do not (ADR-0047, amendment 2026-11-21).
      */
     fun logStatus(logger: Logger) = logStatus(logger, native)
 
