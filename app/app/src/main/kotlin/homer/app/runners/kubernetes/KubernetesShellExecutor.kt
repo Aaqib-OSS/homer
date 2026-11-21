@@ -71,9 +71,9 @@ class KubernetesShellExecutor(
     ): CommandResult =
         withContext(Dispatchers.IO) {
             // jscpd:ignore-end
-            // Rendered before any exec, the `setsid -w` probe included, so a name or value the file refuses fails first.
+            // Rendered before the `setsid -w` probe, so a name or value the file refuses fails before any exec.
             val envFile = if (env.isNotEmpty()) RemoteEnvFile.render(envDir, env) else null
-            // Null without a grace: the launch is then exactly today's.
+            // Null without a grace: the launch is then exactly today's. With one, the probe runs here, before the upload.
             val pgidFile = podControl.pgidFileFor(env, interruptGrace)
             RemoteEnvFile.removingUnlessSucceeded(envFile?.path, { sync.removeIfExists(it, RemoteEnvFile.REMOVE_TIMEOUT) }) {
                 envFile?.let { sync.writePrivateFile(it.path, it.content) }

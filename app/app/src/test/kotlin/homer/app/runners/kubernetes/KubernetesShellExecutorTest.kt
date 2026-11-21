@@ -1461,8 +1461,8 @@ class KubernetesShellExecutorTest {
             )
 
         assertEquals(0, result.exitCode)
+        assertEquals(listOf("setsid", "-w", "true"), started.first(), "the probe precedes the env file upload: $started")
         val argv = started.single { "echo" in it }
-        assertTrue(started.indexOf(listOf("setsid", "-w", "true")) in 0 until started.indexOf(argv), "probed first: $started")
         assertEquals(listOf("setsid", "-w", "sh", "-c"), argv.take(4))
         assertTrue(argv[4].endsWith("f=\$1; shift; . \"\$f\" && (exec \"\$@\"); exit \$?"), "the wrapper sources the env file: $argv")
         assertEquals("/homer/workspace/workdir/homer-exec-1.pgid", argv[5], "the pgid file must sit in the workspace dir")

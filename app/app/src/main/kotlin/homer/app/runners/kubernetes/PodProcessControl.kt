@@ -19,17 +19,19 @@ internal class PodProcessControl(
     private val pgidCounter = AtomicLong(0)
 
     /** The pod's `setsid -w` argv prefix, or none where it lacks one. Probed only when a grace is used. */
-    private val setsidPrefix: List<String> by lazy { if (probeSetsidWait()) SETSID_WAIT else emptyList() }
+    private val setsidPrefix = lazy { if (probeSetsidWait()) SETSID_WAIT else emptyList() }
 
     /**
      * The pod-side file this command's group leader records its pid (its pgid) in, under `HMR_WORK_DIR` or else a
-     * relative `.homer`; null without [interruptGrace], and the launch is then unchanged (ADR-0108).
+     * relative `.homer`; null without [interruptGrace], and the launch is then unchanged (ADR-0108). The first call with
+     * a grace runs the `setsid -w` probe, so it precedes the caller's env-file upload.
      */
     fun pgidFileFor(
         env: Map<String, String>,
         interruptGrace: Duration?,
     ): String? {
         if (interruptGrace == null) return null
+        setsidPrefix.value
         val dir = env[EnvConstants.WORK_DIR]?.takeIf { it.isNotBlank() } ?: FALLBACK_PGID_DIR
         return "$dir/homer-exec-${pgidCounter.incrementAndGet()}.pgid"
     }
@@ -47,7 +49,7 @@ internal class PodProcessControl(
         val launch = if (envFile != null) "f=\$1; shift; " + RemoteShell.sourceThenRun("\$f") else "(exec \"\$@\")"
         // `trap :`, never `trap ''`, keeps the wrapper waiting through a group signal without the argv inheriting an ignore.
         val wrapper = "trap : INT TERM HUP; $PGID_RECORD$launch; exit \$?"
-        return setsidPrefix + listOf("sh", "-c", wrapper, pgidFile) + listOfNotNull(envFile) + command
+        return setsidPrefix.value + listOf("sh", "-c", wrapper, pgidFile) + listOfNotNull(envFile) + command
     }
 
     /**
