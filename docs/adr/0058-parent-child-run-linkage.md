@@ -252,7 +252,7 @@ not make — if the fan-out shows up in practice, that is the change to reach fo
   `ProcessRepository.obtainProcessId`; header resolution in
   `SecuredRoutes.resolveParentProcessHeader`.
 - Read path: `ProcessRepository.getAllProcesses(parentProcessId)`, `ProcessInfoResponse.parentProcessId`.
-- Env: `EnvConstants.PARENT_PROCESS_ID`, `HomerHeaders.PARENT_PROCESS_ID`.
+- Env: `EnvConstants.PARENT_PROCESS_ID`, `EnvConstants.PARENT_PROCESS_HEADER`.
 - Root (amendment above): same write/read paths carrying `rootProcessId` /
   `root_process_id`; filters `?rootProcessId=` and `?roots=`; env
   `EnvConstants.ROOT_PROCESS_ID` (`HMR_ROOT_PROCESS_ID`).

@@ -117,7 +117,7 @@ count of PENDING dispatches meets the cap, the creation fails with `429`.
 
 **Config block.** `server.dispatch` (optional; all fields have defaults):
 `authToken` (nullable, `@SYSENV:`-resolvable), `maxPending` (default 100),
-`defaultTtlSec` (nullable; see the 2026-11-21 amendment), `sweepIntervalSec` (default 60).
+`defaultTtlSec` (nullable), `sweepIntervalSec` (default 60).
 
 > **Amendment (2026-10-09) —** `authToken` was removed, see ADR-0030.
 

@@ -383,7 +383,7 @@ remote subresource; a future HTML surface needs an explicit policy override befo
   recursive delete at any host directory, and a stored per-run root equal to the workspace root
   must not become a wipe of it.
 - **`isHardLinked` refuses a file with more than one link:** the same bytes are reachable
-  under a name a walk never sees, so containment cannot be decided (the race is AR-12).
+  under a name a walk never sees, so containment cannot be decided (the walk races are AR-04 and AR-05).
 - **`LocalFileOperations.fileSize` and `listRegularFiles` use `NOFOLLOW_LINKS`.** A stat over an
   agent-writable path must report a link's own size, or it becomes a size and existence oracle
   for host files a swapped symlink points at; a symlink an agent drops among its artifacts is

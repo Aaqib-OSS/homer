@@ -101,7 +101,7 @@ internal object PathSafety {
         return isHardLinked(path)
     }
 
-    // True when [path] has more than one link, so containment cannot be decided. See AR-12.
+    // True when [path] has more than one link, so containment cannot be decided. See ADR-0047.
     fun isHardLinked(path: Path): Boolean {
         // `as? Number`: some views report nlink as a Long, which `as? Int` would read as unlinked.
         val nlink =

@@ -4166,7 +4166,8 @@ first, then the OS environment, so either form works:
   comma-separated `logger=LEVEL` pairs (`trace`, `debug`, `info`, `warn`, `error`, `off`;
   case-insensitive), e.g. `homer.app.executors.ProcessExecutor=trace,io.ktor=warn`.
   Applied to logback once at startup, over `logback.xml`. Malformed pairs and unknown
-  levels are skipped. It can lower the two pinned MINA SSHD loggers, which quote the ssh command and its env, so leave those alone.
+  levels are skipped. Setting either pinned MINA SSHD logger to `debug` or `trace` logs the ssh
+  command and its env, so leave those two alone.
 - **`HOMER_LOG_DIR`** — directory for `app.log` and `api.log`. Defaults to the working
   directory; the Dockerfile sets it as an env var to `/app/workspace`.
 
