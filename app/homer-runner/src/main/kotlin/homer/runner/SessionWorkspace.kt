@@ -1,5 +1,6 @@
 package homer.runner
 
+import homer.app.infra.DanglingLinkException
 import homer.app.infra.PathSafety
 import homer.app.infra.coRunCatching
 import homer.app.runners.DownloadMode
@@ -131,7 +132,7 @@ internal class SessionWorkspace(
 
     /** A fixed phrase for [e]; its own message carries host paths, which must not reach the server. */
     private fun refusalKind(e: SecurityException): String =
-        if (e.message?.contains("dangling symlink") == true) "passes through a dangling symlink" else "escapes the session root"
+        if (e is DanglingLinkException) "passes through a dangling symlink" else "escapes the session root"
 
     fun deleteTree(path: Path) {
         if (!path.exists()) return

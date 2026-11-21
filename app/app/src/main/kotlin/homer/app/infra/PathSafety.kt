@@ -6,6 +6,11 @@ import java.nio.file.Path
 import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.deleteRecursively
 
+/** A path that passes through a dangling symlink; a [SecurityException], so existing catches still apply. */
+class DanglingLinkException(
+    message: String,
+) : SecurityException(message)
+
 // Contained only when both the lexical and the realpath view agree, else SecurityException. See ADR-0047.
 object PathSafety {
     fun assertContained(
@@ -135,7 +140,7 @@ object PathSafety {
         val existing = longestExistingAncestor(path, if (failOnDanglingLink) NO_FOLLOW else FOLLOW) ?: return path
         // An unfollowed walk stops at a dangling link, which has no realpath to contain.
         if (failOnDanglingLink && !Files.exists(existing)) {
-            throw SecurityException("Path '$path' passes through the dangling symlink '$existing'")
+            throw DanglingLinkException("Path '$path' passes through the dangling symlink '$existing'")
         }
         val real = existing.toRealPath()
         val remainder = existing.relativize(path)
