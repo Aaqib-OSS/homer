@@ -38,6 +38,7 @@ object ConfigLoader {
             globalEnv = resolvedGlobalEnv,
             llmPrice = resolveLlmPrice(config.llmPrice, sysEnvResolver::resolve),
             sysEnvBackedGlobalEnvNames = sysEnvBackedGlobalEnvNames,
+            globalEnvSysEnvNames = SysEnvResolver.referencedNames(rawConfig.globalEnv),
         )
     }
 

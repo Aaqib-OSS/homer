@@ -1512,8 +1512,12 @@ cmd: "/opt/claude/bin/claude"   # default: claude / codex / opencode</code></pre
         <article class="f">
           <h3><code>@SYSENV:</code> references <span class="where">config · agent.yaml</span></h3>
           <p>Pulls a host env var into config or agent env at load time — so secrets stay out of the files. Missing
-            variables fail fast: a config reference stops startup, and an agent reference skips that agent at load.</p>
-          <pre><code>globalEnv:
+            variables fail fast: a config reference stops startup, and an agent reference skips that agent at load.
+            An agent's <code>env</code> may name only the variables <code>agentSysEnvAllowlist</code> lists or
+            <code>globalEnv</code> already references; any other name skips the agent, and the error names the
+            variable, never its value.</p>
+          <pre><code>agentSysEnvAllowlist: ["GITLAB_TOKEN"]
+globalEnv:
   ANTHROPIC_AUTH_TOKEN: "@SYSENV:ANTHROPIC_AUTH_TOKEN"</code></pre>
         </article>
 

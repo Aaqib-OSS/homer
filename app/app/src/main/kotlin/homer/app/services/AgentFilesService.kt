@@ -24,7 +24,7 @@ open class AgentFilesService(
     private val maxConfigFileBytes: Long = DEFAULT_MAX_CONFIG_FILE_BYTES,
 ) {
     private val paths = AgentFilePathResolver(agentsService)
-    private val definitionGate = AgentDefinitionWriteGate(logger)
+    private val definitionGate = AgentDefinitionWriteGate(logger, agentsService.sysEnvAllowlist)
 
     sealed class FileOpResult<out T> {
         data class Ok<T>(

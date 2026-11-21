@@ -56,6 +56,7 @@ This document provides comprehensive documentation for configuring the Homer ser
 - [Global Environment Variables](#global-environment-variables)
   - [Referencing System Environment Variables](#referencing-system-environment-variables)
   - [`parentEnvAllowlist`](#parentenvallowlist)
+  - [`agentSysEnvAllowlist`](#agentsysenvallowlist)
 - [OpenTelemetry Export](#opentelemetry-export)
   - [Export Options](#export-options)
   - [Knowing where traces actually go](#knowing-where-traces-actually-go)
@@ -86,6 +87,7 @@ This document provides comprehensive documentation for configuring the Homer ser
   - [`ssh` runner](#ssh-runner)
   - [Runner claim queue](#runner-claim-queue)
   - [External runners (pull mode)](#external-runners-pull-mode)
+- [Server process hardening](#server-process-hardening)
 - [Logging](#logging)
 - [Configuration Best Practices](#configuration-best-practices)
 - [See Also](#see-also)
@@ -192,6 +194,7 @@ llmPrice:
 | `langfuse` | `LangfuseConfig` | No | empty | Langfuse integration configuration |
 | `globalEnv` | `Map<String, String>` | No | `{}` | Global environment variables for all processes; a run on an `ssh` or `kubernetes` runner fails on a key that is not a shell identifier (`^[A-Za-z_][A-Za-z0-9_]*$`) |
 | `parentEnvAllowlist` | `List<String>` | No | `["PATH","HOME","LANG","TZ"]` | Host JVM env keys layered under `globalEnv` for the `local` runner only — remote runners never receive them — see [`parentEnvAllowlist`](#parentenvallowlist) |
+| `agentSysEnvAllowlist` | `List<String>` | No | `[]` | Host variable names an agent's `env` may reference with `@SYSENV:`, beside the names `globalEnv` already references; an agent naming any other variable fails to load — see [`agentSysEnvAllowlist`](#agentsysenvallowlist) |
 | `openTelemetryExport` | `OpenTelemetryExport` | No | `LANGFUSE` | OpenTelemetry export destination |
 | `runners` | `Map<String, RunnerConfig>` | No | `{}` | Named pluggable execution backends — see [Runners](#runners-pluggable-execution-backends) |
 | `costLimits` | `CostLimits` | No | `{}` | Soft caps on LLM harness spend (`claude`, `codex`, `opencode`) — see [Cost Limits](#cost-limits) |
@@ -977,7 +980,7 @@ grants:
 | `run` | Invoke the agent (`GET/POST /api/v1/agent/{name}`) plus unconditional visibility/control of runs the caller itself started. |
 | `read` | See all runs of the agent. |
 | `control` | Kill/answer runs of the agent. For runs the caller did not start, `control` also needs visibility, so pair it with `read`. |
-| `edit` | File CRUD under the agent's directory, and creating a new agent whose name matches the pattern. Writing `agent.yaml`/`agent.json` that declares a name other than the target agent also requires edit on the declared name. **`edit` is authority over what the agent runs**: `agent.yaml`/`agent.json` are executable definitions, so an `edit` holder can change the agent's commands or cron and those changes then run on schedule or when someone with `run` triggers the agent — grant `edit` only to principals trusted to define behavior. (`edit` cannot reach *other* agents' authority: nested-dispatch hops are re-checked against operator-controlled grants, not the editable definition.) |
+| `edit` | File CRUD under the agent's directory, and creating a new agent whose name matches the pattern. Writing `agent.yaml`/`agent.json` that declares a name other than the target agent also requires edit on the declared name. **`edit` is authority over what the agent runs**: `agent.yaml`/`agent.json` are executable definitions, so an `edit` holder can change the agent's commands or cron and those changes then run on schedule or when someone with `run` triggers the agent — grant `edit` only to principals trusted to define behavior. (`edit` cannot reach *other* agents' authority: nested-dispatch hops are re-checked against operator-controlled grants, not the editable definition.) A definition's `env` reaches only the host variables [`agentSysEnvAllowlist`](#agentsysenvallowlist) allows through `@SYSENV:`, which is no confidentiality boundary for code the agent runs on the server host (see that section). |
 | `debug` | `POST /api/v1/agents/{name}/debug` (arbitrary command execution). Never implied by anything except `role: admin` — a `["*"]`-style `agents` grant without `debug` in `actions` still cannot reach it. |
 
 **`agents` patterns** use the same glob rules as agent names: `*` matches
@@ -2018,7 +2021,9 @@ Several config values can reference host system environment variables using the
 does not exist, the server fails to start with a clear error message. Agent `env`
 values are the exception: they are resolved whenever the agent is loaded (at startup
 and on every reload), and a missing variable fails only that agent — it is skipped
-with an `Error loading agent from …` load error while the server keeps running.
+with an `Error loading agent from …` load error while the server keeps running. An
+agent `env` may also name only the host variables the operator allows — see
+[`agentSysEnvAllowlist`](#agentsysenvallowlist).
 
 `@SYSENV:` is resolved in:
 - `globalEnv` values, agent `env` values, and runner `env` values (`ssh`, `kubernetes`, `external`)
@@ -2149,6 +2154,63 @@ the runner's `env`, or the agent's `env` is the operator's own and reaches the
 target; a local target keeps everything.
 
 See [ADR-0065](../docs/adr/0065-remote-runner-env-composition.md) for the rationale and the full layering order.
+
+### `agentSysEnvAllowlist`
+
+The host variable names an agent definition's `env` may reference with
+`@SYSENV:`. An agent definition is not operator-owned the way this file is: a
+caller holding the `edit` grant writes it through the agent-file API, so without
+this list a definition alone could pull any variable in Homer's environment into
+the agent's runs, on any runner. The names
+allowed are the ones listed here **plus** every host variable `globalEnv`
+already references with `@SYSENV:` — a variable the operator already hands to
+every agent stays usable from an agent's own `env`. The `globalEnv` keys do not
+count, only the host variables their values name, and runner `env` references
+do not count either. Default: none, so an agent
+`env` may reference only what `globalEnv` references.
+
+An agent naming any other variable fails to load: it is skipped with a load
+error naming the variable, never its value, and the server keeps running. The
+check runs before resolution, so the error is the same whether the variable is
+set or not. An agent-file write (`PUT /api/v1/agents/{name}/files/{path}`) of
+such a definition is refused with `422`, like any other invalid definition, and
+the file is left untouched. `@SYSENV:` elsewhere in this file (`globalEnv`,
+runner `env`, auth secrets) is unaffected: the operator owns this file.
+
+The list bounds only this declarative route. It does not keep the server's
+secrets from an `edit` holder whose code runs on the server host, as Homer's
+own user, which happens on two paths: an agent routed to the `local` runner
+(the definition picks its runner, no `runner:` means `local`, and the local
+runner is enabled by default), and the LangGraph inspect/state interpreter,
+which always runs on the server host and imports the agent's graph module with
+the agent's `python` and `env`. On Linux the server JVM is non-dumpable (see
+[Server process hardening](#server-process-hardening)), so that code cannot
+read the server's environment. It can still read whatever Homer's user can
+read, and the environment of concurrent runs: AR-13 in
+[`SECURITY.md`](../SECURITY.md#accepted-risks).
+
+```yaml
+agentSysEnvAllowlist: ["GITLAB_TOKEN", "SONAR_TOKEN"]
+globalEnv:
+  ANTHROPIC_AUTH_TOKEN: "@SYSENV:ANTHROPIC_AUTH_TOKEN"   # agents may also name ANTHROPIC_AUTH_TOKEN
+```
+
+<details>
+<summary>JSON format</summary>
+
+```json
+{
+  "agentSysEnvAllowlist": ["GITLAB_TOKEN", "SONAR_TOKEN"],
+  "globalEnv": { "ANTHROPIC_AUTH_TOKEN": "@SYSENV:ANTHROPIC_AUTH_TOKEN" }
+}
+```
+</details>
+
+Each entry must be a variable name (`[A-Za-z_][A-Za-z0-9_]*`); anything else
+fails startup. This is a **breaking change**: an agent whose `env` names a host
+variable that is neither listed here nor referenced by `globalEnv` stops
+loading — add the name here. See
+[ADR-0037](../docs/adr/0037-grants-authorization.md).
 
 ## OpenTelemetry Export
 
@@ -4042,6 +4104,34 @@ the sum of every agent's `maxParallelRuns`, and there is no way to reserve a
 share of the queue for one agent. Size `maxPendingRunnerClaims` at or above
 that sum (default `maxParallelRuns` is `10` per agent) and the bound becomes a
 backstop that only trips on misconfiguration, never in steady state.
+
+## Server process hardening
+
+On Linux the server JVM makes itself non-dumpable (`prctl(PR_SET_DUMPABLE, 0)`)
+once its config file parses, before it resolves any `@SYSENV:` reference or
+starts a run. Agent commands on the `local` runner and the LangGraph
+inspect/state interpreters run as Homer's own user, so without this they could
+read every server secret from `/proc/<server pid>/environ` or ptrace the
+server. Spawned processes are unaffected, because `execve` resets the flag for
+the child. The startup log says which way it went: `Server JVM is non-dumpable`
+at INFO, a warning on a host without `prctl` (macOS development), and an ERROR
+when the call fails on Linux. Startup goes on in every case. The protection
+covers the environment only where the JVM itself holds it: the images `exec`
+the JVM, but a launcher that stays alive as Homer's user, such as a shell
+wrapper without `exec` or `gradle run`, keeps its own copy readable.
+
+The cost is operational. The server writes no core dump, and a tool that
+attaches to it (`jcmd`, `jstack`, `jmap`, a profiler, `gdb`) may be refused,
+even as root inside a default Docker container, which lacks `CAP_SYS_PTRACE`.
+For a thread dump, `kill -3 <server pid>` still works as Homer's user and
+prints it to the server's stdout (the container log). For an attaching tool,
+start the container with `--cap-add SYS_PTRACE` (or `--privileged`) and run the
+tool as root. A JVM-written heap dump (`-XX:+HeapDumpOnOutOfMemoryError`) still
+works. The image's entrypoint
+passes `--enable-native-access=ALL-UNNAMED` for the `prctl` call; a JVM started
+without it still hardens and prints a JDK warning. What this does not cover is
+listed as AR-13 in [`SECURITY.md`](../SECURITY.md#accepted-risks). See
+[ADR-0078](../docs/adr/0078-runner-jvm-is-non-dumpable.md).
 
 ## Logging
 
