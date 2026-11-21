@@ -22,7 +22,7 @@ internal enum class Layer {
 
     companion object {
         /** The type names of each row of the "Layered architecture" diagram; an implementation counts as its interface. */
-        private val ROWS =
+        val rows =
             mapOf(
                 SERVICES to
                     setOf(
@@ -92,7 +92,7 @@ internal enum class Layer {
             )
 
         /** The [SERVICES] row, read by the rule that requires a test per service, so the row exists once. */
-        val services: Set<String> get() = ROWS.getValue(SERVICES)
+        val services: Set<String> get() = rows.getValue(SERVICES)
 
         private val HTTP_PACKAGES = listOf("homer.app.routes", "homer.app.auth", "homer.app.di")
         private val KERNEL_PACKAGES = listOf("homer.app.models", "homer.app.config", "homer.app.exceptions")
@@ -120,7 +120,7 @@ internal enum class Layer {
                 setOf(file.name) +
                     types.map { it.name } +
                     file.classes(includeNested = false).flatMap { cls -> cls.parents().map { it.name.substringBefore("<") } }
-            return ROWS.entries.firstOrNull { (_, row) -> names.any { it in row } }?.key
+            return rows.entries.firstOrNull { (_, row) -> names.any { it in row } }?.key
         }
 
         private fun packageDefault(

@@ -18,11 +18,11 @@ tasks.withType<Test>().configureEach {
     systemProperty("homer.repoRoot", repoRoot.absolutePath)
     // Konsist parses every backend source into one JVM; Gradle's 512m default ran out of heap in CI.
     maxHeapSize = "1g"
-    // The rules read other modules' sources; undeclared, editing them would replay a cached result.
+    // The rules read other modules' sources and the backend guide; undeclared, editing them would replay a cached result.
     inputs
         .files(
             fileTree(repoRoot) {
-                include("app/app/src/**/*.kt", "app/agentdebug/src/**/*.kt", "app/homer-runner/src/**/*.kt")
+                include("app/app/src/**/*.kt", "app/agentdebug/src/**/*.kt", "app/homer-runner/src/**/*.kt", "app/CLAUDE.md")
             },
         ).withPropertyName("scannedSources")
         .withPathSensitivity(PathSensitivity.RELATIVE)
