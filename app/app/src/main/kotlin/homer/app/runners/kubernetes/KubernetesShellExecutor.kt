@@ -71,9 +71,10 @@ class KubernetesShellExecutor(
     ): CommandResult =
         withContext(Dispatchers.IO) {
             // jscpd:ignore-end
+            // Rendered before the `setsid` probe, so a name or value the file refuses fails before any exec.
+            val envFile = if (env.isNotEmpty()) RemoteEnvFile.render(envDir, env) else null
             // Null without a grace (or where the pod has no `setsid`): the launch is then exactly today's.
             val pgidFile = podControl.pgidFileFor(env, interruptGrace)
-            val envFile = if (env.isNotEmpty()) RemoteEnvFile.render(envDir, env) else null
             RemoteEnvFile.removingUnlessSucceeded(envFile?.path, { sync.removeIfExists(it, ENV_FILE_REMOVE_TIMEOUT) }) {
                 envFile?.let { sync.writePrivateFile(it.path, it.content) }
                 val argv = launchArgv(command, envFile?.path, pgidFile)

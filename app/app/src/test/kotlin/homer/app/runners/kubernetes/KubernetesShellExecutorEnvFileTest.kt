@@ -171,8 +171,9 @@ class KubernetesShellExecutorEnvFileTest {
         }
 
     @Test
-    fun `a value holding a NUL byte fails the step before any exec, naming the key and no value`() =
+    fun `a value holding a NUL byte fails a graced step before any exec, the setsid probe included`() =
         runTest {
+            podHasSetsid = true
             val e =
                 assertThrows<IllegalArgumentException> {
                     executor().cmd(
@@ -181,6 +182,7 @@ class KubernetesShellExecutorEnvFileTest {
                         tmp.resolve("err"),
                         env = mapOf("STEP_VALUE" to "s3cr3t-Ab9\u0000-env-value"),
                         timeout = 10.seconds,
+                        interruptGrace = 5.seconds,
                     )
                 }
 
