@@ -50,7 +50,11 @@ class RemoteEnvFile private constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                logger.warn("Could not remove env file {} ({}); removing the workspace deletes it", envFile, e.javaClass.simpleName)
+                logger.warn(
+                    "Could not remove env file {} ({}); removing the session's workspace or pod deletes it",
+                    envFile,
+                    e.javaClass.simpleName,
+                )
             }
         }
     }

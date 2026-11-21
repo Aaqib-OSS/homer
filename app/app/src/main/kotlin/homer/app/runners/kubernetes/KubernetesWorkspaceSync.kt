@@ -8,6 +8,7 @@ import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.isDirectory
 import kotlin.io.path.isRegularFile
+import kotlin.time.Duration
 
 /**
  * Workspace transfer into a pod as one gzip'd tar stream per direction over exec (ADR-0043); the image needs `tar` and
@@ -79,13 +80,16 @@ class KubernetesWorkspaceSync(
         awaitZeroExit(proc, stderr, "private file upload to '$dir'")
     }
 
-    /** Removes [path] in the pod if it exists; bounded like every other exec here. */
-    fun removeIfExists(path: String) {
+    /** Removes [path] in the pod if it exists, failing when the exec reports no exit status within [timeout]. */
+    fun removeIfExists(
+        path: String,
+        timeout: Duration,
+    ) {
         val argv = listOf("rm", "-f", "--", path)
         val proc = execClient.start(namespace, podName, argv, stdin = false)
         val stderr = drain(proc.errorStream)
         drain(proc.inputStream)
-        awaitZeroExit(proc, stderr, argv.joinToString(" "))
+        awaitZeroExit(proc, stderr, argv.joinToString(" "), timeout.inWholeSeconds)
     }
 
     fun download(
@@ -168,10 +172,11 @@ class KubernetesWorkspaceSync(
         proc: Process,
         stderr: Drained,
         what: String,
+        timeoutSeconds: Long = EXIT_STATUS_TIMEOUT_SECONDS,
     ) {
-        if (!proc.waitFor(EXIT_STATUS_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+        if (!proc.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
             proc.destroyForcibly()
-            throw IllegalStateException("$what: exec did not report exit status within ${EXIT_STATUS_TIMEOUT_SECONDS}s")
+            throw IllegalStateException("$what: exec did not report exit status within ${timeoutSeconds}s")
         }
         stderr.thread.join(2_000)
         val exit = proc.exitValue()

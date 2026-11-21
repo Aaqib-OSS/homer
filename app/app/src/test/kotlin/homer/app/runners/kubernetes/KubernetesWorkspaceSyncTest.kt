@@ -1,5 +1,6 @@
 package homer.app.runners.kubernetes
 
+import homer.app.fixtures.waitUnfinished
 import homer.app.runners.DownloadMode
 import homer.app.runners.TarStreams
 import io.mockk.every
@@ -27,6 +28,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 class KubernetesWorkspaceSyncTest {
     // "Remote" execs run locally: the pod's filesystem is the local one.
@@ -706,10 +708,30 @@ class KubernetesWorkspaceSyncTest {
         val file = remote.resolve("a1.env")
         file.writeText("x")
 
-        sync().removeIfExists(file.toString())
-        sync().removeIfExists(file.toString())
+        sync().removeIfExists(file.toString(), 30.seconds)
+        sync().removeIfExists(file.toString(), 30.seconds)
 
         assertFalse(Files.exists(file))
+    }
+
+    @Test
+    fun `removeIfExists gives up at its bound when the exec reports no exit status`() {
+        val hung =
+            mockk<Process>(relaxed = true) {
+                every { inputStream } returns ByteArrayInputStream(ByteArray(0))
+                every { errorStream } returns ByteArrayInputStream(ByteArray(0))
+                every { waitFor(any<Long>(), any<TimeUnit>()) } answers {
+                    waitUnfinished(firstArg(), secondArg())
+                    false
+                }
+            }
+        val sync = KubernetesWorkspaceSync(KubernetesExecClient { _, _, _, _ -> hung }, "ns", "pod-1")
+
+        val e = assertFailsWith<IllegalStateException> { sync.removeIfExists("/w/a1.env", 1.seconds) }
+
+        assertTrue(e.message!!.contains("within 1s"), e.message)
+        verify { hung.waitFor(1, TimeUnit.SECONDS) }
+        verify { hung.destroyForcibly() }
     }
 
     @Test
