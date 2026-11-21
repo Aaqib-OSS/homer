@@ -1,9 +1,13 @@
 package homer.app
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.LoggerContext
 import homer.app.infra.SysEnvResolver
 import homer.app.models.RunnerConfig
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import org.slf4j.LoggerFactory
 import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -64,6 +68,84 @@ class LoadStartupConfigTest {
     fun `a missing config file refuses to start`() {
         assertNull(loadStartupConfig(arrayOf(File(dir, "absent.json").absolutePath), hardenJvm = {}))
     }
+
+    private fun logConfig(): String = file("config.json", """{"agentsSearchPath": "a", "workspaceRootPath": "w", "databasePath": "d"}""")
+
+    private fun loggerLevel(name: String): Level? = (LoggerFactory.getLogger(name) as Logger).level
+
+    /** Restores the named loggers' levels afterwards, so one case never leaks into another. */
+    private fun <T> withLoggerLevels(
+        vararg names: String,
+        block: () -> T,
+    ): T {
+        val context = LoggerFactory.getILoggerFactory() as LoggerContext
+        val pinned = names.map { it to context.getLogger(it).level }
+        try {
+            return block()
+        } finally {
+            pinned.forEach { (name, level) -> context.getLogger(name).level = level }
+        }
+    }
+
+    @Test
+    fun `startup applies the HOMER_LOG_LEVELS override to the logback logger`() =
+        withLoggerLevels("homer.app.services") {
+            assertNotNull(
+                loadStartupConfig(
+                    arrayOf(logConfig()),
+                    env = mapOf("HOMER_LOG_LEVELS" to "homer.app.services=debug"),
+                    hardenJvm = {},
+                ),
+            )
+
+            assertEquals(Level.DEBUG, loggerLevel("homer.app.services"))
+        }
+
+    @Test
+    fun `startup applies every HOMER_LOG_LEVELS pair to its own logger`() =
+        withLoggerLevels("homer.app.services", "io.ktor") {
+            assertNotNull(
+                loadStartupConfig(
+                    arrayOf(logConfig()),
+                    env = mapOf("HOMER_LOG_LEVELS" to "homer.app.services=debug,io.ktor=warn"),
+                    hardenJvm = {},
+                ),
+            )
+
+            assertEquals(Level.DEBUG, loggerLevel("homer.app.services"))
+            assertEquals(Level.WARN, loggerLevel("io.ktor"))
+        }
+
+    @Test
+    fun `startup replaces a logger level the logging config set`() =
+        withLoggerLevels("homer.app.services") {
+            val context = LoggerFactory.getILoggerFactory() as LoggerContext
+            context.getLogger("homer.app.services").level = Level.INFO
+
+            assertNotNull(
+                loadStartupConfig(
+                    arrayOf(logConfig()),
+                    env = mapOf("HOMER_LOG_LEVELS" to "homer.app.services=debug"),
+                    hardenJvm = {},
+                ),
+            )
+
+            assertEquals(Level.DEBUG, loggerLevel("homer.app.services"))
+        }
+
+    @Test
+    fun `startup applies the HOMER_LOG_LEVELS override even when the config is refused`() =
+        withLoggerLevels("homer.app.services") {
+            assertNull(
+                loadStartupConfig(
+                    arrayOf(file("config.json", "{ not json")),
+                    env = mapOf("HOMER_LOG_LEVELS" to "homer.app.services=debug"),
+                    hardenJvm = {},
+                ),
+            )
+
+            assertEquals(Level.DEBUG, loggerLevel("homer.app.services"))
+        }
 
     @Test
     fun `a config file over the 1 MiB bootstrap cap refuses to start without parsing it`() {
