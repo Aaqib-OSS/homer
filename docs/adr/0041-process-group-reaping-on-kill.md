@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-08-13
-amended: 2026-11-20
+amended: 2026-11-20, 2026-11-21
 deciders: Lukáš Vlk
 ---
 # ADR-0041: Reap orphaned processes via the process group
@@ -138,3 +138,22 @@ on the stop, and the exit status is never read. A command that a signal from els
 example the remote host's OOM killer, fails the step with exit code 9. The local runner reports
 the same death as 137 (128 + 9), so the two runners report different codes for it. The step's
 outcome is the same: a signal death never reads as exit 0.
+
+## Amendment (2026-11-21): both ssh forms report a signal death as 128 + n
+
+This supersedes the 2026-11-20 amendment's note that a signal death fails the step with the raw
+signal number, and the sentence in ADR-0032 that the reaping form `exec`s the command with exit
+codes, signals and stdin unchanged.
+
+Both forms now report 128 + n, as the local runner does:
+
+- The fallback form reads the exit signal that MINA reports for a command with no exit status. It
+  maps the name to its Linux number, and a name outside the table fails the step.
+- The reaping wrapper runs the command as `(exec "$@")` in a child subshell, under
+  `trap : INT TERM HUP`, and exits with `$?`. `setsid -w` passes that ordinary exit through. The
+  subshell resets the caught traps, so the command still receives the signals, and the `exec`
+  resolves argv[0] through `PATH`, so a builtin-named argument still runs the program.
+- A signal to the whole group other than INT, TERM or HUP, for example QUIT, still kills the
+  wrapper, so `setsid -w` gives the raw number. Homer's own reapers send only INT and KILL.
+- The shell's own notice on stderr, such as `Killed`, replaces the `setsid: child N did not exit
+  normally` line.

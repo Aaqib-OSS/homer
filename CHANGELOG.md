@@ -38,6 +38,7 @@
 - **Fixed: a refused ssh exec request is named in the step's error** — A step whose exec request the ssh server refuses (a `ForceCommand`, a restricted shell or a session limit) fails saying the server refused it, instead of only that the channel closed without an exit status.
 - **Fixed: the log streams' `cmd` parameter means the command index everywhere** — `GET /api/v1/stream/processes/{id}/logs` and `/llm-events` serve the step whose command index `cmd` names, on a live run and after a restart, instead of the step at that position in the run's rows — so a run that executes only some of its commands streams each one's own output.
 - **Fixed: a step whose stdout or stderr file cannot be written fails** — The step fails naming the stream instead of reporting the child's exit code when its output fit the pipe buffer.
+- **Fixed: ssh command killed by a signal** — Reports exit 128 + the signal number, as the local runner does, instead of the raw signal number or a lost connection.
 
 ### Console
 
