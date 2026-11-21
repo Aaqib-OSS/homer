@@ -46,9 +46,7 @@ internal class PodProcessControl(
         envFile: String?,
         command: List<String>,
     ): List<String> {
-        val launch = if (envFile != null) "f=\$1; shift; " + RemoteShell.sourceThenRun("\$f") else "(exec \"\$@\")"
-        // `trap :`, never `trap ''`, keeps the wrapper waiting through a group signal without the argv inheriting an ignore.
-        val wrapper = "trap : INT TERM HUP; $PGID_RECORD$launch; exit \$?"
+        val wrapper = RemoteShell.reapingWrapper(PGID_RECORD, sourcesEnvFile = envFile != null)
         return setsidPrefix.value + listOf("sh", "-c", wrapper, pgidFile) + listOfNotNull(envFile) + command
     }
 
