@@ -368,8 +368,8 @@ The response-hardening headers (`X-Frame-Options`, `X-Content-Type-Options`, `Re
 `Content-Security-Policy`) are sent on every response; `Strict-Transport-Security` is not. Single-node
 installs are often reached over plain HTTP, and a browser that has seen the header refuses plain HTTP
 for the host for as long as `max-age` runs, so sending it would lock those installs out of their own
-console. TLS terminates at an operator-run proxy, which is where HSTS belongs; the API sends it only
-once deployment is HTTPS-only.
+console. Where TLS is used, it terminates at an operator-run reverse proxy (see `DOCKER.md`), which is
+where HSTS belongs; the API sends it only once deployment is HTTPS-only.
 
 ## Pros and Cons of the Options
 
