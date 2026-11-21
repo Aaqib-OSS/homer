@@ -1546,10 +1546,13 @@ agent definition.
 
 A stop step is checked at load exactly as a `commands:` step is. A `resultEnvParam` `envName` that is
 reserved (`HMR_*`, `PATH`, `LD_*`, …) or malformed fails the agent, and so does a
-[`runnerCmd`](#commandrunnercmd---run-a-command-on-another-runner) step off `runner: local`, naming an
-unknown runner or carrying an absolute, `..` or blank `sync*` path, as does a `!<langgraph>` step in
-an agent without `dispatch.enabled: true`. The input-steering warning covers a stop step's `RunAgent`
-target and Claude path/mode options too, naming the step as `onStop step`.
+[`runnerCmd`](#commandrunnercmd---run-a-command-on-another-runner) step inside an agent not itself on
+`runner: local` — the agent's own runner filter decides, not the step's `runner:` — a `runnerCmd`
+naming an unknown runner, or one carrying an absolute, `..` or blank `sync*` path, as does a
+`!<langgraph>` step in an agent without `dispatch.enabled: true`. These load-time rejections keep the
+`commands:` wording, naming the agent but never the phase, while the input-steering warning is
+labelled: it covers a stop step's `RunAgent` target and Claude path/mode options too, naming the step
+as `onStop step`.
 
 **Interrupting the step.** `interruptGraceSeconds` (default `30`, `0`..`600`) is how long an
 interrupted step may take to exit after Homer signals its process group, before it is killed; `0`
