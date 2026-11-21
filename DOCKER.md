@@ -192,7 +192,8 @@ Never expose the debug port off-host: JDWP executes code in the JVM, so a
 non-loopback publish is remote code execution.
 
 **Frontend Hot Reload**:
-- Runs `npm run dev` for Next.js development server
+- Runs `npm run dev` for Next.js development server, in the console image's
+  `dev` stage: the release image has no npm
 - Source code mounted as volume
 - Changes reflect immediately without rebuild
 - Full Next.js development features enabled
@@ -356,7 +357,7 @@ docker run -p 3000:3000 \
 | `BACKEND_PORT` | 8080 | Host port for the backend (published on `127.0.0.1` only) |
 | `HOMER_ADMIN_TOKEN` | _(required)_ | Admin API bearer token; resolved by `@SYSENV` in the example config. Startup fails if empty or unset. |
 | `FRONTEND_PORT` | 3000 | Compose passes the console's port to the backend too: the example configs allow the console origin `http://localhost:<FRONTEND_PORT>` (and `127.0.0.1`) via `@SYSENV:FRONTEND_PORT`. Startup fails if unset |
-| `JAVA_OPTS` | `-Xmx512m -Xms256m` | JVM options. The image puts `-XX:-UseBASE64Intrinsics` (CVE-2026-114938, Java4Shell; W-020 in [`docs/workarounds.md`](docs/workarounds.md)) before them, so setting `JAVA_OPTS` keeps it, and adds `--enable-native-access=ALL-UNNAMED` after them for the non-dumpable hardening ([`app/SERVER.md`](app/SERVER.md#server-process-hardening)) |
+| `JAVA_OPTS` | `-Xmx512m -Xms256m` | JVM options. The image adds `--enable-native-access=ALL-UNNAMED` after them for the non-dumpable hardening ([`app/SERVER.md`](app/SERVER.md#server-process-hardening)) |
 | `CONFIG_PATH` | `config/config.json` | Path to config file in container |
 
 ### Build Arguments
@@ -370,6 +371,7 @@ Build arguments are set at **image build time** (not runtime). They must be pass
 | `CLAUDE_CODE_VERSION` | `2.1.318` | Claude Code CLI version to install. Pinned by default, for the same reason as the two below; it must match `server.requireClaudeCodeVersion`, which fails a `!<claude>` run whose CLI reports another version. |
 | `CODEX_VERSION` | `0.166.0` | Codex CLI version to install. Pinned by default: the CLI runs agent prompts with the workspace's secrets in its environment, so a build ships a version someone chose, not whatever npm had. |
 | `OPENCODE_VERSION` | `1.19.5` | opencode CLI version to install. Pinned by default, for the same reason. |
+| `NPM_VERSION` | `11.21.3` | npm version that replaces the Alpine package's npm before the CLIs install. Pinned for the same reason; the Alpine package's bundled dependencies lag the fixed npm releases. |
 
 ### Pinning the Claude CLI
 

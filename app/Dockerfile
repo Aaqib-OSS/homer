@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile for Homer
 # Stage 1: Build the fat jar
-FROM eclipse-temurin:25-jdk-alpine-3.23@sha256:9c835a4ba215132c44248947376e270323ccca5a770248dd5cdf6c1711ebfa1f AS builder
+FROM eclipse-temurin:25-jdk-alpine-3.24@sha256:22edbb1021420ae6e248519d1af07577742314d67d4c60fcbb2e285b7e47fa78 AS builder
 
 WORKDIR /build
 
@@ -37,17 +37,24 @@ RUN zip -q -d app/build/libs/homer-*-all.jar 'org/sqlite/native/*' -x 'org/sqlit
 
 # Stage 2: the slim server image (ADR-0094): Homer, a JRE, bash, su-exec, curl and the LangGraph
 # runtime, with no agent toolchain.
-FROM eclipse-temurin:25-jre-alpine-3.23@sha256:e3ec242a23cf736c024475da9cd2a26f1f9d896840dd797da1bb95d30ed3f659 AS slim
+FROM eclipse-temurin:25-jre-alpine-3.24@sha256:69c2a26e9894016e274c880fa542956d005b3755f84db765145185e87405bd89 AS slim
 
 ARG HOMER_VERSION=dev
 ENV HOMER_VERSION=$HOMER_VERSION
+
+# The JVM launches carry no -XX:-UseBASE64Intrinsics, so a JRE without the Java4Shell fix fails the build (W-020).
+RUN --mount=type=bind,source=app/require-java4shell-fix.sh,target=/tmp/require-java4shell-fix.sh sh /tmp/require-java4shell-fix.sh
 
 RUN apk add --no-cache \
     bash \
     curl \
     su-exec \
     python3 \
-    py3-pip
+    py3-pip \
+    py3-setuptools
+
+# zlib from the repository, newer than the base digest's build (W-022).
+RUN apk add --no-cache --upgrade zlib
 
 # The !<langgraph> runtime: the hash-pinned requirements.lock, never a resolve, which backtracks on
 # musl (ADR-0114). --break-system-packages: PEP 668 refuses a system-wide install on Alpine otherwise.
@@ -80,7 +87,7 @@ RUN --mount=type=bind,from=builder,source=/build/agentdebug/build/libs,target=/t
 
 # agentdebug wrapper, always present; the single quotes leave ${CONFIG_PATH…} and $@ to it.
 # hadolint ignore=SC2016
-RUN printf '#!/bin/sh\nset -e\nif [ ! -f /app/agentdebug.jar ]; then\n  echo "Error: agentdebug not available. Rebuild the container with HOMER_DEBUG=1." >&2\n  exit 1\nfi\nexec su-exec homer java -XX:-UseBASE64Intrinsics --enable-native-access=ALL-UNNAMED \\\n  -jar /app/agentdebug.jar \\\n  --config "${CONFIG_PATH:-config/config.json}" "$@"\n' > /usr/local/bin/agentdebug && \
+RUN printf '#!/bin/sh\nset -e\nif [ ! -f /app/agentdebug.jar ]; then\n  echo "Error: agentdebug not available. Rebuild the container with HOMER_DEBUG=1." >&2\n  exit 1\nfi\nexec su-exec homer java --enable-native-access=ALL-UNNAMED \\\n  -jar /app/agentdebug.jar \\\n  --config "${CONFIG_PATH:-config/config.json}" "$@"\n' > /usr/local/bin/agentdebug && \
     chmod +x /usr/local/bin/agentdebug
 
 # Root-owned entrypoint: it runs as root, so homer must not be able to replace it (CWE-732/269).
@@ -114,8 +121,12 @@ RUN apk add --no-cache \
 ARG CLAUDE_CODE_VERSION=2.1.318
 ARG CODEX_VERSION=0.166.0
 ARG OPENCODE_VERSION=1.19.5
+# npm replaces Alpine's own first: the apk package's bundled dependencies lag the fixed releases.
+# `hash -r` drops the shell's cached path to the removed apk npm.
+ARG NPM_VERSION=11.21.3
 # The npm cache is cleaned in the same layer: nothing reads it at run time.
-RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @openai/codex@${CODEX_VERSION} opencode-ai@${OPENCODE_VERSION} && \
+RUN npm install -g npm@${NPM_VERSION} && apk del --no-cache npm && hash -r && \
+    npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @openai/codex@${CODEX_VERSION} opencode-ai@${OPENCODE_VERSION} && \
     npm cache clean --force
 
 # glab checks its release host first, and a stalled route there held this step to the CI timeout: the
@@ -131,12 +142,17 @@ USER root
 
 # Stage 4: the external runner (ADR-0066), deliberately small: derive from it to add toolchains.
 # util-linux provides setsid, so killed commands take their process group with them (ADR-0041).
-FROM eclipse-temurin:25-jre-alpine-3.23@sha256:e3ec242a23cf736c024475da9cd2a26f1f9d896840dd797da1bb95d30ed3f659 AS homer-runner
+FROM eclipse-temurin:25-jre-alpine-3.24@sha256:69c2a26e9894016e274c880fa542956d005b3755f84db765145185e87405bd89 AS homer-runner
 
 ARG HOMER_VERSION=dev
 ENV HOMER_VERSION=$HOMER_VERSION
 
+# The JVM launches carry no -XX:-UseBASE64Intrinsics, so a JRE without the Java4Shell fix fails the build (W-020).
+RUN --mount=type=bind,source=app/require-java4shell-fix.sh,target=/tmp/require-java4shell-fix.sh sh /tmp/require-java4shell-fix.sh
+
 RUN apk add --no-cache bash curl git tar gzip util-linux
+# zlib from the repository, newer than the base digest's build (W-022).
+RUN apk add --no-cache --upgrade zlib
 
 RUN addgroup -g 1000 homer && \
     adduser -u 1000 -G homer -h /home/homer -s /bin/bash -D homer && \
@@ -152,6 +168,6 @@ WORKDIR /var/homer-runner
 ENV HOMER_RUNNER_ROOT=/var/homer-runner
 ENV JAVA_OPTS="-Xmx256m"
 
-# Options: HOMER_RUNNER_* env vars or the command line; -XX:-UseBASE64Intrinsics (W-020) leads JAVA_OPTS.
+# Options: HOMER_RUNNER_* env vars or the command line.
 #   docker run -e HOMER_RUNNER_URL=... -e HOMER_RUNNER_TOKEN=... -e HOMER_RUNNER_TAGS=linux homer-runner
-ENTRYPOINT ["/bin/sh", "-c", "exec java -XX:-UseBASE64Intrinsics $JAVA_OPTS --enable-native-access=ALL-UNNAMED -jar /app/homer-runner.jar \"$@\"", "--"]
+ENTRYPOINT ["/bin/sh", "-c", "exec java $JAVA_OPTS --enable-native-access=ALL-UNNAMED -jar /app/homer-runner.jar \"$@\"", "--"]

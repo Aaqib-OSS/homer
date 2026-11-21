@@ -100,8 +100,8 @@ paths in the config resolve against the working directory:
 java -XX:-UseBASE64Intrinsics -jar <repo>/app/app/build/libs/homer-<version>-all.jar config.yaml
 ```
 
-`-XX:-UseBASE64Intrinsics` mitigates Java4Shell (CVE-2026-114938), as the images and the launch
-scripts do; keep it until your JRE carries the fix.
+`-XX:-UseBASE64Intrinsics` mitigates Java4Shell (CVE-2026-114938), as the launch scripts do; keep
+it until your JRE carries the fix (Temurin 25.0.5.1 or later, which the images ship).
 
 ### 4. Execute the Agent
 

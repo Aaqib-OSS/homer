@@ -4,6 +4,11 @@
 
 ### Homer
 
+- **Security: Guava updated past a high-severity advisory** — The backend and `homer-runner` now ship Guava 33.8.0 (from 33.5.0, under the Kubernetes client's Google auth library).
+- **Security: `homer-app` ships npm 11.21.3** — The full image replaces Alpine's npm, whose bundled dependencies carry known advisories, with the release the new `NPM_VERSION` build argument pins.
+- **Security: the server images ship zlib 1.4** — `homer-app` and `homer-runner` upgrade zlib past their base image's build, fixing CVE-2026-4738.
+- **Security: the server images move to Temurin 25.0.5.1** — `homer-app`, its slim variant and `homer-runner` ship the JRE with the Java4Shell fix (CVE-2026-114938) and no longer start it with `-XX:-UseBASE64Intrinsics`.
+- **BREAKING: the server images run Alpine 3.24 with Python 3.14** — `homer-app`'s `python3` moves from 3.12 to 3.14 and `glab` to 1.100, so derived images and agent scripts tied to Python 3.12 or Alpine 3.23 packages must move.
 - **Fixed: an invalid hook target is not echoed in the error** — The agent-load and definition-write error for a malformed `hooks` target no longer repeats the value.
 - **BREAKING: env names on the ssh and Kubernetes runners must be shell identifiers** — Runner `env` and `extraUploads.env` names must match `^[A-Za-z_][A-Za-z0-9_]*$` at startup, and a run fails before it reaches the host or creates a pod on a `globalEnv`, agent `env` or `onStop:` `resultEnvParam` name that does not.
 - **Security: the step env no longer travels on the ssh command line or the Kubernetes exec URI** — Each step's env no longer appears in remote process tables, `execve` audit records or Kubernetes audit logs.
@@ -18,7 +23,7 @@
 - **BREAKING: the optional Artifactory build path is removed** — Gradle builds and the backend and E2E image builds no longer read `ARTIFACTORY_URL`, `ARTIFACTORY_USER` or `ARTIFACTORY_TOKEN` and resolve from Maven Central and the Gradle Plugin Portal, so an operator whose network reaches dependencies only through Artifactory must provide another route to them.
 - **Fixed: `HOMER_LOG_LEVELS` takes effect** — The per-logger overrides now apply to logback, which the server logs through, instead of having no effect.
 - **BREAKING: `server.dispatch.defaultTtlSec` defaults to 7 days** — A dispatch or continuation without its own `ttlSec` expires after 604800 seconds instead of never, as does a pending one created before the upgrade (counted from its creation, whatever the setting), and `null` is no longer accepted; set a higher value or pass `ttlSec` for longer waits.
-- **Security: the host launch scripts start the JVM with Base64 intrinsics off** — `homer-runner.sh` and `agentdebug.sh` pass `-XX:-UseBASE64Intrinsics`, as the images do, mitigating Java4Shell (CVE-2026-114938).
+- **Security: the host launch scripts start the JVM with Base64 intrinsics off** — `homer-runner.sh` and `agentdebug.sh` pass `-XX:-UseBASE64Intrinsics`, mitigating Java4Shell (CVE-2026-114938) on a host JDK without the fix.
 - **Security: LangGraph inspect and state run with a minimal environment** — The server-side `homer_langgraph inspect` and `state` subprocesses get only `PATH`, `HOME`, `LANG`, the standard `LC_` locale categories, `TMPDIR`, `VIRTUAL_ENV` and `PYTHONHOME` from the server environment, plus the agent's `env`, so a graph module that reads any other server variable at import time must now declare it in the agent's `env`. See [ADR-0027](docs/adr/0027-langgraph-graph-introspection.md).
 - **Security: exec no longer logs the raw remote command** — The ssh exec channel and session no longer log the remote command at any log level, and a failed Kubernetes exec is logged and reported without its exec URL, raw cause or stack trace.
 - **Fixed: workspace helpers keep tokens off the command line** — `homer-ask`, `homer-dispatch`, `homer-inbox`, `homer-join`, `homer-result` and `homer-tag` pass the callback token, the result token and request bodies to curl outside argv, where other users on the host could read them.
@@ -52,8 +57,8 @@
 
 - **Fixed: an expanded step subscribes with its own command index** — The process detail asks the log and LLM-event streams for the command the step ran, so a debug run's single step streams its output instead of the run's first command.
 
-### Console
-
+- **Removed: package managers from the console image** — The release image no longer ships the Node.js base image's npm, npx, corepack and yarn, which nothing in it runs; the dev compose overlay builds a `dev` stage that keeps them.
+- **Security: the console image ships zlib 1.4 and OpenSSL 3.5.9-r1** — The image upgrades zlib, libcrypto3 and libssl3 past its Node.js base's builds, fixing their known advisories.
 - **Added: removing a saved instance from the instance switcher** — Each row of the header picker deletes the instance and its bearer token; the last instance cannot be removed, and removing the active one signs out of it and switches to another.
 - **Security: bearer-mode sign-in no longer grants admin** — A bearer token now sees only the pages, controls and plugins its own role and grants allow, and none of the admin ones against a server too old to report them. See [ADR-0059](docs/adr/0059-console-plugins-are-runtime-loaded-modules.md).
 - **Security: one strict Content-Security-Policy on every route** — The agent file editor route no longer allows inline scripts, `eval` or `blob:` workers; it gets the same nonce policy as every other page.

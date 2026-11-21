@@ -23,11 +23,14 @@ RUN npm run build
 # workflow's LGPL gate refuses the push if any remain.
 RUN rm -rf .next/standalone/node_modules/@img .next/standalone/node_modules/sharp
 
-# Production stage
-FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS runner
+# The release image's content with the base image's npm, which docker-compose.dev.yml runs.
+FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS dev
 WORKDIR /app
 
 ENV NODE_ENV=production
+
+# zlib and OpenSSL from the repository, newer than the base digest's builds (W-023).
+RUN apk add --no-cache --upgrade zlib libcrypto3 libssl3
 
 # Create non-root user
 RUN addgroup --system --gid 1001 nodejs
@@ -50,3 +53,10 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 CMD ["node", "server.js"]
+
+# Production stage: nothing in it runs a package manager, so the release image drops npm, npx, corepack and yarn.
+FROM dev AS runner
+USER root
+RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+    /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-v*
+USER nextjs

@@ -171,7 +171,8 @@ The Dockerfile uses multi-stage builds to minimize the final image size:
 
 1. **Deps stage**: Installs dependencies
 2. **Builder stage**: Builds the application
-3. **Runner stage**: Copies only the standalone build output, `.next/static` and `public/`
+3. **Dev stage**: Copies only the standalone build output, `.next/static` and `public/`; `docker-compose.dev.yml` runs it
+4. **Runner stage**: The release image: the dev stage without npm, npx, corepack and yarn, which nothing in it runs (their files stay in the Node.js base layers, so the image is no smaller)
 
 ### Health Checks
 
