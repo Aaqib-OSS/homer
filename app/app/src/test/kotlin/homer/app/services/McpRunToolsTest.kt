@@ -106,6 +106,28 @@ class McpRunToolsTest {
     // ========== get_run_info ==========
 
     @Test
+    fun `get_run_info serves none of the run's input values or tags`() =
+        runTest {
+            coEvery { processManager.getProcessInfo(RUN_ID) } returns
+                ProcessInfo(
+                    id = RUN_ID,
+                    status = ProcessStatus.FINISHED,
+                    agentName = "other",
+                    owner = "alice",
+                    inputParams = mapOf("TOKEN" to SECRET_INPUT),
+                    secretInputKeys = setOf("TOKEN"),
+                    tags = listOf("subject:$SECRET_INPUT"),
+                    executions = listOf(execution("build", resultCode = 0)),
+                )
+
+            val result = tools.getRunInfo(runRequest(), "bob")
+
+            assertNull(result.isError)
+            val served = firstText(result) + result.structuredContent.toString()
+            assertFalse(SECRET_INPUT in served, "get_run_info must not serve an input value or a tag: $served")
+        }
+
+    @Test
     fun `get_run_info carries currentCommand and a command error only when the run has them`() =
         runTest {
             visibleRun(
@@ -319,5 +341,6 @@ class McpRunToolsTest {
     private companion object {
         const val RUN_ID = 42
         const val DEFAULT_CAP = 65_536L
+        const val SECRET_INPUT = "mcp-secret-input-value"
     }
 }

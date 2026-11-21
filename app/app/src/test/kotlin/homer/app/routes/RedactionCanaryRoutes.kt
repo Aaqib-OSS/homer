@@ -69,6 +69,10 @@ private const val RUNNER_PROTOCOL = "runner protocol; the canary run is local"
  */
 internal const val CANARY_START_BODY = """{"canary":"{canary}","tagged":"{canary}"}"""
 
+/** A JSON-RPC `tools/call` of the canary agent's MCP tool, carrying the canary run's start body as its arguments. */
+private const val CANARY_MCP_CALL_BODY =
+    """{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"{agentName}","arguments":$CANARY_START_BODY}}"""
+
 /**
  * Every route `configureRouting` mounts with every optional surface on, in registration order, each
  * classified `served` or exempt. A new route fails `SecretRedactionCanaryTest` until it has a row here
@@ -150,7 +154,13 @@ internal val CANARY_ROUTES: List<CanaryRoute> =
         exempt("PUT /api/v1/agents/{agentName}/files/{...}", "writes an agent file: no run data"),
         exempt("DELETE /api/v1/agents/{agentName}/files/{...}", "deletes an agent file: no run data"),
         exempt("GET /api/v1/agents/{agentName}/langgraph", "renders a LangGraph command's topology; the canary agent declares none"),
-        exempt("POST /api/v1/agents/{agentName}/debug", "debugs a LangGraph command; the canary agent declares none"),
+        served(
+            "POST /api/v1/agents/{agentName}/debug",
+            CanaryPayload.JSON,
+            "a one-command debug run's start response; the request body is where both canaries enter the run",
+            body = """{"commandIndex":0,"body":$CANARY_START_BODY}""",
+            startsRun = true,
+        ),
         exempt("POST /api/v1/agents/{agentName}/cron-run", "fires a cron entry; the canary agent declares none"),
         exempt("DELETE /api/v1/kill/{processId}", "kills a run; the response carries no run data"),
         served(
@@ -228,7 +238,13 @@ internal val CANARY_ROUTES: List<CanaryRoute> =
         ),
         exempt("GET /api/v1/processes/{id}/langgraph", "renders a LangGraph run's state; the canary agent declares none"),
         exempt("POST /api/v1/processes/{id}/resume", "resumes a LangGraph run; the canary agent declares none"),
-        exempt("POST /mcp", "protocol-exempt: MCP JSON-RPC transport; its run tools are covered by McpRunToolsTest"),
+        served(
+            "POST /mcp",
+            CanaryPayload.JSON,
+            "the canary agent's MCP tool result; the call's arguments are where both canaries enter the run",
+            body = CANARY_MCP_CALL_BODY,
+            startsRun = true,
+        ),
         exempt("GET /mcp", "static-405: every method but POST is a handler answering a static 405 error body, no run data"),
         exempt("DELETE /mcp", "static-405: every method but POST is a handler answering a static 405 error body, no run data"),
     )

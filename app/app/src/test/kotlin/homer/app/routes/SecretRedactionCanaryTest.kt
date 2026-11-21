@@ -342,11 +342,13 @@ class SecretRedactionCanaryTest {
         return "${row.route}: leaks $leaked canary value(s) in ${preview(body.orEmpty())}".takeIf { leaked > 0 }
     }
 
-    /** The run a start response's [body] reports. */
-    private fun startedProcessId(body: String): Int =
-        parseJsonObject("a run-start response", body)
-            .getValue("processId")
-            .jsonPrimitive.int
+    /** The run a start response's [body] reports: `processId`, or an MCP tool result's structured `runId`. */
+    private fun startedProcessId(body: String): Int {
+        val response = parseJsonObject("a run-start response", body)
+        val mcpResult = response["result"]?.jsonObject
+        val id = mcpResult?.getValue("structuredContent")?.jsonObject?.getValue("runId") ?: response.getValue("processId")
+        return id.jsonPrimitive.int
+    }
 
     /**
      * [body] as a JSON object, for a caller that asserts on its fields. A non-JSON or non-object
@@ -494,6 +496,7 @@ class SecretRedactionCanaryTest {
         buildString {
             append("name: $CANARY_AGENT\n")
             append("dispatch:\n  enabled: true\n")
+            append("mcp:\n  enabled: true\n")
             append("inputs:\n")
             append("  - paramName: canary\n    envName: CANARY_IN\n    src: body\n    type: string\n    required: true\n    secret: true\n")
             append("  - paramName: tagged\n    envName: TAGGED_IN\n    src: body\n    type: string\n    required: false\n")

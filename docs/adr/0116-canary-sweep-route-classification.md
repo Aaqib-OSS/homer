@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-11-16
 deciders: Homer maintainers
+amended: 2026-11-21
 consulted: ADR-0047, ADR-0052, ADR-0063, ADR-0070, ADR-0112
 ---
 
@@ -75,6 +76,14 @@ touched:
    runner-protocol endpoints, the MCP JSON-RPC transport (the canary run is driven over HTTP, and
    the run tools the transport fronts are covered by their own tool tests), and the
    LangGraph/debug/cron surfaces the canary agent does not declare.
+
+   > **Amendment (2026-11-21) — the MCP transport and the debug route are served.** No tool test
+   > checked the run tools for redaction, and the debug route runs any agent's command, so both
+   > reasons were wrong. `POST /mcp` is probed with a `tools/call` of the canary agent's tool and
+   > `POST …/debug` with a one-command debug run, each carrying both canaries as input, like the
+   > run-start row; `McpRunToolsTest` asserts that `get_run_info` serves no input value or tag.
+   > Class 3 keeps the runner protocol and the LangGraph and cron surfaces.
+
 4. **Static-405** — every method but the data-carrying one is a registered handler whose only
    answer is a static `405` error body: the `GET`/`DELETE` rows of the POST-only MCP endpoints
    respond with a fixed "Method not allowed" error message and no run data.
