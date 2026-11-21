@@ -280,7 +280,7 @@ class ResultToEnvMapperTest {
     }
 
     @Test
-    fun `mapToEnv should handle invalid JSON gracefully`() {
+    fun `mapToEnv leaves out a JsonPath param whose source is not JSON`() {
         Files.writeString(stdOutFile, "not valid json")
         Files.writeString(stdErrFile, "")
         val result = TestFixtures.mockCommandResult(exitCode = 0, stdOut = stdOutFile, stdErr = stdErrFile)
@@ -294,18 +294,9 @@ class ResultToEnvMapperTest {
                 ),
             )
 
-        val mapper = ResultToEnvMapper(result)
+        val env = ResultToEnvMapper(result).mapToEnv(params)
 
-        // Should handle parsing errors gracefully (might throw or return empty)
-        val env =
-            try {
-                mapper.mapToEnv(params)
-            } catch (e: Exception) {
-                emptyMap()
-            }
-
-        // Either way, we shouldn't crash
-        assertTrue(env.isEmpty() || !env.containsKey("VALUE"))
+        assertEquals(emptyMap(), env)
     }
 
     // ========== JsonPath Value Shape Tests ==========
