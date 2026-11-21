@@ -522,7 +522,9 @@ class SessionWorkerTest {
             Files.createSymbolicLink(w.sessionRoot.resolve("workdir/in"), w.sessionRoot.resolve("artifacts"))
 
             api.ops.send(RunnerOp.Upload("u1", "workdir/out"))
-            assertFalse(api.result().ok, "an upload through an escaping symlink is refused")
+            val escaped = api.result()
+            assertFalse(escaped.ok, "an upload through an escaping symlink is refused")
+            assertEquals("path 'workdir/out' refused: escapes the session root", escaped.error)
             assertFalse(outside.resolve("in.txt").exists(), "nothing is written outside the session root")
 
             api.ops.send(RunnerOp.Download("d1", "workdir/out/host.txt", DownloadMode.OVERLAY))
@@ -578,7 +580,9 @@ class SessionWorkerTest {
             Files.createSymbolicLink(w.sessionRoot.resolve("workdir/dangling"), outside.resolve("absent"))
 
             api.ops.send(RunnerOp.Download("d1", "workdir/dangling", DownloadMode.OVERLAY))
-            assertFalse(api.result().ok, "a download through a dangling link is refused, not reported missing")
+            val dangling = api.result()
+            assertFalse(dangling.ok, "a download through a dangling link is refused, not reported missing")
+            assertEquals("path 'workdir/dangling' refused: passes through a dangling symlink", dangling.error)
 
             api.ops.send(RunnerOp.Download("d2", "workdir/dangling/child.txt", DownloadMode.OVERLAY))
             assertFalse(api.result().ok, "a path below a dangling link is refused")
