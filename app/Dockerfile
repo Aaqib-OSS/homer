@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile for Homer
 # Stage 1: Build the fat jar
-FROM eclipse-temurin:25-jdk-alpine-3.23@sha256:9c835a4ba215132c44248947376e270323ccca5a770248dd5cdf6c1711ebfa1f AS builder
+FROM eclipse-temurin:25-jdk-alpine-3.24@sha256:22edbb1021420ae6e248519d1af07577742314d67d4c60fcbb2e285b7e47fa78 AS builder
 
 WORKDIR /build
 
@@ -37,7 +37,7 @@ RUN zip -q -d app/build/libs/homer-*-all.jar 'org/sqlite/native/*' -x 'org/sqlit
 
 # Stage 2: the slim server image (ADR-0094): Homer, a JRE, bash, su-exec, curl and the LangGraph
 # runtime, with no agent toolchain.
-FROM eclipse-temurin:25-jre-alpine-3.23@sha256:e3ec242a23cf736c024475da9cd2a26f1f9d896840dd797da1bb95d30ed3f659 AS slim
+FROM eclipse-temurin:25-jre-alpine-3.24@sha256:69c2a26e9894016e274c880fa542956d005b3755f84db765145185e87405bd89 AS slim
 
 ARG HOMER_VERSION=dev
 ENV HOMER_VERSION=$HOMER_VERSION
@@ -47,7 +47,8 @@ RUN apk add --no-cache \
     curl \
     su-exec \
     python3 \
-    py3-pip
+    py3-pip \
+    py3-setuptools
 
 # The !<langgraph> runtime: the hash-pinned requirements.lock, never a resolve, which backtracks on
 # musl (ADR-0114). --break-system-packages: PEP 668 refuses a system-wide install on Alpine otherwise.
@@ -131,7 +132,7 @@ USER root
 
 # Stage 4: the external runner (ADR-0066), deliberately small: derive from it to add toolchains.
 # util-linux provides setsid, so killed commands take their process group with them (ADR-0041).
-FROM eclipse-temurin:25-jre-alpine-3.23@sha256:e3ec242a23cf736c024475da9cd2a26f1f9d896840dd797da1bb95d30ed3f659 AS homer-runner
+FROM eclipse-temurin:25-jre-alpine-3.24@sha256:69c2a26e9894016e274c880fa542956d005b3755f84db765145185e87405bd89 AS homer-runner
 
 ARG HOMER_VERSION=dev
 ENV HOMER_VERSION=$HOMER_VERSION

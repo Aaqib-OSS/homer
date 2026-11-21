@@ -4,6 +4,7 @@
 
 ### Homer
 
+- **Changed: the server images run Alpine 3.24** — `homer-app`, its slim variant and `homer-runner` move to Alpine 3.24 with Temurin 25.0.5.1, which carries the Java4Shell fix (CVE-2026-114938), so the bundled `python3` is now Python 3.14 and `glab` is 1.100.
 - **BREAKING: env names on the ssh and Kubernetes runners must be shell identifiers** — Runner `env` and `extraUploads.env` names must match `^[A-Za-z_][A-Za-z0-9_]*$` at startup, and a run fails before it reaches the host or creates a pod on a `globalEnv`, agent `env` or `onStop:` `resultEnvParam` name that does not.
 - **Security: the step env no longer travels on the ssh command line or the Kubernetes exec URI** — Each step's env no longer appears in remote process tables, `execve` audit records or Kubernetes audit logs.
 - **BREAKING: the Kubernetes runner's image needs `sh`** — A step with an env now runs under `sh`, so an image without it fails every such step; add `sh` to the image.
