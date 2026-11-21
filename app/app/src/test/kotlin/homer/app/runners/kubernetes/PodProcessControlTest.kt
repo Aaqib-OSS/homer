@@ -1,8 +1,12 @@
 package homer.app.runners.kubernetes
 
 import homer.app.fixtures.pollUntil
+import homer.app.fixtures.waitUnfinished
 import homer.app.runners.RemoteShell
 import homer.app.runners.ssh.setsidCanFormGroup
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
 import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
@@ -58,6 +62,24 @@ class PodProcessControlTest {
         control.groupLaunch(PGID, null, listOf("true"))
 
         assertEquals(listOf(listOf("setsid", "-w", "true")), probes)
+    }
+
+    @Test
+    fun `a setsid -w probe that outlives its bound launches with no prefix and is destroyed`() {
+        val slowProbe =
+            mockk<Process>(relaxed = true) {
+                every { waitFor(any<Long>(), any<TimeUnit>()) } answers {
+                    waitUnfinished(firstArg(), secondArg())
+                    false
+                }
+            }
+        val control = PodProcessControl({ _, _, _, _ -> slowProbe }, "homer", "pod-1", signalExecSlackMs = 0)
+
+        val argv = control.groupLaunch(PGID, null, listOf("echo", "hi"))
+
+        assertEquals(listOf("sh", "-c", "$TRAP$RECORD$RUN; exit \$?", PGID, "echo", "hi"), argv)
+        verify(exactly = 1) { slowProbe.destroyForcibly() }
+        verify(exactly = 0) { slowProbe.exitValue() }
     }
 
     @Test
