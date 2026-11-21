@@ -980,7 +980,7 @@ grants:
 | `run` | Invoke the agent (`GET/POST /api/v1/agent/{name}`) plus unconditional visibility/control of runs the caller itself started. |
 | `read` | See all runs of the agent. |
 | `control` | Kill/answer runs of the agent. For runs the caller did not start, `control` also needs visibility, so pair it with `read`. |
-| `edit` | File CRUD under the agent's directory, and creating a new agent whose name matches the pattern. Writing `agent.yaml`/`agent.json` that declares a name other than the target agent also requires edit on the declared name. **`edit` is authority over what the agent runs**: `agent.yaml`/`agent.json` are executable definitions, so an `edit` holder can change the agent's commands or cron and those changes then run on schedule or when someone with `run` triggers the agent — grant `edit` only to principals trusted to define behavior. (`edit` cannot reach *other* agents' authority: nested-dispatch hops are re-checked against operator-controlled grants, not the editable definition.) A definition's `env` reaches only the host variables [`agentSysEnvAllowlist`](#agentsysenvallowlist) allows through `@SYSENV:`. |
+| `edit` | File CRUD under the agent's directory, and creating a new agent whose name matches the pattern. Writing `agent.yaml`/`agent.json` that declares a name other than the target agent also requires edit on the declared name. **`edit` is authority over what the agent runs**: `agent.yaml`/`agent.json` are executable definitions, so an `edit` holder can change the agent's commands or cron and those changes then run on schedule or when someone with `run` triggers the agent — grant `edit` only to principals trusted to define behavior. (`edit` cannot reach *other* agents' authority: nested-dispatch hops are re-checked against operator-controlled grants, not the editable definition.) A definition's `env` reaches only the host variables [`agentSysEnvAllowlist`](#agentsysenvallowlist) allows through `@SYSENV:`, which is no confidentiality boundary for code the agent runs on the server host (see that section). |
 | `debug` | `POST /api/v1/agents/{name}/debug` (arbitrary command execution). Never implied by anything except `role: admin` — a `["*"]`-style `agents` grant without `debug` in `actions` still cannot reach it. |
 
 **`agents` patterns** use the same glob rules as agent names: `*` matches
@@ -2176,9 +2176,17 @@ such a definition is refused with `422`, like any other invalid definition, and
 the file is left untouched. `@SYSENV:` elsewhere in this file (`globalEnv`,
 runner `env`, auth secrets) is unaffected: the operator owns this file.
 
-The list bounds what a definition can *declare*. It does not sandbox the
-commands an `edit` holder can write: on the `local` runner they run as Homer's
-own OS user (see the [`edit` grant](#grants-and-roles)).
+The list bounds only this declarative route. It does not keep the server's
+secrets from an `edit` holder whose code runs on the server host, as Homer's
+own user, which happens on two paths: an agent routed to the `local` runner
+(the definition picks its runner, no `runner:` means `local`, and the local
+runner is enabled by default), and the LangGraph inspect/state interpreter,
+which always runs on the server host and imports the agent's graph module with
+the agent's `python` and `env`. On Linux the server JVM is non-dumpable (see
+[Server process hardening](#server-process-hardening)), so that code cannot
+read the server's environment. It can still read whatever Homer's user can
+read, and the environment of concurrent runs: AR-13 in
+[`SECURITY.md`](../SECURITY.md#accepted-risks).
 
 ```yaml
 agentSysEnvAllowlist: ["GITLAB_TOKEN", "SONAR_TOKEN"]

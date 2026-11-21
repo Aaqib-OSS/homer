@@ -157,11 +157,20 @@ nothing and is the same whether the variable is set, and the agent-file write ap
 check, so such a definition never lands. `@SYSENV:` in the server config is unaffected, since the
 operator owns that file. `agentdebug` loads agents with the same rule.
 
-The allowlist bounds what a definition declares, not what its commands do: on the `local` runner
-an `edit` holder's commands run as Homer's OS user, which can read the server process's own
-environment (`/proc/<pid>/environ` on Linux). That is the existing "`edit` is authority over what
-the agent runs" in `app/SERVER.md`, not a gap this amendment closes; a remote runner does not share
-Homer's process table.
+The allowlist bounds only this declarative route. It does not keep the server's secrets from an
+`edit` holder whose code runs on the server host, as Homer's own user, which happens on two paths:
+
+- an agent routed to the `local` runner: the definition picks its runner, no `runner:` means
+  `local`, and the local runner is enabled by default;
+- the LangGraph inspect/state interpreter, which always runs on the server host, whatever the
+  agent's runner, and imports the agent's graph module with the agent's `python` and `env`.
+
+On Linux the server JVM is non-dumpable ([ADR-0078](0078-runner-jvm-is-non-dumpable.md), amendment
+of the same date), so that code cannot read the server's environment or ptrace it. What it can
+still reach is everything Homer's user can read (the config file, the database, other runs'
+workspaces, credential files the server uses), the environment of concurrent runs, and the server's
+environment on a host without `prctl` or where the call fails. That remainder is accepted as AR-13
+in [`SECURITY.md`](../../SECURITY.md).
 
 ## More Information
 
