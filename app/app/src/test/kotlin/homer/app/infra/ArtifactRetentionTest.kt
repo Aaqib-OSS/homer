@@ -171,6 +171,27 @@ class ArtifactRetentionTest {
     }
 
     @Test
+    fun `a tree grown past the walk cap before the delete walk retains nothing and flags truncated`(
+        @TempDir root: Path,
+    ) {
+        val layout = buildLayout(root)
+
+        // artifacts/, decision.json, summary.md, cmd_0.out, sub/, sub/report.md: exactly the cap.
+        val result =
+            ArtifactRetention.prune(
+                workspaceRoot = root,
+                artifactsDir = layout.artifactsDir,
+                globs = listOf("*.json"),
+                maxBytes = 1_000_000,
+                maxWalkEntries = 6,
+                beforeDeleteWalk = { Files.writeString(layout.artifactsDir.resolve("late.txt"), "late") },
+            )
+
+        assertEquals(ArtifactRetention.PruneResult(keptFiles = 0, truncated = true), result)
+        assertFalse(Files.exists(layout.projectRoot), "whole project dir should be gone")
+    }
+
+    @Test
     fun `the delete walk at exactly the walk cap still prunes`(
         @TempDir root: Path,
     ) {

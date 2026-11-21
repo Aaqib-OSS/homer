@@ -25,6 +25,7 @@ internal object ArtifactRetention {
         globs: List<String>,
         maxBytes: Long,
         maxWalkEntries: Int = MAX_PRUNE_WALK_ENTRIES,
+        beforeDeleteWalk: () -> Unit = {},
     ): PruneResult {
         // Normalize first: a redundant segment would defeat the fileName comparison in deleteSiblings.
         val dir = artifactsDir.normalize()
@@ -52,6 +53,7 @@ internal object ArtifactRetention {
             return PruneResult(0, truncated)
         }
         deleteSiblings(workspaceRoot, projectRoot, dir)
+        beforeDeleteWalk()
         if (!deleteUnkept(dir, kept, maxWalkEntries)) {
             PathSafety.deleteContainedRecursively(workspaceRoot, projectRoot)
             return PruneResult(0, true)
