@@ -17,25 +17,30 @@ import homer.agentdebug.commands.ValidateCommand
 
 /**
  * Root Clikt command: parses --config/--env and delegates to subcommands.
- * Usage: agentdebug --config server/config.yaml [--env vars.env] <list|validate|show-commands|run> [args];
- * `--help` on a subcommand lists its options.
+ * Usage: agentdebug --config server/config.yaml [--env vars.env] <list|validate|show-commands|run> [args], or
+ * agentdebug hash-password [--cost N] with no config; `--help` on a subcommand lists its options.
  */
 class AgentdebugCli : CliktCommand(name = "agentdebug") {
     override fun help(context: Context) =
-        """
-        Homer Agent Debugger — validate, inspect, and run agents locally.
-
-        Usage:
-          agentdebug --config <config> [--env <vars.env>] list
-          agentdebug --config <config> [--env <vars.env>] validate <agentname>
-          agentdebug --config <config> [--env <vars.env>] show-commands <agentname>
-          agentdebug --config <config> [--env <vars.env>] run <agentname> [--input <input.env>] [--dry-run] [--cmd N] [--keep-workspace]
-        """.trimIndent()
+        listOf(
+            "Usage:",
+            "agentdebug --config <config> [--env <vars.env>] list",
+            "agentdebug --config <config> [--env <vars.env>] validate <agentname>",
+            "agentdebug --config <config> [--env <vars.env>] show-commands <agentname>",
+            "agentdebug --config <config> [--env <vars.env>] run <agentname> [--input <input.env>] [--dry-run] [--cmd N] " +
+                "[--keep-workspace]",
+            "agentdebug hash-password [--cost N] (reads the password on stdin; needs no --config)",
+        ).joinToString(NEXT_LINE, prefix = "Homer Agent Debugger — validate, inspect, and run agents locally.\n\n")
 
     val config by option("--config", help = "Path to Homer app config (app.yaml or app.json)")
     val envFile by option("--env", help = "Env file (key=value) loaded before config — used to resolve @SYSENV: references")
 
     override fun run() {}
+
+    private companion object {
+        /** Clikt rewraps a help paragraph; NEL is its forced line break. */
+        const val NEXT_LINE = "\u0085"
+    }
 }
 
 private fun AgentdebugCli.loadConfig(): homer.app.models.AppConfig {
@@ -102,13 +107,16 @@ class HashPasswordSubcommand : CliktCommand(name = "hash-password") {
     }
 }
 
+/** The root command with every subcommand registered. */
+fun agentdebugCli(): AgentdebugCli =
+    AgentdebugCli().subcommands(
+        ListSubcommand(),
+        ValidateSubcommand(),
+        ShowCommandsSubcommand(),
+        RunSubcommand(),
+        HashPasswordSubcommand(),
+    )
+
 fun main(args: Array<String>) {
-    AgentdebugCli()
-        .subcommands(
-            ListSubcommand(),
-            ValidateSubcommand(),
-            ShowCommandsSubcommand(),
-            RunSubcommand(),
-            HashPasswordSubcommand(),
-        ).main(args)
+    agentdebugCli().main(args)
 }

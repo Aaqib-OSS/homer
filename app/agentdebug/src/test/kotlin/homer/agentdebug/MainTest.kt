@@ -2,6 +2,7 @@ package homer.agentdebug
 
 import com.github.ajalt.clikt.core.parse
 import com.github.ajalt.clikt.core.subcommands
+import com.github.ajalt.clikt.testing.test
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream
@@ -12,8 +13,9 @@ import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
-/** The root command's `--config` / `--env` loading, through the `list` subcommand. */
+/** The root command: its help, and its `--config` / `--env` loading through the `list` subcommand. */
 class MainTest {
     private fun capture(block: () -> Unit): String {
         val buffer = ByteArrayOutputStream()
@@ -74,6 +76,22 @@ class MainTest {
         val output = capture { cli().parse(listOf("--config", config.toString(), "list")) }
 
         assertContains(output, "hello")
+    }
+
+    @Test
+    fun `the help's usage lines name every registered subcommand`() {
+        val cli = agentdebugCli()
+        val usageLines =
+            cli
+                .test("--help")
+                .stdout
+                .lines()
+                .map { it.trim() }
+                .filter { it.startsWith("agentdebug ") }
+
+        for (name in cli.registeredSubcommands().map { it.commandName }) {
+            assertTrue(usageLines.any { name in it.split(" ") }, "no usage line for '$name' in:\n${usageLines.joinToString("\n")}")
+        }
     }
 
     @Test
