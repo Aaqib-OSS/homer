@@ -76,13 +76,6 @@ val serverId = UUID.randomUUID().toString()
 val isDraining: AtomicBoolean = AtomicBoolean(false)
 
 fun main(args: Array<String>) {
-    // Apply HOMER_LOG_LEVELS overrides before any DI-created logger is built.
-    // Only set a property the operator hasn't pinned via -D, so a system
-    // property always wins over the env var.
-    logLevelSystemProps(System.getenv()).forEach { (key, value) ->
-        if (System.getProperty(key) == null) System.setProperty(key, value)
-    }
-
     val resolvedConfig = loadStartupConfig(args, hardenJvm = ::hardenServerJvm) ?: return
 
     logger.info(
@@ -98,14 +91,23 @@ fun main(args: Array<String>) {
 }
 
 /**
- * Reads and parses the config file named by `args[0]`, runs [hardenJvm], then `@SYSENV`-resolves it.
- * Returns `null` after logging and printing why startup cannot continue.
+ * Applies `HOMER_LOG_LEVELS`, then reads and parses the config file named by `args[0]`, runs
+ * [hardenJvm], then `@SYSENV`-resolves it. Returns `null` after logging and printing why startup
+ * cannot continue.
  */
 internal fun loadStartupConfig(
     args: Array<String>,
     sysEnvResolver: SysEnvResolver = SysEnvResolver(),
+    env: Map<String, String> = System.getenv(),
     hardenJvm: () -> Unit,
-): AppConfig? = readStartupConfig(args)?.also { hardenJvm() }?.let { resolveStartupConfig(it, sysEnvResolver) }
+): AppConfig? {
+    // A logger built before the override keeps its initial level, so apply it before any
+    // DI-created logger exists — and only where the operator has not pinned it with -D.
+    logLevelSystemProps(env).forEach { (key, value) ->
+        if (System.getProperty(key) == null) System.setProperty(key, value)
+    }
+    return readStartupConfig(args)?.also { hardenJvm() }?.let { resolveStartupConfig(it, sysEnvResolver) }
+}
 
 /** Loads the config file named by `args[0]`, capped at the bootstrap size; `null` = refused. */
 private fun readStartupConfig(args: Array<String>): AppConfig? {

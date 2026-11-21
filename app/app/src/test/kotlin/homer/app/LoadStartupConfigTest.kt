@@ -66,6 +66,27 @@ class LoadStartupConfigTest {
     }
 
     @Test
+    fun `startup applies the HOMER_LOG_LEVELS override to the logger system property`() {
+        val config = file("config.json", """{"agentsSearchPath": "a", "workspaceRootPath": "w", "databasePath": "d"}""")
+        val key = "org.slf4j.simpleLogger.log.homer.app.services"
+        val pinned = System.getProperty(key)
+
+        try {
+            assertNotNull(
+                loadStartupConfig(
+                    arrayOf(config),
+                    env = mapOf("HOMER_LOG_LEVELS" to "homer.app.services=debug"),
+                    hardenJvm = {},
+                ),
+            )
+
+            assertEquals("debug", System.getProperty(key))
+        } finally {
+            if (pinned == null) System.clearProperty(key) else System.setProperty(key, pinned)
+        }
+    }
+
+    @Test
     fun `a config file over the 1 MiB bootstrap cap refuses to start without parsing it`() {
         val pad = "x".repeat(1024 * 1024)
         // Valid apart from its size, so only the cap can refuse it.
