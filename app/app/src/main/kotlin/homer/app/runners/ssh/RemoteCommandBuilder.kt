@@ -1,5 +1,7 @@
 package homer.app.runners.ssh
 
+import homer.app.models.ShellEnvNames
+
 // Every token is POSIX single-quoted for the remote login shell, and `exec` keeps the command's signals and exit code.
 // The env reaches the command only through a sourced file, never the command line (CWE-214, ADR-0032).
 object RemoteCommandBuilder {
@@ -42,7 +44,7 @@ object RemoteCommandBuilder {
         envFile: String,
         env: Map<String, String>,
     ): String {
-        val invalid = env.keys.firstOrNull { !SHELL_IDENTIFIER.matches(it) }
+        val invalid = ShellEnvNames.firstInvalid(env.keys)
         require(invalid == null) { "env name '$invalid' is not a POSIX shell identifier, which the ssh runner can export" }
         val withNul = env.entries.firstOrNull { '\u0000' in it.value }?.key
         require(withNul == null) { "env value of '$withNul' contains a NUL byte, which no process environment can hold" }
@@ -82,8 +84,6 @@ object RemoteCommandBuilder {
 
     /** Sources the env file the shell variable [fileRef] names, then replaces the shell with the argv in `$@`. */
     private fun sourceThenExec(fileRef: String): String = ". \"$fileRef\" && exec \"\$@\""
-
-    private val SHELL_IDENTIFIER = Regex("^[A-Za-z_][A-Za-z0-9_]*$")
 
     /** POSIX single-quote escaping: wrap in '...', and render embedded ' as '\''. */
     fun quote(token: String): String = "'" + token.replace("'", "'\\''") + "'"

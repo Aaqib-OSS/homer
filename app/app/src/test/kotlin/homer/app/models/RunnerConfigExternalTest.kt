@@ -88,6 +88,16 @@ class RunnerConfigExternalTest {
     }
 
     @Test
+    fun `external env keys need not be shell identifiers`() {
+        RunnerConfig
+            .External(
+                token = "t",
+                env = mapOf("FOO-BAR" to "1"),
+                extraUploads = listOf(ExtraUploadSpec(local = "/a", remote = ".homer/x", env = "SCRIPTS-DIR")),
+            ).validate("workers")
+    }
+
+    @Test
     fun `two domains may not share a token value`() {
         val ex =
             assertThrows<IllegalArgumentException> {

@@ -234,7 +234,7 @@ mcp:
 | `onStop` | `List<Command>` | No | `[]` | Steps run once, in order, after the run is stopped gracefully — by a step's own `timeout` with `onTimeout: stop`, or by the runner's soft run deadline. Each receives the `HMR_STOP_*` variables and runs under the run's remaining deadline; the first stop step that fails or times out ends the rest. At most 10 steps, and a step with `onTimeout: stop` may not be a stop step. An empty list (the default) means no stop phase. See [Graceful stop](#graceful-stop). |
 | `inputs` | `List<Param>` | No | `null` | Input parameter definitions (query, body, headers). Setting both `inputs` and `queryParams` fails agent load. |
 | `queryParams` | `List<Param>` | No | `null` | **Deprecated alias for `inputs`.** Kept for backward compatibility. Mutually exclusive with `inputs`; setting both fails agent load. |
-| `env` | `Map<String, String>` | No | `{}` | Agent-specific environment variables |
+| `env` | `Map<String, String>` | No | `{}` | Agent-specific environment variables; a run on an `ssh` or `kubernetes` runner fails on a key that is not a shell identifier (`^[A-Za-z_][A-Za-z0-9_]*$`) |
 | `workspace` | `Workspace` | No | Default workspace | Workspace configuration |
 | `lockStrategy` | `LockStrategy` | No | Default lock strategy | Concurrency control strategy |
 | `maxParallelRuns` | `Int` | No | `10` | Maximum number of concurrent executions of this agent. Bounds the runs that are actually executing: a run waiting for its `lockStrategy` lock holds no slot. |

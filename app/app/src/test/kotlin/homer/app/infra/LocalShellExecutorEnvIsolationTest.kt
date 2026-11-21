@@ -64,4 +64,21 @@ class LocalShellExecutorEnvIsolationTest {
             assertFalse(keys.contains("USER"), "USER must not be inherited via ProcessBuilder")
             assertFalse(keys.contains("JAVA_HOME"), "JAVA_HOME must not be inherited via ProcessBuilder")
         }
+
+    @Test
+    fun `the local runner passes env names that are not shell identifiers`() =
+        runTest {
+            val workDir = Files.createTempDirectory("homer-shell-env-names")
+            val stdOut = workDir.resolve("out.log")
+            LocalShellExecutor(workDir).cmd(
+                command = listOf("/usr/bin/env"),
+                stdOut = stdOut,
+                stdErr = workDir.resolve("err.log"),
+                stdIn = null,
+                env = mapOf("spring.profiles.active" to "dev", "FOO-BAR" to "1"),
+                timeout = 5.seconds,
+            )
+            val printed = stdOut.readText()
+            assertTrue("spring.profiles.active=dev" in printed && "FOO-BAR=1" in printed, printed)
+        }
 }
