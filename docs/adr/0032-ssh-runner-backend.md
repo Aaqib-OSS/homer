@@ -3,6 +3,7 @@ status: accepted
 date: 2026-07-21
 deciders: Lukáš Vlk
 amended: 2026-11-20, 2026-11-21
+superseded-by: ADR-0041
 ---
 # ADR-0032: SSH as a runner backend
 
@@ -188,6 +189,9 @@ file ([#364](https://github.com/livesport/homer/issues/364)):
   file, then `exec`s. Exit codes, signals and stdin are unchanged. A step with no env writes no file.
   The `rm` is the file's own first line, not a later step, so an env that resets `PATH` cannot break
   the removal.
+
+  > **Amendment (2026-11-21) — the reaping form no longer `exec`s the command.** It runs the command in a subshell and reports a signal death as 128 + n; see the 2026-11-21 amendment in [ADR-0041](0041-process-group-reaping-on-kill.md).
+
 - **Lifecycle and cleanup.** The file is gone before the command starts. Whenever the step is
   refused, times out, is cancelled or exits non-zero, the executor removes it over SFTP under its own
   bounded deadline, best effort: a lost SFTP session makes that removal fail, and it is only logged.

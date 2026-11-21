@@ -143,7 +143,15 @@ outcome is the same: a signal death never reads as exit 0.
 
 This supersedes the 2026-11-20 amendment's note that a signal death fails the step with the raw
 signal number, and the sentence in ADR-0032 that the reaping form `exec`s the command with exit
-codes, signals and stdin unchanged.
+codes, signals and stdin unchanged. For the SSH runner it also supersedes, for a command killed by
+a signal: the decision driver that reaping must not change the exit code or signal semantics; the
+decision's description of the inner `sh` `exec`ing the real argv in place; the Consequences bullet
+that exit-code, stdin and signal semantics stay identical to before; and the rejection of a `trap`
+wrapper that drops the in-place `exec` and turns a signal death into 128 + n.
+
+The new wrapper differs from the rejected ones: those backgrounded the command, which loses its
+stdin, while this one keeps it in the foreground, so stdin is unchanged. 128 + n is now the goal,
+matching the local runner, not a hazard.
 
 Both forms now report 128 + n, as the local runner does:
 
@@ -157,3 +165,8 @@ Both forms now report 128 + n, as the local runner does:
   wrapper, so `setsid -w` gives the raw number. Homer's own reapers send only INT and KILL.
 - The shell's own notice on stderr, such as `Killed`, replaces the `setsid: child N did not exit
   normally` line.
+- A TERM or HUP sent to the recorded pid alone no longer reaches the command: that pid is now the
+  waiting wrapper, which holds the signal until the command exits. Signal the group
+  (`kill -TERM -<pgid>`), as Homer's reapers do.
+- OpenSSH names every signal outside the 13 RFC 4254 names `SIG@openssh.com`, so such a death, for
+  example SIGXCPU, fails the step with that name instead of reporting 128 + n.
