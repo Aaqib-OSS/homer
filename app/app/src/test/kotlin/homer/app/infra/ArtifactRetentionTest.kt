@@ -158,6 +158,34 @@ class ArtifactRetentionTest {
     }
 
     @Test
+    fun `the delete walk over a tree grown past the walk cap deletes nothing and reports it`(
+        @TempDir root: Path,
+    ) {
+        val layout = buildLayout(root)
+
+        val deleted = ArtifactRetention.deleteUnkept(layout.artifactsDir, setOf(layout.decisionJson), maxWalkEntries = 3)
+
+        assertFalse(deleted)
+        assertTrue(Files.exists(layout.cmdOut), "nothing is deleted past the cap")
+        assertTrue(Files.exists(layout.reportMd), "nothing is deleted past the cap")
+    }
+
+    @Test
+    fun `the delete walk at exactly the walk cap still prunes`(
+        @TempDir root: Path,
+    ) {
+        val layout = buildLayout(root)
+
+        // artifacts/, decision.json, summary.md, cmd_0.out, sub/, sub/report.md
+        val deleted = ArtifactRetention.deleteUnkept(layout.artifactsDir, setOf(layout.decisionJson), maxWalkEntries = 6)
+
+        assertTrue(deleted)
+        assertTrue(Files.exists(layout.decisionJson))
+        assertFalse(Files.exists(layout.cmdOut))
+        assertFalse(Files.exists(layout.reportMd.parent))
+    }
+
+    @Test
     fun `a huge workdir does not count against the artifacts walk budget`(
         @TempDir root: Path,
     ) {

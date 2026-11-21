@@ -58,7 +58,10 @@ internal object ArtifactRetention {
             return PruneResult(0, truncated)
         }
         deleteSiblings(workspaceRoot, projectRoot, dir)
-        deleteUnkept(dir, kept)
+        if (!deleteUnkept(dir, kept, maxWalkEntries)) {
+            PathSafety.deleteContainedRecursively(workspaceRoot, projectRoot)
+            return PruneResult(0, true)
+        }
         return PruneResult(kept.size, truncated)
     }
 
@@ -124,33 +127,33 @@ internal object ArtifactRetention {
         }
     }
 
-    /** Deletes everything under [dir] but the [kept] files and the directories holding them. */
-    private fun deleteUnkept(
+    /**
+     * Deletes everything under [dir] but the [kept] files and the directories holding them; false, deleting
+     * nothing, when the tree has grown past [maxWalkEntries] entries since the candidate walk.
+     */
+    internal fun deleteUnkept(
         dir: Path,
         kept: Set<Path>,
-    ) {
+        maxWalkEntries: Int,
+    ): Boolean {
         val keepDirs =
             kept
                 .flatMap { file ->
                     generateSequence(file.parent) { it.parent }.takeWhile { it.startsWith(dir) }.toList()
                 }.toSet() + dir
-        // Reverse-order walk deletes children before parents; a dir holding a kept
-        // file is in keepDirs and survives, an emptied dir is deleted. This walk is
-        // unbounded (no maxWalkEntries re-check): prune only runs on terminal,
-        // non-shared workspaces, so there is no live writer left to grow the tree
-        // between the capped candidate walk and here. A future caller invoking prune
-        // on a non-terminal workspace must not assume that still holds.
-        Files.walk(dir).use { stream ->
-            stream.sorted(Comparator.reverseOrder()).forEach { path ->
-                if (path in keepDirs) return@forEach
-                // Re-check regular-file-under-NOFOLLOW at delete time, not just membership
-                // in `kept`: the artifacts dir is agent-writable, so a matched regular file
-                // could have been swapped for a symlink between the candidate walk and here.
-                val stillKept = path in kept && path.isRegularFile(LinkOption.NOFOLLOW_LINKS)
-                if (!stillKept) {
-                    Files.deleteIfExists(path)
-                }
+        val entries = Files.walk(dir).use { stream -> stream.limit(maxWalkEntries + 1L).toList() }
+        if (entries.size > maxWalkEntries) return false
+        // Reverse order deletes children before parents; a dir holding a kept file is in keepDirs and survives.
+        entries.sortedDescending().forEach { path ->
+            if (path in keepDirs) return@forEach
+            // Re-check regular-file-under-NOFOLLOW at delete time, not just membership
+            // in `kept`: the artifacts dir is agent-writable, so a matched regular file
+            // could have been swapped for a symlink between the candidate walk and here.
+            val stillKept = path in kept && path.isRegularFile(LinkOption.NOFOLLOW_LINKS)
+            if (!stillKept) {
+                Files.deleteIfExists(path)
             }
         }
+        return true
     }
 }
