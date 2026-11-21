@@ -19,11 +19,11 @@ internal object SshExitSignals {
             "TERM" to 15,
         )
 
-    private val PLAIN_NAME = Regex("[A-Za-z0-9_]{1,16}")
+    private val PLAIN_NAME = Regex("[A-Za-z0-9_@.-]{1,24}")
 
     /** The signal [name]'s number, or null when it is not an RFC 4254 name. */
     fun number(name: String): Int? = NUMBERS[name]
 
-    /** [name] as safe to quote: the server chose it, so anything but a short plain name is withheld (CWE-117). */
+    /** [name] as safe to quote: the server chose it, so anything but a short printable name is withheld (CWE-117). */
     fun quotable(name: String): String = if (PLAIN_NAME.matches(name)) name else "<unprintable>"
 }

@@ -688,6 +688,14 @@ class SshShellExecutorTest {
     }
 
     @Test
+    fun `OpenSSH's catch-all signal name fails the step with that name`(
+        @TempDir local: Path,
+    ) = runTest {
+        val exception = assertThrows<IllegalStateException> { exitWithSignal("SIG@openssh.com", local) }
+        assertContains(exception.message.orEmpty(), "SIG@openssh.com")
+    }
+
+    @Test
     fun `an exit signal naming control characters is withheld from the step error`(
         @TempDir local: Path,
     ) = runTest {

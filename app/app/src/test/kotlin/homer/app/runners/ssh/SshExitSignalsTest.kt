@@ -37,6 +37,7 @@ class SshExitSignalsTest {
     fun `quotable keeps a plain name and withholds anything else`() {
         assertEquals("BOGUS", SshExitSignals.quotable("BOGUS"))
         assertEquals("<unprintable>", SshExitSignals.quotable("A\nB"))
-        assertEquals("<unprintable>", SshExitSignals.quotable("A".repeat(17)))
+        assertEquals("<unprintable>", SshExitSignals.quotable("A".repeat(25)))
+        assertEquals("SIG@openssh.com", SshExitSignals.quotable("SIG@openssh.com"))
     }
 }
