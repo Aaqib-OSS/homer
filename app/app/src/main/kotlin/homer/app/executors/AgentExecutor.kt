@@ -33,7 +33,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import java.nio.file.Path
-import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
 /**
@@ -104,7 +103,6 @@ class AgentExecutor(
         )
 
     /** Runs the agent's selected steps in order, recording the step in flight on [inFlight]. */
-    @OptIn(ExperimentalTime::class)
     private suspend fun runSteps(
         session: RunnerSession,
         runDeadline: RunDeadline?,
@@ -118,8 +116,8 @@ class AgentExecutor(
         var pendingStart: Long? = null
         for ((step, indexedCommand) in steps.withIndex()) {
             // Past the soft deadline no unstarted step starts: the run stops instead.
-            if (stopDeadlinePassed(runDeadline)) throw RunDeadlineReached()
-            val startedAt = pendingStart ?: Clock.System.now().epochSeconds
+            if (stopDeadlinePassed(runDeadline, nowEpochSec())) throw RunDeadlineReached()
+            val startedAt = pendingStart ?: nowEpochSec()
             val facts = StepFacts()
             inFlight.step = InterruptedStep(indexedCommand.index, indexedCommand.value, facts)
             val handover =
@@ -140,7 +138,6 @@ class AgentExecutor(
      * Runs the [step]-th selected command, [carriedStart] being the start time the previous step's
      * boundary recorded; the handover says when the next step starts and whether the run finishes here.
      */
-    @OptIn(ExperimentalTime::class)
     private suspend fun runStep(
         session: RunnerSession,
         step: Int,
@@ -150,7 +147,7 @@ class AgentExecutor(
         plan: StepPlan,
     ): StepHandover {
         val (_, command) = indexedCommand
-        val startTime = carriedStart ?: Clock.System.now().epochSeconds
+        val startTime = carriedStart ?: nowEpochSec()
         // Only a phase's first step is set here: a later step's start rides the
         // previous step's boundary transaction, so a step boundary is one write.
         if (step == 0) {
@@ -230,7 +227,6 @@ class AgentExecutor(
         )
 
     /** Records a step its `when` predicate skipped; returns the next step's start time, if one starts now. */
-    @OptIn(ExperimentalTime::class)
     private suspend fun recordSkip(
         command: Command,
         startTime: Long,
@@ -245,7 +241,7 @@ class AgentExecutor(
     ): Long? {
         var nextStart: Long? = null
         withContext(NonCancellable) {
-            val endTime = Clock.System.now().epochSeconds
+            val endTime = nowEpochSec()
             // Operator-authored text (the `when` expression) can carry a secret, and errMsg reaches the
             // status API. CWE-532
             val redactor = executionContext.secretRedactor()
@@ -322,7 +318,7 @@ class AgentExecutor(
             outcome = CommandOutcome.Success(exitCode = result.exitCode, isFinishCode = isFinishCode)
         } catch (e: Exception) {
             outcome = failureOutcome(e)
-            stoppedBy = stopReasonFor(e, command, deadline)
+            stoppedBy = stopReasonFor(e, command, deadline, nowEpochSec())
             withContext(NonCancellable) {
                 commandSpan.setStatus(StatusCode.ERROR, e.message ?: "Unknown error")
                 commandSpan.recordException(e)
@@ -342,17 +338,16 @@ class AgentExecutor(
      * this session, before teardown, and records the stop. The caller rethrows, so the run ends `FAILED`
      * and no further `commands` step starts. See ADR-0108.
      */
-    @OptIn(ExperimentalTime::class)
     private suspend fun runStopPhase(
         session: RunnerSession,
         deadline: RunDeadline?,
         interrupted: InterruptedStep,
         cause: Throwable,
     ) {
-        val reason = stopReasonFor(cause, interrupted.command, deadline) ?: return
+        val reason = stopReasonFor(cause, interrupted.command, deadline, nowEpochSec()) ?: return
         // When the stop was detected, not when the stop phase finished — the stop steps run
         // after it, and the record's timeline must not place them before the stop itself.
-        val stoppedAt = Clock.System.now().epochSeconds
+        val stoppedAt = nowEpochSec()
         val stopEnv =
             StopContext.env(
                 reason = reason,
@@ -384,7 +379,6 @@ class AgentExecutor(
      * `continueIfFail` and `finishExitCode` all honoured — with the stop context in its env.
      * The first stop step that fails or times out ends the rest.
      */
-    @OptIn(ExperimentalTime::class)
     @Suppress("SuspendFunSwallowedCancellation") // rethrows; failsTheRun tells a kill from a failure
     private suspend fun runStopSteps(
         session: RunnerSession,
@@ -396,7 +390,7 @@ class AgentExecutor(
             // The stop steps share the run's artifact directory with the agent's own steps, so
             // they are numbered past them rather than from zero.
             val index = agent.commands.size + ordinal
-            val startedAt = Clock.System.now().epochSeconds
+            val startedAt = nowEpochSec()
             try {
                 val handover =
                     runStep(
@@ -423,6 +417,8 @@ class AgentExecutor(
         }
         return StopStepsOutcome.FINISHED
     }
+
+    private fun nowEpochSec(): Long = config.clock() / 1000
 
     companion object {
         private val logger = LoggerFactory.getLogger(AgentExecutor::class.java)

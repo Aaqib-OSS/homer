@@ -8,10 +8,8 @@ import homer.app.runners.RunDeadline
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
-import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
-import kotlin.time.ExperimentalTime
 
 /** The safety margin a step keeps before the backend's hard run deadline, so it is reaped in time. */
 private const val DEADLINE_MARGIN_SECONDS = 10L
@@ -112,10 +110,11 @@ private fun interruptGraceFor(
     deadline: RunDeadline?,
 ): Duration? = if (deadline != null || command.onTimeout == OnTimeout.STOP) command.interruptGraceSeconds.seconds else null
 
-/** Whether the backend's soft run deadline has passed: no further step starts, and the run stops. */
-@OptIn(ExperimentalTime::class)
-internal fun stopDeadlinePassed(deadline: RunDeadline?): Boolean =
-    deadline != null && Clock.System.now().epochSeconds >= deadline.softEpochSec
+/** Whether the backend's soft run deadline has passed at [nowEpochSec]: no further step starts, and the run stops. */
+internal fun stopDeadlinePassed(
+    deadline: RunDeadline?,
+    nowEpochSec: Long,
+): Boolean = deadline != null && nowEpochSec >= deadline.softEpochSec
 
 /**
  * Why [cause] ends the steps as a graceful stop, or null: a passed soft deadline always stops; else
@@ -126,9 +125,10 @@ internal suspend fun stopReasonFor(
     cause: Throwable,
     command: Command,
     deadline: RunDeadline?,
+    nowEpochSec: Long,
 ): StopReason? =
     when {
-        stopDeadlinePassed(deadline) -> StopReason.RUN_DEADLINE
+        stopDeadlinePassed(deadline, nowEpochSec) -> StopReason.RUN_DEADLINE
         cause is OutputCapExceededException -> null
         cause is CancellationException && !currentCoroutineContext().isActive -> null
         cause is CancellationException && command.onTimeout == OnTimeout.STOP -> StopReason.STEP_TIMEOUT
