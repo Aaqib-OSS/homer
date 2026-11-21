@@ -4,6 +4,7 @@
 
 ### Homer
 
+- **Fixed: an unsupported config file extension is refused with a clean error** — Startup prints which extension it got and that `.yaml` or `.json` is required, and exits like any other bad config instead of dying with an uncaught `UnknownError`.
 - **Fixed: a Kubernetes step with a grace reports 128 + n when its command dies by a signal** — It no longer reports the bare signal number with a `setsid:` line on stderr. See [ADR-0108](docs/adr/0108-graceful-stop-of-a-run.md).
 - **Fixed: a Kubernetes step with a grace on a BusyBox `setsid` pod waits for its command** — It reports the command's exit code instead of 0 while the command ran on detached. See [ADR-0108](docs/adr/0108-graceful-stop-of-a-run.md).
 - **Security: Guava updated past a high-severity advisory** — The backend and `homer-runner` now ship Guava 33.8.0 (from 33.5.0, under the Kubernetes client's Google auth library).
