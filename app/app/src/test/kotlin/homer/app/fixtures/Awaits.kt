@@ -5,6 +5,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 import java.nio.file.Path
+import kotlin.io.path.isDirectory
 import kotlin.io.path.readText
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -73,24 +74,18 @@ fun awaitProcessExit(
     pid: Long,
     timeoutMs: Long = EVENTUALLY_TIMEOUT.inWholeMilliseconds,
     pollMs: Long = POLL_INTERVAL.inWholeMilliseconds,
-): Boolean {
-    if (pollUntil(timeoutMs, pollMs) { processGone(pid) }) return true
-    return ProcessHandle
-        .of(pid)
-        .map { it.isAlive }
-        .orElse(false)
-        .not()
-}
+): Boolean = pollUntil(timeoutMs, pollMs) { processGone(pid) }
+
+private val PROC: Path = Path.of("/proc")
 
 /**
- * Reads the `/proc` state rather than `ProcessHandle.isAlive`: a group-killed orphan dies as a
- * zombie (state `Z`) until its reparent target wait()s on it — in a CI container a PID 1 that
- * may never get around to it — and `ProcessHandle` counts an unreaped zombie as alive. `Z` means
- * the kill worked. Callers run on Linux, so `/proc` exists; the setsid tests additionally rely
- * on the zombie semantics described above. (Linux only.)
+ * Where `/proc` exists, reads its state: `ProcessHandle.isAlive` counts an unreaped zombie
+ * (state `Z`) as alive, and a group-killed orphan may stay one under a CI container's PID 1.
+ * Without `/proc` (macOS), asks `ProcessHandle`.
  */
 private fun processGone(pid: Long): Boolean {
-    val stat = runCatching { Path.of("/proc/$pid/stat").readText() }.getOrNull() ?: return true
+    if (!PROC.isDirectory()) return ProcessHandle.of(pid).map { !it.isAlive }.orElse(true)
+    val stat = runCatching { PROC.resolve("$pid/stat").readText() }.getOrNull() ?: return true
     val state = stat.substringAfterLast(") ").trim().split(" ")[0]
     return state == "Z" || state == "X"
 }

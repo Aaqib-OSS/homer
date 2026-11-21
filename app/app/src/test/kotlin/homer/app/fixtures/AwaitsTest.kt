@@ -131,7 +131,7 @@ class AwaitsTest {
         runTest {
             val absent = Int.MAX_VALUE.toLong()
 
-            assertTrue(awaitProcessExit(absent), "an absent /proc entry means the process is gone")
+            assertTrue(awaitProcessExit(absent), "a pid no process holds is gone")
         }
 
     @Test
