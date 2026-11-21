@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-09-10
 deciders: Lukáš Vlk
-amended: 2026-09-11, 2026-09-16, 2026-10-06, 2026-10-09
+amended: 2026-09-11, 2026-09-16, 2026-10-06, 2026-10-09, 2026-11-21
 ---
 # ADR-0061: Price Claude runs from an external session-spend endpoint, CLI figure as marked fallback
 
@@ -417,6 +417,25 @@ count). The per-request window fixes both from the same response.
 The known limitation above is superseded by this amendment for any deployment that sets the
 window keys; the pinned-`sessionId` × `retry.attempts > 1` case is exactly a session reused
 across attempts and is fixed the same way. Without the keys, that limitation stands.
+
+## Amendment (2026-11-21): a JVM `Error` is no longer swallowed by the resolver
+
+The "Every remaining failure mode degrades too" bullet and the "no thrown exception" denial-path
+line above describe the resolver as catching `Throwable`. `LlmCostResolver.resolve` and
+`SessionSpendPricing` now catch `Exception` only: every `Exception` still degrades to the marked
+CLI fallback, but an `Error` (for example `OutOfMemoryError`) is not converted to `lookup failed`
+by the resolver. The reason is the branch-wide rule that a catch-all must not swallow what it
+cannot handle (`coRunCatching`, app/CLAUDE.md "A catch-all in `suspend` code must not swallow
+cancellation").
+
+What an `Error` does to a run: nothing it did not do before. The resolver is only called through
+`LlmAttemptAccounting`, whose background settlement and `LlmHarnessExecutor`'s aborted-attempt
+accounting both wrap the call in `runCatching`, which catches `Throwable`. The settlement then
+charges the harness figure without a lookup, never leaving the record at `session figure
+pending`, and the step does not fail; an aborted attempt logs a warning and rethrows its own
+exception. The guarantee that a spend lookup never fails a run is therefore carried by those
+call sites, not by the resolver. One cosmetic cost: a settlement rescued this way carries the
+fallback reason `run cancelled before lookup`, although the lookup was attempted.
 
 ## More Information
 

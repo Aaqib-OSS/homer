@@ -278,8 +278,10 @@ the CLI session id instead. It applies to every LLM harness command (`!<claude>`
 marked (`costSource: cli`, `llmAccounting.fallbackReason`) — for a harness whose CLI
 reports no cost of its own (Codex), a failed or unconfigured lookup instead records
 `costSource: none` and charges nothing, since there is no CLI figure to fall back to.
-Each lookup is a single `GET`, bounded by `timeoutMs` and a 1 MiB response cap, and
-never blocks or fails the run. A finished attempt does not wait for it either: the step
+Each lookup is a single `GET`, bounded by `timeoutMs` and a 1 MiB response cap; any
+exception it raises degrades to the marked fallback and never blocks or fails the run. A
+JVM `Error` is not caught by the lookup itself, but the settlement still charges the CLI
+figure and the run continues ([ADR-0061](../docs/adr/0061-price-claude-runs-from-session-spend-endpoint.md)). A finished attempt does not wait for it either: the step
 is recorded at once with the CLI figure (`costSource: none` and 0.0 for Codex, which has
 none) and `fallbackReason: session figure pending`, and
 the lookup settles in the background, replacing that record and adding to the run's
