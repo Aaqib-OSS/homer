@@ -329,15 +329,14 @@ jobs:
   # makes gate.mjs exit 3, which passes with a warning annotation; exit 1 fails.
   quality-gate:
     needs: [homer-app-tests, homer-app-detekt, homer-console-tests, homer-python-tests, homer-console-mutation, homer-app-mutation, homer-infra-lint, homer-e2e]
-    # The mutation jobs are skipped outside pull requests; the gate still runs. A failed
-    # homer-infra-lint leaves its report missing, which fails the gate.
+    # The mutation jobs are skipped outside pull requests; the gate still runs. A failed homer-infra-lint
+    # or homer-e2e may leave its report missing, a finding; the required job's own red still blocks.
     if: >-
       !cancelled()
       && needs.homer-app-tests.result == 'success'
       && needs.homer-app-detekt.result == 'success'
       && needs.homer-console-tests.result == 'success'
       && needs.homer-python-tests.result == 'success'
-      && needs.homer-e2e.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
