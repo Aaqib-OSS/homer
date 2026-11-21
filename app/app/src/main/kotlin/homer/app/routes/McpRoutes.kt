@@ -32,16 +32,13 @@ import kotlinx.coroutines.selects.select
 import kotlin.coroutines.CoroutineContext
 
 /**
- * Stateless Streamable HTTP MCP endpoint at `/mcp` (JSON-response mode, no
- * sessions, no SSE). A fresh transport + MCP Server is built per POST so the
- * tool list always reflects agent reloads. Mounted inside the same
- * authenticate/rateLimit wrapper as the REST API. See ADR-0018.
+ * Stateless Streamable HTTP MCP endpoint at `/mcp` (JSON-response mode, no sessions, no SSE): a fresh transport
+ * and server per POST keep the tool list current across agent reloads. Same auth wrapper as the REST API (ADR-0018).
  */
 internal fun Route.mcpRoutes(deps: McpRouteDeps) {
     route("/mcp") {
-        // The MCP transport responds with SDK JSONRPCMessage objects, which
-        // must serialize through McpJson (polymorphic message types). Route-
-        // scoped so Homer's global ContentNegotiation Json is untouched.
+        // SDK JSONRPCMessage types are polymorphic and must serialize through McpJson; route-scoped so the
+        // global ContentNegotiation Json is untouched.
         install(ContentNegotiation) {
             json(McpJson)
         }
@@ -71,12 +68,9 @@ internal fun Route.mcpRoutes(deps: McpRouteDeps) {
 }
 
 /**
- * Stateless MCP endpoint at `/mcp/questions` for the question tools (`ask_user`, `check_answer`,
- * `ask_user_and_wait`). Same per-POST pattern as [mcpRoutes] with two differences (ADR-0019): it is
- * authenticated by the per-process `HMR_CALLBACK_TOKEN` resolved at the route level — mounted
- * physically OUTSIDE `authenticate(...)`, in the same credential domain as [callbackRoutes] — and
- * uses SSE response mode (`enableJsonResponse = false`), so headers flush before the tool runs and
- * progress notifications stream mid-call, letting a blocking `ask_user_and_wait` survive client first-byte/inactivity timeouts.
+ * Stateless MCP endpoint at `/mcp/questions` for the question tools: like [mcpRoutes], but authenticated by
+ * `HMR_CALLBACK_TOKEN` outside `authenticate(...)` and in SSE response mode, so a blocking `ask_user_and_wait`
+ * survives client timeouts (ADR-0019).
  */
 internal fun Route.questionsMcpRoutes(deps: McpRouteDeps) {
     route("/mcp/questions") {
@@ -118,11 +112,8 @@ internal fun Route.questionsMcpRoutes(deps: McpRouteDeps) {
 private const val SSE_HEARTBEAT_MS = 15_000L
 
 /**
- * Bridges the SDK transport's SSE response mode onto Homer's hand-rolled SSE (no Ktor SSE plugin
- * installed). The transport only needs a [ServerSSESession] it can `send`/`close`; the response
- * stream must not start before the transport's first send — it appends the SSE headers itself just
- * before, and its reject paths (401/406/415) respond plain HTTP on the untouched call. Idle gaps
- * between events are filled with `: ping` comment heartbeats so held tool calls keep bytes flowing.
+ * Bridges the SDK transport's SSE response mode onto Homer's SSE: the stream must not start before the transport's
+ * first send, as its reject paths (401/406/415) respond plain HTTP. `: ping` heartbeats fill idle gaps.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 private suspend fun handleSsePost(
@@ -153,11 +144,8 @@ private suspend fun handleSsePost(
                 // text/event-stream before its first send.
                 call.respondBytesWriter {
                     while (true) {
-                        // Must be select, not withTimeoutOrNull(receiveCatching):
-                        // a timeout cancelling a plain receive can discard an
-                        // element already taken off the channel (prompt
-                        // cancellation, no onUndeliveredElement) — losing the
-                        // final JSON-RPC response event.
+                        // select, not withTimeoutOrNull(receiveCatching): a timeout cancelling a plain receive can drop an
+                        // element already taken off the channel, losing the final JSON-RPC response.
                         val received =
                             select<ChannelResult<ServerSentEvent>?> {
                                 events.onReceiveCatching { it }

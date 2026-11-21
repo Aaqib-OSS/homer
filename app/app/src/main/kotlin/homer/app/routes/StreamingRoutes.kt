@@ -123,14 +123,8 @@ private fun Route.agentEventsStreamRoute(
                     .filter { it is ProcessEvent.AgentsReloaded }
                     .collect { event ->
                         val reloaded = event as ProcessEvent.AgentsReloaded
-                        // Mirror GET /api/v1/agents: a principal only learns about
-                        // agent names it holds a grant on (admins see all via anyGrant).
-                        // The frame itself is ALWAYS sent, even with all lists empty:
-                        // consumers use it as the "reload completed" signal (a no-op
-                        // reload has a genuinely empty diff — file edits reload
-                        // inline, so a follow-up POST /reload often changes nothing),
-                        // and suppressing filtered-empty frames would let a no-grant
-                        // principal infer that some hidden agent changed.
+                        // Mirror GET /api/v1/agents: only names the principal holds a grant on. The frame is always sent, even empty:
+                        // it signals "reload completed", and suppressing filtered-empty frames would reveal a hidden agent changed.
                         val added = reloaded.added.filter { authorizer.anyGrant(principal, it) }
                         val updated = reloaded.updated.filter { authorizer.anyGrant(principal, it) }
                         val removed = reloaded.removed.filter { authorizer.anyGrant(principal, it) }
@@ -406,9 +400,8 @@ private suspend fun runSseSession(
     val session = SseSession(channel)
     try {
         coroutineScope {
-            // Flush an immediate ping: Netty defers the response headers until the
-            // first body byte, so without it an idle stream (no events yet) never
-            // delivers headers and the client cannot tell it is subscribed.
+            // Flush a ping first: Netty defers response headers to the first body byte, so an idle
+            // stream would never tell the client it is subscribed.
             session.ping()
             val heartbeat =
                 launch {

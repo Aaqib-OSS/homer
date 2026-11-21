@@ -151,9 +151,8 @@ private fun Route.agentFileWriteRoutes(deps: AgentRouteDeps) {
             val body = call.receiveOr400<AgentFileWriteRequest>("Invalid JSON body: expected { content }")
             respondFileOpResult(
                 call,
-                // A definition write is also an agent create: reload() loads the
-                // declared `name:` as an agent, so it needs the create-agent grant
-                // (EDIT on that name) too — CWE-285, ADR-0068.
+                // A definition write also creates the declared agent on reload(), so it needs EDIT on that name
+                // too (CWE-285, ADR-0068).
                 agentFilesService.write(name, path, body.content) { declared ->
                     authorizer.hasAction(call.principalName(), Action.EDIT, declared)
                 },
@@ -204,9 +203,8 @@ private fun Route.agentToolingRoutes(deps: AgentRouteDeps) {
             )
         }
 
-        // Admin-only, handler-level gate; a denial is the same 404 as an unknown agent
-        // (ADR-0037, ADR-0047 rule 3). fireAgent swallows a failed fire, so the response
-        // has no body (ADR-0080).
+        // Admin-only; a denial is the same 404 as an unknown agent (ADR-0037, ADR-0047 rule 3).
+        // A failed fire is swallowed, so the response has no body (ADR-0080).
         post("/agents/{agentName}/cron-run") {
             val agentName = call.pathParameter("agentName")
             val agent =
@@ -241,11 +239,8 @@ private suspend fun ApplicationCall.mayEditAgentFiles(
 }
 
 /**
- * Maps an [AgentFilesService.FileOpResult] to an HTTP response. The error
- * cases (NotFound/BadRequest/Forbidden/Conflict/SchemaInvalid) are identical
- * across the agent-files endpoints; [onOk] renders the per-endpoint success
- * body, and [schemaInvalidMsg] is the message used for the 422 SchemaInvalid
- * response.
+ * Maps an [AgentFilesService.FileOpResult] to the HTTP response the agent-files endpoints share;
+ * [onOk] renders the success body and [schemaInvalidMsg] is the 422 SchemaInvalid message.
  */
 internal suspend fun <T> respondFileOpResult(
     call: ApplicationCall,

@@ -50,10 +50,8 @@ import java.nio.file.Path
 private val logger = LoggerFactory.getLogger("homer.app.routes.CallbackRoutes")
 
 /**
- * Question callback routes for running commands, authenticated by the per-process
- * `HMR_CALLBACK_TOKEN` — never by operator credentials. Mounted OUTSIDE `authenticate(...)` on
- * purpose: a structural trust boundary (ADR-0019) where neither auth scheme can satisfy the
- * other's routes; token extraction and constant-time resolution happen here, at the route level.
+ * Question callback routes for running commands, authenticated by the per-process `HMR_CALLBACK_TOKEN`,
+ * never by operator credentials; mounted outside `authenticate(...)` (ADR-0019).
  */
 internal fun Route.callbackRoutes(deps: CallbackDeps) {
     callbackQuestionRoutes(deps)
@@ -80,11 +78,8 @@ private fun Route.callbackQuestionRoutes(deps: CallbackDeps) {
                 call.respond(AskQuestionResponse(id = question.id))
             }
 
-            // Check / long-poll an answer. waitSec=0 (default) returns the
-            // current snapshot immediately; otherwise the request is held
-            // until the question leaves OPEN or the (clamped) wait elapses —
-            // the response can still be OPEN, and the caller just polls again
-            // with the same id (waits are resumable).
+            // waitSec=0 returns the current snapshot; otherwise the clamped wait holds until the question leaves
+            // OPEN, so the response may still be OPEN and the caller polls again with the same id.
             get("/{id}") {
                 val processId = call.resolveCallbackProcess(questionsService) ?: return@get
                 val id = call.pathParameter("id")
@@ -117,10 +112,8 @@ private fun Route.callbackQuestionRoutes(deps: CallbackDeps) {
 private fun Route.callbackTagRoutes(deps: CallbackDeps) {
     with(deps) {
         route("/api/v1/callback/tags") {
-            // Declare one `key:value` subject tag against the calling run. The run is
-            // identified by the callback token alone — a process id in the body is
-            // ignored (ADR-0019). 409 when the run is terminal/closed; 400 for an
-            // undeclared key, a malformed value, or the per-run tag ceiling. See ADR-0060.
+            // The run is identified by the callback token alone; a process id in the body is ignored (ADR-0019).
+            // 409 for a terminal/closed run; 400 for an undeclared key, a malformed value or the per-run ceiling.
             post {
                 val processId = call.resolveCallbackProcess(questionsService) ?: return@post
                 // A terminal/closed run can no longer describe its subject; mirror the
@@ -145,11 +138,8 @@ private fun Route.callbackTagRoutes(deps: CallbackDeps) {
                     return@post
                 }
                 val (key, value) = runtimeTag(request.tag, agent)
-                // [sensitive_data_exposure / CWE-200] A run tag is readable by every principal
-                // with a read grant, so a value carrying any of this run's secrets (secret
-                // inputs, @SYSENV credentials, its own callback token) is refused — the same
-                // substring screen the artifact-stem check applies. Never log the value.
-                // See ADR-0060.
+                // A run tag is readable by every principal with a read grant, so a value carrying one of this run's
+                // secrets is refused and never logged (CWE-200, ADR-0060).
                 refuseSecretTagValue(registration, processId, key, value)
                 val result =
                     processManager.addRuntimeTag(
@@ -227,12 +217,8 @@ private fun Route.callbackDispatchGroupRoutes(deps: CallbackDeps) {
 private fun Route.callbackRunRoutes(deps: CallbackDeps) {
     with(deps) {
         route("/api/v1/callback/runs") {
-            // Fire-and-forget: start an opt-in target agent immediately, no
-            // operator question. Fresh chain; the asking process is recorded
-            // only as the referer (ADR-0022). When `continueAgent` is present,
-            // the service also registers a completion continuation that resumes
-            // the parent once the started sub reaches a terminal state
-            // (ADR-0023) — validate-before-start and kill-on-failure live there.
+            // Starts an opt-in target agent as a fresh chain, the asking process recorded only as referer (ADR-0022);
+            // `continueAgent` also registers a completion continuation on the parent (ADR-0023).
             post {
                 val processId = call.resolveCallbackProcess(questionsService) ?: return@post
                 val request =
@@ -250,10 +236,8 @@ private fun Route.callbackRunRoutes(deps: CallbackDeps) {
 private fun Route.callbackJoinRoutes(deps: CallbackDeps) {
     with(deps) {
         route("/api/v1/callback/joins") {
-            // Parallel fan-out: start N subs at once and register ONE join continuation that resumes
-            // the parent a single time after the last sub ends, carrying all results keyed by
-            // interrupt id. The service validates before it starts anything and kills every sub it
-            // started on a later failure, so a 4xx can't orphan one. See ADR-0026.
+            // One join continuation resumes the parent once after the last sub ends; the service validates before
+            // starting anything and kills started subs on a later failure, so a 4xx orphans none (ADR-0026).
             post {
                 val processId = call.resolveCallbackProcess(questionsService) ?: return@post
                 val request =
@@ -271,14 +255,8 @@ private fun Route.callbackJoinRoutes(deps: CallbackDeps) {
 private fun Route.callbackResultRoutes(deps: CallbackDeps) {
     with(deps) {
         route("/api/v1/callback/results") {
-            // Read-by-reference fetch of a large continuation result. Triple-auth:
-            // a valid HMR_CALLBACK_TOKEN proves a live Homer process is calling,
-            // the capability token in the path scopes the read to one (watched
-            // process, artifact), and the caller's agent must match the token's
-            // audience (the continuation's target) so a leaked token is useless to
-            // any other agent. The transformer is applied server-side at
-            // fetch. Reusable within the token's TTL by any process running the
-            // target agent (each resume segment is a fresh such process). See ADR-0025.
+            // Triple-auth: callback token, a path capability token scoped to one (watched process, artifact), and the
+            // caller's agent matching the token's audience, so a leaked token is useless to others (ADR-0025).
             get("/{token}") {
                 val callerProcessId = call.resolveCallbackProcess(questionsService) ?: return@get
                 val token = call.pathParameter("token")
@@ -317,9 +295,8 @@ private fun Route.callbackResultRoutes(deps: CallbackDeps) {
 /** `POST /api/v1/callback/messages/take`: a run taking the operator messages queued for it. */
 private fun Route.callbackMessageRoutes(deps: CallbackDeps) {
     with(deps) {
-        // Takes every QUEUED message of the token's own run, never another's (a child run has its own
-        // token), and marks them DELIVERED. `?hook=` answers as Claude Code hook JSON, or 204 when
-        // nothing was queued. Never long-polls: hooks must stay fast. See ADR-0097.
+        // Takes only the token's own run's QUEUED messages (a child run has its own token), marking them DELIVERED.
+        // `?hook=` answers as hook JSON, or 204 when empty. Never long-polls, so hooks stay fast (ADR-0097).
         post("/api/v1/callback/messages/take") {
             val processId = call.resolveCallbackProcess(questionsService) ?: return@post
             val hook =
