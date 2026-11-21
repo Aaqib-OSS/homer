@@ -39,10 +39,9 @@ import org.koin.dsl.module
 import kotlin.io.path.Path
 
 /**
- * The Services layer's wiring: agent loading and inspection, the maintenance gate, the
- * questions/messages/dispatch/continuation stack with its sweeps, the MCP factories and the
- * remaining long-running services. Split out of [appModule] so each subject's bindings stay in
- * one file (root CLAUDE.md §2); the boot loads it beside the other subject modules.
+ * The Services layer's wiring: agent loading and inspection, the maintenance gate, the questions/messages/
+ * dispatch/continuation stack with its sweeps, the MCP factories and the remaining long-running services.
+ * Split out of [appModule] so each subject's bindings stay in one file.
  */
 internal val servicesModule =
     module {

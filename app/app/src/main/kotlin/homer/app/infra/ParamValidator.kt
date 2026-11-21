@@ -16,10 +16,8 @@ sealed interface ParamValidation {
 }
 
 /**
- * Owns all input-param value semantics: the typed generation (string / integer /
- * number / boolean plus the declarative constraint fields on [Param]) and the
- * legacy generation (STRING / NUMBER / ANY heuristics, frozen until removal).
- * See ADR-0031.
+ * Owns all input-param value semantics: the `STR` / `INT` / `NUM` / `BOOL` types with the constraint
+ * fields on [Param], and the STRING / NUMBER / ANY types. See ADR-0031.
  */
 class ParamValidator {
     fun validate(
@@ -60,10 +58,7 @@ class ParamValidator {
         value: String,
         param: Param,
     ): ParamValidation =
-        // Legacy STRING historically rejected only spaces. Also reject control
-        // characters (newlines, etc.): a newline in a value templated into a
-        // `when` bash predicate can inject a second predicate line. ANY stays
-        // unsanitized by definition (documented in AGENT.md).
+        // Control characters are rejected as well as spaces: a newline can inject a predicate line (ADR-0031).
         if (value.contains(" ") || value.any { it.isISOControl() }) {
             legacyInvalid(param)
         } else {
@@ -149,7 +144,7 @@ class ParamValidator {
         return errors
     }
 
-    /** The constraint fields [param]'s (non-legacy) type does not accept, as one error; `null` = none. */
+    /** The constraint fields [param]'s type does not accept, as one error; `null` = none. */
     private fun typeConstraintError(
         param: Param,
         prefix: String,

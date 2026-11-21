@@ -5,9 +5,8 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 enum class ParamType {
-    // Legacy generation — deprecated (load-time WARN in AgentsService). Semantics
-    // are frozen until the removal release: STRING rejects values containing a
-    // space, NUMBER accepts only Int-parseable values. See ADR-0031.
+    // Legacy generation, deprecated and frozen until removal: STRING rejects a space or a control
+    // character, NUMBER accepts only Int values, ANY nothing. See ADR-0031.
     STRING,
     NUMBER,
     ANY,
@@ -62,13 +61,11 @@ data class Param(
     val type: ParamType = ParamType.STRING,
     val required: Boolean = true,
     val transformer: Transformer = Transformer.Pass,
-    // Redact this input's value in API responses and telemetry. The value
-    // still reaches the run's env and is stored in the server database
-    // (retry / dispatch re-fire need it).
+    // Redact this input's value in API responses and telemetry; it still reaches the run's env and is
+    // stored in the database (retry and dispatch re-fire need it).
     val secret: Boolean = false,
-    // Typed-generation constraints (lowercase types only). Modeled as strings;
-    // ParamValidator interprets them per type. Applicability and well-formedness
-    // are checked at agent load (ParamValidator.validateDeclaration).
+    // Typed-generation constraints (lowercase types only), modeled as strings and interpreted per type
+    // by ParamValidator; applicability and form are checked at agent load (validateDeclaration).
     val values: List<String>? = null,
     val pattern: String? = null,
     val min: Double? = null,

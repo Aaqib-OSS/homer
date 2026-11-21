@@ -79,7 +79,7 @@ data class Agent(
     val sysEnvBackedEnvKeys: Set<String> = emptySet(),
 ) {
     init {
-        // Reads the legacy alias on purpose: an agent may set only one of the two forms.
+        // Reads the `queryParams` alias (ADR-0031): an agent may set only one of the two forms.
         @Suppress("DEPRECATION")
         require(inputs == null || queryParams == null) {
             "Agent '$name': set either 'inputs' or legacy 'queryParams', not both"
@@ -108,7 +108,7 @@ data class Agent(
                 "Agent '$name': hook '${hook.status}' must not target the declaring agent"
             }
         }
-        // Computed here, not from `secretEnvNames`: that property initializes after this block.
+        // Both `secretEnvNames` and `effectiveInputs` initialize after this block: read the alias directly.
         @Suppress("DEPRECATION")
         val declaredSecretInputNames =
             (inputs ?: queryParams)
@@ -128,9 +128,9 @@ data class Agent(
         }
     }
 
-    // Reads the legacy alias on purpose: it is the fallback for agents still using it.
+    // The `queryParams` alias is the fallback for agents still using it. See ADR-0031.
     @Transient
-    @Suppress("DEPRECATION") // reads the legacy queryParams alias on purpose
+    @Suppress("DEPRECATION") // reads the queryParams alias on purpose
     val effectiveInputs: List<Param>? = inputs ?: queryParams
 
     /** The claim-queue filter this agent's runs wait on. See ADR-0066. */
@@ -161,7 +161,7 @@ data class Agent(
     // `tags.fromInputs` unioned with the deprecated `telemetry.traceTags`; one list feeds both the
     // trace tags and the process-tag rows, so the two never diverge. See ADR-0050, ADR-0060.
     @Transient
-    @Suppress("DEPRECATION") // unions the deprecated telemetry.traceTags alias on purpose
+    @Suppress("DEPRECATION") // unions the telemetry.traceTags alias on purpose (ADR-0060)
     val effectiveFromInputTags: List<String> =
         (tags.fromInputs + telemetry.traceTags).distinct()
 }
@@ -230,9 +230,8 @@ data class AgentTelemetry(
     val traceTags: List<String> = emptyList(),
 )
 
-// A run's subject tags — what it ran over. [fromInputs] names declared inputs by `paramName`
-// (each resolved value becomes a tag at start); [runtime] names keys a command may declare later
-// via `homer-tag`, and must be disjoint from [fromInputs]. See ADR-0060.
+// A run's subject tags. [fromInputs]: declared inputs by `paramName`, each resolved into a tag at start.
+// [runtime]: keys a command may declare later via `homer-tag`; disjoint from [fromInputs]. See ADR-0060.
 @Serializable
 data class Tags(
     val fromInputs: List<String> = emptyList(),
@@ -272,9 +271,10 @@ data class AgentCommandParam(
     val transformer: ResultTransformer = ResultTransformer.Pass,
 )
 
-// A non-null `whenClause` gates a command: each expression is `bash -c` against the command's env.
-// Exit 0 = true, 1 = false, >=2 = eval error (fails the agent). ALL = AND, ANY = OR; 5 s per
-// expression. See ADR-0009.
+/**
+ * A non-null `whenClause` gates a command: each expression runs as `bash -c` against the command's env,
+ * 5 s each. Exit 0 = true, 1 = false, >=2 = eval error that fails the agent; ALL = AND, ANY = OR. See ADR-0009.
+ */
 @Serializable(with = WhenSerializer::class)
 data class When(
     val operator: Operator,
@@ -334,8 +334,8 @@ data class Workspace(
     val purgeRecordAfter: String? = null,
 ) {
     init {
-        // Any workspace.path containing '..' could normalize outside — or collapse back onto — the
-        // workspace root. Root §12. Folds in the retain-specific check from ADR-0053.
+        // A workspace.path containing '..' could normalize outside, or collapse back onto, the workspace
+        // root (ADR-0053, CWE-22).
         require(!path.contains("..")) {
             "workspace.path must not contain '..': $path"
         }

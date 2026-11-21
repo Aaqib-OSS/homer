@@ -76,9 +76,7 @@ private fun Route.processEventsStreamRoute(
 ) {
     get("/processes") {
         val principal = call.principal<UserIdPrincipal>()?.name
-        // Per-connection memo (processId -> owner, agentName) so repeated events
-        // for the same process don't each re-query ProcessManager.
-        val visibilityMemo = mutableMapOf<Int, Pair<String?, String>>()
+        val visibilityMemo = visibilityMemo()
         call.withSseSlot(sseLimiter) {
             runSseSession(this) {
                 broadcaster
@@ -98,6 +96,18 @@ private fun Route.processEventsStreamRoute(
     }
 }
 
+/** Distinct processes one `/stream/processes` connection remembers the owner and agent of. */
+internal const val MAX_VISIBILITY_MEMO_ENTRIES = 1_024
+
+/**
+ * A connection's process id → (owner, agent name) memo, so repeated events skip the lookup. Past
+ * [MAX_VISIBILITY_MEMO_ENTRIES] the least recently read entry is evicted and looked up again on its next event.
+ */
+internal fun visibilityMemo(): MutableMap<Int, Pair<String?, String>> =
+    object : LinkedHashMap<Int, Pair<String?, String>>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: Map.Entry<Int, Pair<String?, String>>): Boolean = size > MAX_VISIBILITY_MEMO_ENTRIES
+    }
+
 /** `GET /stream/agents`: the `agent.reload` diff, narrowed to the agents the caller holds a grant on. */
 private fun Route.agentEventsStreamRoute(
     sseLimiter: SseConnectionLimiter,
@@ -113,14 +123,8 @@ private fun Route.agentEventsStreamRoute(
                     .filter { it is ProcessEvent.AgentsReloaded }
                     .collect { event ->
                         val reloaded = event as ProcessEvent.AgentsReloaded
-                        // Mirror GET /api/v1/agents: a principal only learns about
-                        // agent names it holds a grant on (admins see all via anyGrant).
-                        // The frame itself is ALWAYS sent, even with all lists empty:
-                        // consumers use it as the "reload completed" signal (a no-op
-                        // reload has a genuinely empty diff — file edits reload
-                        // inline, so a follow-up POST /reload often changes nothing),
-                        // and suppressing filtered-empty frames would let a no-grant
-                        // principal infer that some hidden agent changed.
+                        // Mirror GET /api/v1/agents: only granted names. The frame is always sent, even empty: it
+                        // signals "reload completed", and dropping empty frames would reveal a hidden change.
                         val added = reloaded.added.filter { authorizer.anyGrant(principal, it) }
                         val updated = reloaded.updated.filter { authorizer.anyGrant(principal, it) }
                         val removed = reloaded.removed.filter { authorizer.anyGrant(principal, it) }
@@ -396,9 +400,8 @@ private suspend fun runSseSession(
     val session = SseSession(channel)
     try {
         coroutineScope {
-            // Flush an immediate ping: Netty defers the response headers until the
-            // first body byte, so without it an idle stream (no events yet) never
-            // delivers headers and the client cannot tell it is subscribed.
+            // Flush a ping first: Netty defers response headers to the first body byte, so an idle
+            // stream would never tell the client it is subscribed.
             session.ping()
             val heartbeat =
                 launch {

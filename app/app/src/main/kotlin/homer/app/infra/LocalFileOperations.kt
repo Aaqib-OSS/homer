@@ -41,9 +41,7 @@ class LocalFileOperations internal constructor(
     private val logger = LoggerFactory.getLogger(LocalFileOperations::class.java)
 
     override fun fileSize(path: Path): Long =
-        // NOFOLLOW: a stat over an agent-writable path must report the link's own
-        // size, never the target's — else it is a size/existence oracle for host
-        // files a swapped symlink points at. Security follow-up; root §12.
+        // NOFOLLOW: report a link's own size, never its target's. See ADR-0047.
         Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS).size()
 
     override fun readText(path: Path): String = path.readText()
@@ -96,11 +94,7 @@ class LocalFileOperations internal constructor(
         limit: Int,
     ): List<Path> =
         Files.walk(dir).use { stream ->
-            // NOFOLLOW_LINKS: a symlink is not a regular file, so a symlink an agent
-            // drops in its artifacts dir is excluded rather than listed with its
-            // target's size/mtime. Files.walk already does not descend dir symlinks.
-            // limit short-circuits the lazy walk so an oversized tree is never
-            // fully materialized in memory (see ArtifactService's cap).
+            // NOFOLLOW_LINKS excludes an agent-planted symlink; limit stops the lazy walk early. See ADR-0047.
             stream
                 .filter { it.isRegularFile(LinkOption.NOFOLLOW_LINKS) }
                 .limit(limit.toLong())

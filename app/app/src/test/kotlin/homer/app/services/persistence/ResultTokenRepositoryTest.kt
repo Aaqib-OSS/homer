@@ -5,6 +5,7 @@ import homer.app.models.ResultEnvParam
 import homer.app.models.ResultTransformer
 import homer.app.models.SrcType
 import kotlinx.coroutines.test.runTest
+import org.jetbrains.exposed.v1.jdbc.insert
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -35,7 +36,7 @@ class ResultTokenRepositoryTest {
     private fun record(
         token: String,
         expiresAt: Long? = null,
-        transformer: ResultEnvParam? = null,
+        transformer: ResultEnvParam = ResultEnvParam(SrcType.STD_OUT, "OUT", ResultTransformer.JsonPath("$.x")),
     ) = ResultTokenRecord(
         token = token,
         watchedProcessId = 42,
@@ -66,6 +67,25 @@ class ResultTokenRepositoryTest {
     fun `get returns null for an unknown token`() =
         runTest {
             assertNull(repo.get("nope"))
+        }
+
+    @Test
+    fun `get returns null for a row without a transformer, so no token redeems a raw read`() =
+        runTest {
+            db.query {
+                ResultTokens.insert {
+                    it[token] = "raw"
+                    it[watchedProcessId] = 42
+                    it[path] = "cmd-0.out"
+                    it[resultTransformer] = null
+                    it[sizeBytes] = 1
+                    it[createdAt] = 1
+                    it[expiresAt] = null
+                    it[consumerAgent] = "parent-agent"
+                }
+            }
+
+            assertNull(repo.get("raw"))
         }
 
     @Test

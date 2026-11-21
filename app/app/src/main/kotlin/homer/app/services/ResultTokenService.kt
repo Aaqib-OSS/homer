@@ -27,12 +27,12 @@ internal class ResultTokenService(
 
     /**
      * Mints and returns a token for fetching [path] from process [watchedProcessId]'s artifacts, [transformer]-mapped at
-     * fetch time when set. Only a caller running [consumerAgent] may redeem it, until `config.resultTokenTtlSec` passes.
+     * fetch time. Only a caller running [consumerAgent] may redeem it, until `config.resultTokenTtlSec` passes.
      */
     suspend fun mint(
         watchedProcessId: Int,
         path: String,
-        transformer: ResultEnvParam?,
+        transformer: ResultEnvParam,
         sizeBytes: Long,
         consumerAgent: String,
     ): String {

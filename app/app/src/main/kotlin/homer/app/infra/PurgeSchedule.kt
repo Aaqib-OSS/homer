@@ -4,10 +4,8 @@ import homer.app.models.PurgeAfterParser
 import homer.app.models.Workspace
 
 /**
- * How long a terminal run's directory and record outlive its end, and which artifact
- * globs survive the directory sweep. The one derivation from `workspace.purgeAfter` /
- * `workspace.retain`, shared by a run's own end (`Process`) and by startup
- * reconciliation of runs a restart left `UNKNOWN`. See ADR-0048, ADR-0053.
+ * How long a terminal run's directory and record outlive its end, and which artifact globs
+ * survive the sweep; derived from `workspace.purgeAfter` / `retain`. See ADR-0048, ADR-0053.
  */
 data class PurgeSchedule(
     val purgeAfterSeconds: Long,

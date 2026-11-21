@@ -96,12 +96,9 @@ class Workspace(
     }
 
     /**
-     * Deletes [dir]'s tree bottom-up without following symlinks, stopping once [deadline]
-     * has passed. The tree is workload-sized and therefore attacker-sized, so the walk is
-     * time-bounded and a per-entry failure is skipped rather than aborting it; whatever is
-     * left stays on disk for `WorkspacePurgeService`'s `purgeAfter` sweep.
-     * CWE-400. `ensureActive()` is no use here: teardown runs under `NonCancellable`, so
-     * the deadline is the only bound. See ADR-0048 (2026-10-14 amendment).
+     * Deletes [dir]'s tree bottom-up without following symlinks, stopping once [deadline] has passed; a per-entry
+     * failure is skipped and the remainder is left for `WorkspacePurgeService`'s `purgeAfter` sweep. Teardown runs
+     * under `NonCancellable`, so the deadline is the only bound (CWE-400, ADR-0048).
      */
     private fun deleteWithin(
         dir: Path,
@@ -187,7 +184,7 @@ private class BoundedDeleteVisitor(
             deleted++
         } catch (_: IOException) {
             // Deliberately swallowed: the entry stays on disk for the purge sweep, and the
-            // message would carry a path from the attacker's tree into the log (§12 rule 7).
+            // message would carry a path from the attacker's tree into the log (ADR-0048).
             failed++
         }
     }

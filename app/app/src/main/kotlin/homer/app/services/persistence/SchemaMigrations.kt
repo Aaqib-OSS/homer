@@ -20,6 +20,7 @@ internal fun upgradeSchema(
     migrateToV32(st, current)
     migrateToV33(st, current)
     migrateToV34(st, current)
+    migrateToV35(st, current)
 }
 
 private fun columnNames(
@@ -344,5 +345,19 @@ private fun migrateToV34(
 ) {
     if (current in 1 until 34) {
         st.execute("CREATE INDEX IF NOT EXISTS result_tokens_expires_at ON result_tokens (expires_at)")
+    }
+}
+
+/** v34→v35 gives a PENDING dispatch or continuation that has no expiry the 7-day default, counted from its creation. */
+private fun migrateToV35(
+    st: Statement,
+    current: Int,
+) {
+    if (current in 1 until 35) {
+        for (table in listOf("dispatches", "continuations")) {
+            st.execute(
+                "UPDATE $table SET expires_at = created_at + 604800 WHERE status = 'PENDING' AND expires_at IS NULL",
+            )
+        }
     }
 }

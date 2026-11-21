@@ -3,12 +3,8 @@ package homer.app.infra
 import com.jayway.jsonpath.Configuration
 
 /**
- * Text form of a value a JsonPath selected — the one conversion every call site shares, so the
- * `resultEnvParam`, input and `!<agent>` `queryParams` transformers cannot diverge. The provider
- * hands back its own types: a Map for a JSON object and a List for a JSON array, whose `toString()`
- * is Java text (`{a=1}`), not JSON, so those are re-serialized compactly with the provider that
- * parsed them. Scalars keep their current text (a string raw, a number or boolean its JSON text);
- * a JSON null or an absent path yields null and the caller omits the value.
+ * Text form of a JsonPath-selected value, shared by every transformer. Objects and arrays are
+ * re-serialized as JSON, scalars keep their text, and a JSON null or absent path yields null.
  */
 internal fun jsonPathText(value: Any?): String? =
     when (value) {

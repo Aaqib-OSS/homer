@@ -4,11 +4,9 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * Charset/length gate for a Claude session id at every point it crosses a trust boundary: the
- * id is read from agent-controlled stdout (§12 rule 2), then stored in the executions JSON
- * column and the status API, then used to build an outbound URL. [homer.app.infra.scanLlmAccounting]
- * enforces it where the id enters storage; [homer.app.infra.LlmCostResolver] enforces it
- * again before use (defense in depth). See ADR-0061.
+ * Charset/length gate for a Claude session id wherever it crosses a trust boundary: the id is agent-controlled
+ * stdout (ADR-0047 rule 2), stored in the executions column and used in an outbound URL. Enforced where it enters
+ * storage ([homer.app.infra.scanLlmAccounting]) and again before use ([homer.app.infra.LlmCostResolver]). ADR-0061.
  */
 val SESSION_ID_PATTERN = Regex("^[A-Za-z0-9_-]{1,128}$")
 

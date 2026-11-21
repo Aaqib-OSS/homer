@@ -11,12 +11,9 @@ import kotlin.io.path.setPosixFilePermissions
 import kotlin.io.path.writeText
 
 /**
- * Materializes the question-asking tooling into a process workspace before
- * commands run: the `homer-ask` shell helper (prepended to `PATH` when the
- * workspace env defines one) and a `.homer/mcp.json` for manual Claude wiring
- * via `HMR_MCP_CONFIG` (only when the MCP server is enabled). Lives under
- * `{projectRoot}/.homer/`, deleted with the run when `cleanAfterFinish` (it is
- * run tooling, not output). See ADR-0019, AGENT.md "Asking the operator questions".
+ * Materializes the `homer-*` shell helpers (with a `PATH` entry only when the env defines PATH) and, when the MCP
+ * server is enabled, `.homer/mcp.json` into a process workspace; deleted with the run when `cleanAfterFinish`.
+ * See ADR-0019.
  */
 class QuestionsWorkspaceSetup(
     private val mcpEnabled: Boolean,
@@ -45,10 +42,8 @@ class QuestionsWorkspaceSetup(
         writeAtomically(inboxHelper, inboxHelperScript, PosixFilePermissions.fromString("rwxr-xr-x"))
 
         val env = mutableMapOf<String, String>()
-        // Prepend the helper dir only when the composed env defines PATH.
-        // Inventing a PATH when the operator excluded it would override a
-        // container image's built-in PATH (k8s pod env wins over ENV PATH);
-        // without PATH the helper is still reachable at its absolute path.
+        // Inventing a PATH would override a container image's own (k8s pod env wins over ENV PATH);
+        // without one the helpers stay reachable by absolute path.
         workspace.config.env["PATH"]?.let { env["PATH"] = "$binDir:$it" }
 
         if (mcpEnabled) {

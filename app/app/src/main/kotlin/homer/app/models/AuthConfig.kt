@@ -26,10 +26,8 @@ data class TokenConfig(
     override val endpoints: List<String>? = null,
 ) : Principaled {
     init {
-        // A blank token would match the empty credential the bearer provider
-        // extracts from `Authorization: Bearer `, authenticating anyone.
-        // resolveAuth rebuilds via copy(), so this also rejects @SYSENV
-        // values that resolve to blank.
+        // A blank token would match the empty credential of `Authorization: Bearer `. resolveAuth
+        // rebuilds via copy(), so this also rejects @SYSENV values that resolve to blank.
         require(token.isNotBlank()) { "TokenConfig.token must not be blank." }
         requireValidPrincipalRole(role, "TokenConfig")
     }
@@ -101,8 +99,8 @@ object TokenConfigSerializer : YamlContentPolymorphicSerializer<TokenConfig>(Tok
         return super.deserialize(decoder)
     }
 
-    // The base class would look up TokenConfig's class serializer — this object — and recurse (#238).
-    // Always the object form: it carries every field, so a field added later cannot be dropped on encode.
+    // The base class would resolve to this serializer and recurse. The object form carries every field,
+    // so a field added later cannot be dropped on encode.
     override fun serialize(
         encoder: Encoder,
         value: TokenConfig,
@@ -165,7 +163,7 @@ interface Principaled {
     val role: String?
     val grants: List<Grant>
 
-    /** Deprecated path allowlist; non-null means the config must be migrated (rejected at startup). */
+    /** Path allowlist replaced by `role` / `grants`; non-null is rejected at startup (ADR-0037). */
     val endpoints: List<String>?
 }
 
@@ -191,12 +189,8 @@ sealed class AuthConfig {
         val tokens: Map<String, TokenConfig>,
     ) : AuthConfig() {
         init {
-            // A bearer token's map key becomes its UserIdPrincipal name verbatim.
-            // "session:" is reserved for cookie principals (the CSRF guard keys on
-            // it), "hmac:" for HMAC key principals in a combined config, and
-            // "system:" for internal synthetic owners (e.g. "system:cron"); a
-            // bearer key with any of these prefixes would collide with that
-            // principal's namespace. Keep principal namespaces disjoint. See ADR-0016.
+            // A token's map key is its UserIdPrincipal name verbatim: `session:` (cookie), `hmac:` (HMAC keys)
+            // and `system:` (internal owners) are reserved principal namespaces. See ADR-0038, ADR-0016.
             tokens.keys.forEach { key ->
                 require(!key.startsWith("session:")) {
                     "AuthConfig.Bearer token key '$key' must not start with the reserved 'session:' prefix " +
@@ -221,12 +215,9 @@ sealed class AuthConfig {
     ) : AuthConfig()
 
     /**
-     * Username + password authentication backed by an HMAC-signed `HttpOnly`
-     * session cookie. `sessionSecret` (and the optional `sessionSecretPrevious`
-     * rotation key) sign the cookie payload and flow through `SysEnvResolver`
-     * like `HmacKeyConfig.secret`; `sessionTtlMin` is the cookie's `Max-Age` and
-     * the payload's `exp` claim. Per-user `role`/`grants` follow the same
-     * authorization model as `Bearer` tokens (ADR-0037). See ADR-0011.
+     * Username + password authentication via an HMAC-signed `HttpOnly` session cookie. `sessionSecret` and the
+     * optional `sessionSecretPrevious` rotation key sign it and resolve through `SysEnvResolver`; `sessionTtlMin`
+     * is the cookie's `Max-Age` and the payload's `exp`. Per-user `role`/`grants` as Bearer (ADR-0037). See ADR-0011.
      */
     @Serializable
     @SerialName("password")
@@ -333,9 +324,8 @@ data class HmacKeyConfig(
     val replayToleranceSec: Long = 300,
 ) : Principaled {
     init {
-        // A blank secret is a public HMAC key — any client could compute
-        // valid signatures. resolveAuth rebuilds via copy(), so this also
-        // rejects @SYSENV values that resolve to blank.
+        // A blank secret is a public HMAC key. resolveAuth rebuilds via copy(), so this also rejects
+        // @SYSENV values that resolve to blank.
         require(secret.isNotBlank()) { "HmacKeyConfig.secret must not be blank" }
         require(signatureHeader.isNotBlank()) {
             "HmacKeyConfig.signatureHeader must not be blank"
@@ -356,9 +346,8 @@ data class HmacKeyConfig(
         require(timestampHeader != null || "{{timestamp}}" !in used) {
             "HmacKeyConfig.payloadTemplate uses {{timestamp}} but timestampHeader is null"
         }
-        // The mirror rule: a freshness-checked timestamp must also be
-        // MAC-bound, or a captured signature can be replayed forever with
-        // a fresh (unsigned) header value.
+        // The mirror rule: a freshness-checked timestamp must also be MAC-bound, or a captured
+        // signature replays forever with a fresh unsigned header.
         require(timestampHeader == null || "{{timestamp}}" in used) {
             "HmacKeyConfig.timestampHeader is set but payloadTemplate does not include {{timestamp}}; " +
                 "an unsigned timestamp provides no replay protection (e.g. use \"{{timestamp}}.{{body}}\")"
@@ -388,12 +377,9 @@ enum class HmacAlgorithm {
 }
 
 /**
- * `SameSite` attribute applied to the session cookie issued by
- * [AuthConfig.Password]. `LAX` is the default. `NONE` is required when the
- * console is served from a different origin than the API (cross-origin cookie
- * auth) and is only valid alongside `cookieSecure = true`. Moving off `LAX`
- * does not reopen CSRF — the defense is the `X-Homer-CSRF` custom-header guard
- * plus pinned credentialed CORS (ADR-0016), not SameSite. See ADR-0028.
+ * `SameSite` attribute of the session cookie issued by [AuthConfig.Password]; `LAX` is the default. `NONE` is
+ * for a console on a different origin than the API and requires `cookieSecure = true`. CSRF defense is the
+ * `X-Homer-CSRF` header guard plus pinned credentialed CORS (ADR-0016), not SameSite. See ADR-0028.
  */
 @Serializable
 enum class SameSiteMode {

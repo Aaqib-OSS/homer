@@ -10,12 +10,8 @@ import javax.crypto.spec.SecretKeySpec
 import kotlin.math.abs
 
 /**
- * Verifies inbound HMAC body signatures against a map of configured keys. A pure function of
- * (config, headers, body, clock) with no Ktor types; the Ktor auth provider reads the body once via
- * `DoubleReceive` and hands it here as a byte array. Iterates keys in declaration order: the first
- * key whose `signatureHeader` is present and whose MAC matches wins, and a missing or stale timestamp
- * header skips MAC computation (null), letting the loop fall through. With a [replayCache] and a
- * `timestampHeader`, a signature already seen within its freshness window is a replay (ADR-0010); the cache is the one mutable state.
+ * Verifies inbound HMAC body signatures against the configured keys; the first key whose MAC matches
+ * wins. With a [replayCache] and a `timestampHeader`, a signature already seen in its window is a replay (ADR-0010).
  */
 class HmacVerifier(
     private val clock: () -> Long = System::currentTimeMillis,
@@ -35,8 +31,7 @@ class HmacVerifier(
         keys: Map<String, HmacKeyConfig>,
         method: String,
         path: String,
-        // Raw query string (no leading '?'), bound only when a template uses {{query}}.
-        // Defaults to "" so callers/tests without a query need not pass it.
+        // Raw query string without the leading '?', bound only when a template uses {{query}}.
         query: String = "",
         headers: (String) -> String?,
         rawBody: ByteArray,
@@ -63,16 +58,10 @@ class HmacVerifier(
         cfg: HmacKeyConfig,
         macBytes: ByteArray,
     ): Result {
-        // Replay guard: only meaningful with a bounded freshness window
-        // (timestampHeader). The signature is valid for up to ±tolerance
-        // around its timestamp, so remember it for 2×tolerance.
+        // Only meaningful with a freshness window; a signature is valid within ±tolerance, so keep it 2×tolerance.
         if (replayCache != null && cfg.timestampHeader != null) {
             val ttlMillis = cfg.replayToleranceSec * 2 * 1000
-            // Key on the canonical decoded MAC bytes, not the raw signature
-            // string: hex case and base64 representation vary while decoding
-            // to the same bytes, so a raw-string key lets a re-encoded copy
-            // evade dedup. The expected bytes equal the provided ones here
-            // (equality just passed) and are deterministic.
+            // Keyed on the decoded MAC bytes: a re-encoded copy of the signature must not evade dedup.
             val canonicalSig = HexFormat.of().formatHex(macBytes)
             if (!replayCache.firstUse("$keyId:$canonicalSig", ttlMillis)) {
                 return Result.Rejected("hmac: signature replayed within the freshness window")

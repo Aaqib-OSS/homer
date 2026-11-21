@@ -36,14 +36,9 @@ import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.math.pow
 
 /**
- * CRAP (Change Risk Anti-Patterns) score per Kotlin function body: `cc² × (1 − cov)³ + cc`, with
- * cyclomatic complexity `cc` counted from the source and coverage `cov` from Kover's per-line XML
- * report. The console computes the same metric the same way (`console/scripts/crap.mjs`); the
- * definition and the warning-then-required rollout are ADR-0081.
- *
- * Everything but [Parser] works on already-read text so it stays unit testable; the Gradle task
- * (`CrapReportTask`) owns the file reads and writes. This object loads compiler classes, so it runs
- * only inside that task's isolated worker classloader (see `app/buildSrc/build.gradle.kts`).
+ * CRAP score per Kotlin function body: `cc² × (1 − cov)³ + cc`, with `cc` counted from the source and
+ * `cov` from Kover's per-line XML report. It references compiler (PSI) types, so call it only inside
+ * `CrapReportTask`'s worker classloader (ADR-0081); everything but [Parser] takes parsed or read input.
  */
 object CrapScore {
     const val DEFAULT_THRESHOLD = 30.0

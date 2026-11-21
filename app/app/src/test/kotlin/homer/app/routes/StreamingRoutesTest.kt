@@ -54,6 +54,19 @@ class StreamingRoutesTest {
     }
 
     @Test
+    fun `the visibility memo never holds more than its cap, evicting the least recently read process`() {
+        val memo = visibilityMemo()
+        repeat(MAX_VISIBILITY_MEMO_ENTRIES) { memo[it] = "owner" to "agent" }
+        memo[0]
+
+        memo[MAX_VISIBILITY_MEMO_ENTRIES] = "owner" to "agent"
+
+        assertEquals(MAX_VISIBILITY_MEMO_ENTRIES, memo.size)
+        assertTrue(0 in memo)
+        assertFalse(1 in memo)
+    }
+
+    @Test
     fun `processEventFrame renders each processes-stream event`() {
         assertEquals(
             SseFrame("process.status", """{"processId":1,"status":"WORKING","agentName":"a"}"""),

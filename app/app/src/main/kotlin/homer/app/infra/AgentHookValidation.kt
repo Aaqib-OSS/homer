@@ -3,12 +3,8 @@ package homer.app.infra
 import homer.app.models.Agent
 
 /**
- * The cross-agent half of `hooks` load-time validation: a hook target must be a loaded
- * agent, and the hook graph must be acyclic. Both need the whole scan, so they cannot run
- * per definition, and rejecting an agent can strand the hooks that named it, so the pass
- * repeats until it stops finding anything. A cycle is rejected here rather than at the start
- * preflight's invocation-chain check because a hook is declared, not called: the author is
- * the only one who can fix it, and the run that would discover it is already several deep.
+ * Cross-agent `hooks` validation: a target must be a loaded agent and the hook graph acyclic.
+ * Repeats until stable, since rejecting an agent can strand hooks that named it.
  */
 internal object AgentHookValidation {
     /**

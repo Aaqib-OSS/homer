@@ -3,6 +3,7 @@ status: accepted
 date: 2026-11-10
 deciders: Lukáš Vlk
 consulted: ADR-0020, ADR-0047, ADR-0058, ADR-0066, ADR-0083, ADR-0092
+amended: 2026-11-21
 ---
 
 # ADR-0102: The shutdown drain re-reads the run jobs it joins, admits the runs they start, and stops the consumers last
@@ -185,3 +186,10 @@ Each constraint has a test that asserts the denial path (ADR-0047 rule 8):
   reads.
 - [ADR-0083](0083-backend-layers-through-ports-and-packages.md) — the Services layer the flag is
   injected into, and why the drain logic stays in `homer.app`.
+
+## Amendment (2026-11-21): sessions close only after the join
+
+`activeSessions.closeAll()` runs strictly after the join: closing a remote session deletes the pod or
+connection under a run the drain is still waiting for, failing it. A run that finishes inside the window
+releases its own session in the executor's `finally`, so only a session still registered after the join is
+an orphan.

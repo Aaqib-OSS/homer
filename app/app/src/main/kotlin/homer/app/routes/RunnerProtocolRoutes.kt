@@ -52,12 +52,9 @@ import kotlin.time.Duration.Companion.seconds
 private val logger = LoggerFactory.getLogger("homer.app.routes.RunnerProtocolRoutes")
 
 /**
- * The runner-facing surface of pull-mode runners (ADR-0066). Authenticated by a
- * domain token, a principal class of its own: mounted OUTSIDE `authenticate(...)`
- * next to `callbackRoutes`, so operator credentials can never satisfy these
- * routes and a domain token can never satisfy operator routes. Instance and
- * session ids are resolved inside the caller's domain only; anything else is
- * `404`, hiding existence across domains.
+ * The runner-facing surface of pull-mode runners (ADR-0066), authenticated by a domain token outside
+ * `authenticate(...)`, so operator credentials and domain tokens never satisfy each other's routes. Ids resolve
+ * inside the caller's domain only; anything else is the same `404` as an unknown id (ADR-0047 rule 3).
  */
 internal fun Route.runnerProtocolRoutes(
     domains: List<ExternalRunnerDomain>,
@@ -73,7 +70,7 @@ internal fun Route.runnerProtocolRoutes(
     }
 }
 
-/** `POST /register`, `DELETE /instances/{id}` and `POST /instances/{id}/claim`: an instance's lifecycle and its claim poll. */
+/** `POST /register`, `DELETE /instances/{id}` and `POST /instances/{id}/claim`: an instance's lifecycle and claims. */
 private fun Route.runnerInstanceRoutes(
     domains: List<ExternalRunnerDomain>,
     queue: RunnerClaimQueue,
@@ -103,9 +100,8 @@ private fun Route.runnerInstanceRoutes(
         if (instance.draining) return@post call.respond(HttpStatusCode.NoContent)
         if (!instance.tryAcquirePoll()) throw TooManyRunnerPollsException(instance.name, instance.declaredConcurrency)
         try {
-            // The CAS claim inside take() has no suspension point after it, so a request it
-            // took is always recorded here — even when the timeout fires at the same instant
-            // and withTimeoutOrNull drops the block's return value.
+            // No suspension point follows the CAS claim in take(), so a request it took is always recorded
+            // here, even when the timeout drops the block's return value (ADR-0047 rule 5).
             val taken = AtomicReference<ClaimRequest?>()
             withTimeoutOrNull(pollTimeout) { queue.take(instance).also { taken.set(it) } }
             val request = taken.get() ?: return@post call.respond(HttpStatusCode.NoContent)
@@ -153,7 +149,7 @@ private fun Route.runnerUploadTarRoute(domains: List<ExternalRunnerDomain>) {
         domain.touch(session.instance)
         val opId = call.pathParameter("opId")
         val source = session.uploadSource(opId) ?: return@get call.respond(HttpStatusCode.NotFound)
-        // A single file is packed under the remote name so the instance's extract matches it (TarStreams single-file check).
+        // A single file is packed under the remote name so the instance's extract matches it (TarStreams check).
         val entryName = if (source.local.isRegularFile()) source.remoteRelative.substringAfterLast('/') else null
         // Taken before respond so a duplicate can still be answered 429, but released by the
         // producer: whether respond waits for the stream to end is up to the engine.
@@ -173,10 +169,8 @@ private fun Route.runnerUploadTarRoute(domains: List<ExternalRunnerDomain>) {
                         }
                     }
                 } catch (e: RunnerTransferTimeoutException) {
-                    // The 200 is already sent, so nothing can answer this; the stream just ends
-                    // short. Its gzip trailer is missing, so the instance's extract refuses it, and
-                    // the run's await of this upload, started earlier under the same deadline, has
-                    // already failed.
+                    // The 200 is already sent, so the stream just ends short: its missing gzip trailer makes the
+                    // instance's extract refuse it, and the run's earlier await of this upload has failed.
                     logger.warn("Runner '{}': upload tar to instance '{}' cut off: {}", domain.alias, session.instance.name, e.message)
                 } finally {
                     session.endTransfer(opId, slot)
@@ -325,10 +319,8 @@ internal fun ApplicationRequest.runnerBearerToken(): String? =
         ?.takeIf { it.isNotEmpty() }
 
 /**
- * Constant-time match of [token] against every configured domain token. The only
- * such matcher: the request-body limit is resolved before this route authenticates
- * and has to reach the same verdict, and a second copy of a credential comparison
- * is new surface of its own (§12).
+ * Constant-time match of [token] against every configured domain token. The only such matcher: the rate-limit key
+ * and the request-body limit resolve before authentication and must reach the same verdict (ADR-0014).
  */
 internal fun <T> matchRunnerDomain(
     domains: List<T>,

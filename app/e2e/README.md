@@ -22,7 +22,7 @@ always-on "does the production Dockerfile still build" gate.
   triggering (`SseCollector`).
 - **The auth boundary is swept end to end.** `AuthBoundaryTest` drives every
   operator resource family (process, question, dispatch, continuation,
-  artifacts, agent run) through the live server twice: with no credential at
+  artifacts, agent run, agent files) through the live server twice: with no credential at
   all, which must be `401`, and with a bearer token granted on another agent.
   On routes scoped to one resource that token must get `404` — indistinguishable
   from not-found (ADR-0047 rule 3), never `403`. The family-level list endpoints

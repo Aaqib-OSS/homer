@@ -3,12 +3,9 @@ package homer.app.infra
 import java.io.OutputStream
 
 /**
- * Splits the bytes written to it into `\n`-terminated lines and forwards each line
- * to [target] only when [filter] keeps it. Kept bytes are forwarded verbatim; the
- * filter sees a UTF-8 decoded copy. An unterminated line longer than [maxLineBytes]
- * is committed as-is — the buffered prefix is written and the rest streams through
- * unfiltered until its newline — so the buffer stays bounded. A trailing
- * unterminated line is filtered and flushed on [close]. See ADR-0063.
+ * Forwards each `\n`-terminated line to [target] verbatim when [filter] keeps it; a line over
+ * [maxLineBytes] bypasses the filter, and a trailing unterminated line is filtered on [close].
+ * See ADR-0063.
  */
 class LineFilteringOutputStream(
     private val target: OutputStream,

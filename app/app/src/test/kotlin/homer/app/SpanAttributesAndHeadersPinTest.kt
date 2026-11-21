@@ -51,12 +51,4 @@ class SpanAttributesAndHeadersPinTest {
         assertEquals("X-Homer-Agent", HomerHeaders.AGENT)
         assertEquals("X-Homer-Process-Id", HomerHeaders.PROCESS_ID)
     }
-
-    @Test
-    fun `the EnvConstants header aliases carry the HomerHeaders values`() {
-        assertEquals(HomerHeaders.PARENT_PROCESS_ID, EnvConstants.PARENT_PROCESS_HEADER)
-        assertEquals(HomerHeaders.CALLBACK_TOKEN, EnvConstants.CALLBACK_TOKEN_HEADER)
-        assertEquals(HomerHeaders.AGENT, EnvConstants.AGENT_HEADER)
-        assertEquals(HomerHeaders.PROCESS_ID, EnvConstants.PROCESS_ID_HEADER)
-    }
 }

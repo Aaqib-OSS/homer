@@ -278,8 +278,10 @@ the CLI session id instead. It applies to every LLM harness command (`!<claude>`
 marked (`costSource: cli`, `llmAccounting.fallbackReason`) — for a harness whose CLI
 reports no cost of its own (Codex), a failed or unconfigured lookup instead records
 `costSource: none` and charges nothing, since there is no CLI figure to fall back to.
-Each lookup is a single `GET`, bounded by `timeoutMs` and a 1 MiB response cap, and
-never blocks or fails the run. A finished attempt does not wait for it either: the step
+Each lookup is a single `GET`, bounded by `timeoutMs` and a 1 MiB response cap; any
+exception it raises degrades to the marked fallback and never blocks or fails the run. A
+JVM `Error` is not caught by the lookup itself, but the settlement still charges the CLI
+figure and the run continues ([ADR-0061](../docs/adr/0061-price-claude-runs-from-session-spend-endpoint.md)). A finished attempt does not wait for it either: the step
 is recorded at once with the CLI figure (`costSource: none` and 0.0 for Codex, which has
 none) and `fallbackReason: session figure pending`, and
 the lookup settles in the background, replacing that record and adding to the run's
@@ -525,7 +527,7 @@ server:
 | `mcp` | `McpServerConfig` | No | `{enabled=false, maxWaitSec=300, maxInlineArtifactBytes=65536}` | Streamable HTTP MCP endpoint at `/mcp` exposing opted-in agents as MCP tools — see [MCP endpoint](#mcp-endpoint). |
 | `questions` | `QuestionsConfig` | No | `{maxWaitSec=86400, maxOpenPerProcess=10, maxTextLength=10000, maxOptions=20, maxConcurrentWaitsPerProcess=32}` | Human-in-the-loop questions asked by running commands — see [Operator questions](#operator-questions). |
 | `messages` | `RunMessagesConfig` | No | `{maxTextLength=10000, maxPerRun=100}` | Per-run inbox limits for operator messages sent to a running run — see [Run messages](#run-messages). |
-| `dispatch` | `DispatchConfig` | No | `{maxPending=100, defaultTtlSec=null, sweepIntervalSec=60, settledRetentionSec=604800, resultTokenTtlSec=3600, maxJoinSubs=32, maxGroupSize=8}` | Ask-and-dispatch bounds and TTLs — see [Ask-and-dispatch](#ask-and-dispatch). |
+| `dispatch` | `DispatchConfig` | No | `{maxPending=100, defaultTtlSec=604800, sweepIntervalSec=60, settledRetentionSec=604800, resultTokenTtlSec=3600, maxJoinSubs=32, maxGroupSize=8}` | Ask-and-dispatch bounds and TTLs — see [Ask-and-dispatch](#ask-and-dispatch). |
 | `hooks` | `HookConfig` | No | `{maxPending=200, maxChainDepth=8, settledRetentionSec=604800}` | Bounds on agent-declared status hooks — see [Status hooks](#status-hooks). |
 | `langGraph` | `LangGraphConfig` | No | `{stateDir=null}` | LangGraph runtime settings (durable checkpoint root) — see [LangGraph](#langgraph). |
 | `agentGrants` | `Map<String, List<Grant>>` | No | `{}` | Per-agent delegation: which target agents an agent's own nested dispatches may reach, keyed by the dispatching agent's name — see [Grants and roles](#grants-and-roles). |
@@ -796,7 +798,7 @@ cancel, TTL and the settled-row prune. See
 server:
   dispatch:
     maxPending: 100           # global cap on PENDING dispatches, and separately on PENDING continuations (default 100)
-    defaultTtlSec: 86400      # default per-dispatch TTL in seconds (default null = no TTL)
+    defaultTtlSec: 86400      # default TTL in seconds for dispatches and continuations (default 604800 = 7 days)
     sweepIntervalSec: 60      # how often the TTL sweep runs, in seconds (default 60)
     settledRetentionSec: 604800  # delete settled dispatches/continuations this long after creation (default 7 days, floor 3600)
     resultTokenTtlSec: 3600   # TTL for read-by-reference result tokens (default 3600, floor 60)
@@ -807,7 +809,7 @@ server:
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `maxPending` | `Int` | No | `100` | Global cap on the number of simultaneously PENDING dispatches and continuations (the pending cap is counted separately for each). A new dispatch or continuation that would exceed its cap is rejected with `429`. |
-| `defaultTtlSec` | `Int?` | No | `null` | Default TTL (seconds) applied to dispatches and continuations (including joins) that do not supply their own `ttlSec`. `null` = no default TTL (they stay PENDING until answered, fired, or cancelled). |
+| `defaultTtlSec` | `Int` | No | `604800` | Default TTL (seconds) applied to dispatches and continuations (including joins) that do not supply their own `ttlSec`; a pending row expires after it. Must be `> 0`; raise it, or pass `ttlSec` per call, for a wait longer than 7 days. It is applied when a row is created, so a change does not reach rows already pending. |
 | `sweepIntervalSec` | `Int` | No | `60` | How often (seconds) the background sweeps run to cancel PENDING dispatches (and expire PENDING continuations) whose `expires_at` has passed. |
 | `settledRetentionSec` | `Long` | No | `604800` | How long (seconds) a settled dispatch or continuation — any status but `PENDING` and `DISPATCHING` — is kept, measured from its `createdAt`; the dispatch and continuation sweeps then delete it, with its dispatch-bound question or join watch rows. A row that settled late is therefore kept for less than this after settling. Minimum `3600`. |
 | `resultTokenTtlSec` | `Int` | No | `3600` | TTL (seconds) for read-by-reference result tokens minted when a watched sub-process's result exceeds the inline cap. Floored at `60` so a token outlives the resumed parent's first segment. See [ADR-0025](../docs/adr/0025-capability-token-result-read.md). |
@@ -1020,7 +1022,7 @@ delegate one agent's dispatches to reach another.
 
 **Denials hide agent existence.** A caller holding no grant at all on an
 agent gets the same `404 Agent not found` as for an agent that does not
-exist — on run, debug, and LangGraph inspect alike — so a probe cannot
+exist — on run, debug, the agent file routes and LangGraph inspect alike — so a probe cannot
 enumerate agents. A caller who holds some grant on the agent (and so already
 sees it in `GET /api/v1/agents`) gets `403` for an action it lacks. See
 [ADR-0047](../docs/adr/0047-security-by-design-and-threat-model.md) rule 3.
@@ -4160,8 +4162,14 @@ first, then the OS environment, so either form works:
 
 - **`HOMER_LOG_LEVEL`** — root log level (default `INFO`).
   `docker-compose.dev.yml` sets it as a system property via
-  `JAVA_OPTS=-DHOMER_LOG_LEVEL=DEBUG`. Per-logger levels are set in
-  `logback.xml`; adjust them there rather than at runtime.
+  `JAVA_OPTS=-DHOMER_LOG_LEVEL=DEBUG`. Bundled per-logger levels are set in
+  `logback.xml`.
+- **`HOMER_LOG_LEVELS`** — per-logger overrides, read from the OS environment only:
+  comma-separated `logger=LEVEL` pairs (`trace`, `debug`, `info`, `warn`, `error`, `off`;
+  case-insensitive), e.g. `homer.app.executors.ProcessExecutor=trace,io.ktor=warn`.
+  Applied to logback once at startup, over `logback.xml`. Malformed pairs and unknown
+  levels are skipped. Setting either pinned MINA SSHD logger to `debug` or `trace` logs the ssh
+  command and its env, so leave those two alone.
 - **`HOMER_LOG_DIR`** — directory for `app.log` and `api.log`. Defaults to the working
   directory; the Dockerfile sets it as an env var to `/app/workspace`.
 

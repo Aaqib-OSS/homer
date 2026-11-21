@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-16
 deciders: Lukáš Vlk
-amended: 2026-08-11, 2026-11-15, 2026-11-20
+amended: 2026-08-11, 2026-11-15, 2026-11-20, 2026-11-21
 ---
 # ADR-0025: Capability-token read-by-reference for large continuation results
 
@@ -166,3 +166,19 @@ variable per entry, and `homer_fanout` reads the payload, not the environment.
 Resuming the parent `FAILED`, or minting a raw-only reference, was rejected: the
 parent's own status check already decides what a missing result means, and a
 raw reference would hand a graph megabytes it asked to have transformed.
+
+## Amendment (2026-11-21): a fetch always transforms, through a bounded read
+
+Decision #5's "over that the fetch is raw-only", and the matching Consequence, no
+longer hold. The fire has minted a reference only for a result it would transform
+(the 2026-11-20 amendment marks a larger one instead), so a token always carries
+its transformer: `resultTransformer` is non-null on the record, a stored row
+without one resolves to no token, and the fetch has no raw-stream branch.
+
+The fetch reads the result through `readTextBounded` at the 4 MiB transform cap,
+the read the continuation fire uses for an inline result, instead of reading the
+whole file by name. A result over the cap at its size check still answers `413`;
+one that is linked or non-regular when read, or has grown past the cap since the
+size check, answers `404`, like a missing file. `server.maxArtifactBytes` still
+applies first. The races left between the checks and the read are `SECURITY.md`
+AR-12.
