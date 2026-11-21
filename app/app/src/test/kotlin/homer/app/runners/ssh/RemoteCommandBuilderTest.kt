@@ -207,6 +207,19 @@ class RemoteCommandBuilderTest {
     }
 
     @Test
+    fun `a command that does not trap SIGTERM reports 143 through the reaping wrapper under every shell`(
+        @TempDir tmp: Path,
+    ) {
+        assumeFalse(isWindows())
+        for (shell in wrapperShells()) {
+            val dir = Files.createTempDirectory(tmp, "run")
+            val process = start(wrapperAlone(reaping(dir, listOf("sh", "-c", "echo \$\$ > child.pid; exec sleep 30")), shell), dir)
+            signal("TERM", process.pid(), awaitPid(dir.resolve("child.pid")))
+            assertEquals(143, exitOf(process), "under $shell")
+        }
+    }
+
+    @Test
     fun `under setsid -w a command SIGKILLed from outside reports 137`(
         @TempDir dir: Path,
     ) {
@@ -238,11 +251,15 @@ class RemoteCommandBuilderTest {
         @TempDir dir: Path,
     ) {
         assumeTrue(setsidCanFormGroup(), "util-linux setsid -w is required")
-        val process = start(underLoginSession(reaping(dir, listOf("sh", "-c", "echo \$\$ > child.pid; exec sleep 30"))), dir)
-        awaitPid(dir.resolve("child.pid"))
-        // The shell's builtin kill: procps-ng kill misparses a negative pid (ADR-0041).
-        ProcessBuilder("sh", "-c", "kill -TERM -\"\$0\"", dir.resolve(PGID_FILE).readText().trim()).start().waitFor()
-        assertEquals(143, exitOf(process))
+        assertEquals(143, exitAfterGroupSignal(dir, "TERM"))
+    }
+
+    @Test
+    fun `under setsid -w a group SIGHUP reports 129 for a command that does not trap it`(
+        @TempDir dir: Path,
+    ) {
+        assumeTrue(setsidCanFormGroup(), "util-linux setsid -w is required")
+        assertEquals(129, exitAfterGroupSignal(dir, "HUP"))
     }
 
     @Test
@@ -272,6 +289,18 @@ class RemoteCommandBuilderTest {
         ProcessBuilder("sh", "-c", RemoteCommandBuilder.buildReapKill(dir.resolve(PGID_FILE).toString())).start().waitFor()
         exitOf(process)
         assertTrue(awaitProcessExit(background), "the backgrounded child outlived the group kill")
+    }
+
+    /** Runs a command that traps nothing under `setsid -w`, signals its whole group with [name], and returns its exit. */
+    private fun exitAfterGroupSignal(
+        dir: Path,
+        name: String,
+    ): Int {
+        val process = start(underLoginSession(reaping(dir, listOf("sh", "-c", "echo \$\$ > child.pid; exec sleep 30"))), dir)
+        awaitPid(dir.resolve("child.pid"))
+        // The shell's builtin kill: procps-ng kill misparses a negative pid (ADR-0041).
+        ProcessBuilder("sh", "-c", "kill -$name -\"\$0\"", dir.resolve(PGID_FILE).readText().trim()).start().waitFor()
+        return exitOf(process)
     }
 
     /** Runs [script] reaping under `setsid -w`, SIGINTs its group with the real graceful reaper, and returns its exit. */
