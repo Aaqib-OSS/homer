@@ -326,7 +326,8 @@ resolve the path. The download opens the file afterwards; each stream opens it a
 that finds it, which can be as late as the stream's end.
 
 Four cases remain. Three are races: a hard link renamed into place between the link check and the
-open, because `NOFOLLOW_LINKS` ignores the link count; a symlink swapped in for the artifacts
+open, in `readTextBounded` and in the check `streamFile` repeats before its open, because
+`NOFOLLOW_LINKS` ignores the link count; a symlink swapped in for the artifacts
 directory between its check and the open; and, for the two streams, the same swap at any time
 between `resolve` and the poll that opens the file. The fourth needs no race: a symlink
 at the run root or a directory above it is followed by every one of these reads. Each makes Homer

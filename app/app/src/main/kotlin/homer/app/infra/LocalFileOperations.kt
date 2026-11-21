@@ -88,8 +88,8 @@ class LocalFileOperations internal constructor(
             // Closes the resolve-vs-open window on a hard link: ArtifactService (and
             // callers like it) check isLinkedOrSpecial once at resolve, but nlink isn't
             // covered by O_NOFOLLOW, so re-check it here too, immediately before the
-            // open. Residual: a link planted between this check and the open(2) below
-            // still wins that race — same-UID, ADR-0047. CWE-59.
+            // open. Residual: a hard link renamed in between this check and the open(2)
+            // below still wins that race (AR-12). CWE-59.
             if (PathSafety.isLinkedOrSpecial(path)) {
                 throw IOException("Refusing to read non-regular file: $path")
             }
