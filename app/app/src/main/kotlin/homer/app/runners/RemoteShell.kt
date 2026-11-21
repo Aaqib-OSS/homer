@@ -3,7 +3,7 @@ package homer.app.runners
 import homer.app.models.ShellEnvNames
 
 // POSIX shell pieces the ssh and Kubernetes runners share. A step's env reaches its command only through a sourced
-// file, never a command line or exec request (CWE-214, ADR-0032).
+// file, never a command line or exec request URI (CWE-214, CWE-598, ADR-0032, ADR-0043).
 object RemoteShell {
     /** POSIX single-quote escaping: wrap in '...', and render embedded ' as '\''. */
     fun quote(token: String): String = "'" + token.replace("'", "'\\''") + "'"
