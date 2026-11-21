@@ -25,10 +25,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * H3 (security review 2026-06-08, ADR-0016): credentialed CORS must only be
- * enabled for pinned origins, and a cookie/session (Password) auth scheme
- * without `corsAllowedOrigins` must fail startup rather than ship a CORS
- * credential reflector.
+ * Credentialed CORS must only be enabled for pinned origins, and a cookie/session (Password) auth scheme without
+ * `corsAllowedOrigins` must fail startup rather than ship a CORS credential reflector (ADR-0016).
  */
 class CorsConfigTest {
     private val passwordScheme =
@@ -110,9 +108,8 @@ class CorsConfigTest {
                 configureCors(listOf("http://console.example.com"))
                 routing { get("/test") { call.respond(HttpStatusCode.OK) } }
             }
-            // The console sends X-Homer-CSRF (non-safelisted) on every request, so
-            // the cross-origin preflight must see it echoed in Allow-Headers or the
-            // browser blocks the real request (ADR-0016).
+            // The console sends X-Homer-CSRF (non-safelisted) on every request, so the preflight must echo it in
+            // Allow-Headers or the browser blocks the real request (ADR-0016).
             val response =
                 client.options("/test") {
                     header(HttpHeaders.Origin, "http://console.example.com")
@@ -148,7 +145,7 @@ class CorsConfigTest {
             )
         }
 
-    // ---- resolveCorsOrigins (startup @SYSENV resolution, #29) ----
+    // ---- resolveCorsOrigins (startup @SYSENV resolution) ----
 
     private val env =
         SysEnvResolver {

@@ -7,17 +7,9 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Collects every distinct SQL statement production code runs during `:app:test`, with the
- * production source line that ran it, for the `query-plans` check (ADR-0082): `queryPlanReport`
- * then plans each one ([QueryPlanReport]). It also records, for the `query-repeats` check, each
- * statement production code runs [REPEAT_THRESHOLD] times in one transaction: a query per row in
- * a loop (SQLite rule 2 in `app/CLAUDE.md`). Twice is not enough: two separate reads of one
- * shape (a root's visibility, then the page's roots) are no loop. Registered through `META-INF/services` like
- * [SqlStatementRecorder]; inert unless the test task sets [DIR_PROPERTY].
- *
- * A statement whose nearest `homer.app` frame is test code (seeding, assertions) is not
- * production SQL: it is neither planned nor counted toward a repeat. Each new statement is
- * appended to its file at once, so nothing depends on a shutdown hook.
+ * Collects every distinct SQL statement production code runs during `:app:test`, with its source line, for the
+ * `query-plans` check, and each one run [REPEAT_THRESHOLD] times in one transaction for `query-repeats` (ADR-0082).
+ * Registered via META-INF/services; inert unless the test task sets [DIR_PROPERTY].
  */
 class QueryPlanCapture : GlobalStatementInterceptor {
     override fun beforeExecution(

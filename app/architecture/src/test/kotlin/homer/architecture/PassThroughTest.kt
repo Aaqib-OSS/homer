@@ -15,11 +15,8 @@ import com.lemonappdev.konsist.api.provider.modifier.KoModifierProvider
 import kotlin.test.Test
 
 /**
- * No pass-through function in the main code of :app, agentdebug and homer-runner: a function whose whole
- * body is one call forwarding its own parameters, unchanged and in order, is a layer that adds nothing.
- * A forward to a non-public member of the same class or
- * object, or through a non-public property of it, is encapsulation, not a finding. It restates root CLAUDE.md §2 ("No abstractions for
- * single-use code"), which app/CLAUDE.md "Architecture tests" records.
+ * No pass-through function in the main code of :app, agentdebug and homer-runner: a body that is one call
+ * forwarding its own parameters is a layer that adds nothing. Exemptions: app/CLAUDE.md "Architecture tests".
  */
 class PassThroughTest {
     @Test
@@ -33,7 +30,7 @@ class PassThroughTest {
                     target?.let { violation(fn, "${fn.name} only forwards its parameters to $it; call it directly") }
                 }
             }
-        assertNoViolations("No pass-through function (root CLAUDE.md §2)", violations)
+        assertNoViolations("No pass-through function (root CLAUDE.md section 2)", violations)
     }
 }
 
@@ -45,13 +42,8 @@ internal fun portMethods(scope: KoScope): Map<String, Set<String>> =
     scope.interfaces(includeNested = true).associate { it.name to it.functions().map { f -> f.name }.toSet() }
 
 /**
- * The callee text when [fn] is a pass-through, else null. Exempt: an `override` or `operator` function, a function
- * without parameters, one with a parameter default (it supplies something), one without a body, an interface member (a default method included), a function of a class
- * implementing an interface of [ports] (name to member names, ADR-0083) that declares a member of that name — by
- * name over every implemented interface, since Konsist does not resolve which member a function overrides — and a
- * forward whose callee, or any receiver before it, is a non-public (private, protected or internal) member of the
- * enclosing class or object, its companion or a parent class, a constructor property included, or a private top-level
- * function or property of the same file — encapsulation, not a layer.
+ * The callee text when [fn] is a pass-through, else null. [ports] maps interface name to member names (ADR-0083);
+ * the exemptions are listed in app/CLAUDE.md "Architecture tests".
  */
 internal fun passThroughTarget(
     fn: KoFunctionDeclaration,

@@ -135,8 +135,8 @@ class CooldownGateTest {
     @Test
     fun `a key is never echoed in the refusal`() =
         runTest {
-            // §12 rule 7: the key is derived from the run's inputs, which may be secret
-            // under another agent's definition — the refusal names the agent, not the key.
+            // ADR-0047 rule 7, ADR-0106: the key may derive from secret inputs, so the refusal
+            // names the agent, not the key.
             coEvery { repo.latestRunStartedAt("watcher", "mr-s3cr3t") } returns now - 60
 
             val e =
@@ -208,11 +208,9 @@ class CooldownGateTest {
     }
 
     @Test
-    fun `a cooldown key naming a secret legacy queryParams input is rejected at load`() {
-        // The load-time guard reads the legacy alias on purpose (an agent may set only one
-        // of the two forms), so this arm must stay covered: a regression to `inputs.orEmpty()`
-        // would let a legacy-format agent store a secret input's value in the indexed
-        // `processes.cooldown_key` column while the suite stays green.
+    fun `a cooldown key naming a secret input declared only through the queryParams alias is rejected at load`() {
+        // The guard must read the `queryParams` alias too (ADR-0031): a regression to `inputs.orEmpty()`
+        // would let an alias-only agent store a secret input's value in `processes.cooldown_key` (ADR-0106).
         @Suppress("DEPRECATION")
         val e =
             assertFailsWith<IllegalArgumentException> {
@@ -229,9 +227,8 @@ class CooldownGateTest {
 
     @Test
     fun `a cooldown key naming a SYSENV-backed env value is rejected at load`() {
-        // An env entry whose raw value referenced `@SYSENV:` is a secret by construction —
-        // the host variable rides the run's env, and the key is stored in plain text in the
-        // indexed `processes.cooldown_key` column, outside the secret store.
+        // An env entry whose raw value references `@SYSENV:` is a secret by construction; the key is
+        // stored in plain text in `processes.cooldown_key` (ADR-0106).
         val e =
             assertFailsWith<IllegalArgumentException> {
                 Agent(
@@ -256,12 +253,8 @@ class CooldownGateTest {
 
     @Test
     fun `a cooldown key naming a host variable an env value merely references is not rejected at load`() {
-        // The redaction composite (`sysEnvBackedEnvNames`) also carries the host variables
-        // an env value *references* — `GH_HEADER: "Bearer @SYSENV:REPO_TOKEN"` redacts both
-        // `GH_HEADER` and `REPO_TOKEN`. The load check reads the keys half only: here
-        // `{{REPO_TOKEN}}` resolves from the input of that name and renders the caller's
-        // value, not the host one — refusing it would make a legitimate definition fail to
-        // load and vanish from the catalog.
+        // `sysEnvBackedEnvNames` also holds host variables an env value merely references; the load check
+        // reads the keys half only, as `{{REPO_TOKEN}}` renders the caller's input, not the host value.
         Agent(
             name = "watcher",
             env = mapOf("GH_HEADER" to "Bearer @SYSENV:REPO_TOKEN"),
@@ -284,9 +277,8 @@ class CooldownGateTest {
 
     @Test
     fun `withoutFailureBackoff keeps a key alongside minInterval`() {
-        // A keyed `minInterval` is still pacing, so a manual recovery keeps the key and
-        // its subject — dropping it would let a retry start inside the window it is
-        // pacing. `afterFailure` goes; the key is not its property.
+        // A keyed `minInterval` is still pacing: dropping the key would let a manual retry start inside
+        // its window. Only `afterFailure` goes.
         val recovery =
             agent(Cooldown(minInterval = "1m", afterFailure = "15m", key = "mr-{{MR}}")).withoutFailureBackoff()
 
@@ -295,9 +287,8 @@ class CooldownGateTest {
 
     @Test
     fun `withoutFailureBackoff drops a cooldown that was only afterFailure`() {
-        // `Cooldown`'s init rejects a value with neither window set, so clearing the
-        // only field must collapse to null — a `copy()` without this would throw at
-        // construction and take the start down with it.
+        // `Cooldown`'s init rejects neither window set, so clearing the only field must collapse to
+        // null; a bare `copy()` would throw and take the start down.
         val recovery = agent(Cooldown(afterFailure = "15m")).withoutFailureBackoff()
 
         assertEquals(null, recovery.cooldown)

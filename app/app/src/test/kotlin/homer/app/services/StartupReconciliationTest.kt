@@ -433,9 +433,8 @@ class StartupReconciliationTest {
     @Test
     fun `a hook row left PENDING by the previous run fires once at boot, and a second boot fires nothing`() =
         runTest {
-            // The server stopped between the status write's commit and its fire: the row is
-            // durable and PENDING, and the boot replay is the only thing that can fire it. The
-            // run never reached FINISHED here, so the row is seeded as that write left it.
+            // The server stopped between the status write's commit and its fire: the boot replay is
+            // the only thing that can fire the durable PENDING row, so it is seeded as that write left it.
             val f = chain(ProcessStatus.FINISHED to "notifier")
             val run = f.processManager.obtainProcessId(NewRunRecord("declarer", owner = "alice"))
             f.db.query {

@@ -6,7 +6,7 @@ import java.io.File
 import kotlin.test.Test
 
 /**
- * Report-only architecture rules (ADR-0082). Every rule restates one that app/CLAUDE.md or the root
+ * Architecture rules (ADR-0082). Every rule restates one that app/CLAUDE.md or the root
  * CLAUDE.md documents; the rule table in app/CLAUDE.md "Architecture tests" names each source.
  */
 class ArchitectureRulesTest {
@@ -35,7 +35,7 @@ class ArchitectureRulesTest {
                         )
                     }
             }
-        assertNoViolations("Test classes mirror the production package (root CLAUDE.md §6)", violations)
+        assertNoViolations("Test classes mirror the production package (root CLAUDE.md section 6)", violations)
     }
 
     @Test
@@ -49,7 +49,7 @@ class ArchitectureRulesTest {
                         cls.name in DOCUMENTED_SERVICES ||
                         cls.parents().any { it.name.substringBefore("<") in DOCUMENTED_SERVICES }
                 }
-        assertNoViolations("Every service has a test (root CLAUDE.md §6)", untested(services))
+        assertNoViolations("Every service has a test (root CLAUDE.md section 6)", untested(services))
     }
 
     @Test
@@ -58,7 +58,7 @@ class ArchitectureRulesTest {
             Sources.appMain
                 .classes(includeNested = false)
                 .filter { it.resideInPackage("homer.app.executors..") && it.isTestableConcreteClass() && it.name.endsWith("Executor") }
-        assertNoViolations("Every executor has a test (root CLAUDE.md §6)", untested(executors))
+        assertNoViolations("Every executor has a test (root CLAUDE.md section 6)", untested(executors))
     }
 
     @Test
@@ -142,7 +142,7 @@ class ArchitectureRulesTest {
                 .flatMap { Sources.test(it).files }
                 .flatMap { file -> file.imports.filter { it.name.startsWith("org.mockito") } }
                 .map { violation(it, "imports ${it.name}; use MockK") }
-        assertNoViolations("MockK for mocks (root CLAUDE.md §6)", violations)
+        assertNoViolations("MockK for mocks (root CLAUDE.md section 6)", violations)
     }
 
     @Test
@@ -161,7 +161,7 @@ class ArchitectureRulesTest {
                             test.imports.any { it.name.startsWith("$KOTEST_PROPERTY.") }
                     }
                 }.map { violation(it.path, 1, "${it.name} has no ${it.name}*Test importing $KOTEST_PROPERTY") }
-        assertNoViolations("Infra parsers, validators and builders have a property-based test (root CLAUDE.md §6)", violations)
+        assertNoViolations("Infra parsers, validators and builders have a property-based test (root CLAUDE.md section 6)", violations)
     }
 
     private fun KoClassDeclaration.isTestableConcreteClass(): Boolean =
@@ -226,7 +226,7 @@ class ArchitectureRulesTest {
 
         val INLINE_BAD_REQUEST = Regex("""\brespond\w*\(\s*(status\s*=\s*)?HttpStatusCode\.BadRequest\b""")
 
-        /** The `homer.app.infra` unit names root CLAUDE.md §6 requires a property-based test for. */
+        /** The `homer.app.infra` unit names that need a property-based test. */
         val PROPERTY_TESTED_SUFFIXES = listOf("Parser", "Validator", "Builder")
 
         const val KOTEST_PROPERTY = "io.kotest.property"

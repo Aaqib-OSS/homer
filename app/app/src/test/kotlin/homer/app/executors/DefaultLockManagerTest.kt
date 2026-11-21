@@ -176,7 +176,7 @@ class DefaultLockManagerTest {
             // First process acquires lock
             lockManager.acquireThenDisplace(lockName, OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT, processId1)
 
-            // Second process kills first but both should be in the set temporarily
+            // Second process kills the first; both are in the set during the displacement
             lockManager.acquireThenDisplace(lockName, OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT, processId2)
 
             // Release both

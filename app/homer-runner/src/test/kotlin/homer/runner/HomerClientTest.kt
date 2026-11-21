@@ -110,16 +110,11 @@ class HomerClientTest {
     @Test
     fun `an oversized error body is never fully drained before the exception is thrown`() =
         runBlocking {
-            // A lazily-produced, backpressured channel (not a pre-built ByteArray/String): if
-            // toException() ever fell back to a call that buffers the whole body first (e.g. a
-            // plain client.post instead of preparePost().execute {}), this producer would run to
-            // completion before the exception surfaces. Bounded reading leaves it well short.
+            // A lazy backpressured channel: a toException() that buffered the whole body would run
+            // this producer to completion before the exception surfaces.
             val chunk = ByteArray(64 * 1024) { 'x'.code.toByte() }
-            // 4096 chunks (256 MiB if ever fully drained) produced lazily — only as the channel's
-            // backpressure accepts them, so this costs no memory unless something actually drains
-            // it — makes the "stayed well short" margin robust under load: 50 chunks (3.2 MiB) can
-            // finish producing before the bounded reader even engages if the producer coroutine
-            // gets scheduled first, which is exactly the flake this widens away from.
+            // 4096 chunks (256 MiB if fully drained), produced lazily, keep the "well short" margin robust
+            // under load: 50 chunks can finish producing before the bounded reader engages.
             val totalChunks = 4096
             val chunksWritten = AtomicInteger(0)
             val producerScope = CoroutineScope(Dispatchers.Default + Job())

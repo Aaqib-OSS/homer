@@ -204,9 +204,8 @@ class SessionAuthTest {
     @Test
     fun `valid session authenticates regardless of user's (deprecated) endpoints scope`() =
         testApplication {
-            // bob's `endpoints` field is deprecated and no longer enforced by the
-            // provider — a valid session authenticates on any route; authorization
-            // by grants happens at the route (ADR-0037).
+            // bob's `endpoints` field is no longer enforced by the provider; authorization by grants
+            // happens at the route (ADR-0037).
             application {
                 installPasswordSessions(baseScheme)
                 install(Authentication) {

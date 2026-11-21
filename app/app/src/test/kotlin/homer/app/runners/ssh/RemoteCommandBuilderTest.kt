@@ -393,10 +393,9 @@ class RemoteCommandBuilderTest {
     }
 
     /**
-     * Runs the real buildReapKill command with `kill` shadowed by a shell
-     * function so nothing is actually signalled, and asserts the numeric guard
-     * lets only a plain integer > 1 through. Proves a forged `1`/`0`, a
-     * non-numeric value, or an injection attempt is a no-op.
+     * Runs the real buildReapKill command with `kill` shadowed by a shell function so nothing is signalled.
+     * Asserts the numeric guard lets only a plain integer > 1 through: a forged `1`/`0`, a non-numeric value or an
+     * injection attempt is a no-op.
      */
     @Test
     fun `buildReapKill only kills a plain pgid greater than one`(

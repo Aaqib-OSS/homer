@@ -45,6 +45,8 @@
 - **Fixed: the log streams' `cmd` parameter means the command index everywhere** — `GET /api/v1/stream/processes/{id}/logs` and `/llm-events` serve the step whose command index `cmd` names, on a live run and after a restart, instead of the step at that position in the run's rows — so a run that executes only some of its commands streams each one's own output.
 - **Fixed: a step whose stdout or stderr file cannot be written fails** — The step fails naming the stream instead of reporting the child's exit code when its output fit the pipe buffer.
 - **Fixed: ssh command killed by a signal** — Reports exit 128 + the signal number, as the local runner does, instead of the raw signal number or a lost connection.
+- **Fixed: an `onStop:` step's result capture follows the load-time envName rules** — An agent whose `onStop:` step captures into a reserved (`HMR_*`, `PATH`, `LD_*`, …) or malformed name now fails to load, as a `commands:` step already did.
+- **Fixed: an input cannot choose an `onStop:` LLM step's executable** — An agent whose stop step templates a declared input into the harness command now fails to load, as a `commands:` step already did; the uncontained-claude-tools warning covers stop steps too.
 
 ### Console
 

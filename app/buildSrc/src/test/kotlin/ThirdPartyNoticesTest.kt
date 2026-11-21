@@ -14,10 +14,8 @@ import kotlin.test.assertTrue
 private const val BEGIN = "<!-- BEGIN GENERATED: backend -->"
 private const val END = "<!-- END GENERATED: backend -->"
 
-// The copyright-line rule exists twice, here and in console/scripts/third-party-licenses.mjs.
-// This file is the shared truth table both suites assert against, so a change to one generator's
-// filter that the other does not follow fails whichever side drifted. Relative to the buildSrc
-// project directory, which is a Gradle Test task's working directory.
+// Shared truth table for the copyright-line rule, also asserted by console/scripts/third-party-licenses.test.mjs.
+// Relative to the buildSrc project directory (a Gradle Test task's working directory).
 private val COPYRIGHT_CASES_FILE = File("../config/third-party-copyright-cases.json")
 
 class ThirdPartyNoticesTest {
@@ -289,9 +287,8 @@ class ThirdPartyNoticesTest {
 
     @Test
     fun `withEmbeddedFiles skips a symlinked directory, reading no attribution from its target`() {
-        // A symlinked *directory* (e.g. META-INF -> a host dir) is not itself yielded as a leaf, and
-        // its real children are not symlinks, so the leaf guard alone would let walkTopDown descend and
-        // readText() their contents. onEnter must prune the symlinked directory before that recursion.
+        // The leaf guard alone would let walkTopDown descend into a symlinked directory;
+        // onEnter must prune it before that recursion.
         val hostDir = tempDir.resolve("host-legal-dir").also { it.mkdirs() }
         hostDir.resolve("NOTICE").writeText("Copyright 2020 Sentinel Secret")
         val reportDir = tempDir.resolve("report-symlink-dir").also { it.mkdirs() }
@@ -597,7 +594,7 @@ class ThirdPartyNoticesTest {
     @Test
     fun `copyrightLines agrees with the shared cross-generator cases`() {
         assertTrue(COPYRIGHT_CASES_FILE.isFile, "shared cases not found at ${COPYRIGHT_CASES_FILE.absolutePath}")
-        @Suppress("UNCHECKED_CAST")
+        @Suppress("UNCHECKED_CAST") // JsonSlurper returns untyped JSON; the file is a list of case objects
         val cases = JsonSlurper().parseText(COPYRIGHT_CASES_FILE.readText()) as List<Map<String, Any>>
         assertTrue(cases.size >= 16, "expected the full truth table, got ${cases.size} cases")
 

@@ -19,4 +19,7 @@ COPY app/e2e ./e2e
 
 RUN ./gradlew :e2e:testClasses --no-daemon
 
+# Without a server to test, the suite fails here rather than skipping every test and passing.
+ENV E2E_REQUIRED=true
+
 ENTRYPOINT ["./gradlew", ":e2e:test", "--no-daemon"]

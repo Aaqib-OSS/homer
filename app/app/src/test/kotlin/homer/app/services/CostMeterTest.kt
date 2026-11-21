@@ -217,10 +217,7 @@ class CostMeterTest {
             meter.recordCost("a", 0.6)
             assertEquals(0L, meter.overshootCount) // 0.6 <= 1.0, no overshoot yet
             meter.recordCost("a", 0.6) // window now 1.2 > 1.0
-            assertTrue(
-                meter.overshootCount >= 1,
-                "expected an overshoot once the window exceeded the cap, got ${meter.overshootCount}",
-            )
+            assertEquals(1L, meter.overshootCount, "one overshoot once the window exceeded the cap")
         }
 
     @Test
@@ -246,10 +243,7 @@ class CostMeterTest {
             meter.recordCost("x", 8.0)
             assertEquals(0L, meter.overshootCount)
             meter.recordCost("x", 5.0) // 13.0 > 10.0
-            assertTrue(
-                meter.overshootCount >= 1,
-                "expected a per-agent overshoot, got ${meter.overshootCount}",
-            )
+            assertEquals(1L, meter.overshootCount, "one per-agent overshoot")
         }
 
     @Test

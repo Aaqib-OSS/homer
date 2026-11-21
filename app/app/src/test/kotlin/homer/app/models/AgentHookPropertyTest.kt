@@ -33,7 +33,7 @@ class AgentHookPropertyTest {
     fun `a decode error names only the offending key, never the value`() =
         runTest {
             // The value is an untrusted definition's string and the error text reaches the load
-            // log and the definition-write response, so the message must not echo it. §12 rule 7.
+            // log and the definition-write response, so the message must not echo it. ADR-0047 rule 7.
             checkAll(
                 Arb.list(Arb.element(nameChars), 1..12),
                 Arb.list(Arb.element(nameChars), 1..12),

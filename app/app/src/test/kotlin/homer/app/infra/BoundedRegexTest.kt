@@ -130,9 +130,8 @@ class BoundedRegexTest {
 
     @Test
     fun `findOrOmit does not report a shed match when the pattern does not compile`() {
-        // Only a shed match (timeout or saturation) trips the shed-then-skip cap; an
-        // uncompilable pattern omits its own value and must leave the cap untouched so
-        // a caller does not drop the later, valid regex transformers of its list.
+        // Only a shed match (timeout or saturation) trips the shed-then-skip cap; an uncompilable pattern omits its
+        // own value and must leave the cap untouched so later valid regex transformers still run.
         var shed = false
 
         assertNull(BoundedRegex.findOrOmit("(", "anything", "SECRET_VAR", logger) { shed = true })
@@ -153,30 +152,20 @@ class BoundedRegexTest {
 
     @Test
     fun `a pool-saturation shed is logged as shed, not as a timeout`() {
-        // Fill the pool exactly (workers + queue) with matches blocked on a latch, so no
-        // occupier can finish before the test releases it: saturation cannot drain away
-        // mid-test however loaded the runner is. The findOrOmit call afterwards is then
-        // rejected outright and must report saturation rather than diagnose a slow pattern.
-        // Saturation is waited for by observing a shed probe, not by sleeping: a fixed
-        // settle wait races the occupier submissions under load and the probe could be
-        // served by a still-free worker. runCatching keeps the occupiers' futures from
-        // throwing on drain.
+        // Fill the pool (workers + queue) with matches blocked on a latch so saturation cannot drain mid-test, and
+        // wait for it by observing a shed probe, not by sleeping: a fixed wait races the occupier submissions.
         val openPool = CountDownLatch(1)
         val occupiers = Executors.newFixedThreadPool(WORKERS_PLUS_QUEUE)
         try {
+            // runCatching: a drained occupier must not throw out of its future.
             val futures =
                 (1..WORKERS_PLUS_QUEUE).map {
                     occupiers.submit(
                         Callable { runCatching { BoundedRegex.find(Regex("a+"), LatchedCharSequence(openPool), timeoutMs = 30_000) } },
                     )
                 }
-            // Poll until a probe submission is shed: the pool then stays saturated, every
-            // occupier holding its worker or queue slot until the latch opens. A probe that
-            // waits past its own bound in a queue slot that is not yet full is retried —
-            // only an outright rejection proves saturation. A cancelled probe keeps its
-            // queue slot until a worker polls it, so the first shed probe can also free a
-            // slot again: the findOrOmit assertion observes the shed through the same
-            // retry, instead of trusting one fixed submission to be rejected outright.
+            // Poll until a probe is shed: only an outright rejection proves saturation, and a cancelled probe frees a
+            // queue slot again, so the findOrOmit assertion observes the shed through the same retry.
             waitUntilSaturated()
             assertSaturatedPoolShedsAsShed()
             // Drain the occupiers so the shared pool is free again for the other tests.
@@ -204,10 +193,8 @@ class BoundedRegexTest {
     }
 
     /**
-     * Asserts a findOrOmit submission past the saturated pool reports shed, not a slow
-     * pattern. The submission itself is retried under the same deadline: a worker that
-     * drains a cancelled probe between tasks frees a queue slot, so one fixed call can
-     * be served a slot and time out there instead of being rejected outright.
+     * Asserts a findOrOmit submission past the saturated pool reports shed, not a slow pattern. It is retried under the
+     * same deadline: a worker draining a cancelled probe frees a queue slot, so one fixed call could time out in it.
      */
     private fun assertSaturatedPoolShedsAsShed() {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)

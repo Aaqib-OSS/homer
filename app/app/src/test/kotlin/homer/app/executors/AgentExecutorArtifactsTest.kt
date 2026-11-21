@@ -143,10 +143,8 @@ class AgentExecutorArtifactsTest : AgentExecutorTestBase() {
     @Test
     fun `execute records the executor-returned result's actual paths in ExecutionInfo`() =
         runTest {
-            // Simulates a Claude retry whose winning attempt wrote to a different file
-            // than the attempt-0 path AgentExecutor built the ExecutionContext with
-            // (per-attempt artifactNameTemplate) — ExecutionInfo must reflect where the
-            // output actually landed, not the attempt-0 path.
+            // A Claude retry's winning attempt wrote to a different file than the attempt-0 path (per-attempt
+            // artifactNameTemplate); ExecutionInfo must reflect where the output landed.
             val artifactsPath = mockWorkspace.config.artifacts
             val winningStdOut = artifactsPath.resolve("cmd_0_a1.out")
             val winningStdErr = artifactsPath.resolve("cmd_0_a1.err")
@@ -199,13 +197,8 @@ class AgentExecutorArtifactsTest : AgentExecutorTestBase() {
     @Test
     fun `execute records the tracked per-attempt paths in ExecutionInfo when the executor throws without returning a result`() =
         runTest {
-            // Simulates a MalformedLlmOutputException on the final retry attempt: the
-            // command executor (e.g. LlmHarnessExecutor) throws instead of
-            // returning a CommandResult, so executedResult stays null — but its retry
-            // loop already updated the tracked per-attempt artifacts via
-            // processManager.setCommandArtifacts before throwing. ExecutionInfo must
-            // record that last-attempt path, not the attempt-0 path AgentExecutor built
-            // the ExecutionContext with.
+            // The executor throws on the final attempt, so executedResult stays null; its retry loop already
+            // updated the tracked artifacts, and ExecutionInfo must record that last-attempt path.
             val artifactsPath = mockWorkspace.config.artifacts
             val lastAttemptOut = artifactsPath.resolve("cmd_0_a2.out")
             val lastAttemptErr = artifactsPath.resolve("cmd_0_a2.err")
@@ -226,10 +219,8 @@ class AgentExecutorArtifactsTest : AgentExecutorTestBase() {
     @Test
     fun `execute records ExecutionInfo and ends the span when artifactNameTemplate resolution fails`() =
         runTest {
-            // §12 denial path: a rendered-stem validation failure must flow through the
-            // same per-command bookkeeping as any other command failure — an
-            // ExecutionInfo row, the span ended, currentCommand cleared — not bypass it
-            // via the outer session-lifecycle catch/finally.
+            // Denial path: a rendered-stem validation failure takes the per-command bookkeeping (ExecutionInfo row,
+            // span ended, currentCommand cleared), not the outer session-lifecycle catch/finally.
             val agent = AgentFixtures.simpleAgent().copy(artifactNameTemplate = "{{MISSING}}")
 
             val executor = executor(agent = agent)
@@ -253,9 +244,8 @@ class AgentExecutorArtifactsTest : AgentExecutorTestBase() {
     @Test
     fun `execute rejects an artifactNameTemplate referencing a secret-classified env var without leaking its value`() =
         runTest {
-            // The rendered stem becomes a server-local file name, so a
-            // template referencing a secret-classified var must fail closed (§12) — and
-            // neither the exception nor the recorded ExecutionInfo may carry the value.
+            // The rendered stem becomes a server-local file name: a template referencing a secret-classified var
+            // must fail closed, and neither the exception nor ExecutionInfo may carry the value.
             val agent = AgentFixtures.simpleAgent().copy(artifactNameTemplate = "{{SECRET_VAR}}")
             val workspaceWithSecret =
                 TestFixtures.mockWorkspace(
@@ -281,13 +271,8 @@ class AgentExecutorArtifactsTest : AgentExecutorTestBase() {
     @Test
     fun `execute rejects an artifactNameTemplate whose stem embeds a derived secret value reaching a non-classified var`() =
         runTest {
-            // Layer 1 (name exclusion) does not fire here: STEM_VAR is not itself
-            // secret-classified, so its value renders through unfiltered. Only layer 2
-            // — the SecretRedactor built from workspace.config.secretEnvNames and wired
-            // into ArtifactNameResolver at the AgentExecutor call site — can catch this.
-            // If that wiring is ever dropped, this is the test that fails, not the
-            // sibling above (whose secret var is both in env AND secretEnvNames, so
-            // layer 1 alone would still pass it).
+            // Layer 1 (name exclusion) does not fire: STEM_VAR is not secret-classified. Only layer 2, the
+            // SecretRedactor wired into ArtifactNameResolver, catches this; the sibling test passes on layer 1.
             val secretValue = "s3cr3t-value-long-enough"
             val agent = AgentFixtures.simpleAgent().copy(artifactNameTemplate = "{{STEM_VAR}}")
             val workspaceWithDerivedSecret =

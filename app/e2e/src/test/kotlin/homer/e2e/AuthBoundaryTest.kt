@@ -27,20 +27,9 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 
 /**
- * The operator auth boundary, swept over every resource family through the live server:
- * a request with no credential is `401`, and a bearer token granted on another agent gets
- * `404` — identical to not-found (ADR-0047 rule 3) — on routes scoped to one resource. The
- * family-level list endpoints (`/status/all`, `/questions`, `/dispatches`, `/continuations`)
- * answer `200` with the other agent's rows filtered out; a route scoped to one resource, such
- * as `/artifacts/list?processId=`, answers the same `404`. One route per family also
- * compares the denial's body against the same request at an id that does not exist. The agent
- * file routes answer `403` instead on an agent the token holds another grant on. The
- * callback-token `401` is `WhoamiTest`'s.
- *
- * `echoScoped` (fixtures/config/config.json) holds `run`+`read` on `echo` only, so it is the
- * wrong-agent probe: every resource below belongs to an agent it holds no grant on. The one
- * exception is the dispatch family — `dispatcher` dispatches to `echo`, which this token *can*
- * read — so it is probed through `continuation-inherit`, whose ask-and-dispatch targets itself.
+ * The operator auth boundary: no credential is `401`; a token granted on another agent gets the not-found `404`
+ * (ADR-0047 rule 3) on one-resource routes, filtered `200` on lists. `echoScoped` is the wrong-agent probe;
+ * dispatch goes through `continuation-inherit`, since `dispatcher` dispatches to `echo`, which it can read.
  */
 class AuthBoundaryTest : E2eTestBase() {
     private val scopedAuth = "Bearer echo-scoped-token"

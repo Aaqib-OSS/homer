@@ -38,7 +38,7 @@ class AgentTest {
     }
 
     @Test
-    @Suppress("DEPRECATION") // asserts the legacy alias itself
+    @Suppress("DEPRECATION") // asserts the `queryParams` alias itself
     fun `effectiveInputs returns queryParams when only queryParams is set`() {
         val agent =
             AgentFixtures.simpleAgent().copy(

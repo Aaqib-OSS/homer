@@ -10,11 +10,8 @@ import kotlin.test.assertNull
 import kotlin.test.fail
 
 /**
- * Size limits on the main code of :app, agentdebug and homer-runner, plus a line cap on their test files
- * — the complement of the CRAP check
- * (ADR-0081), which misses long code that branches little. They restate root CLAUDE.md §2 ("If you write
- * 200 lines and it could be 50, rewrite it") as numbers, plus a cap on parameter lists, which a parameter
- * object keeps short; app/CLAUDE.md "Architecture tests" records them.
+ * Size limits on the main code of :app, agentdebug and homer-runner, plus a line cap on their test files.
+ * They complement the CRAP check (ADR-0081); app/CLAUDE.md "Architecture tests" records them.
  */
 class SizeLimitsTest {
     @Test
@@ -24,7 +21,7 @@ class SizeLimitsTest {
                 val lines = File(file.path).readLines().size
                 Size(lines, violation(file.path, 1, "${file.name}.kt has $lines lines (limit $MAX_FILE_LINES)"))
             }
-        assertWithinCap("Source files ≤ $MAX_FILE_LINES lines (root CLAUDE.md §2)", "MAX_FILE_LINES", MAX_FILE_LINES, sizes)
+        assertWithinCap("Source files ≤ $MAX_FILE_LINES lines (root CLAUDE.md section 2)", "MAX_FILE_LINES", MAX_FILE_LINES, sizes)
     }
 
     @Test
@@ -34,7 +31,12 @@ class SizeLimitsTest {
                 val lines = File(file.path).readLines().size
                 Size(lines, violation(file.path, 1, "${file.name}.kt has $lines lines (limit $MAX_TEST_FILE_LINES)"))
             }
-        assertWithinCap("Test files ≤ $MAX_TEST_FILE_LINES lines (root CLAUDE.md §2)", "MAX_TEST_FILE_LINES", MAX_TEST_FILE_LINES, sizes)
+        assertWithinCap(
+            "Test files ≤ $MAX_TEST_FILE_LINES lines (root CLAUDE.md section 2)",
+            "MAX_TEST_FILE_LINES",
+            MAX_TEST_FILE_LINES,
+            sizes,
+        )
     }
 
     @Test
@@ -44,7 +46,7 @@ class SizeLimitsTest {
                 val lines = declarationLines(cls.text)
                 Size(lines, violation(cls, "${cls.name} has $lines lines (limit $MAX_CLASS_LINES)"))
             }
-        assertWithinCap("Classes ≤ $MAX_CLASS_LINES lines (root CLAUDE.md §2)", "MAX_CLASS_LINES", MAX_CLASS_LINES, sizes)
+        assertWithinCap("Classes ≤ $MAX_CLASS_LINES lines (root CLAUDE.md section 2)", "MAX_CLASS_LINES", MAX_CLASS_LINES, sizes)
     }
 
     @Test
@@ -55,7 +57,7 @@ class SizeLimitsTest {
                 val lines = KotlinText.bodyLines(fn.text) ?: return@mapNotNull null
                 Size(lines, violation(fn, "${fn.name} has a $lines-line body (limit $MAX_BODY_LINES)"))
             }
-        assertWithinCap("Function bodies ≤ $MAX_BODY_LINES lines (root CLAUDE.md §2)", "MAX_BODY_LINES", MAX_BODY_LINES, sizes)
+        assertWithinCap("Function bodies ≤ $MAX_BODY_LINES lines (root CLAUDE.md section 2)", "MAX_BODY_LINES", MAX_BODY_LINES, sizes)
     }
 
     @Test
@@ -75,7 +77,7 @@ class SizeLimitsTest {
                     }
                 functions + constructors
             }
-        assertWithinCap("Parameters ≤ $MAX_PARAMETERS (root CLAUDE.md §2)", "MAX_PARAMETERS", MAX_PARAMETERS, sizes)
+        assertWithinCap("Parameters ≤ $MAX_PARAMETERS (root CLAUDE.md section 2)", "MAX_PARAMETERS", MAX_PARAMETERS, sizes)
     }
 
     @Test
@@ -142,7 +144,7 @@ class SizeLimitsTest {
 
     private companion object {
         const val SOURCE_FILE = "app/architecture/src/test/kotlin/homer/architecture/SizeLimitsTest.kt"
-        const val MAX_FILE_LINES = 542
+        const val MAX_FILE_LINES = 514
         const val MAX_TEST_FILE_LINES = 3_300
         const val MAX_CLASS_LINES = 400
         const val MAX_BODY_LINES = 60

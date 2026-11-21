@@ -19,10 +19,9 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * [AgentFilePathResolver.resolveSafe]'s containment gate over generated request paths (ADR-0047,
- * CWE-22/59): a request either resolves inside the agent directory or is denied — never outside it.
- * The example cases live in `AgentFilePathResolverTest`; these cover the `..` chains, absolute
- * spellings and link forms an editor would not think of (root CLAUDE.md §6).
+ * [AgentFilePathResolver.resolveSafe]'s containment gate over generated request paths (ADR-0047, CWE-22/59): a request
+ * either resolves inside the agent directory or is denied. The example cases live in `AgentFilePathResolverTest`;
+ * these cover `..` chains, absolute spellings and link forms.
  */
 class AgentFilePathResolverPropertyTest {
     @TempDir

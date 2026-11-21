@@ -46,9 +46,8 @@ class ProcessRunnerTest {
     fun `a spawned command runs normally with the composed env while the JVM is non-dumpable`() =
         runBlocking(Dispatchers.Default) {
             withTimeout(20.seconds) {
-                // Hardening is process-wide, so this must not change what a run can do:
-                // execve resets the child's dumpable flag, and its env is exactly what
-                // ProcessRunner composed (clear + putAll).
+                // Hardening is process-wide: a run's env must stay exactly what ProcessRunner composed,
+                // since execve resets the child's dumpable flag.
                 Dumpability.harden()
                 val handle =
                     ProcessRunner.start(
@@ -69,9 +68,8 @@ class ProcessRunnerTest {
         runBlocking(Dispatchers.Default) {
             withTimeout(20.seconds) {
                 assumeTrue(System.getProperty("os.name").startsWith("Linux"))
-                // A privileged reader (uid 0) bypasses the dumpable restriction —
-                // ptrace_may_access succeeds for root regardless — so the denial this
-                // test asserts cannot be observed there (e.g. CI's docker executor).
+                // A privileged reader (uid 0) bypasses the dumpable restriction, so the denial
+                // cannot be observed there (e.g. CI's docker executor).
                 assumeTrue(effectiveUid() != 0, "the dumpable denial is unobservable for a privileged reader")
                 Dumpability.harden()
                 val jvmPid = ProcessHandle.current().pid()
@@ -116,9 +114,8 @@ class ProcessRunnerTest {
             withTimeout(30.seconds) {
                 val handle = ProcessRunner.start(listOf("sh", "-c", "echo MARKER"), tmp, env, null)
                 val out = StringBuilder()
-                // The post alone outlasts the fixed 5 s join, so the drain has to spend the op's
-                // own budget instead: with the join as the bound the chunk is cut and the step's
-                // tail is lost, which is the reported bug.
+                // The post outlasts the fixed 5 s join, so the drain must spend the op's own budget;
+                // bounded by the join, the step's tail would be lost.
                 val exit =
                     handle.await(15.seconds) { _, _, bytes ->
                         delay(5_200)
@@ -136,9 +133,8 @@ class ProcessRunnerTest {
     @Test
     fun `a grandchild holding the pipe open does not stretch await past the op deadline`() =
         runBlocking(Dispatchers.Default) {
-            // The shell exits at once, while the sleep it backgrounded still holds the stream's
-            // write end; the op's budget is minutes, so a drain that waited on the grandchild —
-            // there is no EOF to wait for until it dies — would outlive this test's own bound.
+            // The shell exits at once but its backgrounded sleep holds the stream's write end: a drain
+            // waiting for EOF would outlive this test's bound.
             withTimeout(20.seconds) {
                 val handle =
                     ProcessRunner.start(listOf("sh", "-c", "echo MARKER; sleep 30 & echo pid=$!"), tmp, env, null)
@@ -167,9 +163,8 @@ class ProcessRunnerTest {
                 val elapsedMs = (System.nanoTime() - started) / 1_000_000
 
                 assertEquals(0, exit.code)
-                // A post that never returns is shed at the drain bound — here the 5 s floor, the
-                // op's own budget being smaller — so a stalled sink cannot hang the op, and every
-                // stream still unsent is named rather than passed off as complete.
+                // A post that never returns is shed at the drain bound (the 5 s floor, the op's budget
+                // being smaller); every unsent stream is named, not passed off as complete.
                 assertTrue(elapsedMs < 8_000, "a stalled post is shed at the drain bound; took ${elapsedMs}ms")
                 assertEquals(setOf(RunnerProtocol.STREAM_STDOUT, RunnerProtocol.STREAM_STDERR), exit.cutStreams)
                 assertEquals(0L, exit.stdoutChunks, "a chunk the sink never took back is not counted as handed over")
@@ -205,9 +200,8 @@ class ProcessRunnerTest {
             withTimeout(30.seconds) {
                 val handle = ProcessRunner.start(listOf("sh", "-c", "echo out"), tmp, env, null)
                 val started = System.nanoTime()
-                // The op's budget is well above the 5 s floor, so the drain's second phase —
-                // waiting out what is left of that budget for a pump that is still handing a
-                // chunk over — is the bound that fires, not the floor.
+                // The op's budget is well above the 5 s floor, so the drain's second phase (the rest
+                // of that budget) is the bound that fires.
                 val exit = handle.await(15.seconds) { _, _, _ -> awaitCancellation() }
                 val elapsedMs = (System.nanoTime() - started) / 1_000_000
 

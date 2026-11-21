@@ -59,12 +59,8 @@ class FakeRunnerApi : RunnerApi {
     var nextPollMs = 100L
 
     /**
-     * When true, a `next()` call that carries a completed result only ever records it and then
-     * waits out the full [nextPollMs] before answering with no op — it never hands one back on
-     * that same call. Deterministically emulates the worst case where the dedicated poller's own
-     * `next(null)` always wins the race for the following op, so a caller that posts its result
-     * inline (instead of on its own coroutine) would sit parked for a full poll window even
-     * though the op it wanted is already sitting in [ops].
+     * When true, a `next()` carrying a completed result records it and waits out [nextPollMs] with no op,
+     * emulating a poller that always wins the race for the next op: an inline result post would park.
      */
     @Volatile
     var resultsNeverCarryOps = false
@@ -104,10 +100,8 @@ class FakeRunnerApi : RunnerApi {
     override suspend fun claim(instanceId: String): ClaimResponse? {
         claimCalls.incrementAndGet()
         claimFailure?.let { throw it() }
-        // select, not withTimeoutOrNull(nextPollMs) { claims.receive() }: a send that resumes
-        // the receiver in the same instant the timeout fires can otherwise be cancelled together
-        // with it, dropping the element for good. select's onTimeout only fires if no channel
-        // clause is ready, so a claim already sent is never lost to that race.
+        // select, not withTimeoutOrNull: a send resuming the receiver as the timeout fires would be
+        // cancelled with it and the claim lost.
         return select {
             claims.onReceive { it }
             onTimeout(nextPollMs) { null }

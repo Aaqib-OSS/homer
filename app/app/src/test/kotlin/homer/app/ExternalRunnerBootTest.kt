@@ -26,9 +26,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Boots the real server module with an `!<external>` domain next to bearer
- * `apiAuth`, so the two principal classes meet the real routing tree: each
- * credential must be `401` on the other's routes (ADR-0066, §12).
+ * Boots the real server module with an `!<external>` domain next to bearer `apiAuth`, so the two principal classes
+ * meet the real routing tree: each credential must be `401` on the other's routes (ADR-0066).
  */
 @ExtendWith(ResetDrainingExtension::class)
 class ExternalRunnerBootTest {
@@ -56,10 +55,8 @@ class ExternalRunnerBootTest {
                 },
         )
 
-    // AgentsService.scanAgents() runs in a property initializer, so it (and the
-    // runnerTagSets lambda's get<RunnerRegistry>() call) fires during Koin's
-    // construction of AgentsService, right when configureServer boots — an
-    // empty agentsDir would leave that lambda unexercised by this test.
+    // AgentsService.scanAgents() runs in a property initializer, so the runnerTagSets lambda fires during Koin's
+    // construction of AgentsService at boot: an empty agentsDir would leave that lambda unexercised.
     private fun writeTaggedAgent() {
         File(agentsDir, "tagged").mkdirs()
         File(agentsDir, "tagged/agent.yaml").writeText(

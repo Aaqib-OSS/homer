@@ -6,19 +6,9 @@ import java.io.File
 import kotlin.test.assertTrue
 
 /**
- * Guard for Gradle dependency verification (CWE-494, CWE-345). Both Gradle builds (`app` and its
- * `buildSrc`) verify every resolved artifact against a committed SHA-256 checksum and, where the
- * metadata records a `<pgp>` entry for it, against a PGP key trusted by full fingerprint in
- * `verification-metadata.xml` and carried in a committed public keyring. Most of the graph is
- * checksum-only today — see the known gap in ADR-0115.
- *
- * The guard keeps the three ways the gate could be quietly undone out of the repository: a
- * per-artifact exemption (`ignored-key`) or a key trusted for every group, a private key committed
- * with the keyring, and a build file, workflow or Dockerfile that turns verification off or
- * rewrites the metadata mid-build. It also fails when the version catalog moves ahead of the
- * metadata, which is what a dependency bump without regeneration looks like.
- *
- * See ADR-0115.
+ * Guard for Gradle dependency verification (CWE-494, CWE-345, ADR-0115): it keeps out of the repository a per-artifact
+ * exemption or a key trusted for every group, a committed private key, and a build file that turns verification off
+ * or rewrites the metadata; it also fails when the version catalog moves ahead of the metadata.
  */
 class DependencyVerificationGateTest {
     private val mainMetadata = "app/gradle/verification-metadata.xml"
@@ -136,11 +126,8 @@ class DependencyVerificationGateTest {
     }
 
     /**
-     * Every spelling of turning verification down: the Gradle property and the CLI flag, the
-     * `GRADLE_DEPENDENCY_VERIFICATION` environment variable (`_` separators, a YAML `:` value),
-     * `=` a space and a colon between, an optional quote around the value (a YAML or shell
-     * spelling), either mode, and any capitalisation — `=Lenient` must fail exactly like
-     * `=lenient` does.
+     * Every spelling of turning verification down: the property, the CLI flag and the
+     * `GRADLE_DEPENDENCY_VERIFICATION` variable, any separator, quote, mode and capitalisation (`=Lenient` fails too).
      */
     private val weakened =
         Regex(
@@ -182,9 +169,8 @@ class DependencyVerificationGateTest {
     @Test
     fun `no build file or workflow weakens dependency verification`() {
         val files = buildFiles()
-        // An empty walk passes the loop vacuously: a regression in `skippedDirs`, the name filter or
-        // the repo-root resolution would silently switch the lenient/off and metadata-rewrite guard
-        // off for every build file (CI stays green while nothing is scanned).
+        // An empty walk passes the loop vacuously: a regression in `skippedDirs`, the name filter or the repo-root
+        // resolution would switch the guard off for every build file while CI stays green.
         assertTrue(files.isNotEmpty(), "buildFiles() discovered no build file, workflow or Dockerfile to scan.")
         for (sentinel in listOf("app/gradle.properties", "app/Dockerfile", ".github/workflows/ci.yml")) {
             assertTrue(
@@ -237,7 +223,7 @@ class DependencyVerificationGateTest {
                 "Plugin `$id` is not recorded at version $version in the verification metadata: a bump " +
                     "was committed without regenerating it, so the next build fails verification (or, " +
                     "worse, the metadata is edited by hand to whatever the build downloaded). " +
-                    "Regenerate per app/CLAUDE.md § Build commands.",
+                    "Regenerate per the Build commands section of app/CLAUDE.md.",
             )
         }
     }

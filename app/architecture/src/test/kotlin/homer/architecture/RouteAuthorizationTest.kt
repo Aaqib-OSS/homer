@@ -5,7 +5,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * Root CLAUDE.md §12 rule 3 and app/CLAUDE.md "Adding a new HTTP endpoint" step 3: every handler of a
+ * ADR-0047 rule 3 and app/CLAUDE.md "Adding a new HTTP endpoint" step 3: every handler of a
  * secured `/api/v1` resource calls the `Authorizer` itself — there is no implicit gate.
  */
 class RouteAuthorizationTest {
@@ -16,7 +16,7 @@ class RouteAuthorizationTest {
         // Proves the walk reached the mounted tree, and keeps the allowlist from outliving its endpoints.
         assertEquals(PUBLIC_ENDPOINTS, PUBLIC_ENDPOINTS.filter { key -> handlers.any { it.key == key } }.toSet())
         val violations = routes.violations(handlers, PUBLIC_ENDPOINTS)
-        assertNoViolations("Secured handlers call the Authorizer (root CLAUDE.md §12 rule 3)", violations)
+        assertNoViolations("Secured handlers call the Authorizer (ADR-0047 rule 3)", violations)
     }
 
     private companion object {
@@ -38,23 +38,8 @@ internal data class RouteHandler(
 )
 
 /**
- * The `Route.*` builders of `homer.app.routes` reachable from `apiV1Routes` — the tree mounted under the
- * operator `authenticate(…)` wrapper (Application.kt `configureRouting`) — read from code with comments
- * and string contents blanked ([KotlinText.codeOnly]).
- *
- * A handler is a trailing lambda (`get("/x") { … }`) or a callable reference to a function of the
- * package (`get("/x", ::handle)`, whose body is then the handler's; only when exactly one function, local
- * ones included, has that name). It is gated when its body makes a denying call — `authorizer.<method>(`
- * or `deniedUnlessAdmin(` — or calls a function of the package every overload of which makes one. All
- * overloads of a builder name are walked. The walk fails closed, each of these being a finding of its own:
- * - a handler-shaped call ([SHAPE]) in a `Route` or `Routing` extension — block or expression body —
- *   outside the handler bodies, that the walk did not attribute to a route block or a handler (a
- *   callable reference to a function outside the package, or to an ambiguous name, is one);
- * - a [SHAPE]-named call on an explicit receiver (`routing.get(…)`, `x.staticResources(…)`), with or
- *   without a trailing lambda, anywhere in the package except inside handler bodies and inside route-free
- *   functions: top-level ones whose signature and body name no `Route`, `Routing` or `Application` type,
- *   no import alias or typealias of one, and no `route`, `routing` or `application` identifier — so
- *   `attributes.put(…)` in a span helper is no finding, but a cast or `call.application` is.
+ * The `Route.*` builders of `homer.app.routes` reachable from `apiV1Routes`, read from code with comments and
+ * strings blanked ([KotlinText.codeOnly]). The walk fails closed; its rules: app/CLAUDE.md "Architecture tests".
  */
 internal class SecuredRoutes private constructor(
     /** Every builder per name: overloads are all walked, so none escapes. */
@@ -278,9 +263,8 @@ internal class SecuredRoutes private constructor(
                     val end = bodyEnd(code, start)
                     val body = code.substring(start, end)
                     bodies.getOrPut(m.groupValues[1]) { mutableListOf() } += body
-                    // Top-level only: a local function may still reach a builder's Route through its closure.
-                    // Route-free only when neither signature nor body names a route type, an alias of one, or
-                    // a route/routing/application receiver, so a cast or `call.application` cannot hide one.
+                    // Top-level only: a local function may reach a builder's Route through its closure.
+                    // Route-free: no route type, alias or receiver is named, so a cast cannot hide one.
                     val topLevel = code.lastIndexOf('\n', m.range.first).let { !code[it + 1].isWhitespace() }
                     if (topLevel && !routeNames.containsMatchIn(code.substring(m.range.first, end))) {
                         routeFree.getOrPut(path) { mutableListOf() } += start..end

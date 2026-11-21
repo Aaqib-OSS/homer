@@ -152,9 +152,8 @@ class ClaudeHarnessTest {
 
     @Test
     fun `subagent fields resolve placeholders and stay valid JSON when the value has a quote`() {
-        // The env value contains a double quote: templating the *encoded* --agents
-        // JSON would corrupt it. Resolving fields before encoding lets the encoder
-        // escape the substituted value, so the blob stays valid JSON.
+        // A quote in an env value must be escaped by the encoder: fields resolve before --agents is encoded,
+        // never by templating the encoded JSON.
         val a =
             argv(
                 ClaudeCmdOptions(agents = mapOf("reviewer" to ClaudeSubagent(prompt = "see {{DIR}}"))),
@@ -170,11 +169,8 @@ class ClaudeHarnessTest {
 
     @Test
     fun `subagent value resolving to another placeholder is not re-expanded into the agents JSON`() {
-        // DIR resolves to a value that is itself a {{VAR}} template; EVIL's value
-        // carries JSON metacharacters. A second template pass over the encoded
-        // --agents blob would substitute EVIL unescaped and let it break out of the
-        // prompt string and inject a sibling "tools" key. The encoded blob must be
-        // excluded from that second pass (JSON injection via double evaluation).
+        // A second template pass over the encoded --agents blob would let EVIL's JSON metacharacters inject a sibling
+        // "tools" key; the encoded blob must be excluded from it.
         val a =
             argv(
                 ClaudeCmdOptions(agents = mapOf("reviewer" to ClaudeSubagent(prompt = "see {{DIR}}"))),
@@ -630,10 +626,8 @@ class ClaudeHarnessTest {
 
     @Test
     fun `an is_error flag of an unexpected shape is pinned — a quoted boolean decodes, a number or null fails the whole event`() {
-        // The flag stays a strict Boolean. kotlinx accepts a quoted `"true"`, so the string form
-        // still fails the turn on the flag and keeps its cost. A number or an explicit null is not
-        // a boolean at all: the result line is Malformed and the cost/usage riding on it never
-        // reach a TurnEnd — the fail-closed trade-off the untyped diagnosis fields do not take.
+        // The flag stays a strict Boolean: a quoted `"true"` fails the turn on the flag and keeps its cost; a number
+        // or null is Malformed and its cost never reaches a TurnEnd (fail-closed, unlike untyped diagnosis fields).
         val quoted =
             events("""{"type":"result","subtype":"success","is_error":"true","total_cost_usd":0.25}""")
                 .single() as LlmEvent.TurnEnd
@@ -886,7 +880,7 @@ class ClaudeHarnessTest {
             for ((what, pattern) in forbidden) {
                 assertFalse(
                     pattern.containsMatchIn(text),
-                    "$name holds $what (${pattern.pattern}); scrub it before committing (root CLAUDE.md §12 rule 7)",
+                    "$name holds $what (${pattern.pattern}); scrub it before committing (ADR-0047 rule 7)",
                 )
             }
         }
@@ -908,7 +902,7 @@ class ClaudeHarnessTest {
         assertEquals(3L, lenient.skippedLines)
     }
 
-    // ========== §12 denial: maxTurnsExitCode bound (moved from ClaudeExecutorTest) ==========
+    // ========== denial: maxTurnsExitCode bound (moved from ClaudeExecutorTest) ==========
 
     @Test
     fun `maxTurnsExitCode out of range is rejected at construction`() {

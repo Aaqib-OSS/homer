@@ -24,10 +24,9 @@ import kotlin.test.assertTrue
 import io.kubernetes.client.Exec as KubernetesExec
 
 /**
- * The read bound against a server that accepts the connection and then says nothing (ADR-0100): a
- * non-streaming read ends instead of hanging, and the exec channel sharing that client is left
- * alone (ADR-0043). Both cases run on the short test bound below; that the production client
- * carries 30 s is asserted in `homer.app.di.RunnerWiringTest`.
+ * The read bound against a server that accepts the connection and then says nothing (ADR-0100): a non-streaming
+ * read ends instead of hanging, and the exec channel sharing that client is left alone (ADR-0043). Both cases use
+ * the short test bound; that production carries 30 s is asserted in `homer.app.di.RunnerWiringTest`.
  */
 class KubernetesApiReadTimeoutTest {
     private val server = MockWebServer()

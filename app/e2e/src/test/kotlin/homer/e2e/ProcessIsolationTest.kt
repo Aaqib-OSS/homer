@@ -20,10 +20,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Process-scoped visibility (ADR-0038): a caller sees a process iff admin,
- * the process's owner, or a `read` grant on its agent. `echoScoped`
- * (fixtures/config/config.json) holds `run`+`read` on `echo` only, so it is
- * the isolation probe against a `fail` run started by the admin token.
+ * Process-scoped visibility (ADR-0038): admin, the owner or a `read` grant on its agent sees a process.
+ * `echoScoped` holds `run`+`read` on `echo` only, so it probes a `fail` run started by the admin token.
  */
 class ProcessIsolationTest : E2eTestBase() {
     private val scopedAuth = "Bearer echo-scoped-token"
@@ -99,10 +97,8 @@ class ProcessIsolationTest : E2eTestBase() {
         }
 
     /**
-     * ADR-0098: a failed run's reason is served to every caller who can see the run, but the
-     * id of the run that blocked it is appended only to a caller who may open that run too
-     * (ADR-0058's existence-hiding applied to the holder link). `lock-skip-scoped` shares
-     * `lock-skip`'s lock key, so the blocker sits on an agent `skipScoped` holds no grant on.
+     * ADR-0098: the blocking run's id is appended to a failure reason only for a caller who may open that run.
+     * `lock-skip-scoped` shares `lock-skip`'s lock key, so the blocker is on an agent `skipScoped` cannot read.
      */
     @Test
     fun `a scoped reader gets the failure reason but not the blocking run's id`() =

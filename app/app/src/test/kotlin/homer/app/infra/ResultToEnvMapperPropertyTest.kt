@@ -27,16 +27,9 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * [ResultToEnvMapper.mapToEnv]'s env-naming contract over generated parameter lists and captures
- * (ADR-0047 rules 2 and 8): the captured value is attacker-influenceable, so the mapper may only
- * ever write the env names it was handed — never invent, rename or re-target one — and a name it
- * emits is never one the host or Homer owns. The example cases live in `ResultToEnvMapperTest`;
- * these drive the combinations its author did not list (root CLAUDE.md §6).
- *
- * The generated parameters carry the names `AgentInputChecks.checkCommandBindings` admits (not a
- * reserved name, and matching the env-name pattern), which is the precondition production
- * guarantees before a run starts; the last test pins that precondition through the production check
- * itself, so a generator drifting into rejected names cannot make the property vacuous.
+ * [ResultToEnvMapper.mapToEnv]'s env-naming contract over generated parameters and captures (ADR-0047 rules 2
+ * and 8): the mapper only writes the env names it was handed, never one the host or Homer owns. Generated
+ * names are the ones `AgentInputChecks.checkCommandBindings` admits; the last test pins that through it.
  */
 class ResultToEnvMapperPropertyTest {
     @TempDir

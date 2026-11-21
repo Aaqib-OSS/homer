@@ -17,7 +17,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** `isCorsOrigin` is the gate a `@SYSENV`-completed `corsAllowedOrigins` entry passes at startup (#29). */
+/** `isCorsOrigin` is the gate a `@SYSENV`-completed `corsAllowedOrigins` entry passes at startup. */
 class CorsOriginPropertyTest {
     private val schemes = Arb.element("http", "https")
     private val hosts = Arb.pattern("[a-z]([a-z0-9-]{0,8}[a-z0-9])?(\\.[a-z]{2,5}){0,2}")
@@ -45,7 +45,7 @@ class CorsOriginPropertyTest {
     @Test
     fun `whatever a variable resolves to, an accepted origin still names the host the config wrote`() =
         runTest {
-            // The #29 shape: the config fixes scheme and host, the environment supplies the port.
+            // The config fixes scheme and host, the environment supplies the port.
             checkAll(Arb.string(0..16, Codepoint.printableAscii())) { value ->
                 val origin = "http://localhost:$value"
                 if (isCorsOrigin(origin)) {

@@ -65,10 +65,8 @@ class DispatchTest : E2eTestBase() {
     @Test
     fun `ask-and-dispatch to the asking agent inherits the origin run's inputs`() =
         runBlocking {
-            // `continuation-inherit` opts into inheritance, so the dispatched run gets the
-            // asking run's subject — its fromInputs tag and its lock key — and the asking
-            // run's secret input stays masked, even though the dispatch record carries
-            // neither. ADR-0101.
+            // The dispatched run gets the asker's subject (fromInputs tag, lock key) and keeps its
+            // secret input masked, though the dispatch record carries neither (ADR-0101).
             val ticket = "e2e-dispatch-${System.nanoTime()}"
             val secret = "dispatch-secret-${System.nanoTime()}"
             val askerId =

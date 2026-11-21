@@ -269,9 +269,8 @@ class ProcessExecutorTest {
     @Test
     fun `execute hands the agent cooldown to obtainProcessId`() =
         runBlocking {
-            // The bound is enforced inside obtainProcessId's transaction, atomic with the
-            // INSERT — AgentRunStarter's pre-flight check cannot hold it on its own. If this
-            // wiring is dropped the cooldown silently stops binding. See ADR-0051.
+            // The bound is enforced inside obtainProcessId's transaction, atomic with the INSERT; if this wiring
+            // is dropped the cooldown silently stops binding (ADR-0051).
             val cooldown = Cooldown(minInterval = "1m", key = "mr-{{MR}}")
             coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } just Runs
@@ -635,10 +634,8 @@ class ProcessExecutorTest {
                 .toList()
                 .forEach { it.join() }
 
-            // assignJob runs on the caller thread while the launched body starts on
-            // Dispatchers.Default — the two race with no happens-before, so it cannot
-            // be ordered against the guarded CREATED write. Verify it happened, but
-            // keep it out of the ordered block (otherwise the test flakes under load).
+            // assignJob runs on the caller thread, racing the launched body on Dispatchers.Default, so it cannot join
+            // the ordered block (it would flake under load); only verify that it happened.
             coVerify { mockProcessManager.assignJob(1, any()) }
 
             // Verify complete lifecycle (calls with a real happens-before chain only)
@@ -678,10 +675,8 @@ class ProcessExecutorTest {
                 .toList()
                 .forEach { it.join() }
 
-            // assignJob runs on the caller thread while the launched body starts on
-            // Dispatchers.Default — the two race with no happens-before, so it cannot
-            // be ordered against the guarded CREATED write. Verify it happened, but
-            // keep it out of the ordered block (otherwise the test flakes under load).
+            // assignJob runs on the caller thread, racing the launched body on Dispatchers.Default, so it cannot join
+            // the ordered block (it would flake under load); only verify that it happened.
             coVerify { mockProcessManager.assignJob(2, any()) }
 
             // Verify complete failure lifecycle (calls with a real happens-before chain only)
@@ -791,9 +786,8 @@ class ProcessExecutorTest {
             coEvery { mockProcess.execute(any(), any()) } just Runs
             every { mockProcess.purgeAfterSeconds } returns fiveDaysInSeconds
             every { mockProcess.purgeRecordAfterSeconds } returns fiveDaysInSeconds
-            // Pins the retainArtifacts passthrough: mockProcess is relaxed, so this field
-            // defaults to emptyList() and a match{} on the 4th setPurgeAt arg (or omitting it)
-            // would pass even if schedulePurge forwarded a typo'd constant or the wrong field.
+            // mockProcess is relaxed, so retainArtifacts would default to emptyList() and a match{} on the 4th
+            // setPurgeAt arg would pass even if the wrong field were forwarded; pin it.
             every { mockProcess.retainArtifacts } returns listOf("decision.json")
 
             val beforeCall = System.currentTimeMillis() / 1000
@@ -973,9 +967,8 @@ class ProcessExecutorTest {
     @Test
     fun `execute should preserve KILLED when kill races with the failure path`() =
         runBlocking {
-            // Failure path: process.execute() throws while a concurrent killProcess
-            // moves the record to KILLED. The FAILED write must be guarded the same
-            // way as the happy-path FINISHED write so KILLED is never overwritten.
+            // Failure path: process.execute() throws while a concurrent killProcess moves the record to KILLED;
+            // the FAILED write must be guarded like the FINISHED write so KILLED is never overwritten.
             coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             coEvery { mockProcess.execute(any(), any()) } throws RuntimeException("boom")
 
@@ -1007,10 +1000,8 @@ class ProcessExecutorTest {
     @Test
     fun `execute should preserve a KILLED that landed before the job's first status write`() =
         runBlocking {
-            // A caller can kill a run in the instant between obtainProcessId and the job's
-            // first status write (a failed /callback/joins kills the sub it just started).
-            // The job's CREATED write must not overwrite that KILLED: unguarded, it reset the
-            // record to CREATED and the cancellation then ended the run FAILED.
+            // A caller can kill a run between obtainProcessId and the job's first status write; the CREATED
+            // write must not overwrite that KILLED, which unguarded ended the run FAILED.
             coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
             var status = ProcessStatus.KILLED
             coEvery { mockProcessManager.getProcessStatus(1) } coAnswers { status }
@@ -1234,9 +1225,8 @@ class ProcessExecutorTest {
                     "for a lock, so this run never started.",
                 reason,
             )
-            // The stored reason is what keeps the row out of `cooldown.afterFailure`'s
-            // latest-failure lookup: a run refused before it started never ran, so it must
-            // not back the agent off. See ADR-0098, ADR-0051.
+            // The stored reason keeps the row out of `cooldown.afterFailure`'s latest-failure lookup (ADR-0051):
+            // a run refused before it started never ran, so it must not back the agent off.
             coVerify { mockProcessManager.setFailureReason(1, reason, null) }
         }
 

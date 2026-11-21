@@ -13,12 +13,9 @@ import kotlin.test.assertTrue
 import kotlin.test.fail
 
 /**
- * Guard for the community surface GitHub reads: the two issue forms, the issue-template chooser
- * config and the pull request template. Each file must stay parseable and keep the fields, options
- * and links the repository promises — a form GitHub cannot parse silently disappears from "New
- * issue" — and every one of them must carry the public-content reminder, because a report or a pull
- * request description is published the moment it is submitted. See ADR-0047; the rule that nothing
- * internal reaches the public repository dates from the migration-era mirror (ADR-0085, deprecated).
+ * Guard for the community surface GitHub reads: the two issue forms, the chooser config and the pull request template
+ * must stay parseable, keep the fields, options and links the repository promises, and carry the public-content
+ * reminder, because a report is published once submitted (ADR-0047, ADR-0085 for the migration-era mirror rule).
  */
 class CommunityTemplatesTest {
     private val bugReport = ".github/ISSUE_TEMPLATE/bug_report.yml"

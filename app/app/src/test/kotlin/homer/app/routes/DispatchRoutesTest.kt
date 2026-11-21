@@ -38,12 +38,9 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
 /**
- * The callback POST and the operator REST endpoints sit on different mount
- * points (token-auth vs operator-auth), and the route-test helpers each install
- * ContentNegotiation at the routing root — mounting both in one `testApplication`
- * throws DuplicatePluginException. So callback-side behavior is exercised through
- * [mountCallbackRoutes] and operator-side behavior through [mountApiV1Routes],
- * seeding the dispatch via the shared service when a test only needs one side.
+ * Callback and operator routes sit on different mount points, and mounting both in one `testApplication`
+ * throws DuplicatePluginException: use [mountCallbackRoutes] or [mountApiV1Routes], seeding the dispatch
+ * via the shared service when a test needs one side only.
  */
 class DispatchRoutesTest {
     /** A QuestionsService + DispatchService sharing one database, with the target agent stubbed. */

@@ -35,11 +35,13 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicInteger
@@ -178,9 +180,8 @@ class LangGraphRunStatusServiceTest {
 
     @Test
     fun `identity is null when langgraph json is a symlink, even to a valid identity file`() {
-        // Real FS + real LocalFileOperations here (not mockk): the NOFOLLOW pre-check
-        // in identity() calls java.nio.file.Files directly against the actual path,
-        // so it needs a real symlink on disk to exercise, not a stubbed method.
+        // Real FS and LocalFileOperations: the NOFOLLOW pre-check in identity() calls
+        // java.nio.file.Files directly, so it needs a real symlink on disk.
         val outsideDir =
             java.nio.file.Files
                 .createTempDirectory("lgrs-outside")
@@ -497,9 +498,8 @@ class LangGraphRunStatusServiceTest {
                 service(fileOperations = fileOperations, stateRunner = stateRunner)
                     .status(processInfo(), agent, includeGraph = true)
 
-            // "ghost" is not a node of the topology, and b->a is not a real edge
-            // (only a->b is) -- both are agent-writable checkpoint data, so
-            // Homer trusts neither without re-checking against its own topology.
+            // "ghost" is no node and b->a is no edge (only a->b is): agent-writable checkpoint data
+            // is re-checked against Homer's own topology (ADR-0047 rule 2).
             assertEquals(listOf(LangGraphEdgeRef("a", "b")), result?.traversed)
         }
 
@@ -946,9 +946,8 @@ class LangGraphRunStatusServiceTest {
                                                 errMsg = null,
                                             ),
                                         ),
-                                    // The boundary commits the append and the set in one transaction,
-                                    // so a running "lint" here is the NEXT step: a step may share its
-                                    // predecessor's label, and it must not be hidden as a duplicate.
+                                    // A running "lint" here is the NEXT step (the boundary commits append and
+                                    // set together); a step may share its predecessor's label.
                                     currentCommand = "lint",
                                 ),
                         )
@@ -1328,9 +1327,8 @@ class LangGraphRunStatusServiceTest {
     @Test
     fun `a burst of concurrent polls for one thread collapses onto the runs already in flight`() =
         runBlocking {
-            // The cache alone does not do this: every one of these callers misses on
-            // arrival. Re-checking after taking a permit is what stops each queued
-            // caller from spawning its own interpreter.
+            // Every caller misses the cache on arrival; the re-check after taking a permit stops each
+            // queued caller from spawning its own interpreter.
             val runs = AtomicInteger()
             val stateRunner =
                 GraphStateRunner { _, _, _, _, _ ->
@@ -1357,11 +1355,11 @@ class LangGraphRunStatusServiceTest {
     @Test
     fun `a caller that waits out the queue limit is shed, and the refusal is not cached`() =
         runBlocking {
-            val runs = AtomicInteger()
+            val holding = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
             val stateRunner =
                 GraphStateRunner { _, _, threadId, _, _ ->
-                    runs.incrementAndGet()
-                    delay(300)
+                    if (holding.complete(Unit)) release.await()
                     GraphStateResult.Ok("""{"threadId":"$threadId","nodes":{"a":"done"},"errors":{}}""")
                 }
             val service =
@@ -1375,8 +1373,9 @@ class LangGraphRunStatusServiceTest {
                 )
 
             val occupier = launch(Dispatchers.Default) { service.status(processInfo(), agent, includeGraph = true) }
-            delay(60) // let it take the only permit
-            val shed = service.status(processInfo(), agent, includeGraph = true)
+            holding.await()
+            val shed = withTimeout(5.seconds) { service.status(processInfo(), agent, includeGraph = true) }
+            release.complete(Unit)
             occupier.join()
 
             assertEquals(LangGraphRunStatusService.BUSY_MESSAGE, shed?.error)
@@ -1391,10 +1390,15 @@ class LangGraphRunStatusServiceTest {
     fun `a shed reading is not cached under its thread, so the next poll of that thread reads the state`() =
         runBlocking {
             val ran = java.util.concurrent.CopyOnWriteArrayList<String>()
+            val holding = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
             val stateRunner =
                 GraphStateRunner { _, _, threadId, _, _ ->
                     ran += threadId
-                    if (threadId == "t1") delay(300)
+                    if (threadId == "t1") {
+                        holding.complete(Unit)
+                        release.await()
+                    }
                     GraphStateResult.Ok("""{"threadId":"$threadId","nodes":{"a":"done"},"errors":{}}""")
                 }
             val service =
@@ -1406,8 +1410,9 @@ class LangGraphRunStatusServiceTest {
                 )
 
             val occupier = launch(Dispatchers.Default) { service.status(processInfo(), agent, includeGraph = true) }
-            delay(60) // let t1 take the only permit
-            val shed = service.status(processInfo(), agent, includeGraph = true)
+            holding.await()
+            val shed = withTimeout(5.seconds) { service.status(processInfo(), agent, includeGraph = true) }
+            release.complete(Unit)
             occupier.join()
 
             assertEquals(LangGraphRunStatusService.BUSY_MESSAGE, shed?.error)

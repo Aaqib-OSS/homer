@@ -245,9 +245,8 @@ class AgentExecutorSessionTest : AgentExecutorTestBase() {
     fun `execute marks the session failed when a command throws a plain CancellationException without our job being cancelled`() {
         val session = RecordingSession(mockShell)
         val workspace = TestFixtures.mockWorkspace(TestFixtures.mockWorkspaceConfig(clearAfterFinish = true))
-        // Simulates a runner-enforced timeout (e.g. KubernetesShellExecutor's TTL): a plain
-        // CancellationException surfaces from a command without the executor's own coroutine
-        // job ever being cancelled.
+        // A runner-enforced timeout (e.g. KubernetesShellExecutor's TTL): a plain CancellationException
+        // surfaces from a command without the executor's own coroutine job being cancelled.
         coEvery { mockExecutor.execute(any(), any(), any()) } throws CancellationException("ttl exceeded")
         coEvery { mockRunner.openSession(any()) } returns session
 
@@ -299,7 +298,7 @@ class AgentExecutorSessionTest : AgentExecutorTestBase() {
     fun `execute succeeds even when sync-down and cleanup fail`() {
         val session = RecordingSession(mockShell, failDownload = true, failCleanWorkspace = true)
         val workspace = TestFixtures.mockWorkspace(TestFixtures.mockWorkspaceConfig(clearAfterFinish = true))
-        runWith(session, workspace) // must not throw — sync-down/cleanup are best-effort
+        runWith(session, workspace) // must not throw: a failed sync-down or cleanup does not fail the run
         assertEquals(
             listOf("createWorkspace", "upload:.", "download:artifacts:OVERLAY", "cleanWorkspace", "close"),
             session.calls,
@@ -459,11 +458,8 @@ class AgentExecutorSessionTest : AgentExecutorTestBase() {
 
     @Test
     fun `the alias merge keeps the pod fields when a pod write lands during the merge`() {
-        // The Kubernetes runner's pod transitions and this write both go through
-        // the repository's single BEGIN IMMEDIATE transaction, so they serialize.
-        // The merge's read sees the last committed pod state, and the merged value
-        // must carry its pod fields — a replace-form lambda
-        // (`{ prev -> RunnerState(alias = …) }`) drops them and fails here.
+        // Pod transitions and this write serialize in the repository's single BEGIN IMMEDIATE transaction;
+        // the merged value must carry the pod fields, which a replace-form lambda drops.
         val session = RecordingSession(mockShell, runnerAlias = "k8s-dev")
         var persisted: RunnerState? = null
         // The pod state as the merge's read sees it (the k8s runner wrote it during

@@ -154,9 +154,8 @@ class RunnerWiringTest {
         assertEquals(setOf("local", "pod", "job"), registry.aliases())
         val pod = assertIs<KubernetesRunner>(registry.get("pod"))
         val job = assertIs<KubernetesRunner>(registry.get("job"))
-        // The bound must reach the client the built runner actually holds, not only the helper:
-        // deleting the call in buildKubernetesRunner fails here, so the wiring cannot silently
-        // revert to an unbounded read.
+        // The bound must reach the client the built runner holds, not only the helper:
+        // deleting the call in buildKubernetesRunner fails here.
         assertEquals(30_000, pod.wiredApiClient().readTimeout)
         assertEquals(30_000, job.wiredApiClient().readTimeout)
     }

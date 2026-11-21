@@ -12,13 +12,9 @@ import kotlin.test.assertEquals
 import kotlin.test.fail
 
 /**
- * Structural backstop for [`app/SERVER.md`](../../../../../SERVER.md), the config twin of
- * [AgentMdExamplesTest]: every complete-config YAML/JSON block deserializes with [AppConfig.serializer]
- * the way `readStartupConfig` reads a config file (`Yaml.default`, plain `Json`), and the result
- * re-validates against `homer-config.schema.json`.
- *
- * A block is complete when its top level sets every key [AppConfig] requires (no default); every other
- * block is a fragment and is skipped.
+ * Structural backstop for [`app/SERVER.md`](../../../../../SERVER.md), the config twin of [AgentMdExamplesTest]:
+ * every complete-config block (one setting every key [AppConfig] requires) deserializes the way
+ * `readStartupConfig` reads a file and validates against `homer-config.schema.json`; fragments are skipped.
  */
 class ServerMdExamplesTest {
     private val serverMd = File(repoRoot, "app/SERVER.md")

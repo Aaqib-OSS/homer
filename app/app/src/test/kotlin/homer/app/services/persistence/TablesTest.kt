@@ -18,10 +18,9 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * The integer columns a migration step added with `ALTER TABLE ADD COLUMN`, which cannot add
- * Exposed's int32 range CHECK, are declared without it in `Tables.kt` so a fresh database matches
- * an upgraded one (#233). Their declared type (`INT`, as `integer()` gives), nullability, default and
- * value mapping stay as before.
+ * Integer columns a migration step adds with `ALTER TABLE ADD COLUMN` cannot carry Exposed's int32 range
+ * CHECK, so `Tables.kt` declares them without it and a fresh database matches an upgraded one.
+ * Type (`INT`), nullability, default and value mapping are unchanged.
  */
 class TablesTest {
     private val logger = LoggerFactory.getLogger(TablesTest::class.java)

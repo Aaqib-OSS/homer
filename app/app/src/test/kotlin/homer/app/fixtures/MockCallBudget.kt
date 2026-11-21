@@ -11,19 +11,9 @@ import org.junit.jupiter.api.extension.ExtensionContext
 import java.io.File
 
 /**
- * After every `:app` test: counts the calls each mock method took in the test, then clears mockk's
- * recorded calls (answers stay). mockk keeps every call it records, with its stack trace, for as long
- * as the mock is reachable, and a test JVM runs many test classes (`:app:test` runs several such
- * forks): a stub that answers at once inside a
- * polling loop (a fake `waitFor` returning "not yet" without waiting) calls it about 140,000 times a
- * second, and about a million such calls kept until the suite ended once filled the 2g test heap
- * (#198, #200).
- *
- * A method called [FAIL_CALLS] times or more fails the test: only a busy loop gets there, as the
- * busiest ordinary test calls one method a few hundred times. One called [WARN_CALLS] times or more
- * is a line in `mock-calls-<worker>.jsonl` under [DIR_PROPERTY], which the warn-mode `mock-calls` check
- * reports (ADR-0082). Registered through `META-INF/services`; the test task enables autodetection
- * for this class only.
+ * After every `:app` test: counts each mock method's calls, then clears mockk's recorded calls (answers stay).
+ * [FAIL_CALLS] calls of one method fail the test (only a busy loop gets there); [WARN_CALLS] is a line in
+ * `mock-calls-<worker>.jsonl` under [DIR_PROPERTY] (ADR-0082). Registered via META-INF/services, `:app:test` only.
  */
 class MockCallBudget(
     private val warnAt: Int = WARN_CALLS,
@@ -103,6 +93,6 @@ class MockCallBudget(
             calls: Int,
             limit: Int,
         ) = "$method was called $calls times in this test (the limit is $limit). A stub that answers at once " +
-            "inside a polling loop busy-spins it: make the fake wait as the real call does (CLAUDE.md §6)."
+            "inside a polling loop busy-spins it: make the fake wait as the real call does (`waitUnfinished`)."
     }
 }

@@ -126,9 +126,8 @@ class InputSchemaValidatorTest {
 
     @Test
     fun `catastrophic pattern never reaches the unbounded matcher`() {
-        // Regression: the classic evil regex + a crafted value used to pin a CPU
-        // inside networknt's matcher. It must now be rejected before any match runs,
-        // so validate() (which precompiles first) never evaluates the body.
+        // The classic evil regex with a crafted value must be rejected before any match runs, so validate()
+        // (which precompiles first) never evaluates the body.
         val schema = obj("""{"type":"object","properties":{"s":{"type":"string","pattern":"^(a+)+$"}}}""")
         val crafted = obj("""{"s":"${"a".repeat(40)}!"}""")
         assertThrows<IllegalArgumentException> { validator.validate(schema, crafted) }

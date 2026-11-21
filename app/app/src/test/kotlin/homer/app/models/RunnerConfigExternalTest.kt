@@ -158,9 +158,7 @@ class RunnerConfigExternalTest {
 
     @Test
     fun `toString keeps a reg-name host the URI host field misses`() {
-        // `homer_internal` is a legal homerApiUrl host (isHttpsOrLoopbackHttpUrl accepts
-        // it) but gives a null `URI.host`, which the redaction must not turn into a
-        // mangled or missing URL.
+        // `homer_internal` is a legal homerApiUrl host with a null `URI.host`; redaction must not mangle or drop it.
         val s = RunnerConfig.External(token = "t", homerApiUrl = "https://homer_internal:8443?x=1").toString()
         assertEquals(true, s.contains("https://homer_internal:8443"), s)
     }
@@ -240,9 +238,7 @@ class RunnerConfigExternalTest {
 
     @Test
     fun `AppConfig init reports an extraUploads violation before a facets one`() {
-        // The external rules fire in the order they always have — extraUploads, then
-        // env, then the facets — so a config breaking both keeps naming the
-        // extraUploads one. See ADR-0042 and ADR-0066.
+        // The external rules fire as extraUploads, env, then facets, so a config breaking both names extraUploads.
         val ex =
             assertThrows<IllegalArgumentException> {
                 config(

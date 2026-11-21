@@ -18,12 +18,9 @@ import kotlin.test.assertTrue
 import kotlin.test.fail
 
 /**
- * Model ⇔ schema backstop (root CLAUDE.md §10): walks the serial descriptor of [AppConfig] and [Agent]
- * and checks every object it reaches against the schema node that describes it — the same property
- * names, and the same required set (an element with no default is required). A sealed type is
- * matched variant by variant through the schema's `oneOf`, keyed by each variant's `type` const.
- * `@Transient` fields have no descriptor element, so they are never compared. The bearer token's
- * object form is a root of its own: the walk stops at the content-polymorphic `TokenConfig`.
+ * Model-to-schema backstop: walks the serial descriptor of [AppConfig] and [Agent] and checks every object it reaches
+ * against its schema node, with the same property names and required set (no default means required); sealed types go
+ * variant by variant through `oneOf`. `@Transient` fields are never compared; the bearer token object is its own root.
  */
 class ModelSchemaContractTest {
     @Test
@@ -172,9 +169,8 @@ private class ModelSchemaWalker(
         }
     }
 
-    // A sealed descriptor has two elements: the discriminator and a "value" whose elements are the subclasses.
-    // A content-based polymorphic serializer (TokenConfig: scalar or object) has none: recursion stops there
-    // (its object form is checked as a root of its own).
+    // A sealed descriptor has two elements, the discriminator and a "value" holding the subclasses; a content-based
+    // polymorphic serializer (TokenConfig) has none, so recursion stops there and its object form is its own root.
     private fun compareSealed(
         descriptor: SerialDescriptor,
         node: JsonObject,

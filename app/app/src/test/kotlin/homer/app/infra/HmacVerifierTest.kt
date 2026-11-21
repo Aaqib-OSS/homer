@@ -295,10 +295,8 @@ class HmacVerifierTest {
 
     @Test
     fun `rejects a replayed signature submitted with different hex case`() {
-        // The HEX decoder is case-insensitive, so the same MAC re-cased decodes
-        // to identical bytes and re-verifies — but if the replay cache is keyed on
-        // the raw signature string, the re-cased copy evades dedup. Key must be
-        // the canonical decoded bytes.
+        // The HEX decoder is case-insensitive, so a re-cased MAC re-verifies; the replay cache must key on the decoded
+        // bytes, not the raw signature string, or the re-cased copy evades dedup.
         val body = "x".toByteArray()
         val tsSec = 1_700_000_000L
         val secret = "k"

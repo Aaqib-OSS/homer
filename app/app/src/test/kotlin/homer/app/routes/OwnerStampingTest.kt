@@ -43,15 +43,9 @@ import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 
 /**
- * Task 3 (Plan 2, process ownership): the direct process-creation entry
- * points must stamp the real caller onto the new process -- HTTP execute
- * and debug from the authenticated principal, retry from the RETRYING
- * caller (deliberately NOT the source process's original owner). Cron's
- * `owner = "system:cron"` stamping is covered in CronSchedulerServiceTest.
- *
- * Mounts the production bearer provider so `call.principalName()` is
- * exercised through the real Authentication pipeline rather than asserted
- * against a bare ApplicationCall.
+ * Direct process-creation entry points stamp the real caller: execute and debug from the principal, retry from
+ * the RETRYING caller, deliberately not the source run's owner. The production bearer provider is mounted so
+ * `call.principalName()` runs through the real Authentication pipeline.
  */
 class OwnerStampingTest {
     private fun Application.installBearerAuth(tokenToPrincipal: Map<String, String>) {

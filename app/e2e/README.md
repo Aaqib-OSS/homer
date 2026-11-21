@@ -14,9 +14,12 @@ always-on "does the production Dockerfile still build" gate.
   [`src/test/kotlin/homer/e2e/support/Dto.kt`](src/test/kotlin/homer/e2e/support/Dto.kt)
   and decoded with `ignoreUnknownKeys = true`. Reusing the `:app` models
   would let a serialization regression hide — both sides would share the bug.
-- **Self-skipping.** Every test class extends `E2eTestBase`, which
-  `Assumptions.assumeTrue`s that `E2E_BASE_URL` is set. Plain
-  `./gradlew check` (unit-test CI, pre-commit) skips the suite cleanly.
+- **Self-skipping, except in its own image.** Every test class extends
+  `E2eTestBase`, which needs `E2E_BASE_URL`. Without it, plain
+  `./gradlew check` (unit-test CI, pre-commit) skips the suite and Gradle
+  warns that it did. The runner image (`app/e2e/Dockerfile`) sets
+  `E2E_REQUIRED=true`, so there a missing `E2E_BASE_URL` fails every class
+  instead of passing a suite that tested nothing.
 - **No sleep-and-assert.** Async state is always polled (`Awaits.awaitStatus`,
   30 s timeout / 250 ms interval); SSE assertions subscribe **before**
   triggering (`SseCollector`).

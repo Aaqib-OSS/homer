@@ -128,9 +128,8 @@ extraUploads:
 
     @Test
     fun `remoteWorkspaceRoot rejects blank, slash, relative and traversing values naming the runner alias`() {
-        // [security_misconfiguration / CWE-732]: the root is what `cleanAfterFinish`
-        // hands to `rm -rf` on the target; a value that widens it to the host is refused
-        // at config load. See ADR-0067.
+        // The root is what `cleanAfterFinish` hands to `rm -rf` on the target; a value that widens it to the
+        // host is refused at config load (ADR-0067, CWE-732).
         for (root in listOf("", "/", "relative/ws", "/ws/../..", "/ws/./x", "/ws//x", "/ws/")) {
             val ex = assertFailsWith<IllegalArgumentException>(root) { sshWithRoot(root).validateRemoteWorkspaceRoot("box") }
             assertTrue(ex.message!!.contains("runner 'box' remoteWorkspaceRoot"), ex.message)
@@ -180,9 +179,8 @@ extraUploads:
 
     @Test
     fun `extraUploads rejects non-normalized remote spellings`() {
-        // './'-prefixed, double-slash, and trailing-slash spellings would evade
-        // duplicate detection and leak into env values — only the canonical
-        // form is accepted, and the error names it
+        // './'-prefixed, double-slash and trailing-slash spellings would evade duplicate detection and leak into env
+        // values, so only the canonical form is accepted and the error names it.
         listOf("./.homer/scripts", ".homer//scripts", ".homer/scripts/").forEach { raw ->
             val ex =
                 assertFailsWith<IllegalArgumentException>("expected '$raw' to be rejected") {
@@ -286,9 +284,7 @@ extraUploads:
 
     @Test
     fun `AppConfig init reports an extraUploads violation before a transport timing one`() {
-        // The ssh rules fire in the order they always have — extraUploads, then the
-        // transport timing fields — so a config breaking both keeps naming the
-        // extraUploads one. See ADR-0042.
+        // The ssh rules fire as extraUploads, then transport timing, so a config breaking both names extraUploads.
         val ex =
             assertFailsWith<IllegalArgumentException> {
                 appConfig(

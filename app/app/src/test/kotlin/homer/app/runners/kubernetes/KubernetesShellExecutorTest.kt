@@ -214,6 +214,7 @@ class KubernetesShellExecutorTest {
                 // cap check fires deterministically on the very next check.
                 every { waitFor(any<Long>(), any<TimeUnit>()) } answers {
                     stdOut.toFile().writeBytes(ByteArray((cap * 2).toInt()) { 'A'.code.toByte() })
+                    waitUnfinished(firstArg(), secondArg())
                     false
                 }
             }
@@ -283,6 +284,7 @@ class KubernetesShellExecutorTest {
                 every { outputStream } returns ByteArrayOutputStream()
                 every { waitFor(any<Long>(), any<TimeUnit>()) } answers {
                     stdOut.toFile().writeBytes(ByteArray((cap * 2).toInt()) { 'A'.code.toByte() })
+                    waitUnfinished(firstArg(), secondArg())
                     false
                 }
                 every { destroyForcibly() } answers {
@@ -354,6 +356,7 @@ class KubernetesShellExecutorTest {
                 every { outputStream } returns ByteArrayOutputStream()
                 every { waitFor(any<Long>(), any<TimeUnit>()) } answers {
                     stdOut.toFile().writeBytes(ByteArray((cap * 2).toInt()) { 'A'.code.toByte() })
+                    waitUnfinished(firstArg(), secondArg())
                     false
                 }
             }
@@ -529,7 +532,10 @@ class KubernetesShellExecutorTest {
                 every { inputStream } returns ByteArrayInputStream(ByteArray(0))
                 every { errorStream } returns stderrPipe.stream
                 every { outputStream } returns ByteArrayOutputStream()
-                every { waitFor(any<Long>(), any<TimeUnit>()) } answers { stderrPipe.closed }
+                every { waitFor(any<Long>(), any<TimeUnit>()) } answers {
+                    if (!stderrPipe.closed) waitUnfinished(firstArg(), secondArg())
+                    stderrPipe.closed
+                }
                 every { exitValue() } returns 0
             }
         val executor =
