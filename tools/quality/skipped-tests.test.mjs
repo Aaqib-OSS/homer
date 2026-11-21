@@ -119,7 +119,7 @@ test('a stack with no report, or reports holding no test, is a finding: the chec
   }
 });
 
-test('the reports cover every backend module that runs tests, the console and the Python client', () => {
+test('the reports cover every backend module that runs tests, the e2e suite, the console and the Python client', () => {
   assert.deepEqual(
     REPORTS.map((r) => r.path),
     [
@@ -128,6 +128,7 @@ test('the reports cover every backend module that runs tests, the console and th
       'app/homer-runner/build/test-results/test',
       'app/agentdebug/build/test-results/test',
       'app/buildSrc/build/test-results/test',
+      'app/e2e/build/test-results/test',
       'console/reports/quality/junit/vitest.xml',
       'clients/python/report.xml',
     ],
