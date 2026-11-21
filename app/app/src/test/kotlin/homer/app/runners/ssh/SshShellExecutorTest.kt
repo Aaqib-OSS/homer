@@ -705,6 +705,15 @@ class SshShellExecutorTest {
     }
 
     @Test
+    fun `an unknown exit signal on a session still open but closing is a lost connection quoting nothing`(
+        @TempDir local: Path,
+    ) = runTest {
+        val exception =
+            assertThrows<SshConnectionLostException> { exitWithSignal("BOGUS", local, sessionLive = true, closing = true) }
+        assertFalse(exception.message.orEmpty().contains("BOGUS"))
+    }
+
+    @Test
     fun `a known exit signal still reports 128 plus its number on a session that is closing`(
         @TempDir local: Path,
     ) = runTest {
@@ -731,6 +740,7 @@ class SshShellExecutorTest {
         signal: String?,
         local: Path,
         sessionLive: Boolean = true,
+        closing: Boolean = !sessionLive,
     ): CommandResult {
         val channel = mockk<ChannelExec>(relaxed = true)
         val openFuture = mockk<OpenFuture>()
@@ -742,7 +752,7 @@ class SshShellExecutorTest {
         val session = mockk<ClientSession>(relaxed = true)
         every { session.createExecChannel(any()) } returns channel
         every { session.isOpen } returns sessionLive
-        every { session.isClosing } returns !sessionLive
+        every { session.isClosing } returns closing
         return executorOn(session)
             .cmd(listOf("echo", "hello"), local.resolve("o"), local.resolve("e"), null, emptyMap(), 10.seconds)
     }
