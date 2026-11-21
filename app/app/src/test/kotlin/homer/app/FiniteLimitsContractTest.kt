@@ -172,7 +172,8 @@ class FiniteLimitsContractTest {
         val EXEMPTIONS =
             mapOf(
                 "Agent.runnerClaimTimeoutSec" to "null inherits the finite server.runnerClaimTimeoutSec",
-                "ClaudeCmdOptions.maxBudgetUsd" to "opt-in per-command cap: the run timeout and llmPrice costLimits bound spend without it",
+                "ClaudeCmdOptions.maxBudgetUsd" to
+                    "opt-in per-command cap: the run timeout and the agent's costLimits bound spend without it",
                 "ClaudeCmdOptions.maxMcpOutputTokens" to "opt-in override: unset leaves the Claude CLI's own MCP output cap in force",
                 "ClaudeCmdOptions.maxTurnsExitCode" to "an exit code, not a bound: the name matches the pattern by accident",
                 "Param.max" to "opt-in numeric value constraint on a caller's input, not a resource bound",

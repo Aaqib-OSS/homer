@@ -793,7 +793,7 @@ cancel, TTL and the settled-row prune. See
 server:
   dispatch:
     maxPending: 100           # global cap on PENDING dispatches, and separately on PENDING continuations (default 100)
-    defaultTtlSec: 86400      # default per-dispatch TTL in seconds (default 604800 = 7 days)
+    defaultTtlSec: 86400      # default TTL in seconds for dispatches and continuations (default 604800 = 7 days)
     sweepIntervalSec: 60      # how often the TTL sweep runs, in seconds (default 60)
     settledRetentionSec: 604800  # delete settled dispatches/continuations this long after creation (default 7 days, floor 3600)
     resultTokenTtlSec: 3600   # TTL for read-by-reference result tokens (default 3600, floor 60)

@@ -1791,7 +1791,7 @@ when the agent should carry on instead of ending `FAILED`:
 | `appendSystemPromptFile` | `String` | No | `null` | File appended after the default system prompt |
 | `permissionMode` | `String` | No | `null` | One of `default`, `acceptEdits`, `plan`, `auto`, `dontAsk`, `bypassPermissions`. When set, `--dangerously-skip-permissions` is not emitted. |
 | `permissionPromptTool` | `String` | No | `null` | MCP tool used to prompt for permission in headless runs |
-| `maxBudgetUsd` | `Double` | No | `null` | Upper bound on spend for this run; opt-in, unset sets no per-command cap (the run timeout and `llmPrice` cost caps still bound spend) |
+| `maxBudgetUsd` | `Double` | No | `null` | Upper bound on spend for this run; opt-in, unset sets no per-command cap (the run timeout and the agent's `costLimits` still bound spend) |
 | `sessionId` | `String` | No | `null` | UUID identifying the session |
 | `addDir` | `String \| List<String>` | No | `null` | Additional director(y/ies) to add to context. A bare string adds one; a list adds several (emitted as `--add-dir a b`). |
 | `allowedTools` | `List<String>` | No | `null` | Tools that run without a permission prompt. Not a restriction on its own: with `dangerouslySkipPermissions` (or `permissionMode: bypassPermissions`) every tool runs anyway, and a step that sets neither `tools` nor `disallowedTools` logs a WARN at load. See [Tool Allowlisting/Denylisting](#tool-allowlistingdenylisting) |
