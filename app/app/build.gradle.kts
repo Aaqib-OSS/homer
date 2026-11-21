@@ -64,6 +64,8 @@ dependencies {
         implementation(libs.httpclient5)
         implementation(libs.httpcore5)
         implementation(libs.httpcore5H2)
+        // Above the guava client-java's Google auth client resolves (W-024).
+        implementation(libs.guava)
         // Kept at the project's Kotlin version: without it Ktor and Exposed resolve a 2.3.x kotlin-reflect
         // that predates an advisory fix (W-013, W-014).
         implementation(libs.kotlinReflect)
