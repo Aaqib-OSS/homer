@@ -21,12 +21,9 @@ sealed interface LlmPrompt {
 }
 
 /**
- * Retry configuration for the `claude` command. Wraps the whole CLI invocation (stdin, env and
- * stdout validation): a non-zero exit retries — except the terminal stop the command opted into
- * (`maxTurnsExitCode` or `isErrorExitCode`), never retried — as does stdout failing the JSON-event-stream validation
- * (`MalformedLlmOutputException`); other exceptions (timeouts, cancellation) propagate. Backoff is
- * exponential with full jitter between attempts — `min(maxDelayMs, baseDelayMs * 2^attemptIndex +
- * random(0, baseDelayMs))` — so concurrent retriers do not reconverge. Default `attempts = 1`: no retry.
+ * Retry for the `claude` command, wrapping the whole CLI invocation: a non-zero exit retries (except a terminal
+ * stop opted into via `maxTurnsExitCode` / `isErrorExitCode`), as does `MalformedLlmOutputException`; others
+ * propagate. Full-jitter backoff `min(maxDelayMs, baseDelayMs * 2^attemptIndex + random(0, baseDelayMs))`.
  */
 @Serializable
 data class LlmRetry(
@@ -73,10 +70,8 @@ data class ClaudeCmdOptions(
     val agent: String? = null,
     val agents: Map<String, ClaudeSubagent>? = null,
     val maxTurns: Int = 40,
-    // Opt-in: when Claude stops with result subtype `error_max_turns`, return this exit
-    // code instead of failing the run with a validation error, so a later step (e.g. a
-    // deterministic ship step) can decide what to do with the partial work. Unset keeps
-    // the fail-closed behaviour.
+    // Opt-in: exit code returned instead of failing when Claude stops with `error_max_turns`, so a
+    // later step can handle the partial work. Unset fails closed.
     val maxTurnsExitCode: Int? = null,
     // Opt-in: when the result event is a `success` subtype carrying `is_error`, return this exit
     // code instead of failing the run as malformed output. Unset keeps the fail-closed behaviour.
@@ -114,9 +109,8 @@ data class ClaudeCmdOptions(
     val jsonSchema: String? = null,
     val betas: String? = null,
     val debugFile: String? = null,
-    // Security: opt-in — passes --dangerously-skip-permissions to Claude CLI; only
-    // safe in isolated/sandboxed environments. See ADR-0017.
-    // When permissionMode is set, it takes precedence and the flag is omitted.
+    // Opt-in `--dangerously-skip-permissions`; only safe in isolated environments (ADR-0017). A set
+    // permissionMode takes precedence and the flag is omitted.
     val dangerouslySkipPermissions: Boolean = false,
     val options: List<String>? = null,
 ) {
@@ -157,10 +151,8 @@ data class CodexCmdOptions(
     val ignoreRules: Boolean = false,
     val outputSchema: String? = null,
     val outputLastMessage: String? = null,
-    // Security: opt-in — passes --dangerously-bypass-approvals-and-sandbox to the
-    // Codex CLI; only safe in isolated/sandboxed environments (same reasoning as
-    // ClaudeCmdOptions.dangerouslySkipPermissions, ADR-0017).
-    // When sandbox is set, it takes precedence and the flag is omitted.
+    // Opt-in `--dangerously-bypass-approvals-and-sandbox`; only safe in isolated environments (ADR-0017).
+    // A set sandbox takes precedence and the flag is omitted.
     val dangerouslyBypassApprovalsAndSandbox: Boolean = false,
     // Repeated `-c key=value` config overrides (TOML values).
     val config: List<String>? = null,
@@ -179,10 +171,8 @@ data class OpencodeCmdOptions(
     val dir: String? = null,
     // Repeated `-f path` attachments.
     val file: List<String>? = null,
-    // Security: opt-in — passes --auto to the opencode CLI, which auto-approves
-    // every permission the configuration does not explicitly deny; only safe in
-    // isolated/sandboxed environments (same reasoning as
-    // ClaudeCmdOptions.dangerouslySkipPermissions, ADR-0017).
+    // Opt-in `--auto`: approves every permission the configuration does not deny; only safe in
+    // isolated environments (ADR-0017).
     val auto: Boolean = false,
     val options: List<String>? = null,
 )

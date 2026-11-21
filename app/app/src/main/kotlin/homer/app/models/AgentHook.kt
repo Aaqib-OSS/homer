@@ -9,15 +9,13 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 
-/** Upper bound on `hooks` entries per agent: a local cap on the fan-out one run can cause. §12 rule 4. */
+/** Upper bound on `hooks` entries per agent: a local cap on the fan-out one run can cause. ADR-0047 rule 4. */
 const val MAX_AGENT_HOOKS = 16
 
 /**
- * One agent-level status hook: when a run of the declaring agent reaches [status],
- * Homer starts [agent] — whatever started the run (cron, HTTP, MCP, console retry,
- * a sub-run). Declared as a one-key `{STATUS: agentName}` entry in the agent's
- * `hooks` list; several entries may name the same status, and each one starts its
- * own agent. See ADR-0107.
+ * One agent-level status hook: when a run of the declaring agent reaches [status], Homer starts [agent], however
+ * the run started. Declared as a one-key `{STATUS: agentName}` entry in `hooks`; several entries may name one
+ * status, and each starts its own agent. See ADR-0107.
  */
 @Serializable(with = AgentHookSerializer::class)
 data class AgentHook(
@@ -32,20 +30,15 @@ data class AgentHook(
 }
 
 /**
- * The agent-name charset (AGENT.md § Agent Fields, `name` row), defined here in the kernel and
- * aliased by `AgentDirs`: a hook target and an agent directory are the same contract, so they
- * read one pattern — a widening that reaches one reaches both. The JSON schema's `pattern` is
- * the only other copy, as a contract surface.
+ * The agent-name charset (AGENT.md, Agent Fields, `name` row), aliased by `AgentDirs`: a hook target and an
+ * agent directory are one contract, so a widening reaches both. The JSON schema `pattern` is the only other copy.
  */
 internal val AGENT_NAME_PATTERN = Regex("^[a-zA-Z0-9_-]+$")
 
 /**
- * Reads and writes the one-key `{STATUS: agentName}` wire form of an [AgentHook].
- * A single-entry string map is the same shape in YAML and JSON (a status list as
- * the key is not — JSON object keys are strings). A decode names only the
- * offending key, never the value: the value is an untrusted agent name and the
- * error text reaches the load log and the definition-write API response.
- * See ADR-0107, root §12 rule 7.
+ * Reads and writes the one-key `{STATUS: agentName}` wire form of an [AgentHook], the same shape in YAML and
+ * JSON. A decode error names only the offending key, never the value: the value is an untrusted agent name and
+ * the error reaches the load log and the definition-write response. See ADR-0107.
  */
 object AgentHookSerializer : KSerializer<AgentHook> {
     private val entries = MapSerializer(String.serializer(), String.serializer())

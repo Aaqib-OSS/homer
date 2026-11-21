@@ -21,7 +21,7 @@ data class NewRunRecord(
     val rootProcessId: Int? = null,
     val tags: List<String> = emptyList(),
 ) {
-    // Input values can be secret: keys only. Root CLAUDE.md §12 rule 7.
+    // Input values can be secret: keys only (ADR-0047 rule 7).
     override fun toString() =
         "NewRunRecord(agentName=$agentName, inputKeys=${inputParams.keys}, parentProcessId=$parentProcessId, rootProcessId=$rootProcessId)"
 }
@@ -39,9 +39,8 @@ data class ProcessInfo(
     val status: ProcessStatus,
     val agentName: String,
     val inputParams: Map<String, String> = emptyMap(),
-    // envNames the agent declared `secret: true` when this run started. Null for
-    // rows predating the column, which fall back to the current agent definition.
-    // See ADR-0052.
+    // envNames the agent declared `secret: true` when this run started; null for rows predating the
+    // column, which fall back to the current agent definition. See ADR-0052.
     val secretInputKeys: Set<String>? = null,
     val job: Job? = null,
     val history: List<Pair<Long, ProcessStatus>> = emptyList(),
@@ -52,10 +51,8 @@ data class ProcessInfo(
     // Unix epoch seconds; null = no purge scheduled
     val purgeAt: Long? = null,
     val runner: RunnerState? = null,
-    // Sum of the resolved cost (session-spend endpoint or CLI figure) of every
-    // accounted claude attempt in this process, including failed and aborted
-    // attempts. Zero when the process has no claude commands or none priced above
-    // zero. See costSource below and ADR-0061.
+    // Sum of the resolved cost of every accounted claude attempt, failed and aborted included; zero when
+    // none was priced above zero. See ADR-0061.
     val costUsd: Double = 0.0,
     // 'cli' | 'session' | 'mixed' — which pricing rung produced costUsd. See ADR-0061.
     val costSource: String = "cli",
@@ -65,9 +62,8 @@ data class ProcessInfo(
     // W3C trace id of this run's root span; null when tracing is off or the span
     // was not sampled. Used to deep-link a run to its Langfuse trace.
     val traceId: String? = null,
-    // Id of the run that caused this one (RunAgent, dispatch, continuation, or an
-    // external caller's X-Homer-Parent-Process-Id). Null at the root of a flow.
-    // See ADR-0058.
+    // Id of the run that caused this one (RunAgent, dispatch, continuation, or an external caller's
+    // X-Homer-Parent-Process-Id); null at the root of a flow. See ADR-0058.
     val parentProcessId: Int? = null,
     // Id of the first run of this run's flow; null at the root. See ADR-0058.
     val rootProcessId: Int? = null,
@@ -77,18 +73,14 @@ data class ProcessInfo(
     // Whether the retained set was cut short by server.maxRetainedArtifactBytes.
     // Null until the workspace sweep has run (or when nothing was retained).
     val retainedTruncated: Boolean? = null,
-    // Subject tags carried by this run: `key:value` strings resolved from inputs at
-    // start and/or declared at run time via the callback route. Empty for the
-    // sweep/reconciliation reads that do not surface tags. See ADR-0060.
+    // Subject tags (`key:value`) resolved from inputs at start and/or declared via the callback route;
+    // empty for the sweep/reconciliation reads that do not surface tags. See ADR-0060.
     val tags: List<String> = emptyList(),
-    // Why the run ended FAILED before any of its commands started: the claim timeout, the
-    // lock skip, the parallel-run cap or one of the two queue bounds. A fixed-vocabulary
-    // sentence built from typed fields, never a raw exception message. Null for every other
-    // failure, and for a run that never failed. See ADR-0020.
+    // Why the run ended FAILED before any command started (claim timeout, lock skip, parallel-run cap or a
+    // queue bound): a fixed-vocabulary sentence, never a raw exception message. Null otherwise. See ADR-0020.
     val failureReason: String? = null,
-    // The run that blocked this one (the lock holder), when the cause names one; emitted only
-    // to a caller who may see that run. Not a foreign key: the holder may be evicted first,
-    // like every other run link. See ADR-0058.
+    // The run that blocked this one (the lock holder), emitted only to a caller who may see it. Not a
+    // foreign key: the holder may be evicted first, like every run link. See ADR-0058.
     val failureReasonRunId: Int? = null,
     // Why and where this run was stopped gracefully; null for a run that was not.
     // The run's status stays FAILED — no new ProcessStatus. See ADR-0108.
@@ -217,8 +209,7 @@ data class ExecutionInfo(
     val skipped: Boolean = false,
     val outputTruncated: Boolean = false,
     val llmAccounting: LlmAccounting? = null,
-    // The command's tag (`cmd`, `script`, `claude`, `codex`, `opencode`, `agent`,
-    // `langgraph`, `runnerCmd`);
+    // The command's tag (`cmd`, `script`, `claude`, `codex`, `opencode`, `agent`, `langgraph`, `runnerCmd`);
     // empty for rows written before this field existed.
     val kind: String = "",
     // Why this step was interrupted by a graceful stop (`step_timeout`, `run_deadline`),
