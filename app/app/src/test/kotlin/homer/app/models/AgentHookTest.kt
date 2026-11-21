@@ -106,6 +106,7 @@ class AgentHookTest {
         val ex = assertThrows<IllegalArgumentException> { decodeYaml("  - CREATED: \"not an agent\"") }
 
         assertTrue(ex.message!!.contains("not a valid agent name"), ex.message)
+        assertFalse(ex.message!!.contains("not an agent"), ex.message)
     }
 
     @Test
