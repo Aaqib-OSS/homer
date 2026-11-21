@@ -9,6 +9,9 @@ import org.slf4j.LoggerFactory
 import ch.qos.logback.classic.Level as LogbackLevel
 import ch.qos.logback.classic.Logger as LogbackLogger
 
+/** A copy of the captured events, taken under the lock `doAppend` holds, so a late MINA thread cannot race it. */
+private fun ListAppender<ILoggingEvent>.snapshot(): List<ILoggingEvent> = synchronized(this) { list.toList() }
+
 /** Run [body] with [loggerClass]'s WARN output captured. */
 internal suspend fun captureWarnings(
     loggerClass: Class<*>,
@@ -25,7 +28,7 @@ internal suspend fun captureWarnings(
         logback.detachAppender(appender)
         logback.level = level
     }
-    return appender.list
+    return appender.snapshot()
 }
 
 /**
@@ -47,7 +50,8 @@ internal suspend fun <T> captureAllEvents(body: suspend () -> T): Pair<T, List<I
     pinned.forEach { (logger, level) -> logger.level = level }
     root.addAppender(appender)
     try {
-        return body() to appender.list
+        val result = body()
+        return result to appender.snapshot()
     } finally {
         root.detachAppender(appender)
         root.level = rootLevel
