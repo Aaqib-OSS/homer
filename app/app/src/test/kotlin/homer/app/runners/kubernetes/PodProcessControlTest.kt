@@ -173,7 +173,9 @@ class PodProcessControlTest {
             val wrapperGroup = groupOf(process.pid())
             signal("KILL", child)
             exitOf(process)
-            assertTrue(wrapperGroup.isNotEmpty() && wrapperGroup != process.pid().toString(), "precondition: $shell led its group")
+            // `ps -o pgid= -p` is unavailable on hosts without procps (BusyBox), where no shell's group is
+            // observable: skip rather than fail the check the same way the setsid probes do.
+            assumeTrue(wrapperGroup.isNotEmpty() && wrapperGroup != process.pid().toString(), "precondition: $shell led its group")
             assertFalse(Path.of(pgidFile(dir)).exists(), "under $shell")
         }
     }
