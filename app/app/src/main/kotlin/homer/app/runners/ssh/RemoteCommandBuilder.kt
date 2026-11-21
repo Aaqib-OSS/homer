@@ -53,7 +53,7 @@ object RemoteCommandBuilder {
                     .append(k)
                     .append('=')
                     .append(quote(v))
-                    .append('\n')
+                    .append(" || exit 1\n")
             }
         }
     }

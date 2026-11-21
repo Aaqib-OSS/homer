@@ -4,11 +4,13 @@ import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class RemoteCommandBuilderTest {
     @Test
@@ -81,7 +83,7 @@ class RemoteCommandBuilderTest {
     fun `envFileContent removes the file first, then exports each value single-quoted`() {
         val content = RemoteCommandBuilder.envFileContent("/w/.homer/env/a1.env", linkedMapOf("FOO" to "it's", "BAR" to "x"))
         assertEquals(
-            "rm -f -- '/w/.homer/env/a1.env' || exit 1\nexport FOO='it'\\''s'\nexport BAR='x'\n",
+            "rm -f -- '/w/.homer/env/a1.env' || exit 1\nexport FOO='it'\\''s' || exit 1\nexport BAR='x' || exit 1\n",
             content,
         )
     }
@@ -106,6 +108,33 @@ class RemoteCommandBuilderTest {
             }
         assertContains(e.message.orEmpty(), "'STEP_VALUE'")
         assertFalse(e.message.orEmpty().contains("s3cr3t-Ab9"))
+    }
+
+    @Test
+    fun `a failing export stops the command under sh and non-posix bash, and the env file is gone`(
+        @TempDir tmp: Path,
+    ) {
+        assumeFalse(System.getProperty("os.name").lowercase().contains("win"))
+        for (shell in listOf("/bin/sh", "/bin/bash").filter { Files.isExecutable(Path.of(it)) }) {
+            val envFile = tmp.resolve("e.env").toString()
+            val lines = RemoteCommandBuilder.envFileContent(envFile, linkedMapOf("A" to "1", "B" to "2")).lines()
+            // `B` made readonly before its export line: the export fails in every shell.
+            Path.of(envFile).writeText((listOf(lines[0], "readonly B") + lines.drop(1)).joinToString("\n"))
+            val (exit, out) = run(shell, ". '$envFile' && echo RAN")
+            assertTrue(exit != 0, "$shell: the failing export must fail the launch")
+            assertFalse(out.contains("RAN"), "$shell: the command ran with a partial env")
+            assertFalse(Files.exists(Path.of(envFile)), "$shell: the env file outlived the launch")
+        }
+    }
+
+    /** Runs [script] under [shell] `-c`, returning its exit code and combined output. */
+    private fun run(
+        shell: String,
+        script: String,
+    ): Pair<Int, String> {
+        val p = ProcessBuilder(shell, "-c", script).redirectErrorStream(true).start()
+        val out = p.inputStream.readBytes().decodeToString()
+        return p.waitFor() to out
     }
 
     @Test
