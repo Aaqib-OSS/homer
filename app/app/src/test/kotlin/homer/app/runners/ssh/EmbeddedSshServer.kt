@@ -39,7 +39,7 @@ import java.util.concurrent.TimeUnit
  * on whitespace (quote-stripped) and runs it as a bare argv, whereas real
  * `sshd` always hands the whole string to the login shell (`sh -c command`).
  * Runner code (`RemoteCommandBuilder`) relies on that real-world shell
- * semantics (`cd ... && exec env ... argv`), so the fixture must match it.
+ * semantics (`cd ... && exec sh -c '. "$0" && exec "$@"' file argv`), so the fixture must match it.
  */
 class EmbeddedSshServer(
     private val refuseExec: Boolean = false,
