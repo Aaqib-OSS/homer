@@ -159,6 +159,7 @@ tasks.test {
             repoRoot.resolve("app/entrypoint.sh"),
             repoRoot.resolve("app/homer-runner.sh"),
             repoRoot.resolve("app/agentdebug.sh"),
+            repoRoot.resolve("app/require-java4shell-fix.sh"),
             repoRoot.resolve("app/settings.gradle.kts"),
             repoRoot.resolve("app/buildSrc/settings.gradle.kts"),
             // DependencyVerificationGateTest reads these (ADR-0115). The keyrings are files, not
