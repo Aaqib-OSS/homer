@@ -35,19 +35,11 @@ import io.ktor.server.sessions.set
  * auth handshake work without a token.
  */
 internal fun Route.apiV1UnsecuredRoutes(deps: ApiDeps) {
-    // Probe endpoints must be reachable without a bearer token — kubelet
-    // and most reverse-proxy upstream checks don't send Authorization
-    // headers. Mounted **outside** the auth wrapper so Kubernetes can
-    // hit them on a bearer-secured deployment. Audit P1 #12.
+    // Outside the auth wrapper: kubelet and reverse-proxy probes send no Authorization header.
     probeRoutes(deps.unsecuredDeps())
 
-    // Auth routes — mounted OUTSIDE the authenticate(...) wrapper:
-    //  • /login is by definition unauthenticated;
-    //  • /logout must be idempotent and reachable even with a stale cookie;
-    //  • /me reads its one credential itself — a bearer token when the request
-    //    carries one, else the session cookie — and never FirstSuccessful, which
-    //    would answer one credential's request as the other's principal.
-    // Audit P0 #6 (long-term) / ADR-0011 (amended 2026-11-20), ADR-0059.
+    // Auth routes sit outside the wrapper: /login is unauthenticated, /logout works with a stale cookie, and
+    // /me reads its one credential itself, never FirstSuccessful, which would mix principals. See ADR-0011.
     val passwordScheme = deps.passwordScheme
     if (passwordScheme != null) {
         sessionAuthRoutes(deps.unsecuredDeps(), passwordScheme)

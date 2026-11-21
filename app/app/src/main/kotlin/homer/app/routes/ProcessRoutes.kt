@@ -208,7 +208,6 @@ private fun Route.artifactRoute(deps: ProcessRouteDeps) {
                 return@get
             }
 
-            // Reject oversized artifacts before opening a stream (audit P1 #18).
             artifactService.checkArtifactSize(artifactPath).onFailure { failure ->
                 respondArtifactSizeFailure(call, failure)
                 return@get

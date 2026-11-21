@@ -130,11 +130,8 @@ internal val executionModule =
         }
 
         single<CoroutineScope>(named("applicationScope")) {
-            // Shared scope for all background coroutines that must drain on
-            // shutdown (ProcessExecutor.coroutineScope.launch jobs and the LLM
-            // cost settlements of ADR-0089).
-            // SupervisorJob so one failed child doesn't cancel its siblings.
-            // Audit P0 #3.
+            // Background coroutines that must drain on shutdown (process jobs, ADR-0089 cost settlements);
+            // SupervisorJob keeps one failed child from cancelling its siblings.
             CoroutineScope(SupervisorJob() + Dispatchers.Default)
         }
 

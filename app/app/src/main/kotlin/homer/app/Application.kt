@@ -123,13 +123,7 @@ private fun readStartupConfig(args: Array<String>): AppConfig? {
         return null
     }
 
-    // Cap the config file size at bootstrap before reading it into memory
-    // and handing it to kaml. We don't know the configured cap yet (it
-    // lives inside the file we're about to read), so use the same compile-
-    // time default that the model declares. Operators that legitimately
-    // need a larger config can split it or, once parsed, raise
-    // server.maxConfigFileBytes for subsequent reads (agent files,
-    // reload). Audit P1 #14.
+    // The configured cap lives inside this file, so the bootstrap read uses a fixed 1 MiB (CWE-400).
     val bootstrapConfigSizeCap: Long = 1L * 1024 * 1024
     val configSizeBytes = configFile.length()
     if (configSizeBytes > bootstrapConfigSizeCap) {
@@ -409,12 +403,8 @@ private fun Application.subscribeShutdownDrain(
     drainTimeout: Duration,
 ) {
     monitor.subscribe(ApplicationStopping) {
-        // Flip the readiness flag **first** so /readyz starts answering 503
-        // immediately, before we begin joining in-flight jobs. The load
-        // balancer / Kubernetes Service then stops sending new requests to
-        // this pod while the existing ones finish under the drain timeout.
-        // /livez stays 200 throughout, so the kubelet does not restart the
-        // pod mid-drain. Audit P1 #12.
+        // Readiness flips first so the load balancer stops routing here; /livez stays 200 so the
+        // kubelet does not restart the pod mid-drain.
         if (isDraining.compareAndSet(false, true)) {
             logger.info("Drain initiated; /api/v1/readyz will now answer 503")
         }

@@ -137,10 +137,7 @@ internal class AgentScanner(
         rel: String,
         errors: MutableList<String>,
     ): Agent? {
-        // Cap input size before reading into memory. This is the DoS
-        // backstop against a 1 GB agent.yaml — kaml's underlying
-        // snakeyaml-engine already bounds depth and alias expansion,
-        // but neither caps total input size. Audit P1 #14.
+        // kaml bounds depth and alias expansion but not input size, so cap it before reading (CWE-400).
         val size = Files.size(agentPath)
         if (size > maxConfigFileBytes) {
             logger.error(

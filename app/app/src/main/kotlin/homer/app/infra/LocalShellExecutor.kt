@@ -189,11 +189,7 @@ class LocalShellExecutor(
             processBuilder.redirectOutput(ProcessBuilder.Redirect.to(stdOut.toFile()))
         }
 
-        // ProcessBuilder.environment() is pre-populated from System.getenv()
-        // by the JDK; if we just `putAll` we silently inherit every host env
-        // var. Clear it first so the child sees ONLY what
-        // WorkspaceConfigFactory composed (allowlisted host env + globalEnv +
-        // agent.env + queryParams + HMR_*). Audit P0 #2.
+        // environment() starts as the host's env; clear it so the child sees only the composed env (ADR-0065).
         val childEnv = processBuilder.environment()
         childEnv.clear()
         childEnv.putAll(env)
