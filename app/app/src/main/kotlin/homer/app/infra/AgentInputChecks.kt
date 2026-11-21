@@ -236,28 +236,26 @@ internal class AgentInputChecks(
         agent: Agent,
         errors: MutableList<String>,
     ): Boolean {
-        // Result-capture env names get the same guardrail as input env names:
-        // the captured *value* is attacker-influenceable (command output / Claude
-        // output steerable by prompt injection), and appendToEnv merges it into the
-        // env consumed by later commands. Without this, a `resultEnvParam` targeting
-        // PATH or HMR_CALLBACK_TOKEN poisons subsequent commands. See ReservedEnvNames.
+        // A captured *value* is attacker-influenceable and merges into the env that later commands
+        // and onStop steps consume, so both get the same reserved/malformed env-name guard (ADR-0047).
         val invalidResultEnvName =
-            agent.commands
-                .flatMap { cmd -> cmd.resultEnvParam.map { cmd to it } }
-                .firstOrNull { (_, param) ->
+            (agent.commands.map { "command" to it } + agent.onStop.map { "onStop step" to it })
+                .flatMap { (kind, cmd) -> cmd.resultEnvParam.map { Triple(kind, cmd, it) } }
+                .firstOrNull { (_, _, param) ->
                     ReservedEnvNames.isReserved(param.envName) || !envNamePattern.matches(param.envName)
                 }
         if (invalidResultEnvName != null) {
-            val (cmd, param) = invalidResultEnvName
+            val (kind, cmd, param) = invalidResultEnvName
             logger.error(
-                "Agent '{}': command '{}' captures a result into invalid envName '{}' " +
+                "Agent '{}': {} '{}' captures a result into invalid envName '{}' " +
                     "(reserved Homer/host name, or not matching ^[A-Za-z_][A-Za-z0-9_]*$). Skipping.",
                 agent.name,
+                kind,
                 cmd.label,
                 param.envName,
             )
             errors.add(
-                "Agent '${agent.name}': command '${cmd.label}' captures a result into invalid envName '${param.envName}'",
+                "Agent '${agent.name}': $kind '${cmd.label}' captures a result into invalid envName '${param.envName}'",
             )
             return false
         }

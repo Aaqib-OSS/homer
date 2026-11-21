@@ -82,6 +82,51 @@ class AgentInputChecksTest {
         assertTrue(checks.checkCommandBindings(AgentFixtures.simpleAgent(name = "a"), mutableListOf()))
     }
 
+    private fun capturingStep(
+        label: String,
+        envName: String,
+    ) = Command.Cmd(
+        cmd = listOf("echo"),
+        label = label,
+        resultEnvParam = listOf(ResultEnvParam(src = SrcType.STD_OUT, envName = envName)),
+    )
+
+    /** A valid capture on the command, and the given capture on an `onStop:` step. */
+    private fun agentStoppingWithCapture(envName: String) =
+        AgentFixtures.simpleAgent(name = "a").copy(
+            commands = listOf(capturingStep(label = "run", envName = "OK")),
+            onStop = listOf(capturingStep(label = "save", envName = envName)),
+        )
+
+    @Test
+    fun `an onStop step capturing into a reserved envName is refused, naming the step and the key`() {
+        assertFalse(checks.checkCommandBindings(agentStoppingWithCapture("PATH"), errors))
+        // Threat model (Secrets): the message carries the step and the key name, never a captured value.
+        assertEquals(
+            listOf("Agent 'a': onStop step 'save' captures a result into invalid envName 'PATH'"),
+            errors,
+        )
+    }
+
+    @Test
+    fun `an onStop capture into a Homer token or an LD_ name is refused`() {
+        assertFalse(checks.checkCommandBindings(agentStoppingWithCapture("HMR_CALLBACK_TOKEN"), errors))
+        assertFalse(checks.checkCommandBindings(agentStoppingWithCapture("LD_PRELOAD"), errors))
+        assertEquals(2, errors.size)
+    }
+
+    @Test
+    fun `an onStop capture into a non-identifier name is refused`() {
+        assertFalse(checks.checkCommandBindings(agentStoppingWithCapture("1A-B"), errors))
+        assertTrue(errors.single().contains("invalid envName '1A-B'"), errors.single())
+    }
+
+    @Test
+    fun `an onStop capture into a valid name loads`() {
+        assertTrue(checks.checkCommandBindings(agentStoppingWithCapture("SAVED_REPORT"), errors))
+        assertEquals(emptyList(), errors)
+    }
+
     /** An agent whose commands are the given claude steps. */
     private fun claudeAgent(vararg commands: Command.Claude) = Agent(name = "a", commands = commands.toList())
 
