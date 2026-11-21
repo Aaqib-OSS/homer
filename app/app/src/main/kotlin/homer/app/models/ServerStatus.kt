@@ -67,7 +67,7 @@ data class ProcessInfoResponse(
     // start and/or declared at run time. Filter runs by them with `?tag=`. See ADR-0060.
     val tags: List<String> = emptyList(),
     // Why the run failed before any command started (claim timeout, lock skip, run cap, full
-    // queue); null otherwise. Names a blocking run only to a caller who may see it. ADR-0058.
+    // queue); null otherwise. Names a blocking run only to a caller who may see it. ADR-0098.
     val failureReason: String? = null,
     // Why and where a graceful stop ended this run (cause, interrupted step, `onStop:` outcome);
     // null otherwise. The status is still `FAILED`. ADR-0108.
