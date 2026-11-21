@@ -19,7 +19,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 
-/** Run starts (`/agent/{agentName}`, `/processes/{id}/retry`, `/processes/{id}/resume`) and `GET /processes/{id}/langgraph`. */
+/** Run starts (`/agent/{agentName}`, `/processes/{id}/retry`, `/processes/{id}/resume`) and `GET …/langgraph`. */
 internal fun Route.runRoutes(deps: RunRouteDeps) {
     runStartRoutes(deps)
     processLangGraphRoutes(deps)
@@ -57,7 +57,7 @@ private fun Route.runStartRoutes(deps: RunRouteDeps) {
     }
 }
 
-/** `GET /processes/{id}/langgraph` and `POST /processes/{id}/resume`: a run's LangGraph state and resuming its thread. */
+/** `GET /processes/{id}/langgraph` and `POST /processes/{id}/resume`: a run's LangGraph state and its resume. */
 private fun Route.processLangGraphRoutes(deps: RunRouteDeps) {
     with(deps) {
         get("/processes/{id}/langgraph") {
@@ -119,12 +119,9 @@ private val RESUMABLE_STATUSES =
     )
 
 /**
- * The agent the `{agentName}` path parameter names, when the caller holds [action] on it. Otherwise
- * responds and returns null: `404` when the caller holds no grant on it at all, the same as an
- * unknown agent (ADR-0047 rule 3), else `403` "Not permitted to [verb]".
- *
- * Shared by the run starts here and the debug start in `AgentRoutes.kt`, so it takes the two
- * services it reads rather than either file's dependency class.
+ * The agent the `{agentName}` path parameter names, when the caller holds [action] on it. Otherwise responds and
+ * returns null: `404` when the caller holds no grant at all, as for an unknown agent (ADR-0047 rule 3), else `403`
+ * "Not permitted to [verb]". Shared with the debug start in `AgentRoutes.kt`, so it takes the two services it reads.
  */
 internal suspend fun agentPermitting(
     call: ApplicationCall,
@@ -178,10 +175,9 @@ private suspend fun RunRouteDeps.visibleProcess(call: ApplicationCall): ProcessI
 }
 
 /**
- * The agent a retry or resume of the visible [sourceProcess] replays, when the run is in one of
- * [eligible] and the caller may replay it. Otherwise responds and returns null: `409` with
- * [conflict] for another status, `404` when the agent is gone, and `404` "not found" for a caller
- * who can see the run but lacks RUN (ADR-0047 rule 3).
+ * The agent a retry or resume of the visible [sourceProcess] replays, when it is in one of [eligible] and the caller
+ * may replay it. Otherwise responds and returns null: `409` with [conflict] for another status, `404` when the agent
+ * is gone or the caller lacks RUN (ADR-0047 rule 3).
  */
 private suspend fun RunRouteDeps.replayableAgent(
     call: ApplicationCall,

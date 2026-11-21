@@ -12,12 +12,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Compiles and caches per-agent JSON Schemas (Draft 2020-12) and validates
- * incoming webhook payloads against them.
- *
- * Distinct from [homer.app.config.AgentSchemaValidator], which validates agent
- * *definitions* against the bundled `homer-agent.schema.json`. This validates
- * *runtime request bodies* against an operator-supplied `inputSchema`.
+ * Compiles and caches per-agent JSON Schemas (Draft 2020-12) and validates runtime request bodies
+ * against them; [homer.app.config.AgentSchemaValidator] validates definitions instead.
  */
 class InputSchemaValidator {
     private val registry = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
@@ -25,12 +21,7 @@ class InputSchemaValidator {
         registry.getSchema(SchemaLocation.of("https://json-schema.org/draft/2020-12/schema"))
     private val cache = ConcurrentHashMap<String, Schema>()
 
-    /**
-     * Compiles [inputSchema] (cached by its canonical string). A structurally
-     * malformed schema (fails the Draft 2020-12 meta-schema), one with an
-     * unresolvable `$ref`, or one carrying a ReDoS-prone `pattern` throws here,
-     * so the failure surfaces at agent load rather than at request time.
-     */
+    /** Compiles [inputSchema], cached; a malformed, unresolvable or ReDoS-prone schema throws at agent load. */
     fun precompile(inputSchema: JsonObject): Schema =
         cache.computeIfAbsent(inputSchema.toString()) { schemaText ->
             val metaErrors = metaSchema.validate(schemaText, InputFormat.JSON)
@@ -41,12 +32,7 @@ class InputSchemaValidator {
             registry.getSchema(schemaText).also { it.initializeValidators() }
         }
 
-    /**
-     * Rejects any `pattern` (or `patternProperties` key) whose shape is prone to
-     * catastrophic backtracking. networknt matches these author regexes against
-     * caller-controlled bodies with an unbounded `java.util.regex` engine, so a
-     * vulnerable pattern is a ReDoS vector — fail closed at load. See ADR-0040.
-     */
+    /** Rejects a `pattern` or `patternProperties` key prone to catastrophic backtracking; fail closed (ADR-0040). */
     private fun lintPatterns(schema: JsonElement) {
         when (schema) {
             is JsonObject -> {

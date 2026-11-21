@@ -18,12 +18,9 @@ import org.koin.dsl.module
 import org.slf4j.LoggerFactory
 
 /**
- * The cross-cutting Koin definitions: the per-class logger factory, the execution defaults and the
- * ports (an interface bound to its implementation, or a lambda-shaped sink) that no single subject
- * owns.
- * Everything else lives in a subject module beside this one — `PersistenceWiring`, `TelemetryWiring`,
- * `ExecutionWiring`, `ServicesWiring`, `ProcessWiring`, `HookWiring` — and the boot registers them
- * together (root CLAUDE.md §2).
+ * The cross-cutting Koin definitions: the per-class logger factory, the execution defaults and the ports
+ * (an interface bound to its implementation, or a lambda-shaped sink) that no single subject owns. Every other
+ * subject has its own module (`PersistenceWiring`, `TelemetryWiring`, ...), registered together at boot.
  */
 val appModule =
     module {

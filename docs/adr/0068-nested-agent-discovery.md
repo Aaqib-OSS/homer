@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-09-24
 deciders: Martin Simon
-amended: 2026-09-30, 2026-11-20
+amended: 2026-09-30, 2026-11-20, 2026-11-21
 ---
 # ADR-0068: Agent discovery walks the search path recursively; directory identity is the root-relative path
 
@@ -274,3 +274,8 @@ publishes by compare-and-set on the snapshot its scan began from. A reload that 
 rescans and recomputes its diff against the winner's snapshot. Re-diffing a stale scan alone would
 report as removed the agents the winner had just added. After 8 lost races the reload publishes
 nothing, emits no event, and reports the failure in `errors`.
+
+## Amendment (2026-11-21): why a name collision fails every claimant
+
+Picking a winner among the directories that claim one `name` would let a directory one principal can write
+shadow an agent another principal relies on, so a collision fails every claimant and leaves nothing to shadow.

@@ -19,12 +19,9 @@ import java.io.File
 import javax.inject.Inject
 
 /**
- * Writes the module's CRAP report ([CrapScore]) from its Kotlin sources and Kover XML report:
- * `crap-report.txt`, `gl-code-quality-crap.json` (Code Climate / Code Quality JSON) and `crap-summary.txt`
- * (read by the CI `quality-gate` job). Violations never fail this task; the gate decides. ADR-0081.
- *
- * The analysis runs in a worker classloader holding only [analyzerClasspath] (the embeddable Kotlin
- * compiler): the Kotlin Gradle plugin on the build classpath carries clashing copies of its classes.
+ * Writes the module's CRAP report ([CrapScore]): `crap-report.txt`, `gl-code-quality-crap.json` and
+ * `crap-summary.txt`. Violations never fail this task; the gate decides (ADR-0081).
+ * Runs in a worker classloader holding only [analyzerClasspath], clear of the Kotlin Gradle plugin's classes.
  */
 abstract class CrapReportTask
     @Inject

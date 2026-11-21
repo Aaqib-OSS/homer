@@ -10,13 +10,11 @@ data class RunStartRequest(
     val source: String,
     val ancestorLockKeys: List<String> = emptyList(),
     val owner: String? = null,
-    // The run that caused this one, already validated by the caller (a live
-    // RunAgent/dispatch/continuation origin, or an external caller's visible
-    // parent). Stored with the row and exported as HMR_PARENT_PROCESS_ID. ADR-0058.
+    // The run that caused this one, validated by the caller; stored and exported as
+    // HMR_PARENT_PROCESS_ID. ADR-0058.
     val parentProcessId: Int? = null,
-    // The flow's first run: `parent.rootProcessId ?: parent.id`, derived from
-    // the same already-validated parent. Stored with the row and exported as
-    // HMR_ROOT_PROCESS_ID. Null for a run with no parent. ADR-0058.
+    // The flow's first run (`parent.rootProcessId ?: parent.id`); exported as HMR_ROOT_PROCESS_ID.
+    // Null for a run with no parent. ADR-0058.
     val rootProcessId: Int? = null,
     val resolveInputs: suspend () -> Map<String, String>,
 )

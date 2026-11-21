@@ -27,7 +27,7 @@ internal class DispatchTargetGate(
         agent: String,
         answerParam: String,
         params: Map<String, String>,
-        effectiveTtl: Int?,
+        effectiveTtl: Int,
         label: String,
     ): String? {
         val origin = processManager.getProcessInfo(originProcessId)
@@ -35,7 +35,7 @@ internal class DispatchTargetGate(
         val target = authorizer.dispatchableTarget(agentsService, owner, originAgentName, agent)
         val inherited = inheritedOriginInputs({ origin }, originAgentName, owner, target, label, logger)
         agentInputResolver.validateSatisfiable(target, params.keys + answerParam + inherited.params.keys)
-        if (effectiveTtl != null && effectiveTtl <= 0) {
+        if (effectiveTtl <= 0) {
             throw ValidationException("ttlSec must be > 0; got $effectiveTtl", "ttlSec")
         }
         return owner
@@ -74,7 +74,7 @@ internal class DispatchTargetGate(
         params: Map<String, String>,
         originProcessId: Int,
         originAgentName: String,
-        effectiveTtl: Int?,
+        effectiveTtl: Int,
         now: Long,
         owner: String?,
         kind: DispatchKind = DispatchKind.SINGLE,
@@ -88,7 +88,7 @@ internal class DispatchTargetGate(
             params = params,
             originProcessId = originProcessId,
             originAgentName = originAgentName,
-            expiresAt = effectiveTtl?.let { now + it },
+            expiresAt = now + effectiveTtl,
             createdAt = now,
             owner = owner,
             // Captured now, read at fire: a value collected under `secret: true` must not become a

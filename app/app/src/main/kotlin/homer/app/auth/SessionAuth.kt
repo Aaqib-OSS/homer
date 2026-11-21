@@ -20,12 +20,9 @@ import kotlinx.serialization.json.Json
 import java.time.Instant
 
 /**
- * Payload of the HttpOnly session cookie issued by `POST /api/v1/auth/login`.
- * The cookie is HMAC-signed (not encrypted) via `SessionTransportTransformerMessageAuthentication`,
- * so anything in here is readable by the holder — never put a real secret in. `ver` future-proofs
- * format migrations: bump it when the schema changes and the provider can reject old payloads.
- *
- * See ADR-0011 for the rationale.
+ * Payload of the HttpOnly session cookie from `POST /api/v1/auth/login`. HMAC-signed, not encrypted, so the
+ * holder can read it: never put a secret in. `ver` lets the provider reject old payloads after a format change.
+ * See ADR-0011.
  */
 @Serializable
 data class HomerSession(
@@ -35,20 +32,15 @@ data class HomerSession(
 )
 
 /**
- * Prefix stamped on the [UserIdPrincipal] name for a cookie/session login.
- * Encodes the auth scheme in the principal name so downstream guards (CSRF,
- * rate-limit keying) can tell a browser-ambient cookie identity apart from
- * bearer/HMAC. Reserved — Bearer/HMAC config keys may not start with it. See ADR-0016.
+ * Prefix on the [UserIdPrincipal] name of a cookie/session login, so guards (CSRF, rate-limit keying) tell it
+ * from bearer/HMAC. Reserved: Bearer/HMAC config keys may not start with it. See ADR-0016.
  */
 const val SESSION_PRINCIPAL_PREFIX = "session:"
 
 /**
- * `SessionTransportTransformer` that signs writes with `currentKey` and accepts reads signed
- * with either `currentKey` or `previousKey` (Ktor's built-in MAC transformer is single-key;
- * chaining two is composition, not multi-key fallback). Rotation: set
- * `sessionSecretPrevious = <old>` and `sessionSecret = <new>`, deploy, wait `sessionTtlMin`,
- * then drop `sessionSecretPrevious`.
- * See ADR-0011.
+ * `SessionTransportTransformer` that signs with `currentKey` and accepts `currentKey` or `previousKey` (Ktor's MAC
+ * transformer is single-key). Rotation: set `sessionSecretPrevious` to the old and `sessionSecret` to the new,
+ * deploy, wait `sessionTtlMin`, drop the previous. See ADR-0011.
  */
 internal class MultiKeyMacTransformer(
     private val current: SessionTransportTransformerMessageAuthentication,
@@ -91,12 +83,9 @@ fun Application.installPasswordSessions(scheme: AuthConfig.Password) {
 }
 
 /**
- * Register the `auth-session` provider inside the existing `install(Authentication)` block.
- * Authenticates only; grants are enforced at the route (ADR-0037). Steps: read
- * `call.sessions.get<HomerSession>()` (missing/unsigned → 401); reject if `exp <= now`;
- * look up `users[session.username]` — absent (e.g. revoked since login) → 401. The caller
- * pushes `providerName` into `authNames` so the route wrapper includes auth-session in
- * `FirstSuccessful`.
+ * Registers the `auth-session` provider in the `install(Authentication)` block; authenticates only, grants are
+ * enforced at the route (ADR-0037). A missing or unsigned session, an expired `exp`, or a user absent from `users`
+ * (revoked since login) gives 401. The caller adds `providerName` to `authNames`.
  */
 fun AuthenticationConfig.passwordSessionProvider(
     providerName: String,

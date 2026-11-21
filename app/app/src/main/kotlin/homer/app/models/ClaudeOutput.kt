@@ -6,12 +6,9 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
 /**
- * The Claude Code `--output-format stream-json` events, modelled **only where Homer
- * reads them** (ADR-0057). A field with no reader is deliberately not declared:
- * `ignoreUnknownKeys` tolerates a key the CLI *adds*, not one it *retypes* — a known
- * key of the wrong type fails the whole event, and its handler never runs, so an
- * unread field can delete telemetry that is read. The `system` event has no type here:
- * it is read untyped in [homer.app.executors.llm.ClaudeHarness], via non-throwing accessors.
+ * The Claude Code `--output-format stream-json` events, modelled only where Homer reads them: `ignoreUnknownKeys`
+ * tolerates a key the CLI adds, not one it retypes, so an unread declared field can fail an event whose handler
+ * then never runs. `system` is read untyped in [homer.app.executors.llm.ClaudeHarness]. See ADR-0057.
  */
 @Serializable
 sealed interface ClaudeEvent {

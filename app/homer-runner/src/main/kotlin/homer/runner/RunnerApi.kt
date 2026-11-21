@@ -8,7 +8,7 @@ import homer.app.runners.external.RunnerOp
 import java.io.InputStream
 import java.nio.file.Path
 
-/** The runner side of the protocol (SERVER.md § Runner protocol reference). One implementation talks HTTP; tests fake it. */
+/** The runner side of the protocol (SERVER.md, Runner protocol reference). One implementation talks HTTP; tests fake it. */
 interface RunnerApi {
     suspend fun register(request: RegisterInstanceRequest): RegisterInstanceResponse
 

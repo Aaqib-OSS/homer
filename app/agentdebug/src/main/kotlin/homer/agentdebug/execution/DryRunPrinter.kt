@@ -62,10 +62,8 @@ object DryRunPrinter {
     }
 
     /**
-     * One LLM harness step: the argv its own adapter builds, its stdin, and one
-     * line per escalation tier. Every branch reuses the executor's real argv
-     * builder, so dry-run never drifts from what actually runs (same flags, same
-     * `{{VAR}}` resolution).
+     * One LLM harness step: the argv its adapter builds, its stdin, and one line per escalation tier.
+     * Reuses the executor's real argv builder, so dry-run never drifts from what runs.
      */
     private fun printLlm(
         command: Command.LlmCommand,
@@ -110,11 +108,9 @@ object DryRunPrinter {
     }
 
     /**
-     * One `[ESCALATE n]` line per `escalate` tier, using the harness's own
-     * [homer.app.executors.llm.LlmHarness.escalated] to build the tier's argv —
-     * the same call the executor makes — so a dry run shows every model that
-     * will actually run. Predicate expressions are redacted like the step's
-     * `when`. See ADR-0079.
+     * One `[ESCALATE n]` line per `escalate` tier, built with [homer.app.executors.llm.LlmHarness.escalated] as the
+     * executor does (ADR-0079), so a dry run shows every model that will run. Predicate expressions are redacted
+     * like the step's `when`.
      */
     private fun <C> printTiers(
         tiers: List<LlmEscalation>,

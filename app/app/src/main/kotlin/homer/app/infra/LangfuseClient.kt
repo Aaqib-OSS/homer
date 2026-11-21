@@ -5,10 +5,7 @@ package homer.app.infra
  */
 interface LangfuseClient {
     /**
-     * Fetch a prompt from Langfuse by name
-     * @param promptName Name of the prompt in Langfuse
-     * @param promptArguments Variables to substitute in the prompt template
-     * @return Compiled prompt text
+     * Fetches the named prompt from Langfuse and returns it compiled with [promptArguments].
      */
     suspend fun getPrompt(
         promptName: String,
@@ -18,10 +15,7 @@ interface LangfuseClient {
     ): String
 
     /**
-     * Compile a prompt template by substituting variables
-     * @param template Prompt template with {{variable}} placeholders
-     * @param arguments Variables to substitute
-     * @return Compiled prompt text
+     * Substitutes [arguments] into the `{{variable}}` placeholders of [template].
      */
     fun compilePrompt(
         template: String,

@@ -10,12 +10,9 @@ import kotlin.io.path.readText
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Evaluates a [When] predicate by shelling out to `bash -c <expr>` per expression;
- * per-expression timeout is fixed at 5 s.
- * Exit codes: 0 → true, 1 → false, ≥2 → eval error ([Result.EvalError]; the caller
- * fails the agent — a silent skip would mask predicate bugs). A timeout also yields
- * [Result.EvalError] with exit code `-1`; a genuine caller cancellation is re-thrown
- * unchanged. [When.Operator.ALL] is AND, [When.Operator.ANY] is OR, short-circuiting.
+ * Evaluates a [When] predicate by running `bash -c <expr>` per expression, each with a fixed 5 s timeout. Exit 0 is
+ * true, 1 false; ≥2 or a timeout (exit code `-1`) is [Result.EvalError] and the caller fails the agent. Caller
+ * cancellation is re-thrown. [When.Operator.ALL] is AND, [When.Operator.ANY] is OR, short-circuiting. See ADR-0009.
  */
 class WhenEvaluator(
     private val shell: ShellExecutor,

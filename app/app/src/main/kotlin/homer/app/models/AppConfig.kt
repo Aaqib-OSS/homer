@@ -69,9 +69,8 @@ data class AppConfig(
         }
     }
 
-    // Per-owner split is a security boundary: a thread id read from the run's agent-writable
-    // `langgraph.json` must not address another principal's checkpoints. Pure path computation.
-    // See ADR-0046.
+    // Per-owner split is a boundary: a thread id from the agent-writable `langgraph.json` must not
+    // address another principal's checkpoints. See ADR-0046.
     fun resolveLangGraphStateDir(owner: String?): String {
         val root =
             server.langGraph.stateDir?.let { Path.of(it) }

@@ -8,12 +8,9 @@ import homer.app.models.Agent
 import kotlinx.serialization.json.Json
 
 /**
- * Validates [Agent] definitions against the bundled `homer-agent.schema.json` JSON
- * Schema — the same schema the console editor consumes and that `SchemaValidationTest`
- * checks the example fixtures against. The schema is read from the classpath resource
- * bundled by the `:app` build (`processResources` copies `app/schemas/` into `schemas/`),
- * so validation works from any jar without the repo layout at runtime. Sharing it keeps
- * `agentdebug validate` honest against the same contract the server and tests rely on.
+ * Validates [Agent] definitions against the bundled `homer-agent.schema.json`, the schema the console editor and
+ * `SchemaValidationTest` use. Read from the classpath (`processResources` copies `app/schemas/`), so it works
+ * from any jar; `agentdebug validate` shares it.
  */
 class AgentSchemaValidator(
     schemaResourcePath: String = "schemas/homer-agent.schema.json",

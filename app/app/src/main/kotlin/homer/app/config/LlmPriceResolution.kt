@@ -4,10 +4,7 @@ import homer.app.models.LlmPriceConfig
 
 /**
  * Resolves `@SYSENV:VAR` placeholders in `llmPrice.sessionSpend.headers`. Null-safe.
- *
- * A public top-level function (rather than `internal` in `ConfigValidation.kt`) so it can be
- * shared with `agentdebug`, which is a separate Gradle module and cannot see `internal`
- * members of `:app`.
+ * Public top-level (not `internal` in `ConfigValidation.kt`) so the separate `agentdebug` module can share it.
  */
 fun resolveLlmPrice(
     llmPrice: LlmPriceConfig?,

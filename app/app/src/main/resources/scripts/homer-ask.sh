@@ -1,38 +1,6 @@
 #!/bin/sh
-# homer-ask — ask the Homer operator a question from a running command.
-#
-# Materialized by Homer into {projectRoot}/.homer/bin (on PATH) for every
-# process. Reads HMR_API_URL and HMR_CALLBACK_TOKEN from the environment at
-# call time. See AGENT.md "Asking the operator questions" and ADR-0019.
-#
-# Usage:
-#   homer-ask ask "Question (Markdown)" [--option TEXT]...
-#       Prints the question id on stdout and returns immediately.
-#   homer-ask check ID [--wait SEC]
-#       Prints the answer when ANSWERED (exit 0). Exit 3 while OPEN
-#       (poll again with the same id), 4 when EXPIRED.
-#   homer-ask ask-and-wait "Question (Markdown)" [--option TEXT]... [--ttl SEC]
-#       Asks and blocks until answered (prints the answer, exit 0). With
-#       --ttl, gives up after SEC seconds, printing the question id on
-#       stderr so a later `homer-ask check ID` can pick up the answer.
-#   homer-ask ask-and-dispatch "Question (Markdown)" --agent NAME
-#       [--answer-param NAME] [--param k=v]... [--option TEXT]... [--ttl SEC]
-#       Registers a dispatch: when the operator answers, Homer starts the
-#       named agent with the answer (under --answer-param, default "answer")
-#       plus any --param inputs. Prints "dispatchId\nquestionId" and exits
-#       immediately (fire-and-forget).
-#   homer-ask ask-and-dispatch-group --question TEXT [--option TEXT]...
-#       [--question TEXT]... --agent NAME [--answer-param NAME]
-#       [--param k=v]... [--ttl SEC]
-#       Registers one dispatch over several questions: the operator answers
-#       them independently, and Homer starts the named agent once — after the
-#       last of them — with every answer, in --question order, as a JSON array
-#       under --answer-param (default "answer"). Each --option attaches to the
-#       --question before it. Prints the dispatch id, then one question id per
-#       line, in the order asked, and exits immediately (fire-and-forget).
-#
-# Exit codes: 0 ok/answered, 2 usage or transport error, 3 still open /
-# TTL lapsed, 4 expired (the run reached a terminal state).
+# homer-ask — ask the Homer operator a question from a running command (ADR-0019).
+# Reads HMR_API_URL and HMR_CALLBACK_TOKEN from the environment; usage and exit codes: AGENT.md.
 
 set -u
 
@@ -108,8 +76,7 @@ json_escape() {
 }
 
 # Prints the unescaped string value of field $2 in JSON $1, if present.
-# Line-based (a JSON string value never spans physical lines) and tolerant
-# of the pretty-printed `"field": "value"` form Homer responds with.
+# Line-based and tolerant of the pretty-printed `"field": "value"` form Homer responds with.
 json_str_field() {
     printf '%s' "$1" | awk -v field="$2" '
         BEGIN { found = 0 }
@@ -158,8 +125,7 @@ json_str_field() {
 }
 
 # Prints the unquoted numeric value of field $2 in JSON $1, if present.
-# Mirrors json_str_field but matches an unquoted digit sequence instead
-# of a quoted string (e.g. "dispatchId":11).
+# Like json_str_field, for an unquoted digit sequence (e.g. "dispatchId":11).
 json_num_field() {
     printf '%s' "$1" | awk -v field="$2" '
         BEGIN { found = 0 }
@@ -182,8 +148,7 @@ json_num_field() {
 }
 
 # Prints one unescaped element per line of the JSON string array in field $2 of JSON $1.
-# Unlike json_str_field this one spans physical lines: Homer pretty-prints, so an array
-# arrives as `"field": [` / `  "a",` / `  "b"` / `]`.
+# Unlike json_str_field it spans lines: Homer pretty-prints an array over several.
 json_str_array_field() {
     printf '%s' "$1" | awk -v field="$2" '
         BEGIN { started = 0; done = 0 }
@@ -230,8 +195,7 @@ json_str_array_field() {
 }
 
 # POSTs a dispatch; prints "dispatchId\nquestionId".
-# $1 text  $2 options-json (comma-joined quoted)  $3 agent  $4 answer_param
-# $5 params-json-object-body (comma-joined "key":"val")  $6 ttl (optional, may be empty)
+# Args: text, options-json, agent, answer_param, params-json-object-body, ttl (optional).
 dispatch_question() {
     ttl_field=""
     [ -n "${6:-}" ] && ttl_field=",\"ttlSec\":$6"
@@ -248,8 +212,7 @@ dispatch_question() {
 }
 
 # POSTs a dispatch group; prints the dispatch id, then one question id per line in ask order.
-# $1 questions-json array body (comma-joined {text,options} objects)  $2 agent
-# $3 answer_param  $4 params-json-object-body  $5 ttl (optional, may be empty)
+# Args: questions-json, agent, answer_param, params-json-object-body, ttl (optional).
 dispatch_group() {
     ttl_field=""
     [ -n "${5:-}" ] && ttl_field=",\"ttlSec\":$5"
@@ -278,10 +241,8 @@ ask_question() {
     printf '%s\n' "$id"
 }
 
-# GETs the question once with waitSec=$2; prints the answer on ANSWERED.
-# Returns 0 answered, 3 open, 4 expired, 2 on transport/parse errors —
-# callers decide whether 2 is fatal (plain check) or retryable
-# (ask-and-wait poll loop).
+# GETs the question once with waitSec=$2; prints the answer on ANSWERED. Returns 0 answered,
+# 3 open, 4 expired, 2 transport or parse error (fatal in check, retried in ask-and-wait).
 check_once() {
     response=$(
         homer_curl "$BASE_URL/$1?waitSec=$2" -sS -f --max-time "$CURL_MAX_TIME"
@@ -308,9 +269,8 @@ check_once() {
     esac
 }
 
-# Parses [--option TEXT]... and [--ttl SEC] (any order) into OPTIONS_JSON
-# and TTL; remaining flags rejected. Callers without a --ttl flag reject a
-# non-empty TTL themselves.
+# Parses [--option TEXT]... and [--ttl SEC] (any order) into OPTIONS_JSON and TTL; other flags
+# are rejected, and a caller without --ttl rejects a non-empty TTL itself.
 parse_options() {
     OPTIONS_JSON=""
     TTL=""
@@ -353,9 +313,8 @@ case "$cmd" in
         fi
         [ $# -eq 0 ] || die "unknown argument: $1"
         require_uint "--wait" "$wait_sec"
-        # Chunk the wait below CURL_MAX_TIME like ask-and-wait does: a single
-        # long-poll above ~70s would be killed client-side by curl and
-        # misreported as a transport error instead of still-open.
+        # Chunked below CURL_MAX_TIME: a longer long-poll is cut by curl and misreported as a
+        # transport error instead of still-open.
         start=$(date +%s)
         while :; do
             remaining=$((wait_sec - ($(date +%s) - start)))
@@ -398,9 +357,8 @@ case "$cmd" in
             rc=$?
             case "$rc" in
                 2)
-                    # Transient transport errors must not lose the question:
-                    # retry a few times, and always surface the id so the
-                    # caller can resume — it was only ever captured into $id.
+                    # Retry a transient transport error and always surface the id, which only $id
+                    # holds, so the caller can resume.
                     failures=$((failures + 1))
                     if [ "$failures" -ge "$MAX_POLL_FAILURES" ]; then
                         printf 'homer-ask: giving up after %s transport errors; resume with: homer-ask check %s\n' "$failures" "$id" >&2

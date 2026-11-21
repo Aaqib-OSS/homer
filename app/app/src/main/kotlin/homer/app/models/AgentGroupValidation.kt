@@ -1,14 +1,12 @@
 package homer.app.models
 
 /**
- * Shape rules for an agent's optional `group` label — the operator-facing bucket
- * the console's Agents page renders one tab per. A label, not an identifier: any
- * printable text is allowed, but it is bounded and free of control characters
- * because it is echoed verbatim onto every process response. Sibling of
- * [RunnerTagValidation]; see ADR-0049.
+ * Shape rules for an agent's optional `group` label (one console Agents tab each): any printable text, bounded
+ * and free of control characters because it is echoed verbatim onto every process response (CWE-79, CWE-117).
+ * Sibling of [RunnerTagValidation].
  */
 object AgentGroupValidation {
-    /** Longest accepted `group`; bounds the label repeated on every process row (§12 rule 4). */
+    /** Longest accepted `group`; bounds the label repeated on every process row (ADR-0047 rule 4). */
     const val MAX_GROUP_LENGTH = 64
 
     /**

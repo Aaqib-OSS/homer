@@ -1782,7 +1782,7 @@ when the agent should carry on instead of ending `FAILED`:
 | `maxTurns` | `Int` | No | `40` | Maximum agentic turns |
 | `maxTurnsExitCode` | `Int` | No | `null` | Opt-in: when Claude stops at `maxTurns` (result subtype `error_max_turns`), the command returns this exit code instead of failing the run — whatever exit code the CLI itself ended that stop with, `0` or non-zero. Must be in `1..255` (a value outside that range, e.g. `0`, is rejected at load time so a max-turns failure cannot masquerade as success). Combine with `continueIfFail: true` and a `resultEnvParam` with `src: RESULT_CODE` so a later deterministic step can push or discard the partial work. A non-zero exit whose output holds no readable `error_max_turns` result stays a failure. Cost is charged as usual; the attempt is not retried. |
 | `isErrorExitCode` | `Int` | No | `null` | Opt-in: when the CLI exits `0` with a `result` event that is a `success` subtype carrying `is_error` (a refusal, a gateway `429`/`529` error, a missing deferred tool), the command returns this exit code instead of failing the run as malformed output. Must be in `1..255` (a value outside that range, e.g. `0`, is rejected at load time so an error result cannot masquerade as success). Combine with `continueIfFail: true` and a `resultEnvParam` with `src: RESULT_CODE` so a later deterministic step can push or discard the partial work. Any other subtype, and a stream with no readable `result` event, stays a failure; a non-zero exit is never remapped, it stays the failure its exit code already is. The `result` text stays out of the step error and the logs; cost is charged as usual and the attempt is not retried. |
-| `maxMcpOutputTokens` | `Int` | No | `null` | Maximum MCP output tokens (`MAX_MCP_OUTPUT_TOKENS` env var) |
+| `maxMcpOutputTokens` | `Int` | No | `null` | Maximum MCP output tokens (`MAX_MCP_OUTPUT_TOKENS` env var); unset leaves the Claude CLI's own cap in force |
 | `model` | `String` | No | `null` | Claude model to use (`sonnet`, `opus`, `haiku`) |
 | `fallbackModel` | `String` | No | `null` | Fallback model if the primary is overloaded |
 | `systemPrompt` | `String` | No | `null` | Literal system prompt (mutex with `systemPromptFile`) |
@@ -1791,7 +1791,7 @@ when the agent should carry on instead of ending `FAILED`:
 | `appendSystemPromptFile` | `String` | No | `null` | File appended after the default system prompt |
 | `permissionMode` | `String` | No | `null` | One of `default`, `acceptEdits`, `plan`, `auto`, `dontAsk`, `bypassPermissions`. When set, `--dangerously-skip-permissions` is not emitted. |
 | `permissionPromptTool` | `String` | No | `null` | MCP tool used to prompt for permission in headless runs |
-| `maxBudgetUsd` | `Double` | No | `null` | Upper bound on spend for this run |
+| `maxBudgetUsd` | `Double` | No | `null` | Upper bound on spend for this run; opt-in, unset sets no per-command cap (the command's `timeout` bounds the run, and the server's `costLimits` caps spend when configured) |
 | `sessionId` | `String` | No | `null` | UUID identifying the session |
 | `addDir` | `String \| List<String>` | No | `null` | Additional director(y/ies) to add to context. A bare string adds one; a list adds several (emitted as `--add-dir a b`). |
 | `allowedTools` | `List<String>` | No | `null` | Tools that run without a permission prompt. Not a restriction on its own: with `dangerouslySkipPermissions` (or `permissionMode: bypassPermissions`) every tool runs anyway, and a step that sets neither `tools` nor `disallowedTools` logs a WARN at load. See [Tool Allowlisting/Denylisting](#tool-allowlistingdenylisting) |
@@ -3862,7 +3862,7 @@ Flags:
 | `--answer-param NAME` | no | `answer` | Query-param name the answer is injected under. Cannot be a reserved env name (`PATH`, `HMR_*`, …) other than the LangGraph control markers — rejected with `400` |
 | `--param key=value` | no | — | Additional query params passed to the agent run (repeatable) |
 | `--option TEXT` | no | — | Predefined answer option rendered as a button (repeatable) |
-| `--ttl SEC` | no | `server.dispatch.defaultTtlSec` (unset = no expiry) | Seconds before the question expires unanswered |
+| `--ttl SEC` | no | `server.dispatch.defaultTtlSec` (unset = 7 days) | Seconds before the question expires unanswered |
 
 The dispatched agent run is independent: like any run it gets its own
 freshly-minted `HMR_CALLBACK_TOKEN` and does not inherit the asking
@@ -3934,7 +3934,7 @@ Flags:
 | `--continue-param key=value` | no | — | Param passed to the continuation run, not the sub (repeatable; requires `--continue-agent`). Use for state the *resumed parent* needs — e.g. the LangGraph interrupt id; `--param` would land on the sub and be lost |
 | `--resume-param NAME` | no | `HMR_LG_RESUME` | Param name the continuation run receives the sub's result payload under (requires `--continue-agent`). With the default `HMR_LG_RESUME` (a LangGraph control marker) the payload lands in the continuation run's env directly; any other name is delivered through the continuation agent's declared input with that `paramName`. Cannot be a reserved env name (`PATH`, `HMR_*`, …) other than the LangGraph control markers — rejected with `400` |
 | `--result-jsonpath PATH` | no | — | JsonPath applied to the sub's stdout; the extracted value becomes the `result` field of the resume payload delivered via `--resume-param`. Without it, `result` is `null` (requires `--continue-agent`) |
-| `--ttl SECONDS` | no | `server.dispatch.defaultTtlSec` (unset = no expiry) | Continuation expiry; if the sub never finishes within this window the continuation is swept (requires `--continue-agent`) |
+| `--ttl SECONDS` | no | `server.dispatch.defaultTtlSec` (unset = 7 days) | Continuation expiry; if the sub never finishes within this window the continuation is swept (requires `--continue-agent`) |
 
 #### Continuing when the sub finishes
 

@@ -73,9 +73,8 @@ private fun registeredRunners(
     k8sInstanceId: String,
 ): List<RegisteredRunner> =
     buildList {
-        // Local commands reach Homer's own API (homer-ask helper,
-        // RunAgent) on the loopback unless the operator already
-        // provides HMR_API_URL via globalEnv / agent env.
+        // Local commands reach Homer's own API (homer-ask helper, RunAgent) on the loopback unless the operator
+        // already provides HMR_API_URL via globalEnv / agent env.
         if (appConfig.server.localRunner.enabled) {
             add(
                 RegisteredRunner(
@@ -160,9 +159,8 @@ internal fun batchApiFor(
     apiClient: ApiClient,
 ): BatchV1Api? = if (cfg.workload == KubernetesWorkload.Job) BatchV1Api(apiClient) else null
 
-// A new SshClient per alias, not a shared one: SshRunner.defaultConnect sets
-// client.serverKeyVerifier per config, which would race across aliases with
-// different strictHostKeyChecking settings if the client were shared.
+// A new SshClient per alias: SshRunner.defaultConnect sets client.serverKeyVerifier per config, which would race
+// across aliases with different strictHostKeyChecking settings if shared.
 private fun buildSshRunner(
     alias: String,
     cfg: RunnerConfig.Ssh,

@@ -21,12 +21,9 @@ import java.nio.file.Path
 private val logger = LoggerFactory.getLogger("homer.app.Application")
 
 /**
- * Resolves `@SYSENV:VAR` placeholders inside every secret-bearing field of an
- * [AuthConfig] tree. Recurses into [AuthConfig.Combined] so each inner scheme is
- * resolved. Every variant carrying operator-provided secrets must be covered here —
- * a field with a `@SYSENV`-style placeholder left unresolved passes the literal
- * `"@SYSENV:..."` to the consumer (bcrypt, HMAC, bearer comparison) and looks like
- * "invalid credentials" at runtime.
+ * Resolves `@SYSENV:VAR` placeholders in every secret-bearing field of an [AuthConfig] tree, recursing into
+ * [AuthConfig.Combined]. Every variant carrying operator secrets must be covered: an unresolved placeholder
+ * reaches bcrypt/HMAC/bearer comparison as a literal and looks like invalid credentials.
  */
 internal fun resolveAuth(
     auth: AuthConfig,
@@ -72,10 +69,8 @@ internal fun resolveAuth(
     }
 
 /**
- * Resolves `@SYSENV:VAR` placeholders in every remote runner's `env` map, the
- * same contract `globalEnv` gets. Resolution is fail-fast like the resolver's
- * other callers: an unresolvable placeholder refuses startup rather than
- * shipping a literal `@SYSENV:...` string to the remote host.
+ * Resolves `@SYSENV:VAR` placeholders in every remote runner's `env` map, as `globalEnv` gets: an unresolvable
+ * placeholder refuses startup instead of shipping a literal `@SYSENV:...` to the remote host.
  */
 internal fun resolveRunnerEnvs(
     runners: Map<String, RunnerConfig>,
@@ -101,11 +96,9 @@ internal fun resolveRunnerEnvs(
     }
 
 /**
- * Resolves `@SYSENV:VAR` placeholders in `server.corsAllowedOrigins` and refuses
- * an entry that does not resolve to a bare `http(s)://host[:port]` origin, so a
- * variable can complete an origin but never add a path, credentials or another
- * host. Not a secret: no name set is recorded. The error names the raw entry,
- * never the resolved value.
+ * Resolves `@SYSENV:VAR` in `server.corsAllowedOrigins` and refuses an entry that is not a bare
+ * `http(s)://host[:port]` origin: a variable can complete an origin, never add a path, credentials or a host.
+ * Not a secret, so no name set is recorded; the error names the raw entry, never the resolved value.
  */
 internal fun resolveCorsOrigins(
     origins: List<String>,
@@ -185,10 +178,8 @@ internal fun validateNoLegacyEndpoints(config: AppConfig) {
 }
 
 /**
- * Fail-fast on an extraUploads entry whose local path is missing or unreadable —
- * a misdeclared deployment dependency should stop the server at boot, not fail
- * runs later. Shape rules (relative remote, reserved paths, uniqueness) are
- * enforced at parse time in the models. See ADR-0042.
+ * Fail-fast on an extraUploads entry whose local path is missing or unreadable, so a misdeclared dependency stops
+ * boot instead of failing runs later. Shape rules are enforced at parse time in the models. See ADR-0042.
  */
 internal fun validateExtraUploads(config: AppConfig) {
     config.runners.forEach { (alias, runner) ->
@@ -203,10 +194,8 @@ internal fun validateExtraUploads(config: AppConfig) {
 }
 
 /**
- * Fail-fast when the config omits `server.apiAuth` entirely: the old silent
- * Unsecured default meant a config typo (or a fresh minimal config) exposed
- * every endpoint without auth. Running unsecured is still supported, but only
- * as an explicit opt-in. See ADR-0036.
+ * Fail-fast when the config omits `server.apiAuth`: a typo must not silently expose every endpoint without auth;
+ * running unsecured stays an explicit opt-in. See ADR-0036.
  */
 internal fun validateExplicitApiAuth(config: AppConfig) {
     if (config.server.apiAuth == null) {
@@ -219,12 +208,9 @@ internal fun validateExplicitApiAuth(config: AppConfig) {
 }
 
 /**
- * A runner-domain token and an operator `apiAuth` credential are distinct principal classes
- * (ADR-0066): the runner routes accept only the former, every other route only the latter.
- * Equal values would let one credential satisfy both boundaries, so the collision is refused
- * at startup; the message names the alias, never the value. Every secret an `apiAuth` scheme
- * accepts as proof counts — an HMAC key secret signs arbitrary requests, a session signing
- * secret mints a valid cookie — but a password hash is never presented as a credential.
+ * Refuses a runner-domain token equal to any secret an `apiAuth` scheme accepts as proof (HMAC key secret,
+ * session signing secret; not a password hash): the two are distinct principal classes (ADR-0066). The error
+ * names the alias, never the value.
  */
 internal fun validateRunnerDomainTokens(config: AppConfig) {
     val apiAuthSecrets =
@@ -244,10 +230,8 @@ internal fun validateRunnerDomainTokens(config: AppConfig) {
 }
 
 /**
- * Fail-fast when a cookie/session ([AuthConfig.Password]) scheme is configured
- * without pinned CORS origins: cookie auth needs credentialed CORS, which
- * [configureCors] enables only for pinned origins, so an empty list would
- * silently break the console. See ADR-0016.
+ * Fail-fast when a cookie/session ([AuthConfig.Password]) scheme has no pinned CORS origins: cookie auth needs
+ * credentialed CORS, which [configureCors] enables only for pinned origins. See ADR-0016.
  */
 internal fun validateCorsForCookieAuth(config: AppConfig) {
     val hasPasswordAuth = flattenAuthSchemes(config.server.apiAuth).any { it is AuthConfig.Password }
@@ -262,12 +246,9 @@ internal fun validateCorsForCookieAuth(config: AppConfig) {
 }
 
 /**
- * Fail-fast on an HMAC key whose signature does not bind the request path while its
- * grants reach more than one agent — via `role: admin`, a `*` agent pattern, or grants
- * naming two or more distinct exact agents. Such a signature is portable: a request
- * captured for one agent replays against every other agent the key can reach. The scheme
- * is unchanged (existing signatures still verify), so this only rejects the dangerous
- * config at startup; the operator narrows the grants or binds the path (ADR-0037).
+ * Fail-fast on an HMAC key whose signature does not bind the request path while its grants (ADR-0037) reach more
+ * than one agent (`role: admin`, a `*` pattern, or two or more exact agents): a captured request replays against
+ * every other agent it reaches. Only that config is rejected; the scheme is unchanged.
  */
 internal fun validateHmacSignatureScope(config: AppConfig) {
     flattenAuthSchemes(config.server.apiAuth)
@@ -292,12 +273,9 @@ internal fun validateHmacSignatureScope(config: AppConfig) {
 }
 
 /**
- * Fail-fast on a session signing secret shorter than [MIN_SESSION_SECRET_LEN] characters.
- * `sessionSecret` (and the rotation key `sessionSecretPrevious`) is used raw as the
- * HMAC-SHA256 key for the session cookie; a short secret is brute-forceable, letting an
- * attacker forge cookies. Runs on the *resolved* config (after `@SYSENV` substitution),
- * so a short `@SYSENV:VAR` placeholder referencing a strong secret is fine — only the
- * actual value's length is checked.
+ * Fail-fast on a session signing secret (or `sessionSecretPrevious`) shorter than [MIN_SESSION_SECRET_LEN]: it is
+ * the raw HMAC-SHA256 cookie key, so a short one is brute-forceable. Checked on the resolved config, so a short
+ * `@SYSENV:VAR` placeholder naming a strong secret is fine.
  */
 internal fun validateSessionSecretStrength(config: AppConfig) {
     flattenAuthSchemes(config.server.apiAuth)
@@ -320,11 +298,9 @@ internal fun validateSessionSecretStrength(config: AppConfig) {
 private const val MIN_SESSION_SECRET_LEN = 32
 
 /**
- * Fail-fast on a runner-domain token shorter than [MIN_RUNNER_TOKEN_LEN] characters,
- * on the resolved config like [validateSessionSecretStrength]. The token is the only
- * proof the runner protocol routes ask for, and a match drives commands on the instances, so
- * it must not be guessable. The message names the alias, never the value.
- * CWE-331.
+ * Fail-fast on a runner-domain token shorter than [MIN_RUNNER_TOKEN_LEN], on the resolved config like
+ * [validateSessionSecretStrength]: a match drives commands on the instances, so it must not be guessable.
+ * The message names the alias, never the value. CWE-331.
  */
 internal fun validateRunnerDomainTokenStrength(config: AppConfig) {
     config.runners.forEach { (alias, cfg) ->
@@ -340,10 +316,8 @@ internal fun validateRunnerDomainTokenStrength(config: AppConfig) {
 private const val MIN_RUNNER_TOKEN_LEN = 32
 
 /**
- * Fail-fast when Langfuse export is enabled but `serverUrl` is plaintext `http://`
- * to a non-loopback host: the OTLP export carries the Langfuse public+secret keys
- * and (non-secret) prompt/tool content, so cleartext to a remote host leaks them.
- * Loopback `http://` is allowed (local collector). See `app/SERVER.md` § Langfuse Configuration.
+ * Fail-fast when Langfuse export is on with plaintext `http://` to a non-loopback host: the OTLP export carries
+ * the Langfuse keys and prompt/tool content. Loopback `http://` (a local collector) is allowed.
  */
 internal fun validateLangfuseServerUrl(config: AppConfig) {
     if (config.openTelemetryExport != OpenTelemetryExport.LANGFUSE) return
@@ -383,12 +357,9 @@ internal fun warnOnHmacReplayWindow(
 }
 
 /**
- * Startup WARN for each HMAC key that can run an agent reading inputs from the
- * query string while its `payloadTemplate` omits `{{query}}`: a captured
- * signature then replays with altered query parameters, tampering with those
- * inputs. Non-fatal — signing scope is per-key config, not canonical-request signing
- * (ADR-0010), so whether to bind it is the operator's choice — but the operator should
- * know the exposure.
+ * Startup WARN for each HMAC key that can run an agent reading inputs from the query string while its
+ * `payloadTemplate` omits `{{query}}`: a captured signature then replays with altered query parameters.
+ * Non-fatal, since signing scope is per-key config (ADR-0010).
  */
 internal fun warnOnUnsignedQueryInputs(
     config: AppConfig,

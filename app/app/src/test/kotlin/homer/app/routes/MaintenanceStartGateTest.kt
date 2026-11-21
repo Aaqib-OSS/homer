@@ -1,6 +1,7 @@
 package homer.app.routes
 
 import homer.app.EnvConstants
+import homer.app.HomerHeaders
 import homer.app.apiJson
 import homer.app.configureStatusPages
 import homer.app.executors.ProcessExecutor
@@ -255,7 +256,7 @@ class MaintenanceStartGateTest {
 
             try {
                 val response =
-                    client.post("/api/v1/agent/watcher") { header(EnvConstants.PARENT_PROCESS_HEADER, "42") }
+                    client.post("/api/v1/agent/watcher") { header(HomerHeaders.PARENT_PROCESS_ID, "42") }
 
                 assertEquals(
                     HttpStatusCode.ServiceUnavailable,
@@ -289,10 +290,10 @@ class MaintenanceStartGateTest {
             try {
                 coEvery { rows.getProcessInfo(42) } returns
                     ProcessInfo(id = 42, status = ProcessStatus.WORKING, agentName = "watcher", owner = "bob")
-                val denied = client.post("/api/v1/agent/watcher") { header(EnvConstants.PARENT_PROCESS_HEADER, "42") }
+                val denied = client.post("/api/v1/agent/watcher") { header(HomerHeaders.PARENT_PROCESS_ID, "42") }
 
                 coEvery { rows.getProcessInfo(42) } returns null
-                val absent = client.post("/api/v1/agent/watcher") { header(EnvConstants.PARENT_PROCESS_HEADER, "42") }
+                val absent = client.post("/api/v1/agent/watcher") { header(HomerHeaders.PARENT_PROCESS_ID, "42") }
 
                 assertEquals(HttpStatusCode.UnprocessableEntity, denied.status)
                 assertEquals(HttpStatusCode.UnprocessableEntity, absent.status)

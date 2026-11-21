@@ -33,7 +33,8 @@ import kotlin.test.assertNotNull
  * family-level list endpoints (`/status/all`, `/questions`, `/dispatches`, `/continuations`)
  * answer `200` with the other agent's rows filtered out; a route scoped to one resource, such
  * as `/artifacts/list?processId=`, answers the same `404`. One route per family also
- * compares the denial's body against the same request at an id that does not exist. The
+ * compares the denial's body against the same request at an id that does not exist. The agent
+ * file routes answer `403` instead on an agent the token holds another grant on. The
  * callback-token `401` is `WhoamiTest`'s.
  *
  * `echoScoped` (fixtures/config/config.json) holds `run`+`read` on `echo` only, so it is the
@@ -68,6 +69,7 @@ class AuthBoundaryTest : E2eTestBase() {
             Triple("artifacts", HttpMethod.Get, "/api/v1/artifacts?processId=1&path=cmd_0.out"),
             Triple("artifacts", HttpMethod.Get, "/api/v1/artifacts/list?processId=1"),
             Triple("agent run", HttpMethod.Post, "/api/v1/agent/echo"),
+            Triple("agent files", HttpMethod.Get, "/api/v1/agents/echo/files"),
         )
 
     @Test
@@ -300,6 +302,37 @@ class AuthBoundaryTest : E2eTestBase() {
                 label = "agent run family",
                 idSwap = "no-such-agent" to "fail",
             )
+        }
+
+    @Test
+    fun `a token granted on another agent gets 404 for its files, and 403 without edit on its own agent`() =
+        runBlocking {
+            val routes =
+                listOf(
+                    Triple(HttpMethod.Get, "files", null),
+                    Triple(HttpMethod.Get, "files/notes.txt", null),
+                    Triple(HttpMethod.Put, "files/notes.txt", """{"content":"x"}"""),
+                    Triple(HttpMethod.Delete, "files/notes.txt", null),
+                )
+            for ((method, path, body) in routes) {
+                val hidden = scoped(method, "/api/v1/agents/fail/$path", body)
+                assertEquals(
+                    HttpStatusCode.NotFound,
+                    hidden.status,
+                    "agent files family: $method /api/v1/agents/{name}/$path must hide an agent the caller holds no grant on",
+                )
+                assertDenialAnswersLikeNotFound(
+                    hidden = hidden,
+                    unknown = scoped(method, "/api/v1/agents/no-such-agent/$path", body),
+                    label = "agent files family",
+                    idSwap = "no-such-agent" to "fail",
+                )
+                assertEquals(
+                    HttpStatusCode.Forbidden,
+                    scoped(method, "/api/v1/agents/echo/$path", body).status,
+                    "agent files family: $method /api/v1/agents/{name}/$path needs edit on an agent the caller can see",
+                )
+            }
         }
 
     /**

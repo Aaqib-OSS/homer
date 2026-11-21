@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-09-16
 deciders: Lukáš Vlk
-amended: 2026-11-20
+amended: 2026-11-20, 2026-11-21
 ---
 # ADR-0065: Remote-runner env-composition contract
 
@@ -45,6 +45,12 @@ own `env` (`Runner.runnerEnv`, such as a `PATH` for a macOS ssh host), then the 
 backend-derived values (`HMR_API_URL`), then the workspace overrides `createWorkspace` returns.
 Without the runner layer an ssh target would see only the requesting run's env, which holds no
 value for the target host. The copy stays the target's own (ADR-0034).
+
+### Amendment (2026-11-21): the local runner starts the child from the composed env alone
+
+`LocalShellExecutor` clears the child's environment, which the JDK pre-fills from Homer's own, before it
+puts in the composed env. A host variable reaches the child only through `parentEnvAllowlist` or an
+explicit layer above, never by inheritance.
 
 ### Consequences
 
