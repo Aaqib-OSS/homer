@@ -2494,9 +2494,10 @@ sftpTransferTimeoutSeconds: 60 # per-operation SFTP deadline (default 300)</code
             <code>env</code> once the run is claimed — see the claim queue above. On ssh, sshd
             and the login shell already supply <code>HOME</code>/<code>PATH</code> — override only what must differ.
             On ssh and Kubernetes each step sources its env from a 0600 file, so env names there must be shell
-            identifiers (<code>^[A-Za-z_][A-Za-z0-9_]*$</code>): a runner <code>env</code> key fails startup, and a
-            <code>globalEnv</code> or agent <code>env</code> key fails the run before it reaches the host or creates a
-            pod. External runners accept any name.</p>
+            identifiers (<code>^[A-Za-z_][A-Za-z0-9_]*$</code>): a runner <code>env</code> or <code>extraUploads.env</code>
+            name fails startup, and a <code>globalEnv</code>, agent <code>env</code> or <code>resultEnvParam</code> name
+            fails the run before it reaches the host or creates a pod. External runners keep the general key rules
+            (non-blank, no <code>HMR_</code> prefix) but need no shell identifiers.</p>
           <pre><code>runners:
   macos-ios: !&lt;ssh&gt;
     # ...
