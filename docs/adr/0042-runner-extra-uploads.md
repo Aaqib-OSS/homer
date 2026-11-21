@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-15
 deciders: Lukáš Vlk
-amended: 2026-09-24, 2026-09-30, 2026-11-20
+amended: 2026-09-24, 2026-09-30, 2026-11-20, 2026-11-21
 ---
 # ADR-0042: Runner-level `extraUploads` — materialize host folders into remote workspaces
 
@@ -246,3 +246,13 @@ packed as it stands: a symlink there is tampering and must fail the upload. The 
 every `extraUploads` entry are operator-configured and may legitimately be symlinks, so they are
 resolved to their realpath (`TarStreams.resolvedPackSource`) first, and containment is checked
 against the real root.
+
+## Amendment (2026-11-21): `.homer/env` is reserved
+
+The reserved paths of the shape rules above gain `.homer/env`, where the ssh and Kubernetes runners
+write each step's env file ([ADR-0032](0032-ssh-runner-backend.md) and
+[ADR-0043](0043-k8s-sync-workspaces.md), same date). An extra uploaded there would write into that
+directory or replace it, and its ancestors stay reserved as for the other paths. The rule applies to
+the external domains too, which share the reserved list. `.homer/reap`, the ssh runner's process-group
+directory ([ADR-0041](0041-process-group-reaping-on-kill.md)), is still not reserved; that gap predates
+this amendment and reserving it is a separate change.

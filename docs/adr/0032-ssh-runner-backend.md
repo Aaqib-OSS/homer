@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-07-21
 deciders: Lukáš Vlk
-amended: 2026-11-20
+amended: 2026-11-20, 2026-11-21
 ---
 # ADR-0032: SSH as a runner backend
 
@@ -171,6 +171,51 @@ whoever reads the cluster's audit backend, which records the URI at every audit 
 as it keeps them (`AR-10`, [ADR-0043](0043-k8s-sync-workspaces.md)). An ssh host records the
 values only where `execve` auditing is turned on; a cluster that audits `pods/exec` records them
 always.
+
+#### Amendment (2026-11-21): the env travels in a sourced file, not on the command line
+
+The `exec env <K=V…> <argv…>` shape above and the "Env values are visible in the remote process
+list" bullet no longer describe the runner. A step's env now reaches its command only through a
+file ([#364](https://github.com/livesport/homer/issues/364)):
+
+- **Format.** `<remoteProjectRoot>/.homer/env/<uuid>.env`, a random name per step, outside `workdir`
+  and `artifacts` so no download brings it back. It is written over SFTP, created `O_EXCL` and set to
+  `0600` on the open handle before any content exists, inside a directory held at `0700`. Its first
+  line is `rm -f -- '<file>' || exit 1`; each further line is `export K='V' || exit 1` with the value
+  POSIX single-quoted. The exec request carries only the file's path:
+  `cd <workdir> && exec sh -c '. "$0" && exec "$@"' <file> <argv…>`. The reaping form
+  ([ADR-0041](0041-process-group-reaping-on-kill.md)) keeps `setsid -w`; it records its pgid, sources the
+  file, then `exec`s. Exit codes, signals and stdin are unchanged. A step with no env writes no file.
+  The `rm` is the file's own first line, not a later step, so an env that resets `PATH` cannot break
+  the removal.
+- **Lifecycle and cleanup.** The file is gone before the command starts. Whenever the step is
+  refused, times out, is cancelled or exits non-zero, the executor removes it over SFTP under its own
+  bounded deadline. A step whose Homer process dies between the upload and the `rm` leaves the file,
+  at `0600` in the `0700` directory, until the session's workspace removal deletes the whole project
+  root ([ADR-0067](0067-ssh-cleanup-via-rm-rf.md)); a leftover is covered by that sweep, and the
+  runner has no startup sweep that would need an `.homer/env/` name pattern. That residual is `AR-13`
+  in [`SECURITY.md`](../../SECURITY.md#accepted-risks). The same-UID swap of the env directory between
+  `ensurePrivateDir`'s checks is `AR-14`.
+- **Exposure removed.** The values are on no command line and in no `execve` argv, so `AR-09` (the
+  interim record of the old exposure) is removed. The new design is the rule 7 shape
+  ([ADR-0047](0047-security-by-design-and-threat-model.md)) the 2026-11-20 amendment named.
+- **BREAKING: env names are shell identifiers** (user decision 2026-11-21). `export` cannot set a
+  name like `FOO-BAR`, which `env` could. A runner `env` key and an `extraUploads.env` name must match
+  `^[A-Za-z_][A-Za-z0-9_]*$` at config load, and a run whose composed env or `resultEnvParam` names
+  hold any other name fails before the connection. The local runner and external domains are
+  unchanged. Under a bash or zsh `sh`, names of readonly or special variables (`UID`, `EUID`, `PPID`,
+  `SHELLOPTS`, `BASHOPTS`) are identifiers that still fail the sourcing, so the step fails.
+- **Cost.** One SFTP round trip (client open, create, `fsetstat`, `fstat`, write, close) and one more
+  `sh` and `rm` process per step with an env, about 23 ms on macOS against the embedded test sshd; not
+  measured against a Linux host. Batching with an existing upload would need a `ShellExecutor` API
+  change and was not done.
+- **The remote size limit is not lifted.** `#364` assumed the OS argument limit no longer caps the
+  env. That is wrong: the final `exec "$@"` hands the whole env to `execve`, whose combined argv and
+  envp limit (`ARG_MAX`) and per-string limit (128 KiB on Linux) still apply to the command. What
+  changed is the command string: it no longer holds the env, so the env no longer counts against the
+  single-argument limit of the login shell's `-c` string, which the old shape reached first.
+- **Reserved path.** `.homer/env` joins the reserved `extraUploads` paths
+  ([ADR-0042](0042-runner-extra-uploads.md)).
 
 ### One deviation from the design spec: a client per alias, not shared
 
