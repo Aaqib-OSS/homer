@@ -61,11 +61,8 @@ class SessionWorker(
     // ends in the normal kill path, which is all a best-effort interrupt promises (ADR-0108).
     private val interruptGraces = ConcurrentHashMap<String, Duration>()
 
-    // opIds cancelled before `runCmd` had a chance to register the process in
-    // [running]: `dispatchLoop` launches a `cmd` op's handling without waiting for
-    // it to start, so a `Cancel` for the same op can be dispatched first. `runCmd`
-    // consults this right after registering so that race can't leave the process
-    // running to its full timeout. See fix-round-1 item 3.
+    // opIds cancelled before `runCmd` registered the process in [running]: `dispatchLoop` does not
+    // wait for a `cmd` op to start, so its `Cancel` can arrive first.
     private val cancelledOps = ConcurrentHashMap.newKeySet<String>()
 
     // Delivery jobs (see `deliver`) run on this scope, not on dispatchLoop's own

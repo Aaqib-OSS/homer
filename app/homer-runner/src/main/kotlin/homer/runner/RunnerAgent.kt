@@ -227,9 +227,8 @@ class RunnerAgent(
             // into, or blow past, the budget in-flight sessions get below.
             withTimeoutOrNull(minOf(options.drainTimeout, DEREGISTER_TIMEOUT)) { deregister(id) }
         }
-        // Idle loops sit in a claim long-poll; nothing to finish there. A loop whose claim
-        // already returned but whose busy flag is not set yet is cancelled with that claim in
-        // flight; Homer fails that run at the heartbeat TTL. Narrow window, accepted.
+        // Idle loops sit in a claim long-poll. A claim returned before its busy flag is set is
+        // cancelled in flight and Homer fails that run at the heartbeat TTL. See ADR-0096.
         loops.forEach { (job, busy) -> if (!busy.get()) job.cancel() }
         val finished = withTimeoutOrNull(options.drainTimeout) { loops.map { it.job }.joinAll() } != null
         if (!finished) {

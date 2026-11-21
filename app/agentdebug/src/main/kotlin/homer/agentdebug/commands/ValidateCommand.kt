@@ -77,9 +77,7 @@ class ValidateCommand(
     }
 
     private fun printSchemaValidation(agent: Agent) {
-        // Run the same JSON-schema validation the server's bundled schema and
-        // SchemaValidationTest enforce, so local-debug doesn't diverge from the
-        // shipped contract (audit P2 #28).
+        // The same schema validation the server's bundled schema enforces, so local debugging cannot diverge.
         val schemaErrors = AgentSchemaValidator().validate(agent)
         if (schemaErrors.isEmpty()) {
             println("✓ Schema: valid")
