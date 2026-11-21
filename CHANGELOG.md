@@ -15,6 +15,7 @@
 - **BREAKING: the Kubernetes runner's image needs `sh`** — A step with an env now runs under `sh`, so an image without it fails every such step; add `sh` to the image.
 - **BREAKING: `.homer/env` is a reserved `extraUploads` path** — A runner or external-domain `extraUploads` entry targeting it or a path under it is rejected at startup.
 - **Fixed: `agentdebug run --cmd N` with an out-of-range N** — An index below 0 or at/above the agent's command count now fails before anything runs instead of silently running nothing.
+- **Fixed: `agentdebug --help` omits `hash-password`** — The usage block now lists every subcommand, one per line, and says `hash-password` needs no `--config`.
 - **Added: `isErrorExitCode` on `!<claude>` commands** — An `is_error` result returns this exit code instead of failing as malformed, and is not retried.
 - **Added: `GET /api/v1/auth/me` answers a bearer token** — A request carrying a bearer token gets that token's name, role and grants, and the route is mounted whenever a `bearer` or `password` scheme is configured.
 - **BREAKING: an agent's `@SYSENV:` names only allowed host variables** — An agent whose `env` references a host variable that neither the new `agentSysEnvAllowlist` config lists nor `globalEnv` references with `@SYSENV:` fails to load, and an agent-file write of one is refused with `422`. See [ADR-0037](docs/adr/0037-grants-authorization.md).
