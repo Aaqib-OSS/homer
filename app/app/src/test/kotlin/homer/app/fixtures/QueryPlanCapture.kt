@@ -7,9 +7,9 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Collects every distinct SQL statement production code runs during `:app:test`, with its production source line,
- * for the `query-plans` check; it also records each statement run [REPEAT_THRESHOLD] times in one transaction for
- * `query-repeats` (ADR-0082). Statements whose nearest `homer.app` frame is test code are neither planned nor counted.
+ * Collects every distinct SQL statement production code runs during `:app:test`, with its source line, for the
+ * `query-plans` check, and each one run [REPEAT_THRESHOLD] times in one transaction for `query-repeats` (ADR-0082).
+ * Registered via META-INF/services; inert unless the test task sets [DIR_PROPERTY].
  */
 class QueryPlanCapture : GlobalStatementInterceptor {
     override fun beforeExecution(

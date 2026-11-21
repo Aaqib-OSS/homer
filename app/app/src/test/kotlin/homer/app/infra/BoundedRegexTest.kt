@@ -157,6 +157,7 @@ class BoundedRegexTest {
         val openPool = CountDownLatch(1)
         val occupiers = Executors.newFixedThreadPool(WORKERS_PLUS_QUEUE)
         try {
+            // runCatching: a drained occupier must not throw out of its future.
             val futures =
                 (1..WORKERS_PLUS_QUEUE).map {
                     occupiers.submit(

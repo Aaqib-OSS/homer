@@ -152,8 +152,8 @@ class ClaudeHarnessTest {
 
     @Test
     fun `subagent fields resolve placeholders and stay valid JSON when the value has a quote`() {
-// A quote in an env value must be escaped by the encoder: fields resolve before --agents is encoded,
-// never by templating the encoded JSON.
+        // A quote in an env value must be escaped by the encoder: fields resolve before --agents is encoded,
+        // never by templating the encoded JSON.
         val a =
             argv(
                 ClaudeCmdOptions(agents = mapOf("reviewer" to ClaudeSubagent(prompt = "see {{DIR}}"))),
@@ -169,8 +169,8 @@ class ClaudeHarnessTest {
 
     @Test
     fun `subagent value resolving to another placeholder is not re-expanded into the agents JSON`() {
-// A second template pass over the encoded --agents blob would let EVIL's JSON metacharacters inject a sibling
-// "tools" key; the encoded blob must be excluded from it.
+        // A second template pass over the encoded --agents blob would let EVIL's JSON metacharacters inject a sibling
+        // "tools" key; the encoded blob must be excluded from it.
         val a =
             argv(
                 ClaudeCmdOptions(agents = mapOf("reviewer" to ClaudeSubagent(prompt = "see {{DIR}}"))),
@@ -626,8 +626,8 @@ class ClaudeHarnessTest {
 
     @Test
     fun `an is_error flag of an unexpected shape is pinned — a quoted boolean decodes, a number or null fails the whole event`() {
-// The flag stays a strict Boolean: a quoted `"true"` fails the turn on the flag and keeps its cost; a number or null
-// is Malformed and its cost never reaches a TurnEnd (fail-closed, unlike the untyped diagnosis fields).
+        // The flag stays a strict Boolean: a quoted `"true"` fails the turn on the flag and keeps its cost; a number
+        // or null is Malformed and its cost never reaches a TurnEnd (fail-closed, unlike untyped diagnosis fields).
         val quoted =
             events("""{"type":"result","subtype":"success","is_error":"true","total_cost_usd":0.25}""")
                 .single() as LlmEvent.TurnEnd

@@ -1324,7 +1324,7 @@ class LlmHarnessExecutorTest {
     fun `a settlement of a stream with no start event writes no session onto the settlement span`() =
         runTest {
             // A crashed CLI's stream has no start event, so the scan has no session id: the
-            // `settled.sessionId?.let` guard must drop the attribute, not write it unconditionally. See ADR-0089.
+            // `settled.sessionId?.let` guard must drop the attribute, not write it unconditionally.
             stdOut.writeText("{\"t\":\"end\",\"ok\":true,\"cost\":0.42}")
             every { resolver.configured } returns true
             val lookup = CompletableDeferred<ResolvedCost>()

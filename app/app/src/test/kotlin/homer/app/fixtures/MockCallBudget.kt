@@ -11,9 +11,9 @@ import org.junit.jupiter.api.extension.ExtensionContext
 import java.io.File
 
 /**
- * After every `:app` test: counts each mock method's calls, then clears mockk's recorded calls (answers stay), which
- * otherwise pile up with their stack traces. [FAIL_CALLS] calls of one method fail the test (only a busy loop gets
- * there); [WARN_CALLS] is a line in `mock-calls-<worker>.jsonl` under [DIR_PROPERTY] (ADR-0082).
+ * After every `:app` test: counts each mock method's calls, then clears mockk's recorded calls (answers stay).
+ * [FAIL_CALLS] calls of one method fail the test (only a busy loop gets there); [WARN_CALLS] is a line in
+ * `mock-calls-<worker>.jsonl` under [DIR_PROPERTY] (ADR-0082). Registered via META-INF/services, `:app:test` only.
  */
 class MockCallBudget(
     private val warnAt: Int = WARN_CALLS,
