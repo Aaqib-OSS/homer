@@ -241,6 +241,30 @@ class AgentInputChecksTest {
     }
 
     @Test
+    fun `the load error and the warning name an offending onStop step with the same phase tag`() {
+        val agent =
+            AgentFixtures.simpleAgent(name = "a").copy(
+                commands = listOf(capturingStep(label = "run", envName = "OK")),
+                onStop =
+                    listOf(
+                        capturingStep(label = "save", envName = "PATH"),
+                        claudeCommand(
+                            ClaudeCmdOptions(dangerouslySkipPermissions = true, allowedTools = listOf("Read")),
+                            label = "ship",
+                        ),
+                    ),
+            )
+
+        assertFalse(checks.checkCommandBindings(agent, errors))
+        assertTrue(errors.single().startsWith("Agent 'a': onStop step 'save'"), errors.toString())
+
+        checks.warnOnUncontainedClaudeTools(agent)
+        val kinds = mutableListOf<String>()
+        verify(exactly = 1) { logger.warn(any<String>(), any<Any>(), capture(kinds), any<Any>()) }
+        assertEquals(listOf("onStop step"), kinds)
+    }
+
+    @Test
     fun `an input templated into the cooldown key warns like the lock key`() {
         // The rendered key decides which pacing window a run lands in, so a caller-chosen
         // input chooses the subject — the steering class the lock key is warned for.

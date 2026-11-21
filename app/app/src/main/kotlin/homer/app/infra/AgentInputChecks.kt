@@ -219,15 +219,18 @@ internal class AgentInputChecks(
         return true
     }
 
+    /** The agent's commands and onStop steps, each tagged with the phase name the messages use (ADR-0108). */
+    private val Agent.phaseTaggedSteps: List<Pair<String, Command>>
+        get() = commands.map { "command" to it } + onStop.map { "onStop step" to it }
+
     /** Rejects result captures into invalid envNames and input-chosen LLM executables; `false` = skip the agent. */
     fun checkCommandBindings(
         agent: Agent,
         errors: MutableList<String>,
     ): Boolean {
-        // onStop steps run under the same caller-visible env as commands, so both binding
-        // guards below sweep the stop phase too — a stop step cannot opt out of a check
-        // the phase it runs in does not weaken (ADR-0047, ADR-0108).
-        val steps = agent.commands.map { "command" to it } + agent.onStop.map { "onStop step" to it }
+        // Both binding guards sweep the stop phase too — a stop step cannot opt out of a
+        // check the phase it runs in does not weaken (ADR-0047, ADR-0108).
+        val steps = agent.phaseTaggedSteps
 
         // Captured output is attacker-influenceable and merged into later commands' and onStop steps'
         // env, so it gets the same reserved-name guard as inputs (ADR-0047 rule 2).
@@ -365,9 +368,8 @@ internal class AgentInputChecks(
      * `allowedTools` pre-approves without removing tools, so the step is not contained.
      */
     fun warnOnUncontainedClaudeTools(agent: Agent) {
-        // Phase-tagged like checkCommandBindings: a stop step reported as a "command" sends
-        // the operator to the wrong block of the agent file (ADR-0108).
-        val steps = agent.commands.map { "command" to it } + agent.onStop.map { "onStop step" to it }
+        // Phase-tagged so a stop step is never reported as a "command" (ADR-0108).
+        val steps = agent.phaseTaggedSteps
         steps
             .mapNotNull { (kind, cmd) -> (cmd as? Command.Claude)?.let { kind to it } }
             .filter { (_, cmd) -> cmd.options.bypassesPermissionsWithoutToolLimit() }
