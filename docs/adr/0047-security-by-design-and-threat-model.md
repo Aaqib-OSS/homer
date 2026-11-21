@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-21
 deciders: Lukáš Vlk
-amended: 2026-09-23, 2026-09-30, 2026-10-06, 2026-10-16, 2026-11-05, 2026-11-20
+amended: 2026-09-23, 2026-09-30, 2026-10-06, 2026-10-16, 2026-11-05, 2026-11-20, 2026-11-21
 ---
 # ADR-0047: Security is a design input, and these are the boundaries it defends
 
@@ -361,6 +361,15 @@ could abuse an `endpoint=` or `mode=` ride-along, and both producers pass
 `usePathname()`, which never carries a query, so query state does not survive a
 sign-in round trip. Accepting a query would need a second validation shape per
 target; landing on the destination's default view is the accepted cost.
+
+## Amendment (2026-11-21): the API sends no HSTS header
+
+The response-hardening headers (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`,
+`Content-Security-Policy`) are sent on every response; `Strict-Transport-Security` is not. Single-node
+installs are often reached over plain HTTP, and a browser that has seen the header refuses plain HTTP
+for the host for as long as `max-age` runs, so sending it would lock those installs out of their own
+console. TLS terminates at an operator-run proxy, which is where HSTS belongs; the API sends it only
+once deployment is HTTPS-only.
 
 ## Pros and Cons of the Options
 

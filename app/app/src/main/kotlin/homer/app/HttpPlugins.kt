@@ -136,7 +136,7 @@ fun Application.configureCors(allowedOrigins: List<String>) {
  * nosniff` (no MIME-confusion script execution), `Referrer-Policy: same-origin` (internal URLs do not leak
  * cross-origin), `Content-Security-Policy: default-src 'self'`. The CSP can stay maximally restrictive because the
  * API serves no HTML and loads no remote subresource — a future HTML surface needs an explicit policy override
- * before it ships. HSTS is omitted until deployment is HTTPS-only: over HTTP it breaks single-node installs.
+ * before it ships. No HSTS header: it would lock out plain-HTTP single-node installs. See ADR-0047.
  */
 val SecurityHeaders =
     createApplicationPlugin("SecurityHeaders") {
