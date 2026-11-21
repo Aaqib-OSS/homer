@@ -40,7 +40,10 @@ internal object BoundedRegex {
         message: String = "Regex evaluation exceeded ${timeoutMs}ms (possible catastrophic backtracking)",
     ) : RuntimeException(message)
 
-    /** The match never ran: the pool and its queue were full, so the submission was shed. */
+    /**
+     * The match never ran: the pool and its queue were full, so the submission was shed.
+     * A [RegexTimeoutException], so a caller failing closed on a timeout fails closed on a shed too.
+     */
     class RegexShedException(
         timeoutMs: Long,
     ) : RegexTimeoutException(timeoutMs, "Regex submission shed: all evaluation workers are busy (pool saturated)")

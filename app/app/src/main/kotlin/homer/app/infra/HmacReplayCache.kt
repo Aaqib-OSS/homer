@@ -3,7 +3,7 @@ package homer.app.infra
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Bounded, in-memory set of recently seen HMAC signatures, each kept for its freshness window only.
+ * Bounded, in-memory set of recently seen HMAC signatures, each live for its freshness window only.
  * See ADR-0010.
  */
 class HmacReplayCache(

@@ -213,8 +213,9 @@ class AgentInputResolver(
     )
 
     /**
-     * Routes a string param map by each param's declared src: QUERY to query parameters, everything else
-     * to a JSON body field; HEADER and reserved control keys are dropped so internal callers cannot forge them.
+     * Routes a string param map by each param's declared src: QUERY to query parameters, everything else to a
+     * JSON body field. HEADER keys are dropped (an internal caller must not fabricate transport auth); reserved
+     * control keys reach the run through `reservedControlParams` instead.
      */
     fun classifyParams(
         agent: Agent,

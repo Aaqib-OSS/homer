@@ -36,7 +36,6 @@ internal class AgentScanner(
         val sourceDirs = mutableMapOf<String, String>()
         val presentDirNames = mutableSetOf<String>()
         val errors = mutableListOf<String>()
-        // A name claimed by two directories fails every claimant, never a last-writer-wins (ADR-0068).
         val collidedNames = mutableSetOf<String>()
 
         try {

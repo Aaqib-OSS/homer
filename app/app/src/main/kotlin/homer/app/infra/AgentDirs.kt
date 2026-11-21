@@ -87,7 +87,7 @@ internal object AgentDirs {
         private var subtreeTruncated = false
 
         fun walkCatalog(root: Path) {
-            // Per-top-level budgets keep one principal's wide subtree from dropping others' agents (ADR-0068).
+            // Per-top-level budgets keep one principal's subtree from dropping others' agents (ADR-0068, CWE-400).
             val topLevel = readableChildren(root, MAX_TOTAL_ENTRIES, raw)
             if (topLevel.truncated) catalogTruncated = true
             for (top in topLevel.dirs) {

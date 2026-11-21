@@ -160,7 +160,7 @@ internal class AgentDefinitionValidator(
             return false
         }
         if (runnerFilter is RunnerFilter.Tags) {
-            // A throwing tag provider must never skip the agent: ADR-0066 deviation (9), ADR-0020.
+            // Warn-only: a throwing tag provider never skips the agent (ADR-0066 deviation (9)).
             val servedTagSets =
                 try {
                     runnerTagSets()

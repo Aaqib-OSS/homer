@@ -138,7 +138,6 @@ internal class AgentInputChecks(
         agent: Agent,
         errors: MutableList<String>,
     ): Boolean {
-        // A runtime key may not also be a fromInputs key, or a run could re-point its own subject (ADR-0060).
         val badRuntimeKey = agent.tags.runtime.firstOrNull { !TagValidation.KEY_PATTERN.matches(it) }
         if (badRuntimeKey != null) {
             logger.error(
@@ -149,6 +148,7 @@ internal class AgentInputChecks(
             errors.add("Agent '${agent.name}': tags.runtime key '$badRuntimeKey' is not ^[A-Za-z0-9._-]{1,64}\$")
             return false
         }
+        // A runtime key may not also be a fromInputs key: it could shadow an input-derived tag (ADR-0060).
         val overlappingKey = agent.tags.runtime.firstOrNull { it in agent.effectiveFromInputTags }
         if (overlappingKey != null) {
             logger.error(
@@ -295,7 +295,7 @@ internal class AgentInputChecks(
 
     /**
      * WARNs when an input-bound envName feeds the workspace path, lock key, cooldown key or a RunAgent
-     * target, letting a caller pick another run's directory, lock or pacing window. Legitimate, so only a warning.
+     * target, letting a caller pick another run's directory, lock, pacing window or target agent. Legitimate, so only a warning.
      */
     fun warnOnInputSteering(agent: Agent) {
         val inputEnvNames =

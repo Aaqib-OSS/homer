@@ -99,15 +99,16 @@ HMAC-only, Unsecured all keep working unchanged).
 
 ## Amendment (2026-11-21): how the replay cache stays bounded without weakening replay protection
 
-The replay cache (`HmacReplayCache`) holds one entry per accepted signature, so its rules are part of the
+The replay cache (`HmacReplayCache`) holds one entry per accepted signature of a key with a
+`timestampHeader`, so its rules are part of the
 decision:
 
 - **Lifetime.** A signature is valid within ±`replayToleranceSec` of its timestamp, so it is remembered for
-  twice that; after it the timestamp check rejects the request anyway and the entry is pruned.
+  twice that; after it the timestamp check rejects the request anyway, so the entry becomes reclaimable.
 - **Key.** The entry is keyed on the key id and the *decoded* MAC bytes, never the raw signature string: hex
   case and base64 form vary while decoding to the same bytes, so a raw-string key would let a re-encoded copy
   evade deduplication.
 - **Bound.** Only validly signed requests reach the cache, so growth follows the legitimate signer's rate over
   the freshness window. At the entry cap only *expired* entries are reclaimed. A live marker is never
   evicted, because evicting it would re-open that signature's replay window. When nothing expired can be
-  reclaimed, the new insert is rolled back and the request is rejected (fail closed, ADR-0047 rule 4).
+  reclaimed, the new insert is rolled back and the request is rejected (fail closed, ADR-0047 rules 4-5).
