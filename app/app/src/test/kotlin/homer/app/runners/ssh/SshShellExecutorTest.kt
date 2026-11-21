@@ -714,6 +714,13 @@ class SshShellExecutorTest {
     }
 
     @Test
+    fun `a channel with neither exit status nor signal on a session still open but closing is a lost connection`(
+        @TempDir local: Path,
+    ) = runTest {
+        assertThrows<SshConnectionLostException> { exitWithSignal(null, local, sessionLive = true, closing = true) }
+    }
+
+    @Test
     fun `a known exit signal still reports 128 plus its number on a session that is closing`(
         @TempDir local: Path,
     ) = runTest {
