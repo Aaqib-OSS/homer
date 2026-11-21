@@ -111,6 +111,19 @@ class RemoteCommandBuilderTest {
     }
 
     @Test
+    fun `an env that resets PATH still removes the env file and runs an absolute command`(
+        @TempDir tmp: Path,
+    ) {
+        assumeFalse(System.getProperty("os.name").lowercase().contains("win"))
+        val envFile = tmp.resolve("e.env").toString()
+        Path.of(envFile).writeText(RemoteCommandBuilder.envFileContent(envFile, mapOf("PATH" to "/nonexistent")))
+        val command = RemoteCommandBuilder.build(tmp.toString(), envFile, listOf("/bin/sh", "-c", "printf %s \"\$PATH\""))
+        val (exit, out) = run("/bin/sh", command)
+        assertEquals(0 to "/nonexistent", exit to out)
+        assertFalse(Files.exists(Path.of(envFile)), "the env file outlived the launch")
+    }
+
+    @Test
     fun `a failing export stops the command under sh and non-posix bash, and the env file is gone`(
         @TempDir tmp: Path,
     ) {
