@@ -140,7 +140,10 @@ class SshShellExecutor(
             RemoteCommandBuilder.build(remoteWorkdir, envFile, command)
         }
 
-    /** The channel's exit status as the result; a channel closed without one fails the step ([noExitStatus]). */
+    /**
+     * The channel's exit status as the result, else 128 + n for a command the remote killed with signal n, as the
+     * local runner reports it; a channel closed with neither fails the step ([noExitStatus]).
+     */
     private fun commandResult(
         channel: ChannelExec,
         stdOut: Path,
@@ -148,6 +151,7 @@ class SshShellExecutor(
     ): CommandResult {
         val exit =
             channel.exitStatus
+                ?: channel.exitSignal?.let(::signalExitCode)
                 ?: throw noExitStatus()
         return CommandResult(exitCode = exit, stdOut = stdOut, stdErr = stdErr)
     }
@@ -165,6 +169,13 @@ class SshShellExecutor(
         } catch (_: IOException) {
             throw SshConnectionLostException("SSH channel open failed")
         }
+    }
+
+    private fun signalExitCode(signal: String): Int {
+        val number =
+            SshExitSignals.number(signal)
+                ?: error("the remote command ended on an unknown signal '${SshExitSignals.quotable(signal)}'")
+        return 128 + number
     }
 
     /**

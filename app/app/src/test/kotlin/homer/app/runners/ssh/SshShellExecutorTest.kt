@@ -5,6 +5,7 @@ import homer.app.exceptions.SshConnectionLostException
 import homer.app.exceptions.SshExecRefusedException
 import homer.app.fixtures.waitUnfinished
 import homer.app.infra.OutputLineFilter
+import homer.app.models.CommandResult
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.spyk
@@ -619,6 +620,7 @@ class SshShellExecutorTest {
         every { channel.open() } returns openFuture
         every { channel.waitFor(any<Collection<ClientChannelEvent>>(), any<Long>()) } returns setOf(ClientChannelEvent.CLOSED)
         every { channel.exitStatus } returns null
+        every { channel.exitSignal } returns null
         val session = mockk<ClientSession>(relaxed = true)
         every { session.createExecChannel(any()) } returns channel
         every { session.isOpen } returns false
@@ -630,6 +632,59 @@ class SshShellExecutorTest {
                     .cmd(listOf("echo", "hello"), local.resolve("o"), local.resolve("e"), null, emptyMap(), 10.seconds)
             }
         assertContains(exception.message.orEmpty(), "SSH channel closed without an exit status")
+    }
+
+    @Test
+    fun `a command the remote killed with a signal reports 128 plus its number, not a lost connection`(
+        @TempDir local: Path,
+    ) = runTest {
+        assertEquals(137, exitWithSignal("KILL", local).exitCode)
+        assertEquals(143, exitWithSignal("TERM", local).exitCode)
+        assertEquals(130, exitWithSignal("INT", local).exitCode)
+    }
+
+    @Test
+    fun `an unknown exit signal fails the step naming the signal and quoting no command`(
+        @TempDir local: Path,
+    ) = runTest {
+        val exception = assertThrows<IllegalStateException> { exitWithSignal("BOGUS", local) }
+        assertContains(exception.message.orEmpty(), "BOGUS")
+        assertFalse(exception.message.orEmpty().contains("echo"), "the step error must quote no command")
+    }
+
+    @Test
+    fun `an exit signal naming control characters is withheld from the step error`(
+        @TempDir local: Path,
+    ) = runTest {
+        val exception = assertThrows<IllegalStateException> { exitWithSignal("X\nINJECTED line", local) }
+        assertFalse(exception.message.orEmpty().contains("INJECTED"))
+    }
+
+    @Test
+    fun `a channel closed with neither exit status nor signal on a live session is still a refusal`(
+        @TempDir local: Path,
+    ) = runTest {
+        assertThrows<SshExecRefusedException> { exitWithSignal(null, local) }
+    }
+
+    /** `cmd` against a mocked live session whose exec channel closes with no exit status and [signal], if any. */
+    private suspend fun exitWithSignal(
+        signal: String?,
+        local: Path,
+    ): CommandResult {
+        val channel = mockk<ChannelExec>(relaxed = true)
+        val openFuture = mockk<OpenFuture>()
+        every { openFuture.verify(any<Long>()) } returns openFuture
+        every { channel.open() } returns openFuture
+        every { channel.waitFor(any<Collection<ClientChannelEvent>>(), any<Long>()) } returns setOf(ClientChannelEvent.CLOSED)
+        every { channel.exitStatus } returns null
+        every { channel.exitSignal } returns signal
+        val session = mockk<ClientSession>(relaxed = true)
+        every { session.createExecChannel(any()) } returns channel
+        every { session.isOpen } returns true
+        every { session.isClosing } returns false
+        return executorOn(session)
+            .cmd(listOf("echo", "hello"), local.resolve("o"), local.resolve("e"), null, emptyMap(), 10.seconds)
     }
 
     @Test
