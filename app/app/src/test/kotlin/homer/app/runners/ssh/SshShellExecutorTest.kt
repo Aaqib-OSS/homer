@@ -85,10 +85,9 @@ class SshShellExecutorTest {
     private fun reapingExecutor() = executorOn(server.newClientSession(client), reapProcessGroup = true)
 
     /**
-     * The embedded server runs commands on this same host, so local `setsid -w`
-     * availability mirrors what the reaping path needs remotely. Absent (e.g.
-     * macOS dev), the reaping tests are skipped — SshRunner's probe would have
-     * disabled reaping there anyway.
+     * The embedded server runs commands on this host, so local `setsid -w` availability mirrors what remote reaping
+     * needs. Absent (e.g. macOS dev), the reaping tests are skipped; SshRunner's probe would disable reaping there
+     * anyway.
      */
     private fun setsidAvailable(): Boolean =
         runCatching { ProcessBuilder("setsid", "-w", "true").start().waitFor() == 0 }.getOrDefault(false)
@@ -383,9 +382,8 @@ class SshShellExecutorTest {
         @TempDir local: Path,
     ) {
         assumeTrue(setsidAvailable())
-        // The command backgrounds a child that writes `marker` after 3s, then blocks.
-        // A 1s timeout kills the whole process group before the child can fire; if
-        // reaping failed the detached child would survive close(true) and create it.
+        // The command backgrounds a child that writes `marker` after 3s, then blocks; a 1s timeout must kill the whole
+        // process group first — if reaping failed the detached child would survive close(true) and create it.
         val marker = workdir.resolve("orphan-marker")
         val script = "{ sleep 3; : > $marker; } & echo bg; sleep 30"
         runBlocking {
@@ -398,11 +396,9 @@ class SshShellExecutorTest {
     }
 
     /**
-     * A mocked session whose exec channel never reports CLOSED, so a short timeout always
-     * takes the kill path. Every command string handed to `createExecChannel` is recorded:
-     * the second one is the reaper script, which the interrupt tests assert on without
-     * needing a remote `setsid -w` (the reaping integration tests skip where the target's
-     * `setsid` cannot form a group).
+     * A mocked session whose exec channel never reports CLOSED, so a short timeout always takes the kill path.
+     * Every command string given to `createExecChannel` is recorded; the second is the reaper script the interrupt
+     * tests assert on without needing a remote `setsid -w`.
      */
     private fun stalledSession(): Pair<ClientSession, MutableList<String>> {
         val commands = mutableListOf<String>()

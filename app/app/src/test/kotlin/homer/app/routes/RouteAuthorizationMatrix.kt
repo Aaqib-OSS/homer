@@ -11,21 +11,9 @@ internal enum class CredentialDomain { OPERATOR, CALLBACK, RUNNER, PUBLIC }
 internal const val HIDDEN_AGENT = "secret-agent"
 
 /**
- * One registered route and the status each denial case must answer (root CLAUDE.md §12 rules 3
- * and 8). The cases, driven by [RouteAuthorizationMatrixTest]:
- * - [noGrant]: a live credential of the route's own domain that owns none of the seeded resources —
- *   operator and public routes: the bearer token of a principal holding no grant on the hidden agent;
- *   callback routes: the callback token of that principal's own run; runner routes: the token of a
- *   second runner domain, aimed at the first domain's instance;
- * - [wrongDomain]: every live credential of another domain (callback, runner or operator token);
- * - [none]: no credential at all.
- *
- * A no-grant `404` aimed at a seeded resource must also match, byte for byte, the answer for a
- * resource that does not exist (existence hidden, §12 rule 3). See ADR-0112.
- *
- * [sample] is the request target when the route path alone does not reach the check: a `{name}`
- * placeholder in it or in [body] is filled from the seeded data (`{processId}` is a run of the hidden agent owned by
- * the admin). [listFiltered] marks a list read whose `200` body must not name the hidden agent.
+ * One registered route and the status each denial case must answer (ADR-0112): [noGrant] is a live credential of
+ * the route's domain owning no seeded resource, [wrongDomain] any other domain's credential, [none] no credential.
+ * A no-grant `404` must match a nonexistent resource byte for byte; [sample] and [body] fill `{name}` placeholders.
  */
 internal data class RouteAuthz(
     val route: String,

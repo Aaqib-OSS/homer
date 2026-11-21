@@ -113,16 +113,8 @@ class DatabaseServiceTest {
         val svc = DatabaseService(dbPath, logger)
         svc.migrate()
 
-        // The probe runs at Exposed's after-commit seam, which is the one moment the window is
-        // observable: the commit has landed, and the writer's connection is still open — Exposed
-        // only closes it when the transaction tears down, so a check after query { } returns
-        // would always pass. sqlite-jdbc re-issues BEGIN IMMEDIATE inside commit() while the
-        // connection is still in manual-commit mode, so without the fix the committed
-        // transaction is still holding the write lock here and the probe sits out its
-        // busy_timeout and fails SQLITE_BUSY.
-        // Covers query { } only; migrate()/getOrCreateInstanceId keep the wider window by
-        // design (ADR-0020), so a new raw transaction(database) call site on a live path
-        // belongs on query { } instead of beside this probe.
+        // Probe at the after-commit seam, where the writer connection is still open: a check after
+        // query { } returns would always pass. Only query { } releases the lock early (ADR-0020).
         val probe =
             object : StatementInterceptor {
                 var failure: String? = null
@@ -167,9 +159,8 @@ class DatabaseServiceTest {
         val svc = DatabaseService(dir.resolve("homer.db").toString(), logger)
         svc.migrate()
 
-        // Every write transaction still begins with BEGIN IMMEDIATE up front (ADR-0020's
-        // replacement for the Mutex): N concurrent writers all commit, serialized, and none
-        // waits past busy_timeout.
+        // Every write transaction begins with BEGIN IMMEDIATE (ADR-0020): N concurrent writers all
+        // commit, serialized, and none waits past busy_timeout.
         val elapsed =
             measureTimeMillis {
                 withContext(Dispatchers.IO) {
@@ -200,10 +191,8 @@ class DatabaseServiceTest {
         svc.migrate()
         val wal = dir.resolve("homer.db-wal")
 
-        // Hold a second connection's read snapshot across the write: without it SQLite deletes
-        // the -wal when the writer's connection closes, and the assert below would pass even
-        // had close()'s checkpoint never run. The snapshot is released — but the connection
-        // kept open — before close(), so the checkpoint is not pinned behind it.
+        // The second connection's read snapshot keeps the -wal alive, so the assert cannot pass without
+        // close()'s checkpoint; it is released before close() so the checkpoint is not pinned.
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { keeper ->
             keeper.autoCommit = false
             keeper.createStatement().use { it.executeQuery("SELECT count(*) FROM processes").use { rs -> rs.next() } }
@@ -329,9 +318,8 @@ class DatabaseServiceTest {
         val failing = DatabaseService(path, logger, wrapWriterConnection = PostCommitFailureConnection::wrap)
         val attempts = mutableListOf<Int>()
 
-        // ServerMetaRepository runs `transaction(db.database)` outside `query { }`;
-        // SQLite rule 5 says that path is single-attempt too, because the config
-        // rides the writer Database itself. This pins it.
+        // A raw `transaction(db.database)` outside `query { }` is single-attempt too: the config
+        // rides the writer Database itself (ADR-0020).
         val thrown = assertFailsWith<SQLException> { transaction(failing.database) { appendCost(attempts)() } }
 
         assertEquals("database is locked", thrown.message, "the commit failure propagates unchanged")
@@ -492,9 +480,8 @@ class DatabaseServiceTest {
                 )
             }
         }
-        // A second, externally opened connection stays open across close(): while it is
-        // open SQLite's own last-connection shutdown checkpoint cannot run, so an empty
-        // WAL here is the explicit TRUNCATE checkpoint's doing, not the teardown's.
+        // While this connection is open SQLite's last-connection checkpoint cannot run, so an empty
+        // WAL is the explicit TRUNCATE checkpoint's doing.
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { held ->
             held.createStatement().use { it.execute("SELECT 1") }
             // The cached reader keeps the database open, so the WAL is still there.
@@ -529,9 +516,8 @@ class DatabaseServiceTest {
         val (logbackLogger, appender) = attachListAppender()
         val svc = DatabaseService(dbPath, logbackLogger)
         svc.migrate()
-        // A second connection holding a write transaction across close() blocks the
-        // TRUNCATE checkpoint: it reports busy in its result row instead of throwing,
-        // so without the branch the failure would be silent.
+        // A write transaction held across close() blocks the TRUNCATE checkpoint, which reports busy
+        // in its result row instead of throwing.
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { held ->
             held.createStatement().use { it.execute("BEGIN IMMEDIATE") }
             held.createStatement().use {

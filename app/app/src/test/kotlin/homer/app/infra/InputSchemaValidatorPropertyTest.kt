@@ -20,12 +20,9 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertSame
 
 /**
- * [InputSchemaValidator]'s two load-time contracts over generated schemas (ADR-0040, ADR-0047 rule
- * 8): a well-formed string-typed schema compiles once and accepts exactly the bodies whose length
- * fits its bounds, and a ReDoS-prone `pattern` is refused at load rather than matched against a
- * caller-controlled body. The example cases live in `InputSchemaValidatorTest`; these drive the
- * bounds its author did not list (root CLAUDE.md §6). Values are ASCII, so a length is a code point
- * count under either reading of the spec.
+ * [InputSchemaValidator]'s load-time contracts over generated schemas (ADR-0040, ADR-0047 rule 8): a string schema
+ * compiles once and accepts exactly the bodies whose length fits its bounds, and a ReDoS-prone `pattern` is refused at
+ * load. Example cases are in `InputSchemaValidatorTest`; values are ASCII, so length is a code point count either way.
  */
 class InputSchemaValidatorPropertyTest {
     private val validator = InputSchemaValidator()

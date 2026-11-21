@@ -218,9 +218,8 @@ class RunAgentExecutorTest {
     @Test
     fun `dispatched child inherits the origin run's flow root`() =
         runTest {
-            // The origin is itself a segment: its stored root (3) is the child's root, not
-            // the origin's own id. Derived from the origin row the executor reads back; the
-            // gate reads the root row to check the owner's visibility, so it must resolve.
+            // The origin is itself a segment: its stored root (3), read back from its row, is the child's root;
+            // the gate reads the root row to check the owner's visibility, so it must resolve.
             coEvery { processManager.getProcessInfo(3) } returns
                 ProcessInfo(id = 3, status = ProcessStatus.WORKING, agentName = "asker")
             coEvery { processManager.getProcessInfo(7) } returns
@@ -251,10 +250,8 @@ class RunAgentExecutorTest {
     @Test
     fun `dispatched child drops the derived root when the run owner cannot see the root row`() =
         runTest {
-            // [information_disclosure / CWE-200] The child is attributed to this run's
-            // owner, so a flow root that owner cannot see must not reach the new row, its
-            // HMR_ROOT_PROCESS_ID env or its span. The child is stored rootless instead of
-            // mis-rooted.
+            // The child is attributed to this run's owner, so a flow root that owner cannot see must not reach the new
+            // row, HMR_ROOT_PROCESS_ID or the span (CWE-200); the child is stored rootless instead of mis-rooted.
             coEvery { processManager.getProcessInfo(3) } returns
                 ProcessInfo(id = 3, status = ProcessStatus.WORKING, agentName = "asker", owner = "alice")
             coEvery { processManager.getProcessInfo(7) } returns
@@ -595,9 +592,7 @@ class RunAgentExecutorTest {
     @Test
     fun `a non-regex param after a shed one is still resolved`() =
         runTest {
-            // The shed-then-skip cap skips only later `regex` transformers; the other
-            // transformer kinds are untouched, so the dispatch keeps every param the
-            // cap does not have to re-bound.
+            // The shed-then-skip cap skips only later `regex` transformers; the other kinds are untouched.
             val subject = "a".repeat(30)
             val context = contextWithEnv(mapOf("EVIL_A" to subject, "PLAIN" to "bar"))
             val command =
@@ -640,9 +635,8 @@ class RunAgentExecutorTest {
     @Test
     fun `a regex param after an uncompilable one is still resolved`() =
         runTest {
-            // An uncompilable pattern omits only its own param — it must not trip the
-            // shed-then-skip cap, which fires only on a shed match, so a later valid
-            // regex param still resolves. §12 rule 4.
+            // An uncompilable pattern omits only its own param and must not trip the shed-then-skip cap (ADR-0047 rule
+            // 4), so a later valid regex param still resolves.
             val context = contextWithEnv(mapOf("PATTERN_SOURCE" to "Version: 1.2.3"))
             val command =
                 Command.RunAgent(

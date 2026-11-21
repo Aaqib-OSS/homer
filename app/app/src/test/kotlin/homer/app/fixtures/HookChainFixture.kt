@@ -19,11 +19,9 @@ import io.mockk.mockk
 import org.slf4j.Logger
 
 /**
- * The real status-hook chain over one isolated SQLite database: a [ProcessManager] whose
- * transitions record hook rows through a real [HookService], which fires them through a real
- * `HookFireService` into a mocked [AgentRunStarter]. `ProcessWiring`/`HookWiring` resolve the
- * service at call time for exactly this shape, so a test built on this fixture drives the chain
- * production runs rather than a stand-in for it. See ADR-0107.
+ * The real status-hook chain over one isolated SQLite database: a [ProcessManager] whose transitions record hook
+ * rows through a real [HookService], firing through a real `HookFireService` into a mocked [AgentRunStarter].
+ * `ProcessWiring`/`HookWiring` resolve the service at call time for this shape. See ADR-0107.
  */
 internal class HookChainFixture(
     val agents: Map<String, Agent> = emptyMap(),

@@ -311,8 +311,7 @@ class ContinuationServiceTest {
             coVerify(exactly = 0) { repo.create(any(), any()) }
         }
 
-    // The registration-time re-check re-reads the live registration and the origin's owner
-    // after `validate`, so it authorizes against state that may have changed in between
+    // The re-check after `validate` authorizes against state that may have changed in between
     // (ADR-0039): a hop `validate` allowed must still be refused when the re-check denies it.
     @Test
     fun `create refuses the registration when the hop re-check after validate denies it`() =
@@ -632,10 +631,8 @@ class ContinuationServiceTest {
     fun `the fired run joins the origin process's flow`() =
         runTest {
             stubFireable(pending())
-            // Process 7 is itself a segment of the flow rooted at 3 — the fired run must
-            // join that flow, not start one rooted at 7.
-            // The gate reads the root row to check the owner's visibility, so it must
-            // resolve too.
+            // Process 7 is a segment of the flow rooted at 3: the fired run must join that flow.
+            // The gate reads the root row to check the owner's visibility, so it must resolve too.
             coEvery { processManager.getProcessInfo(3) } returns
                 ProcessInfo(id = 3, status = ProcessStatus.WORKING, agentName = "asker")
             coEvery { processManager.getProcessInfo(7) } returns
@@ -665,10 +662,8 @@ class ContinuationServiceTest {
     @Test
     fun `the fired run drops the derived root when its owner cannot see the root row`() =
         runTest {
-            // [information_disclosure / CWE-200] The fired run is attributed to the
-            // continuation's owner, so a flow root that owner cannot see must not reach
-            // the new row, its HMR_ROOT_PROCESS_ID env or its span. The run is stored
-            // rootless instead of mis-rooted.
+            // CWE-200: a flow root the continuation's owner cannot see must not reach the new row,
+            // its HMR_ROOT_PROCESS_ID env or its span; the run is stored rootless.
             stubFireable(pending().copy(owner = "ci"))
             coEvery { processManager.getProcessInfo(7) } returns
                 ProcessInfo(
@@ -750,9 +745,8 @@ class ContinuationServiceTest {
     fun `a continuation chain three segments deep shares one flow root`() =
         runTest {
             stubFireable(pending())
-            // Segment 1 (id 7) is the flow's root. Each fired segment registers the next
-            // continuation, so the chain runs 7 -> 100 -> 101 -> 102 and every hop below the
-            // root must keep deriving the same root (7) rather than re-rooting at itself.
+            // Chain 7 -> 100 -> 101 -> 102: every hop below the root (7) must derive root 7,
+            // not re-root at itself.
             val rows = mutableMapOf<Int, ProcessInfo>()
             coEvery { processManager.getProcessInfo(any()) } answers {
                 val id = firstArg<Int>()
@@ -1668,10 +1662,8 @@ class ContinuationServiceTest {
             val join = joinPending(watches = listOf(JoinWatch(10, "int-a")))
             stubJoinFireable(join)
             coEvery { processManager.getProcessStatus(10) } returns ProcessStatus.FINISHED
-            // Process 7 is itself a segment of the flow rooted at 3 — the fired run must
-            // join that flow, not start one rooted at 7.
-            // The gate reads the root row to check the owner's visibility, so it must
-            // resolve too.
+            // Process 7 is a segment of the flow rooted at 3: the fired run must join that flow.
+            // The gate reads the root row to check the owner's visibility, so it must resolve too.
             coEvery { processManager.getProcessInfo(3) } returns
                 ProcessInfo(id = 3, status = ProcessStatus.WORKING, agentName = "asker")
             coEvery { processManager.getProcessInfo(7) } returns
@@ -2096,7 +2088,7 @@ class ContinuationServiceTest {
             coVerify(exactly = 1) { repo.pruneSettled(1000L - 3_600) }
         }
 
-    // --- startWithContinuation / startJoin: the orchestration the callback route used to hold ---
+    // --- startWithContinuation / startJoin orchestration ---
 
     /** The continuation target `h` plus each named sub, all dispatchable, on origin process 7. */
     private fun joinTargets(vararg subs: String) {
@@ -2244,7 +2236,7 @@ class ContinuationServiceTest {
             coVerify { processManager.killProcess(42, "Never registered: the callback request that started it failed") }
         }
 
-    // The kill is best-effort: a failed kill is logged and the original failure still propagates.
+    // A failed kill is logged and the original failure still propagates.
     @Test
     fun `startWithContinuation rethrows the registration failure when the kill itself fails`() =
         runTest {

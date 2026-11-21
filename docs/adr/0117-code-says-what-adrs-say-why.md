@@ -3,7 +3,7 @@ status: accepted
 date: 2026-11-19
 deciders: Lukáš Vlk
 consulted: ADR-0047, ADR-0082
-amended: 2026-11-20
+amended: 2026-11-20, 2026-11-21
 ---
 
 # ADR-0117: Code says what, ADRs say why
@@ -169,6 +169,12 @@ PR C landed the two checks that "Shortcuts in code" and the enforcement table le
 - `:e2e` is excepted until #348. `homer-app-tests` runs it without a live stack, where it skips by
   design, and the check does not yet read the results of the `homer-e2e` job. See
   [`docs/quality-checks.md`](../quality-checks.md).
+
+## Amendment (2026-11-21): skipped-tests reads the :e2e report from homer-e2e
+
+The `:e2e` exception above is gone. `homer-e2e` packs its JUnit XML, `quality-gate` needs that job,
+and `skipped-tests` reads the report, so a skipped `:e2e` test now fails the check. The skip-by-design
+`:e2e` run in `homer-app-tests` is not packed and not read.
 
 ## Pros and Cons of the Options
 

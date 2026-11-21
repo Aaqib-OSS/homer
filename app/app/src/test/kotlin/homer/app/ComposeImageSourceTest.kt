@@ -10,15 +10,9 @@ import java.io.File
 import kotlin.test.assertTrue
 
 /**
- * The default compose stack pulls the published release images and builds nothing
- * (ADR-0093), so a fresh clone starts Homer in seconds. This guard keeps the two
- * halves of that split apart — a `build:` section creeping back into
- * `docker-compose.yml` silently restores the multi-minute first run, and a
- * forgotten `HOMER_VERSION` bump ships a stale release to every new clone.
- *
- * It also pins the hardening the image switch must not drop (root CLAUDE.md §12
- * rule 8's regression check) and that no compose file or quick start carries a
- * literal admin token (rule 7: secrets travel by reference).
+ * The default compose stack pulls the published release images and builds nothing (ADR-0093): no `build:` section
+ * in `docker-compose.yml` and no stale `HOMER_VERSION` pin. It also pins the hardening the image switch must not drop
+ * (ADR-0047 rule 8) and that no compose file or quick start carries a literal admin token (ADR-0047 rule 7).
  */
 class ComposeImageSourceTest {
     /** A `key:` (or `- key:`) line of a compose mapping, e.g. `backend:` or `- target: runner`. */
@@ -173,9 +167,8 @@ class ComposeImageSourceTest {
                 ),
                 // README.md's image-verification snippet.
                 Triple("README.md", Regex("""^version=(\d+\.\d+\.\d+)\b""", RegexOption.MULTILINE), 1),
-                // DOCKER.md's `FROM …homer-app:<tag>` and `imagetools inspect …:<tag>` examples, plus the
-                // slim override's `${HOMER_VERSION:-<version>}-slim` default — the `-slim` tag is a
-                // published release artifact too (ADR-0094), so its default is a pin like the literal tags.
+                // DOCKER.md's `FROM …homer-app:<tag>` and `imagetools inspect …:<tag>` examples, plus the slim
+                // override's `-slim` default: a published release artifact, so its default is a pin too (ADR-0094).
                 Triple(
                     "DOCKER.md",
                     Regex("""ghcr\.io/livesport/homer/homer-app:(?:\$\{HOMER_VERSION:-)?(\d+\.\d+\.\d+)"""),
@@ -246,7 +239,7 @@ class ComposeImageSourceTest {
         assertTrue(
             overlay.isFile,
             "docker-compose.build.yml is missing, so building from source is gone: the base compose pulls " +
-                "release images and nothing else builds the working tree (ADR-0093, DOCKER.md § Quick Start).",
+                "release images and nothing else builds the working tree (ADR-0093, DOCKER.md Quick Start).",
         )
         val lines = overlay.readLines()
         val buildSpecs =
@@ -298,9 +291,8 @@ class ComposeImageSourceTest {
 
     @Test
     fun `every dev-overlay command in the docs also names the build overlay`() {
-        // docker-compose.dev.yml sets build arguments and no context, so stacked on the base file
-        // alone it merges build args into a service with no `build:` section and `docker compose up`
-        // fails the merge — every command that adds the dev overlay needs the build overlay under it.
+        // docker-compose.dev.yml sets build arguments and no context, so without the build overlay under it
+        // `docker compose up` fails the merge.
         val scanned = quickStartDocs() + File(repoRoot, "docker-compose.build.yml")
         for (file in scanned) {
             assertTrue(file.isFile, "${file.name} is missing; move this guard with the dev-overlay docs rather than deleting it.")
@@ -335,7 +327,7 @@ class ComposeImageSourceTest {
             assertTrue(
                 securityOpt >= 0 && nestedBlock(lines, securityOpt).any { it.contains("no-new-privileges:true") },
                 "docker-compose.yml: `$name` no longer sets `no-new-privileges:true`, so a process in the " +
-                    "container can gain privileges through a setuid binary (root CLAUDE.md §12; ADR-0047).",
+                    "container can gain privileges through a setuid binary (ADR-0047).",
             )
         }
         val frontend = service(lines, "frontend")
@@ -362,7 +354,7 @@ class ComposeImageSourceTest {
     @Test
     fun `the quick start enables console token sign-in`() {
         // The example backend is bearer-only: a console started without these two settings runs
-        // unauthenticated and every API call it makes gets a 401 (issue #26).
+        // unauthenticated and every API call it makes gets a 401.
         val entries = environmentOf("frontend")
         for (entry in listOf("CONSOLE_AUTH_ENABLED=\${AUTH_ENABLED:-false}", "CONSOLE_ALLOW_BEARER=\${CONSOLE_ALLOW_BEARER:-false}")) {
             assertTrue(
@@ -396,7 +388,7 @@ class ComposeImageSourceTest {
 
     @Test
     fun `the console origin and API URL follow the published ports`() {
-        // Changing FRONTEND_PORT or BACKEND_PORT alone must leave a working console (issue #29): the backend
+        // Changing FRONTEND_PORT or BACKEND_PORT alone must leave a working console: the backend
         // learns the console's port to allow its origin, and the console calls the backend's published port.
         assertTrue(
             "FRONTEND_PORT=\${FRONTEND_PORT:-3000}" in environmentOf("backend"),
@@ -450,7 +442,7 @@ class ComposeImageSourceTest {
                         value.isEmpty() || value.startsWith("$") || value.none { it.isLetterOrDigit() },
                         "${file.name}:${number + 1} sets HOMER_ADMIN_TOKEN to the literal `$value`. The token " +
                             "resolves from the environment (`@SYSENV`), so a literal here ships a working " +
-                            "credential to everyone who clones the repository (root CLAUDE.md §12 rule 7).",
+                            "credential to everyone who clones the repository (ADR-0047 rule 7).",
                     )
                 }
             }

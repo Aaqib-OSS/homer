@@ -23,6 +23,7 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.unmockkAll
 import io.mockk.verify
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -37,6 +38,8 @@ import java.nio.file.Paths
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -291,7 +294,7 @@ class ProcessManagerTest {
             assertEquals(ProcessStatus.FAILED, processManager.getProcessStatus(id2))
         }
 
-    // ========== Compare-And-Set Status Tests (audit #9) ==========
+    // ========== Compare-And-Set Status Tests ==========
 
     @Test
     fun `compareAndSetStatus should update when current status is in expected set`() =
@@ -313,8 +316,7 @@ class ProcessManagerTest {
     @Test
     fun `compareAndSetStatus should refuse to overwrite KILLED with FINISHED`() =
         runTest {
-            // Simulates the audit #9 race: DefaultLockManager set KILLED while ProcessExecutor
-            // is about to write FINISHED. The terminal KILLED status must win.
+            // DefaultLockManager set KILLED while ProcessExecutor is about to write FINISHED: KILLED must win.
             val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             processManager.setProcessStatus(id, ProcessStatus.WORKING)
             processManager.setProcessStatus(id, ProcessStatus.KILLED)
@@ -382,8 +384,7 @@ class ProcessManagerTest {
 
             processManager.assignJob(id, job)
 
-            // Job should be assigned - no exception thrown
-            assertTrue(true)
+            assertSame(job, processManager.getProcessInfo(id)!!.job)
         }
 
     @Test
@@ -395,8 +396,7 @@ class ProcessManagerTest {
             processManager.assignJob(id, job)
             processManager.removeJob(id)
 
-            // Should complete normally - no exception thrown
-            assertTrue(true)
+            assertNull(processManager.getProcessInfo(id)!!.job)
         }
 
     @Test
@@ -543,7 +543,7 @@ class ProcessManagerTest {
             // Create 10 processes concurrently
             coroutineScope {
                 repeat(10) {
-                    launch {
+                    launch(Dispatchers.Default) {
                         val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
                         synchronized(ids) {
                             ids.add(id)
@@ -552,12 +552,8 @@ class ProcessManagerTest {
                 }
             }
 
-            // All IDs should be unique
-            assertEquals(10, ids.size)
-            assertEquals(10, ids.toSet().size)
-
-            // IDs should be the sequential AUTOINCREMENT range 1..10
-            assertEquals((1..10).toSet(), ids.toSet())
+            // The sequential AUTOINCREMENT range, each id handed out once.
+            assertEquals((1..10).toList(), ids.sorted())
         }
 
     @Test
@@ -567,14 +563,12 @@ class ProcessManagerTest {
 
             coroutineScope {
                 // Multiple concurrent status updates
-                launch { processManager.setProcessStatus(id, ProcessStatus.WORKING) }
-                launch { processManager.setProcessStatus(id, ProcessStatus.WORKING) }
-                launch { processManager.setProcessStatus(id, ProcessStatus.WORKING) }
+                launch(Dispatchers.Default) { processManager.setProcessStatus(id, ProcessStatus.WORKING) }
+                launch(Dispatchers.Default) { processManager.setProcessStatus(id, ProcessStatus.WORKING) }
+                launch(Dispatchers.Default) { processManager.setProcessStatus(id, ProcessStatus.WORKING) }
             }
 
-            // Should not crash and should have some final status
-            val finalStatus = processManager.getProcessStatus(id)
-            assertTrue(finalStatus == ProcessStatus.WORKING)
+            assertEquals(ProcessStatus.WORKING, processManager.getProcessStatus(id))
         }
 
     @Test
@@ -588,9 +582,9 @@ class ProcessManagerTest {
 
             // Multiple concurrent kill calls
             coroutineScope {
-                launch { processManager.killProcess(id) }
-                launch { processManager.killProcess(id) }
-                launch { processManager.killProcess(id) }
+                launch(Dispatchers.Default) { processManager.killProcess(id) }
+                launch(Dispatchers.Default) { processManager.killProcess(id) }
+                launch(Dispatchers.Default) { processManager.killProcess(id) }
             }
 
             // Should end up KILLED
@@ -1490,7 +1484,8 @@ class ProcessManagerTest {
     fun `addCost on unknown processId is a no-op`() =
         runTest {
             processManager.addCost(424242, 5.0, CostSource.CLI)
-            // Just shouldn't throw; nothing to assert beyond that.
+
+            assertNull(processManager.getProcessInfo(424242), "a cost for an unknown run must not create its row")
         }
 
     // ========== Status-hook wiring (ADR-0107) ==========

@@ -97,8 +97,7 @@ class WorkspacePurgeServiceTest {
                     artifactsDir = artifactsDir,
                 )
 
-            // The status/purgeAt filter lives in the SQL queries (ProcessRepository,
-            // covered by ProcessRepositoryTest); the service purges what they return.
+            // The status/purgeAt filter lives in the SQL queries (see ProcessRepositoryTest).
             // Default retention: both windows fall due together.
             coEvery { processManager.getWorkspacePurgeableProcesses(any(), any()) } returns listOf(process)
             coEvery { processManager.getRecordPurgeableProcesses(any(), any()) } returns listOf(process)
@@ -113,9 +112,8 @@ class WorkspacePurgeServiceTest {
     @Test
     fun `purgeExpired deletes a projectRoot whose workdir the bounded cleanup left behind`() =
         runTest {
-            // The end-of-run cleanup stops at its budget and leaves a partial workdir; the
-            // purgeAfter sweep is the safety net that removes the whole projectRoot off the
-            // lock path. No WorkspacePurgeService change is needed for that.
+            // The end-of-run cleanup stops at its budget and leaves a partial workdir;
+            // the purgeAfter sweep removes the whole projectRoot.
             val tmpDir = Files.createTempDirectory("homer-test")
             val artifactsDir = tmpDir.resolve("artifacts")
             artifactsDir.toFile().mkdirs()
@@ -235,11 +233,8 @@ class WorkspacePurgeServiceTest {
     @Test
     fun `purgeExpired deletes a dir shared by two expired records exactly when the last one is purged`() =
         runTest {
-            // Pins the interleaving of the shared-dir check with the per-row clear: the
-            // dir must survive the first record's sweep (the second still references it)
-            // and be deleted exactly when the second one is swept. A future reorder that
-            // batched the clears after all the checks would regress this silently, since
-            // both checks would then see both ids still referencing the dir.
+            // Order matters: clearing each row before the next shared-dir check; batching the clears
+            // after all checks would see both ids still referencing the dir and never delete it.
             val tmpDir = Files.createTempDirectory("homer-test")
             val artifactsDir = tmpDir.resolve("artifacts")
             artifactsDir.toFile().mkdirs()
@@ -302,9 +297,8 @@ class WorkspacePurgeServiceTest {
 
             narrowService.purgeExpired()
 
-            // Containment guard blocks the delete; the dir survives, artifacts_dir stays
-            // set (so the next sweep retries), and the record-purge query — which requires
-            // artifacts_dir IS NULL — never returns the row, so it is not removed either.
+            // artifacts_dir stays set so the next sweep retries, and the record purge, which requires
+            // it NULL, never returns the row.
             assertTrue(outside.toFile().exists(), "an out-of-root workspace must not be deleted")
             coVerify(exactly = 0) { processManager.clearArtifactsDir(7) }
             coVerify(exactly = 0) { processManager.removeProcess(7) }
@@ -483,9 +477,8 @@ class WorkspacePurgeServiceTest {
     @Test
     fun `everything-truncated prune still records retainedTruncated`() =
         runTest {
-            // Every matched file overflows the cap: keptFiles == 0, but the prune WAS
-            // truncated. The sweep must not fall through to the "nothing matched"
-            // clear-without-a-flag path — the flag would silently stay NULL forever.
+            // keptFiles == 0 yet the prune was truncated: the flag must be set, not left NULL as on the
+            // "nothing matched" path.
             val projectRoot = Files.createTempDirectory("homer-test")
             val artifactsDir = projectRoot.resolve("artifacts")
             artifactsDir.toFile().mkdirs()
@@ -706,8 +699,6 @@ class WorkspacePurgeServiceTest {
             val (created, createdDir) = runOf(ProcessStatus.CREATED)
             val (working, workingDir) = runOf(ProcessStatus.WORKING)
             // Every terminal status, so a status dropped from the swept set fails here.
-            // Both sweeps take that same set, so this matrix pins the directory sweep
-            // and the record sweep together.
             val (finished, finishedDir) = runOf(ProcessStatus.FINISHED)
             val (failed, failedDir) = runOf(ProcessStatus.FAILED)
             val (killed, killedDir) = runOf(ProcessStatus.KILLED)

@@ -40,9 +40,8 @@ class PasswordVerifierTest {
 
     @Test
     fun `dummyHashAtCost embeds the requested cost in the bcrypt prefix`() {
-        // Closes the timing oracle that existed when a fixed-cost dummy was paired
-        // with a configurable bcryptCost: the dummy must match the configured cost
-        // so the unknown-user verify takes the same wall-clock time as a real one.
+        // The dummy must match the configured cost, or the unknown-user verify takes a different
+        // wall-clock time than a real one.
         val prefix = Regex("""^\$2[aby]\$(\d{2})\$""")
         listOf(4, 6, 10).forEach { cost ->
             val match = prefix.find(verifier.dummyHashAtCost(cost))
@@ -53,9 +52,7 @@ class PasswordVerifierTest {
 
     @Test
     fun `dummyHashAtCost memoizes per cost`() {
-        // Same cost returns the same exact String reference — the memoization is
-        // what makes the pre-warm pay off (one computeIfAbsent at startup, every
-        // login afterwards is just verify).
+        // The same cost returns the same String reference: memoization makes the startup pre-warm pay off.
         val first = verifier.dummyHashAtCost(4)
         val second = verifier.dummyHashAtCost(4)
         assertSame(first, second, "dummyHashAtCost(cost) must be memoized")

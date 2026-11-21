@@ -440,10 +440,7 @@ class LlmHarnessExecutorTest {
     }
 
     // ========== the telemetry hand-off reuses the stream the inspection read ==========
-    // Every returned outcome carries the stream its inspection parsed, and the hand-off must
-    // give telemetry that stream as-is: a second parse of the stdout file (up to the lenient
-    // bounds again) is the regression the carries exist to prevent. The harness above deletes
-    // the file once it is judged, so a re-read can only fail — and must never set telemetry.error.
+    // Telemetry gets the inspected stream as-is; a second parse of the already deleted stdout can only fail.
 
     @Test
     fun `an OtherFailure hands the stream the inspection read to telemetry, not a re-read of stdout`() =
@@ -1039,9 +1036,8 @@ class LlmHarnessExecutorTest {
     @Test
     fun `an abort-path stdout flood is bounded and does not reach the telemetry sink as events`() =
         runTest {
-            // CWE-400 denial path: a CLI that floods stdout must not inflate heap while a
-            // genuinely cancelled attempt is being torn down — the abort hand-off's parse
-            // stops at the event cap instead of materializing the whole artifact.
+            // CWE-400 denial path: a stdout flood must not inflate heap while a cancelled attempt is torn down;
+            // the abort hand-off's parse stops at the event cap.
             stdOut.writeText((1..55_000).joinToString("") { "not-json\n" })
             coEvery {
                 context.shell.cmd(any(), any(), any(), any(), any(), any(), any())
@@ -1052,9 +1048,8 @@ class LlmHarnessExecutorTest {
                 executor.execute(claude(), context.copy(processId = 7, agentName = "demo"), span)
             }
 
-            // The flood is not parsed into events: the stream the sink receives carries none,
-            // and every flooded line is counted as skipped — a lenient primitive (the shape a
-            // truncated object lexes as) is dropped by the shared parser, never silently.
+            // The flood is not parsed into events: the sink's stream carries none and every flooded line counts as
+            // skipped (a lenient primitive is dropped by the shared parser, never silently).
             coVerify(exactly = 1) {
                 telemetry.process(
                     match { stream -> stream.events.isEmpty() && stream.malformed == 55_000L },
@@ -1097,9 +1092,8 @@ class LlmHarnessExecutorTest {
     @Test
     fun `an abort-path flood past the byte cap stops reading`() =
         runTest {
-            // Denial path on the read side: the event cap counts what is kept, so a flood of
-            // long unparseable lines must be stopped by the byte bound instead of being read
-            // line by line past it. The cut is visible as skipped lines only up to the cap.
+            // Denial path on the read side: a flood of long unparseable lines is stopped by the byte bound, not read
+            // past it; the cut shows as skipped lines only up to the cap.
             val longLine = "x".repeat(1_000) + "\n"
             stdOut.writeText(longLine.repeat(40_000)) // ~40 MB, far past ABORT_PARSE_MAX_BYTES
             coEvery {
@@ -1126,9 +1120,8 @@ class LlmHarnessExecutorTest {
     @Test
     fun `an abort-path flood past the byte cap reports the cut on the span`() =
         runTest {
-            // §12 rules 4-5: a bound's overflow is reportable, not silent. The byte bound
-            // sheds long lines; the hand-off that looked complete must be marked as truncated
-            // (denial_of_service / CWE-400 — the bound itself is covered above).
+            // ADR-0047 rules 4-5: an overflow is reportable, not silent; the byte bound sheds long lines and the
+            // hand-off is marked truncated (CWE-400).
             val longLine = "x".repeat(1_000) + "\n"
             stdOut.writeText(longLine.repeat(40_000)) // ~40 MB, far past ABORT_PARSE_MAX_BYTES
             coEvery {
@@ -1181,9 +1174,8 @@ class LlmHarnessExecutorTest {
     @Test
     fun `a non-zero-exit parseable flood is bounded and reports the truncation like the abort path`() =
         runTest {
-            // Denial path (denial_of_service / CWE-400): the lenient hand-off for a non-zero
-            // exit holds one JsonObject per line in heap; a flood of tiny objects must stop at
-            // the same event cap as the abort path, and the shed lines must be visible.
+            // CWE-400 denial path: the non-zero-exit hand-off holds one JsonObject per line in heap, so a flood of tiny
+            // objects stops at the abort path's event cap and the shed lines show.
             stdOut.writeText((1..55_000).joinToString("") { """{"t":"msg","id":"m"}""" + "\n" })
             stubShellExit(1)
 
@@ -1205,10 +1197,8 @@ class LlmHarnessExecutorTest {
     @Test
     fun `a non-zero-exit long-line flood stops at the byte cap and reports the cut like the abort path`() =
         runTest {
-            // Denial path on the read side of the non-zero-exit hand-off: the event cap counts
-            // what is kept, so a flood of long unparseable lines must be stopped by the byte
-            // bound instead of being read line by line past it, and the cut must be visible
-            // (§12 rules 4-5) — the same rows the abort path covers above.
+            // Denial path on the read side of the non-zero-exit hand-off (ADR-0047 rules 4-5): long unparseable
+            // lines stop at the byte bound and the cut is visible, as in the abort path above.
             val longLine = "x".repeat(1_000) + "\n"
             stdOut.writeText(longLine.repeat(40_000)) // ~40 MB, far past ABORT_PARSE_MAX_BYTES
             stubShellExit(1)
@@ -1333,9 +1323,8 @@ class LlmHarnessExecutorTest {
     @Test
     fun `a settlement of a stream with no start event writes no session onto the settlement span`() =
         runTest {
-            // A crashed CLI's stream carries no start event, so the scan has no session id and
-            // still settles: the `settled.sessionId?.let` guard must drop the attribute rather
-            // than write it unconditionally. See ADR-0089.
+            // A crashed CLI's stream has no start event, so the scan has no session id: the
+            // `settled.sessionId?.let` guard must drop the attribute, not write it unconditionally.
             stdOut.writeText("{\"t\":\"end\",\"ok\":true,\"cost\":0.42}")
             every { resolver.configured } returns true
             val lookup = CompletableDeferred<ResolvedCost>()
@@ -1417,9 +1406,8 @@ class LlmHarnessExecutorTest {
     @Test
     fun `a settlement hand-off past the concurrency bound sheds to the inline pending-figure hand-off (CWE-770)`() =
         runTest {
-            // Denial path (ADR-0047 §12 rule 8): more concurrent hand-offs than the local permit
-            // bound must shed to the inline harness figure — never queue a job that keeps the
-            // attempt's parsed stream alive on the shared heap (CWE-770/CWE-400).
+            // Denial path (ADR-0047 rule 8): hand-offs past the local permit bound shed to the inline harness figure,
+            // never queue a job holding the parsed stream on the shared heap (CWE-770, CWE-400).
             stdOut.writeText("{\"t\":\"start\",\"sid\":\"sess-shed\"}\n{\"t\":\"end\",\"ok\":true,\"cost\":0.42}")
             every { resolver.configured } returns true
             val held = CompletableDeferred<ResolvedCost>()
@@ -1461,9 +1449,8 @@ class LlmHarnessExecutorTest {
 
             advanceUntilIdle()
 
-            // The hand-off gave up on the settlement, reported the pending figure instead, and marked
-            // the shed on the child span — the command span has ended, so writing it there would drop
-            // the mark (OpenTelemetry drops attribute writes after `end()`).
+            // The hand-off reports the pending figure and marks the shed on the child span: the command span has
+            // ended, and OpenTelemetry drops attribute writes after `end()`.
             coVerify(exactly = 1) { telemetry.process(any(), any(), any(), any(), any(), 0.42) }
             verify(exactly = 1) { settlementSpan.setAttribute("telemetry.llm.handoff_shed", true) }
             verify(exactly = 0) { span.setAttribute("telemetry.llm.handoff_shed", true) }
@@ -1509,9 +1496,8 @@ class LlmHarnessExecutorTest {
     @Test
     fun `a background hand-off whose telemetry fails frees its permit, so the next hand-off is not shed (CWE-770)`() =
         runTest {
-            // Last completion variant of the release invariant: the post-wait emission itself blows
-            // up inside the background job. The permit is released on the job's completion, however
-            // it ends — a leak here would shed every later hand-off for good.
+            // Last completion variant of the permit-release invariant: the post-wait emission throws inside the job;
+            // the permit is released however the job ends, or a leak would shed every later hand-off.
             stdOut.writeText("{\"t\":\"start\",\"sid\":\"sess-sink\"}\n{\"t\":\"end\",\"ok\":true,\"cost\":0.42}")
             every { resolver.configured } returns true
             // A foreground scope, so the test scheduler runs the settlement and its hand-off.
@@ -1542,9 +1528,8 @@ class LlmHarnessExecutorTest {
     @Test
     fun `a hand-off onto a cancelled settlement scope still frees its permit (CWE-770)`() =
         runTest {
-            // Denial path: the settlement scope is already cancelled (the shutdown drain), so the
-            // job's body never runs. A permit released in a `finally` inside that body would leak
-            // here, and eight leaks would shed every later hand-off for good.
+            // Denial path: the settlement scope is already cancelled (shutdown drain), so the job body never runs; a
+            // permit released in a `finally` inside it would leak, and eight leaks shed every later hand-off.
             stdOut.writeText("{\"t\":\"start\",\"sid\":\"sess-dead\"}\n{\"t\":\"end\",\"ok\":true,\"cost\":0.42}")
             every { resolver.configured } returns true
             val dead = CoroutineScope(SupervisorJob())
@@ -1561,9 +1546,8 @@ class LlmHarnessExecutorTest {
     @Test
     fun `a shed hand-off keeps the step on its pending figure and still charges the run (CWE-770)`() =
         runTest {
-            // Shedding costs the trace's settled figure, nothing else: the step record keeps its
-            // pending figure, the trace reaches the sink inline, and the settlement still charges
-            // the run exactly once (ADR-0007, ADR-0035).
+            // Shedding costs only the trace's settled figure: the step record keeps its pending figure, the trace
+            // reaches the sink inline and the run is charged once (ADR-0007, ADR-0035).
             stdOut.writeText("{\"t\":\"start\",\"sid\":\"sess-charge\"}\n{\"t\":\"end\",\"ok\":true,\"cost\":0.42}")
             every { resolver.configured } returns true
             val held = CompletableDeferred<ResolvedCost>()
@@ -1585,9 +1569,8 @@ class LlmHarnessExecutorTest {
     @Test
     fun `a shed hand-off marks the span with a boolean and logs no prompt or output content (CWE-770)`() =
         runTest {
-            // Denial path (§12 rule 7): the shed logs counts and marks the span with a boolean, so
-            // neither the compiled prompt nor the attempt's parsed output reaches a log line, a span
-            // attribute or error text.
+            // Denial path (ADR-0047 rule 7): the shed logs counts and a boolean span mark, so neither prompt nor
+            // parsed output reaches a log line, span attribute or error text.
             val promptMarker = "PROMPT-SECRET-MARKER"
             val outputMarker = "OUTPUT-SECRET-MARKER"
             stdOut.writeText("{\"t\":\"start\",\"sid\":\"$outputMarker\"}\n{\"t\":\"end\",\"ok\":true,\"cost\":0.42}")
@@ -1638,9 +1621,8 @@ class LlmHarnessExecutorTest {
             // An unconfigured resolver prices inline; a configured one settles in the background (ADR-0089).
             every { resolver.configured } returns false
             coEvery { resolver.resolve(any(), any(), any(), any(), any()) } returns ResolvedCost(0.4, CostSource.CLI)
-            // Cancelled between the two charges, while suspended in recordCost: under
-            // NonCancellable recordCost still returns, so the cancellation surfaces only at a
-            // later suspension point and the executor's catch cannot re-charge the attempt.
+            // Cancelled between the two charges, suspended in recordCost: under NonCancellable it still returns, so
+            // the cancellation surfaces at a later suspension point and the catch cannot re-charge the attempt.
             lateinit var runJob: Job
             coEvery { costMeter.recordCost(any(), any()) } coAnswers {
                 runJob.cancel()
@@ -1893,8 +1875,7 @@ class LlmHarnessExecutorTest {
         }
 
     // ========== real ClaudeHarness integration ==========
-    // Version-pin / maxMcpOutputTokens / max_turns_stop coverage, exercised through
-    // the generic executor with a real (not fake) harness.
+    // Version-pin, maxMcpOutputTokens and max_turns_stop through the generic executor with a real harness.
 
     @Test
     fun `a version mismatch through the real ClaudeHarness is not retried`() =
@@ -2078,7 +2059,7 @@ class LlmHarnessExecutorTest {
     @Test
     fun `a non-zero cap stop logs the harness and exit code and no stream text`() =
         runTest {
-            // Denial path (§12 rule 7): the parsed stream is agent-written, so no part of it may
+            // Denial path (ADR-0047 rule 7): the parsed stream is agent-written, so no part of it may
             // reach a log line or a span attribute.
             val marker = "OUTPUT-SECRET-MARKER"
             stdOut.writeText("""{"type":"result","subtype":"error_max_turns","session_id":"s","result":"$marker"}""")
@@ -2103,7 +2084,7 @@ class LlmHarnessExecutorTest {
     fun `a persistently is_error stream stops at the retry cap and rethrows the reason`() =
         runTest {
             // The step is judged by the CLI's own verdict: retry runs, but it is bounded by the
-            // configured attempts and adds no path of its own (ADR-0047 §12 rule 4).
+            // configured attempts and adds no path of its own (ADR-0047 rule 4).
             var attempt = 0
             coEvery {
                 context.shell.cmd(any(), any(), any(), any(), any(), any(), any())
@@ -2127,7 +2108,7 @@ class LlmHarnessExecutorTest {
     fun `an is_error reason names the CLI's fields and never the result text`() =
         runTest {
             // The `result` of an is_error turn is an error string the CLI may echo from an API
-            // response, so no part of it may reach the step error (§12 rule 7).
+            // response, so no part of it may reach the step error (ADR-0047 rule 7).
             stdOut.writeText(
                 """{"type":"result","subtype":"success","is_error":true,"stop_reason":"refusal",""" +
                     """"result":"API error: sk-ant-oat01-not-a-real-token"}""" + "\n",
@@ -2710,10 +2691,8 @@ class LlmHarnessExecutorTest {
     @Test
     fun `a stop-interrupted attempt that wrote its result is accounted and its session reaches the step's facts`() =
         runTest {
-            // The CLI finished its turn and wrote `result` before the signal landed: the attempt
-            // is priced normally, and the step still carries the spend. The grace is part of the
-            // call, so the stub has to name it — an eight-argument stub, not the seven the
-            // grace-less tests use.
+            // The CLI wrote `result` before the signal landed: the attempt is priced normally and the step carries the
+            // spend. The grace is part of the call, so the stub names it: eight arguments, not the grace-less seven.
             stdOut.writeText("{\"t\":\"start\",\"sid\":\"sess-stop\"}\n{\"t\":\"end\",\"ok\":true,\"cost\":0.42}")
             coEvery {
                 context.shell.cmd(any(), any(), any(), any(), any(), any(), any(), any())

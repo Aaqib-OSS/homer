@@ -13,11 +13,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /**
- * [AgentDefinitionValidator.checkAgentName]'s gate over generated names (ADR-0047 rule 3): a name is
- * accepted exactly when it matches [AgentDirs.AGENT_NAME_PATTERN], and a refused one is reported —
- * the name reaches the filesystem, the API path and the run's identity, so it may not carry a
- * separator or anything else the pattern excludes. The example cases live in
- * `AgentDefinitionValidatorTest`; these drive the shapes its author did not list (root CLAUDE.md §6).
+ * [AgentDefinitionValidator.checkAgentName]'s gate over generated names (ADR-0047 rule 3): a name is accepted exactly
+ * when it matches [AgentDirs.AGENT_NAME_PATTERN] and a refused one is reported, as the name reaches the filesystem,
+ * the API path and the run's identity. The example cases are in `AgentDefinitionValidatorTest`.
  */
 class AgentDefinitionValidatorPropertyTest {
     private val logger = TestFixtures.mockLogger()

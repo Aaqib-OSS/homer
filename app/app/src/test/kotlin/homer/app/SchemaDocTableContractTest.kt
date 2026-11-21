@@ -11,16 +11,9 @@ import java.io.File
 import kotlin.test.fail
 
 /**
- * Schema ⇔ doc-table backstop (root CLAUDE.md §10): every property of every schema object has a row
- * in the field table `CONFIG_TABLES` / `AGENT_TABLES` maps the object to, with the same required flag
- * and, where the schema states a `default`, the same default; every row names a schema property. A
- * sealed variant's `type` discriminator is left out on both sides. An object documented in prose
- * instead is listed in `CONFIG_UNTABLED` / `AGENT_UNTABLED` with the reason, and each of its properties
- * must at least appear in the doc's code. An object neither mapped nor listed fails, so a new schema
- * object needs a decision.
- *
- * Objects are the schema nodes with `properties` reachable through `properties`, `$defs`, `items`,
- * `additionalProperties`, `oneOf` and `anyOf`; `allOf`/`not`/`if`/`then` only constrain, never declare.
+ * Every property of every schema object has a row in its mapped `SERVER.md` / `AGENT.md` field table with the
+ * same required flag and default, and every row names a schema property. An object neither mapped nor listed
+ * in `CONFIG_UNTABLED` / `AGENT_UNTABLED` fails, so a new schema object needs a decision.
  */
 class SchemaDocTableContractTest {
     @Test

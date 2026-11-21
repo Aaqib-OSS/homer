@@ -33,8 +33,7 @@ import kotlin.test.assertTrue
 /**
  * The group's two bounds, as properties rather than examples: the size gate is a comparison
  * against a configurable bound, and the aggregate is a serialization of an arbitrary answer set.
- * Example tests pin the cases the implementation was written around; these pin the ones it was
- * not. See root §6.
+ * Example tests pin the cases the implementation was written around; these pin the ones it was not.
  */
 class DispatchGroupValidationPropertyTest {
     private val repo = mockk<DispatchRepository>(relaxed = true)
@@ -114,10 +113,8 @@ class DispatchGroupValidationPropertyTest {
             }
         }
 
-    // The text bound is the questions service's, applied per member before anything is written, so
-    // one rejected text refuses the whole group. The validator here is a real [QuestionsService]
-    // configured to a small bound, not a stub mirroring the check: the property is about where the
-    // boundary actually falls, and blank is a separate refusal on the same field.
+    // The text bound is the questions service's, applied per member before anything is written. The
+    // validator is a real [QuestionsService], not a stub: the property is where the boundary falls.
     @Test
     fun `create admits exactly the groups whose every question text is inside the length bound`() =
         runTest {
@@ -140,10 +137,8 @@ class DispatchGroupValidationPropertyTest {
             }
         }
 
-    // `QuestionsService.answer` bounds no answer's length, so the aggregate is the one place a
-    // group's payload can outgrow what a start should carry. The decision is pinned to the size of
-    // the serialized payload — not to any one answer, nor to their raw sum — so an off-by-one, or
-    // a check against the wrong quantity, fails here rather than shipping.
+    // `QuestionsService.answer` bounds no answer's length, so the aggregate is capped. The decision is
+    // pinned to the serialized payload size, not any one answer or their raw sum.
     @Test
     fun `aggregateAnswers admits exactly the payloads inside the byte bound and refuses every one over it`() =
         runTest {

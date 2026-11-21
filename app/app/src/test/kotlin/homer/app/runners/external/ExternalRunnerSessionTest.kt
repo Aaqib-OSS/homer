@@ -358,9 +358,8 @@ class ExternalRunnerSessionTest {
             runCurrent()
             val op = s.mailbox.next(1.seconds)!!
             val sink = assertNotNull(s.sink(op.opId))
-            // Both the cap trip and a clean result are posted before the coroutine is
-            // rescheduled, so `select` sees both clauses ready; registration order alone
-            // (deferred before capTripped) must not let a truncated result look clean.
+            // The cap trip and a clean result are both posted before the coroutine is rescheduled, so `select` sees
+            // both clauses ready; registration order alone must not let a truncated result look clean.
             sink.append("stdout", 0, "partial".toByteArray())
             sink.append("stdout", 1, ByteArray(65))
             s.mailbox.complete(OpResult(op.opId, exitCode = 0, stdoutChunks = 2, stderrChunks = 0))
@@ -383,9 +382,8 @@ class ExternalRunnerSessionTest {
             runCurrent()
             val op = s.mailbox.next(1.seconds)!!
             val sink = assertNotNull(s.sink(op.opId))
-            // The result is posted first, so `select` takes the Done clause; the chunk that crosses
-            // the cap lands before the coroutine is rescheduled. The cap trip must be reported as
-            // the cap error, not as the timeout the racing result also reports.
+            // The result is posted first, so `select` takes the Done clause while the cap-crossing chunk lands before
+            // the reschedule; the cap trip must be reported as the cap error, not the timeout the result also reports.
             s.mailbox.complete(OpResult(op.opId, exitCode = 137, timedOut = true))
             sink.append("stdout", 0, ByteArray(65))
             runCurrent()
@@ -581,9 +579,8 @@ class ExternalRunnerSessionTest {
             val op = s.mailbox.next(1.seconds)!!
             val sink = s.sink(op.opId)!!
             sink.append("stdout", 0, ByteArray(10))
-            // Reported ahead of what Homer holds, so the step enters the bounded wait; the
-            // chunk that then lands crosses the 64-byte cap, consumes its seq and drops its
-            // bytes — closing the very gap the wait was for.
+            // Reported ahead of what Homer holds, so the step enters the bounded wait; the chunk then landing crosses
+            // the 64-byte cap, consumes its seq and drops its bytes, closing the gap the wait was for.
             s.mailbox.complete(OpResult(op.opId, exitCode = 0, stdoutChunks = 2, stderrChunks = 0))
             runCurrent()
             sink.append("stdout", 1, ByteArray(60))
@@ -788,10 +785,9 @@ class ExternalRunnerSessionTest {
     private fun slowDomain() = domain(RunnerConfig.External(token = "slow-token", transferTimeoutSec = 1))
 
     /**
-     * Runs [block] through [ExternalRunnerDomain.withTransferTimeout] only once that call's
-     * watchdog has fired, so the block starts past the deadline: the condition wait that replaces
-     * the fixed sleep which used to outlast the 1 s timeout. Waiting on the watchdog itself keeps
-     * the wait and the deadline from drifting apart.
+     * Runs [block] through [ExternalRunnerDomain.withTransferTimeout] only once that call's watchdog has fired, so the
+     * block starts past the deadline: a condition wait on the watchdog itself, replacing a fixed sleep, so the wait
+     * and the deadline cannot drift apart.
      */
     private suspend fun <T> pastDeadline(
         domain: ExternalRunnerDomain,
@@ -869,7 +865,7 @@ class ExternalRunnerSessionTest {
         }
 
     // One transfer per key at a time: the route maps the null to 429 instead of holding another
-    // Dispatchers.IO thread and connection for up to transferTimeoutSec (§12 rule 4).
+    // Dispatchers.IO thread and connection for up to transferTimeoutSec (ADR-0047 rule 4).
     @Test
     fun `a transfer key already in flight refuses a second transfer until it ends`() =
         runTest {

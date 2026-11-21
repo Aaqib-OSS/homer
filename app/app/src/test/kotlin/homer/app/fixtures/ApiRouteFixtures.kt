@@ -33,18 +33,14 @@ import io.mockk.every
 import io.mockk.mockk
 
 /**
- * Mounts the production [apiV1Routes] inside a `testApplication` with a
- * relaxed [ApiDeps] mock; [stubDeps] wires the real dependencies a test
- * needs (e.g. `every { processManager } returns realPm`). ContentNegotiation
- * is installed routing-scoped with the production [apiJson], matching the
- * application wiring. Single edit point for every route-level test suite.
+ * Mounts the production [apiV1Routes] in a `testApplication` with a relaxed [ApiDeps] mock; [stubDeps] wires the
+ * real dependencies a test needs. ContentNegotiation is installed routing-scoped with the production [apiJson].
  */
 internal fun ApplicationTestBuilder.mountApiV1Routes(stubDeps: ApiDeps.() -> Unit = {}): ApiDeps {
     val deps =
         mockk<ApiDeps>(relaxed = true) {
-            // Unauthenticated/no-grants by default, matching unsecured-mode
-            // production behavior — every Authorizer check passes. Tests that
-            // exercise grants enforcement stub `authorizer` themselves.
+            // Unauthenticated, no grants, as in unsecured-mode production: every Authorizer check passes.
+            // Tests of grants enforcement stub `authorizer` themselves.
             every { authorizer } returns Authorizer(emptyMap(), emptyMap(), enabled = false)
             stubDeps()
         }
@@ -115,10 +111,8 @@ internal suspend fun ApplicationTestBuilder.send(
         }
 
 /**
- * Mounts the production [apiV1Routes] behind the production bearer provider
- * (`buildBearerProvider`) for [tokens], nested in `authenticate(...)` as
- * `configureRouting` does, so grants and owner tests run the real
- * authentication → principal → Authorizer path.
+ * Mounts the production [apiV1Routes] behind the production bearer provider (`buildBearerProvider`) for [tokens],
+ * nested in `authenticate(...)` as `configureRouting` does, so grants tests run the real authentication path.
  */
 internal fun Application.installGrantsApp(
     tokens: Map<String, TokenConfig>,

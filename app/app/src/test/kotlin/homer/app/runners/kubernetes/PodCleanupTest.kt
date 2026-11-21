@@ -52,9 +52,8 @@ class PodCleanupTest {
         val body = patch.bodyText()
         assertTrue(body.contains("\"/spec/activeDeadlineSeconds\",\"value\":900"), body)
         assertTrue(body.contains("\"/metadata/labels/homer.app~1kept\",\"value\":\"true\""), body)
-        // Both ops must be "add", not "replace": activeDeadlineSeconds is never set on our
-        // pods, and a "replace" against a missing field 422s the whole atomic patch, voiding
-        // the kept label along with it.
+        // Both ops must be "add": activeDeadlineSeconds is never set, and "replace" on a missing field 422s the whole
+        // atomic patch, voiding the kept label.
         assertFalse(body.contains("\"op\":\"replace\""), body)
         assertEquals(2, Regex("\"op\":\"add\"").findAll(body).count(), body)
     }

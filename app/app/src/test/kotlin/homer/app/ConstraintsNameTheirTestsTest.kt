@@ -6,11 +6,9 @@ import java.io.File
 import kotlin.test.assertTrue
 
 /**
- * Doc-drift backstop for the `Constraint:` bullets of the backend CLAUDE.md guides under `app/`
- * (app/CLAUDE.md § Key service responsibilities): each ends with `Enforced by `Class#test name`.`
- * naming a test in the test sources of `:app`, `:architecture`, `:homer-runner` or `agentdebug` that fails when the constraint is broken. A bullet naming none, a class
- * no test source declares, or a function that is no `@Test` of that class fails here. That the
- * named test really fails on a break is the reviewer's check, made once when the line was written.
+ * Doc-drift backstop for the `Constraint:` bullets of the backend CLAUDE.md guides under `app/`: each ends with
+ * `Enforced by `Class#test name`.` naming a test of `:app`, `:architecture`, `:homer-runner` or `agentdebug`. A bullet
+ * naming none, an undeclared class or a non-`@Test` function fails; that the test fails on a break is review's check.
  */
 class ConstraintsNameTheirTestsTest {
     private val guides: List<File> =

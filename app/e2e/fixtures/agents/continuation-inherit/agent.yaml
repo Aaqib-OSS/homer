@@ -48,9 +48,8 @@ inputs:
     required: false
     default: "false"
 commands:
-  # A fresh run fans out to a sub of its own — a different subject, so the two runs never
-  # share a lock key — and resumes itself when that sub ends. A resumed segment must not
-  # fan out, or every resume would register another continuation.
+  # A fresh run fans out to a sub of a different subject (no shared lock key) and resumes itself;
+  # a resumed segment must not fan out, or every resume would register another continuation.
   - !<script>
     label: dispatch-sub
     when:

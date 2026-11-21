@@ -111,10 +111,8 @@ class SseTest : E2eTestBase() {
                         .snapshot()
                         .filter { it.event == "process.cmd" }
                         .mapNotNull { cmdOf(it, processId) }
-                // Exactly one event per boundary plus the run's single step-start set:
-                // the first step's start, the first boundary handing over to the second
-                // command, the second clearing (the run is over — no phantom next
-                // command, and no doubled add-then-clear pair at either boundary).
+                // One event per boundary plus the first step's start: no phantom next command and no
+                // doubled add-then-clear pair.
                 assertEquals(
                     listOf("emit-json", "echo-captured", null),
                     cmds.map { it.label },

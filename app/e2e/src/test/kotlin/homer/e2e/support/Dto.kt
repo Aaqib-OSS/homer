@@ -3,10 +3,8 @@ package homer.e2e.support
 import kotlinx.serialization.Serializable
 
 /**
- * Minimal client-side declarations of the wire contract, decoded with
- * `ignoreUnknownKeys = true`. Deliberately NOT the `:app` models: sharing
- * them would hide serialization regressions on both sides. Only the fields
- * the suite asserts on are declared.
+ * Minimal client-side declarations of the wire contract (`ignoreUnknownKeys = true`), only the fields the suite
+ * asserts on. Not the `:app` models: sharing them would hide serialization regressions.
  */
 
 @Serializable
@@ -78,9 +76,7 @@ data class ProcessInfo(
     // Why a run failed before any of its commands started; null otherwise. The run
     // that blocked it is named inside the text only for a caller who may see it.
     val failureReason: String? = null,
-    // Why and where this run was stopped gracefully — the cause, the step it interrupted
-    // and how its `onStop:` steps ended. Null for a run no graceful stop ended; the run's
-    // status is still `FAILED`.
+    // The cause, interrupted step and `onStop:` outcome of a graceful stop; null otherwise.
     val stop: StopInfo? = null,
 )
 

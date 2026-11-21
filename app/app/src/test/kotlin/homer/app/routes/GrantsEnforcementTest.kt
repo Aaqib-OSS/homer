@@ -72,11 +72,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Integration tests for grants enforcement (ADR-0037) at the route layer
- * (Task 6). [installGrantsApp] mounts the production bearer provider, so the
- * same Authentication -> authenticate() -> apiV1Routes pipeline production
- * uses is exercised, with a real [Authorizer] built from the same
- * [TokenConfig] grants production resolves via [Authorizer.from].
+ * Route-layer tests for grants enforcement (ADR-0037): [installGrantsApp] mounts the production bearer
+ * provider with a real [Authorizer] built by [Authorizer.from] from the token grants.
  */
 class GrantsEnforcementTest {
     private val echoAgent = AgentFixtures.simpleAgent(name = "echo")
@@ -349,9 +346,8 @@ class GrantsEnforcementTest {
                     contentType(ContentType.Application.Json)
                     setBody("""{"content":"hi"}""")
                 }
-            // Deterministic success (the handler's own AgentFileWriteResponse
-            // path), not just "not 403" -- proves the EDIT grant actually reaches
-            // agentFilesService.write and isn't stopped short by a mismapped action.
+            // `200`, not just "not 403": proves the EDIT grant reaches agentFilesService.write rather than being
+            // stopped by a mismapped action.
             assertEquals(HttpStatusCode.OK, res.status)
         }
 
@@ -371,12 +367,8 @@ class GrantsEnforcementTest {
         }
 
     /**
-     * The declared-name create-grant on definition writes (CWE-285, ADR-0068),
-     * proven at the route boundary with a REAL temp-dir-backed
-     * [AgentFilesService] — everywhere above it is a mock, so the lambda the
-     * handler passes into `write` never executed in any test. One denial row
-     * (declared name ungranted → `404`, disk untouched) and the two siblings
-     * (declared name granted → `200`; non-definition file → `200`).
+     * The declared-name create-grant on definition writes (CWE-285, ADR-0068), with a real temp-dir-backed
+     * [AgentFilesService] so the handler's `write` lambda runs: denial (`404`, disk untouched) plus two `200` siblings.
      */
     @Test
     fun `PUT of a definition declaring an ungranted name is denied at the route with a real service (CWE-285)`() =
@@ -514,10 +506,8 @@ class GrantsEnforcementTest {
     private val starReadToken = TokenConfig(token = "star-read-token", grants = listOf(Grant(listOf("*"), listOf(Action.READ))))
 
     /**
-     * The runner-state fixture: a configured `ssh` runner, an `external` domain with one live
-     * registered instance (carrying the version it reported), and one pending alias claim.
-     * Returns the deps and the instance, so a golden comparison can name the instance the way an
-     * admin sees it.
+     * The runner-state fixture: a configured `ssh` runner, an `external` domain with one live instance (with its
+     * reported version) and one pending alias claim. Returns the deps and the instance for golden comparison.
      */
     private fun runnerStateDeps(tokens: Map<String, TokenConfig>): Pair<ApiDeps, ExternalRunnerInstance> {
         val queue = mockk<RunnerClaimQueue>(relaxed = true)
@@ -747,10 +737,8 @@ class GrantsEnforcementTest {
     @Test
     fun `health withholds runner aliases from a non-admin caller`() =
         testApplication {
-            // CWE-200: /health is open to any authenticated caller,
-            // so the configured runner aliases and the sweep snapshot's runnerAlias
-            // — operator-chosen backend metadata — must not reach a non-admin. The
-            // endpoint answers 200 to everyone; only the alias fields are withheld.
+            // CWE-200: /health answers 200 to everyone, but runner aliases and the sweep snapshot's runnerAlias
+            // must not reach a non-admin.
             val tokens = mapOf("runner" to runToken, "root" to adminToken)
             val sweepStatus = SweepStatus()
             sweepStatus.set(

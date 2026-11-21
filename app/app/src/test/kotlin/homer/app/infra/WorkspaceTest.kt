@@ -350,9 +350,8 @@ class WorkspaceTest {
     @Test
     fun `cleanup stops at its budget and leaves the rest to the purge sweep`() =
         runTest {
-            // The workload sizes its own tree, so the delete is bounded in time: a spent
-            // budget must return with the remainder still on disk (the purgeAfter sweep
-            // takes it) instead of holding the run's lock and slot for the whole walk.
+            // The delete is time-bounded: a spent budget returns with the remainder on disk (the purgeAfter sweep
+            // takes it) instead of holding the run's lock and slot.
             val workspace = createTestWorkspace(cleanupTimeout = Duration.ZERO)
             workspace.create()
             repeat(200) { i ->
@@ -377,9 +376,8 @@ class WorkspaceTest {
     @Test
     fun `cleanup's budget is checked on the failed-entry path too`() =
         runTest {
-            // An entry the walk cannot open is routed through visitFileFailed, not
-            // visitFile; the deadline must be consulted there as well, so a spent budget
-            // terminates the walk before the first failure is even counted.
+            // An unopenable entry goes through visitFileFailed, so the deadline must be checked there too: a spent
+            // budget ends the walk before the first failure is counted.
             assumeTrue(
                 TestFixtures.posixPermissionsEnforced(),
                 "POSIX permissions are not enforced (root or non-POSIX FS); the unopenable entry cannot be induced",

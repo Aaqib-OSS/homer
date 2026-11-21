@@ -100,9 +100,8 @@ class ResultToEnvMapperTest {
         assertEquals("Error message", env["ERROR"])
     }
 
-    // The `quickstart` example gates its closing steps on `[[ "$SHIP_ANSWER" == ship* ]]`,
-    // where SHIP_ANSWER is a captured stdout: a trim here would stop both predicates
-    // matching and the run would end FINISHED printing nothing. Pins the raw capture.
+    // The `quickstart` example gates on a captured SHIP_ANSWER with `ship*`: a trim would stop both predicates
+    // matching and the run would end FINISHED printing nothing.
     @Test
     fun `mapToEnv should preserve the trailing newline with Pass transformer`() {
         Files.writeString(stdOutFile, "ship\n")
@@ -280,7 +279,7 @@ class ResultToEnvMapperTest {
     }
 
     @Test
-    fun `mapToEnv should handle invalid JSON gracefully`() {
+    fun `mapToEnv leaves out a JsonPath param whose source is not JSON`() {
         Files.writeString(stdOutFile, "not valid json")
         Files.writeString(stdErrFile, "")
         val result = TestFixtures.mockCommandResult(exitCode = 0, stdOut = stdOutFile, stdErr = stdErrFile)
@@ -294,25 +293,14 @@ class ResultToEnvMapperTest {
                 ),
             )
 
-        val mapper = ResultToEnvMapper(result)
+        val env = ResultToEnvMapper(result).mapToEnv(params)
 
-        // Should handle parsing errors gracefully (might throw or return empty)
-        val env =
-            try {
-                mapper.mapToEnv(params)
-            } catch (e: Exception) {
-                emptyMap()
-            }
-
-        // Either way, we shouldn't crash
-        assertTrue(env.isEmpty() || !env.containsKey("VALUE"))
+        assertEquals(emptyMap(), env)
     }
 
     // ========== JsonPath Value Shape Tests ==========
 
-    // The defect: a selected object came back as Java map text (`{a=1, b=x}`) because the
-    // provider's Map.toString() is not JSON. A selected object or array is now compact JSON;
-    // scalars are unchanged, so a worker already returning JSON text keeps working.
+    // A selected object or array is compact JSON, never Java map text; scalars are unchanged.
     private val objectShapeStdout = """{"result":{"a":1,"b":"x","c":[1,2],"d":{"e":true}},"list":[{"a":1}],"s":"hi"}"""
 
     private fun envFor(
@@ -396,8 +384,8 @@ class ResultToEnvMapperTest {
         assertFalse(env.containsKey("VALUE"))
     }
 
-    // An arbitrarily deep value must serialize without throwing (§12 rule 2: agent-written
-    // stdout is attacker-controlled, and the helper must survive any shape).
+    // An arbitrarily deep value must serialize without throwing (ADR-0047 rule 2: agent-written stdout is
+    // attacker-controlled, and the helper must survive any shape).
     @Test
     fun `mapToEnv serializes a deeply nested selected value without throwing`() {
         val depth = 40
@@ -408,7 +396,7 @@ class ResultToEnvMapperTest {
         assertEquals("{\"n\":".repeat(depth) + "1" + "}".repeat(depth), env["VALUE"])
     }
 
-    // §12 rule 7: the selected value can hold a secret, so it must never reach a log line.
+    // ADR-0047 rule 7: the selected value can hold a secret, so it must never reach a log line.
     @Test
     fun `mapToEnv does not log the selected value`() {
         val mapperLogger = LoggerFactory.getLogger(ResultToEnvMapper::class.java) as LogbackLogger
@@ -458,11 +446,8 @@ class ResultToEnvMapperTest {
 
     @Test
     fun `mapToEnv should evaluate JsonPath against Claude NDJSON stdout as an event array`() {
-        // Claude's --output-format stream-json writes NDJSON (one event per line),
-        // which is not a single JSON document. The mapper re-assembles the lines
-        // into a JSON array so array-filter JsonPath works as it did against the
-        // pre-streaming --output-format json output. A filter is an "indefinite"
-        // JsonPath, so the match is returned as a JSON array string.
+        // NDJSON stdout is re-assembled into a JSON array so array-filter JsonPath works; a filter is an
+        // indefinite path, so the match comes back as a JSON array string.
         Files.writeString(stdOutFile, claudeNdjsonStdout)
         Files.writeString(stdErrFile, "")
         val result = TestFixtures.mockCommandResult(exitCode = 0, stdOut = stdOutFile, stdErr = stdErrFile)
@@ -661,8 +646,8 @@ class ResultToEnvMapperTest {
         assertFalse(env.containsKey("BAD_PATTERN"))
     }
 
-    // An uncompilable pattern omits only its own value: the shed-then-skip cap fires
-    // only on a shed match, so a later valid regex param still resolves. §12 rule 4.
+    // An uncompilable pattern omits only its own value: the shed-then-skip cap fires only on a shed match,
+    // so a later valid regex param still resolves (ADR-0047 rule 4).
     @Test
     fun `mapToEnv still evaluates a later regex param after an uncompilable one`() {
         Files.writeString(stdOutFile, "Version: 1.2.3")
@@ -689,9 +674,8 @@ class ResultToEnvMapperTest {
         assertEquals("1.2.3", env["VERSION"], "an uncompilable pattern must not skip a later regex param")
     }
 
-    // The shed-then-skip contract the `!<agent>` queryParams path already has: after one
-    // regex param is shed, the remaining regex params are omitted without a second bounded
-    // match, while a non-regex transformer still runs. §12 rule 4.
+    // The shed-then-skip contract of the `!<agent>` queryParams path: after one regex param is shed the rest are
+    // omitted without a second bounded match, while a non-regex transformer still runs (ADR-0047 rule 4).
     @Test
     fun `mapToEnv omits the remaining regex params after one is shed without evaluating them`() {
         val mapperLogger = LoggerFactory.getLogger(ResultToEnvMapper::class.java) as LogbackLogger

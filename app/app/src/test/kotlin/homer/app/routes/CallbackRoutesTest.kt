@@ -289,11 +289,8 @@ class CallbackRoutesTest {
             val body = apiJson.decodeFromString<homer.app.models.DeclareTagResponse>(response.bodyAsText())
             assertEquals("decision:approved", body.tag)
             assertEquals(1, body.count)
-            // The run id comes from the token, not the body — the process id is never in the request.
-            // The agent's fromInputs keys are passed through so they are excluded from the ceiling.
-            // Resolve the child mock outside the verify lambda: the handler also reads
-            // `processManager` for the secret-value check, so a chained verify would count
-            // that accessor and over-count.
+            // The run id comes from the token, never the body; fromInputs keys pass through, excluded from the ceiling.
+            // Resolve the child mock outside verify: the handler also reads `processManager`, which verify would count.
             val pm = deps.processManager
             coVerify(exactly = 1) { pm.addRuntimeTag(1, "decision:approved", 20, setOf("mr")) }
         }
@@ -453,9 +450,7 @@ class CallbackRoutesTest {
     ) = runBlocking {
         assertEquals(HttpStatusCode.BadRequest, response.status)
         assertTrue(response.bodyAsText().contains("secret"))
-        // The write never reached the repository: a refused value must not be persisted.
-        // Resolve the child mock outside the verify lambda so the chained accessor is
-        // not what gets counted.
+        // A refused value is not persisted; the child mock is resolved outside verify so the accessor is uncounted.
         val pm = deps.processManager
         coVerify(exactly = 0) { pm.addRuntimeTag(any(), any(), any(), any()) }
     }
@@ -1317,9 +1312,8 @@ class CallbackRoutesTest {
     @Test
     fun `result fetch by a second process of the same agent still succeeds`() =
         testApplication {
-            // A resumed LangGraph segment re-runs the target agent as a NEW process and
-            // re-fetches the same token. Audience binding is by agent, not process, so
-            // that cross-segment re-fetch must keep working.
+            // A resumed LangGraph segment re-runs the agent as a NEW process and re-fetches the same token; audience
+            // binding is by agent, not process, so that cross-segment re-fetch must keep working.
             val file = resultFile("""{"summary":"DONE"}""")
             val service = newService()
             val secondSegmentToken = runBlocking { service.registerProcess(2, "agent-a") }

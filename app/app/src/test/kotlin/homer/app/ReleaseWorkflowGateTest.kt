@@ -6,14 +6,9 @@ import java.io.File
 import kotlin.test.assertTrue
 
 /**
- * Denial-path guard for the GitHub publishing workflows (CWE-285). A tag or branch anyone with
- * write access can push must not publish a release image or the organization's Pages site, so
- * release.yml runs only on a protected ref and pages.yml only on the default branch. The upstream
- * pipeline gates the same jobs on a protected ref and the default branch. See ADR-0084.
- *
- * It also keeps the supply-chain steps of release.yml (ADR-0086): every image is published for
- * linux/amd64 and linux/arm64 as one index, the index and each platform image are signed and
- * attested by digest, and the release verifies both before it counts as done.
+ * Denial-path guard for the GitHub publishing workflows (CWE-285): release.yml runs only on a protected ref and
+ * pages.yml only on the default branch, so a ref anyone with write access can push publishes nothing (ADR-0084).
+ * It also keeps the supply-chain steps: a multi-arch index signed, attested and verified by digest (ADR-0086).
  */
 class ReleaseWorkflowGateTest {
     private val release = ".github/workflows/release.yml"

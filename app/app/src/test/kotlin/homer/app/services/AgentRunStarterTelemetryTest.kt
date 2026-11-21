@@ -32,12 +32,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Per-agent OTel muting (`telemetry: OFF`).
- *
- * These run against a real [SdkTracerProvider] rather than a mocked tracer on
- * purpose: the whole mechanism is the SDK's default `ParentBased` sampler
- * dropping children of an unsampled parent. A mock would assert the code we
- * wrote, not the behaviour we depend on.
+ * Per-agent OTel muting (`telemetry: OFF`). These run against a real [SdkTracerProvider], not a mocked tracer: the
+ * mechanism is the SDK's default `ParentBased` sampler dropping children of an unsampled parent, and a mock would
+ * only assert the code we wrote.
  */
 class AgentRunStarterTelemetryTest {
     private class CollectingExporter : SpanExporter {

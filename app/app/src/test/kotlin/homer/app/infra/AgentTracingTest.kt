@@ -22,10 +22,9 @@ import kotlin.test.assertTrue
 import ch.qos.logback.classic.Logger as LogbackLogger
 
 /**
- * Direct unit tests for [langfuseTraceTags]'s [TagValidation.VALUE_PATTERN]
- * enforcement: a valid value tags the run, an off-charset or oversized value is
- * dropped (never rewritten) with a WARN, and an empty effective `fromInputs` list
- * short-circuits to an empty list. See ADR-0060.
+ * Unit tests for [langfuseTraceTags]'s [TagValidation.VALUE_PATTERN] enforcement: a valid value tags the run, an
+ * off-charset or oversized value is dropped (never rewritten) with a WARN, and an empty `fromInputs` yields no
+ * tags. See ADR-0060.
  */
 class AgentTracingTest {
     private lateinit var appender: ListAppender<ILoggingEvent>

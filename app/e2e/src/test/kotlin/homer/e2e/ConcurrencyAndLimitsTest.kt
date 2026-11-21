@@ -57,11 +57,8 @@ class ConcurrencyAndLimitsTest : E2eTestBase() {
             val second = Awaits.awaitTerminal(secondId)
             assertEquals("FAILED", second.status)
 
-            // The reason says why it never started. This client is admin, so the id of
-            // the run that held the lock is appended; a caller who may not open that run
-            // gets the same text without it. The reason is stored in a second transaction
-            // after the FAILED status commits, so the poll that first sees the status can
-            // still read a null reason — await the reason itself.
+            // The admin client also sees the holder's run id. The reason is stored after the FAILED
+            // status commits, so await the reason itself.
             val reason =
                 Awaits.awaitNotNull("the skipped run's failure reason") {
                     Awaits.awaitTerminal(secondId).failureReason
@@ -152,11 +149,7 @@ class ConcurrencyAndLimitsTest : E2eTestBase() {
             val holderId = HomerApi.startRun("lock-queue-cap", query = mapOf("subject" to "1"))
             Awaits.awaitStatus(holderId, setOf("WORKING"))
 
-            // `maxQueuedRuns: 0` — the shared wait queue has no places, so the run colliding
-            // on the held subject lock is refused at the gate. The start itself was 200
-            // (startRun asserts it); the run ends FAILED without executing a command.
-            // A zero bound keeps this deterministic: the surplus waiter is the first waiter,
-            // so the test needs no queue saturation race.
+            // `maxQueuedRuns: 0` makes the first waiter the surplus one, so no queue saturation race is needed.
             val refusedId = HomerApi.startRun("lock-queue-cap", query = mapOf("subject" to "1"))
 
             val refused = Awaits.awaitTerminal(refusedId)
@@ -180,9 +173,7 @@ class ConcurrencyAndLimitsTest : E2eTestBase() {
     @Test
     fun `an unresolved lock key placeholder fails the run before it starts`() =
         runBlocking {
-            // The placeholder denial happens inside the async execution, like the other
-            // pre-start causes: HTTP was 200, the run ends FAILED without ever running
-            // its command and without touching the lock.
+            // The denial happens in the async execution, so the start answers 200 and the run ends FAILED.
             val id = HomerApi.startRun("lock-unresolved-placeholder")
 
             val terminal = Awaits.awaitTerminal(id)
@@ -202,9 +193,8 @@ class ConcurrencyAndLimitsTest : E2eTestBase() {
     @Test
     fun `a SKIP_CURRENT skip does not arm the afterFailure cooldown`() =
         runBlocking {
-            // A duplicate correctly dropped by the lock ends FAILED without ever running,
-            // and that row must not back the agent off — including for a start over
-            // another subject, which used to be refused with 429 for the whole window.
+            // The skipped duplicate ends FAILED without running; it must not back the agent off,
+            // not even for a start over another subject.
             val firstId = HomerApi.startRun("cooldown-lock-skip", query = mapOf("subject" to "a"))
             Awaits.awaitStatus(firstId, setOf("WORKING"))
 
@@ -240,9 +230,7 @@ class ConcurrencyAndLimitsTest : E2eTestBase() {
             assertEquals(HttpStatusCode.PayloadTooLarge, response.status)
         }
 
-    // Cooldown on the debug endpoint (ADR-0051 amendment): `minInterval` is a pacing
-    // bound on every start, `afterFailure` does not gate a manual investigation.
-    // Debug bodies need no inputs, so the requests carry an empty body object.
+    // Debug endpoint cooldown (ADR-0051 amendment): `minInterval` paces every start, `afterFailure` does not.
 
     @Test
     fun `minInterval refuses a second debug start with 429`() =
@@ -304,9 +292,8 @@ class ConcurrencyAndLimitsTest : E2eTestBase() {
             // live server, and the keyed case above already has rows of this agent.
             val before = rowsOf("cooldown-key")
 
-            // `mr` is optional, so the request resolves; `{{MR}}` then has nothing to
-            // render from and the start must fail closed rather than run under a key
-            // every subject would share.
+            // `mr` is optional, so the request resolves, but `{{MR}}` has nothing to render:
+            // the start must fail closed rather than run under a key every subject shares.
             val response = HomerApi.run("cooldown-key")
             assertEquals(
                 HttpStatusCode.BadRequest,

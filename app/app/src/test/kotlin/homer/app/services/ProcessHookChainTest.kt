@@ -11,11 +11,9 @@ import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 
 /**
- * The status-hook chain end to end over a real database and no stand-in for any link: a status
- * write in [ProcessManager] records its hook rows inside the write's own transaction, hands them
- * to a real [HookService] after the commit, and that fires them through `HookFireService` into a
- * start. The DI wiring resolves `HookService` at call time for exactly this shape, so this is the
- * chain production runs. See ADR-0107.
+ * The status-hook chain end to end over a real database, with no stand-in for any link: a status write
+ * records its hook rows in its own transaction, then a real [HookService] fires them through
+ * `HookFireService` into a start. See ADR-0107.
  */
 class ProcessHookChainTest {
     private fun agent(
@@ -53,9 +51,8 @@ class ProcessHookChainTest {
     @Test
     fun `the guarded CREATED re-assert a run's own start writes does not fire the CREATED hook again`() =
         runTest {
-            // What ProcessExecutor.runJob writes right after the INSERT, so a kill that landed
-            // first is not reset: the same status written twice is one reach of it, so the hook
-            // entry fires exactly once. See ADR-0107.
+            // ProcessExecutor.runJob writes this right after the INSERT: the same status written twice is
+            // one reach of it, so the hook fires exactly once. ADR-0107.
             val f = chain(ProcessStatus.CREATED to "notifier-created")
 
             val id = f.processManager.obtainProcessId(NewRunRecord("declarer", owner = "alice"))

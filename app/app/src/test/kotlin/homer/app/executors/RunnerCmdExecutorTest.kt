@@ -533,9 +533,8 @@ class RunnerCmdExecutorTest {
         val shell = FakeShell(mutableListOf(0))
         val session = FakeSession(shell)
         val workdir = tmp.resolve("workdir").also { Files.createDirectories(it) }
-        // Same name declared by both sides: the runner's value wins in the target env,
-        // but the workspace credential is a distinct @SYSENV:-backed secret of its own
-        // and must not lose its redaction needle in the merge.
+        // Same name declared by both sides: the runner's value wins, but the workspace credential is a distinct
+        // @SYSENV:-backed secret and must not lose its redaction needle in the merge.
         val runner =
             FakeRunner(
                 session,
@@ -580,11 +579,8 @@ class RunnerCmdExecutorTest {
     fun `remote runnerCmd target receives no host-layer env keys a remote run would not get (CWE-200)`(
         @org.junit.jupiter.api.io.TempDir tmp: Path,
     ) = runTest {
-        // A runnerCmd target inherits the requesting run's composed env — which, on
-        // a local agent, carries the parentEnvAllowlist host layer. A remote target
-        // must be stripped of exactly the host values (never an operator re-set one):
-        // they describe Homer's host, not the target's — the same rule that keeps
-        // them out of a remote run's own env (ADR-0065).
+        // A runnerCmd target inherits the requesting run's env, including the parentEnvAllowlist host layer; a remote
+        // target must be stripped of exactly those host values, never an operator re-set one (ADR-0065).
         val shell = FakeShell(mutableListOf(0))
         val session = FakeSession(shell)
         val workdir = tmp.resolve("workdir").also { Files.createDirectories(it) }
@@ -632,9 +628,8 @@ class RunnerCmdExecutorTest {
     fun `local runnerCmd target keeps the host-layer env keys`(
         @org.junit.jupiter.api.io.TempDir tmp: Path,
     ) = runTest {
-        // Parity: a local target runs on Homer's own host, where the allowlisted
-        // values are correct — stripping them would break local-runnerCmd agents
-        // exactly the way dropping the layer from the local runner would.
+        // Parity: a local target runs on Homer's own host, where the allowlisted values are correct;
+        // stripping them would break local-runnerCmd agents.
         val shell = FakeShell(mutableListOf(0))
         val session = FakeSession(shell)
         val workdir = tmp.resolve("workdir").also { Files.createDirectories(it) }

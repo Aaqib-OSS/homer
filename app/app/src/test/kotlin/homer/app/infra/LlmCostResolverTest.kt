@@ -238,11 +238,8 @@ class LlmCostResolverTest {
     @Test
     fun `own timeout mid-body still falls back with timeout, not an exception`() =
         runBlocking {
-            // Writes a few bytes then never closes the channel — readRemaining suspends
-            // forever waiting for more, with no socket underneath for a socket timeout to
-            // fire on. If the resolver's own bound ever stops being engine-independent,
-            // this hangs instead of failing — the outer withTimeout turns that back into a
-            // fast test failure rather than a hung test run.
+            // Never closes the channel: readRemaining suspends with no socket for a timeout to fire on. If the
+            // resolver's bound stops being engine-independent this hangs, and the outer withTimeout fails it.
             val engine =
                 MockEngine {
                     val channel = ByteChannel(autoFlush = true)
@@ -260,14 +257,8 @@ class LlmCostResolverTest {
 
     @Test
     fun `a caller's own timeout propagates instead of being priced`() {
-        // Our own timeout (5_000) is far longer than the caller's (50), so it's the
-        // caller's withTimeout that fires while we're suspended inside ours — that
-        // TimeoutCancellationException must propagate, not be swallowed as a priced
-        // ResolvedCost(..., "timeout"). A @Test method must return Unit, so this can't
-        // be `= runBlocking { assertFailsWith { ... } }` like the rest of the file —
-        // assertFailsWith's return value (the caught exception) would leak out as the
-        // method's inferred return type and JUnit silently skips it (logged as a
-        // WARNING, not a failure) instead of running it.
+        // The caller's withTimeout (50) fires inside the resolver's own (5_000): that TimeoutCancellationException must
+        // propagate, not become a "timeout" cost. Block-body `runBlocking`: a @Test must return Unit or JUnit skips it.
         runBlocking {
             val engine =
                 MockEngine {
@@ -700,9 +691,8 @@ class LlmCostResolverTest {
     @Test
     fun `two attempts in one session are each charged only their own window rows`() =
         runBlocking {
-            // One session, two runs: the endpoint's rows carry both runs' requests and its
-            // session-cumulative spend is the total. Each attempt must be priced from its own
-            // window, so the two charges sum to $.spend.
+            // One session, two runs: the endpoint's session-cumulative spend is the total, so each attempt must be
+            // priced from its own window and the two charges sum to $.spend.
             val body =
                 """
                 {"spend":0.30,"calls":3,"requests":[
@@ -730,10 +720,8 @@ class LlmCostResolverTest {
     @Test
     fun `a window with only earlier attempts' calls is Partial, never Complete`() =
         runBlocking {
-            // The second attempt made 2 calls, but by the first poll the endpoint has only
-            // ingested the earlier run's row inside the window (grace 0, so the third row is
-            // outside). Session-wide $.calls is 3, which alone would satisfy expectedCalls and
-            // accept the figure early — the window count must not.
+            // By the first poll only the earlier run's row is ingested in the window (grace 0), so session-wide
+            // $.calls = 3 would satisfy expectedCalls alone and settle early: the window count must not.
             val (engine, stamps) =
                 scriptedEngine(
                     listOf(
@@ -812,9 +800,8 @@ class LlmCostResolverTest {
     @Test
     fun `one unreadable row timestamp refuses the whole window, not just that row`() =
         runBlocking {
-            // CWE-840: skipping the unreadable row would drop a
-            // possibly in-window charge silently and the poll could still settle Complete —
-            // the window is refused instead, like the all-unreadable case.
+            // CWE-840: skipping the unreadable row would silently drop a possibly in-window charge and the poll could
+            // still settle Complete, so the window is refused, like the all-unreadable case.
             val engine =
                 jsonEngine(
                     """{"spend":0.30,"requests":[{"started":"2026-10-06T10:05:00Z","spend":0.15},{"spend":0.2}]}""",
@@ -864,9 +851,8 @@ class LlmCostResolverTest {
     @Test
     fun `a zone-less row timestamp is refused rather than read as UTC`() =
         runBlocking {
-            // A local date-time carries no zone, so placing it in an attempt's window would be a
-            // guess; the row must not be priced from. SERVER.md / ADR-0061 say such a row is
-            // refused rather than misattributed.
+            // A local date-time has no zone, so placing it in an attempt's window would be a guess: the row is
+            // refused, not priced (ADR-0061).
             val engine = jsonEngine("""{"spend":0.30,"requests":[{"started":"2026-10-06T10:05:00","spend":0.15}]}""")
             val r =
                 LlmCostResolver(windowCfg(), engine, pollMs)

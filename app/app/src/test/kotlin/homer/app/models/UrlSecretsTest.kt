@@ -6,9 +6,8 @@ import kotlin.test.assertEquals
 class UrlSecretsTest {
     @Test
     fun `stripUrlSecrets keeps a reg-name host the URI host field misses`() {
-        // A legal reg-name host (`homer_internal`, accepted by isHttpsOrLoopbackHttpUrl)
-        // gives a null `URI.host`; the rebuild must go through the raw authority, or the
-        // host is dropped from the sanitized form.
+        // A legal reg-name host (`homer_internal`) gives a null `URI.host`; the rebuild must use the raw authority
+        // or the host is dropped.
         assertEquals("https://homer_internal/api", stripUrlSecrets("https://homer_internal/api?x=1"))
         assertEquals("https://homer_internal", stripUrlSecrets("https://homer_internal?x=1"))
         assertEquals("https://homer_internal:8443", stripUrlSecrets("https://homer_internal:8443?a=1"))

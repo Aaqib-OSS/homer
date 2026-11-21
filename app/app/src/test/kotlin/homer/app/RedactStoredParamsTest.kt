@@ -6,24 +6,9 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * Redaction of the parameters stored on a dispatch or continuation row.
- *
- * Those rows hold their parameters from registration until an operator answers or a
- * watched process ends, and the list/detail endpoints return them to anyone who can
- * see the row — so they need the same treatment a process's inputs get. See ADR-0052.
- *
- * `params` is stored keyed by **paramName** (DispatchService.create /
- * ContinuationService.create persist the caller-supplied request map verbatim;
- * AgentInputResolver.resolveFromParams converts to envName only at fire time), so
- * every case below uses `paramName` as the map key — not `envName` — to match what is
- * actually on the row. A `Param` whose `paramName` differs from its `envName` is the
- * case a security scan found unredacted.
- *
- * `storedSecretParamNames` is the schema v17 paramName-keyed snapshot
- * (`secret_param_names`), taken alongside the pre-existing envName-keyed one at
- * registration; `null` throughout most cases below models a pre-v17 row (or one where
- * the two snapshots agree with the current definition anyway) — see the dedicated
- * v17 cases for what it closes.
+ * Redaction of the parameters stored on a dispatch or continuation row, which hold them until an operator answers or
+ * a watched process ends and are returned to anyone who can see the row (ADR-0052). `params` is keyed by paramName,
+ * so every case uses `paramName` as the key; `storedSecretParamNames` is the paramName-keyed snapshot (null: pre-v17).
  */
 class RedactStoredParamsTest {
     private fun agentWith(vararg inputs: Param) = AgentFixtures.simpleAgent(name = "a").copy(inputs = inputs.toList())
@@ -82,9 +67,8 @@ class RedactStoredParamsTest {
 
     @Test
     fun `without a snapshot an unknown key fails closed`() {
-        // The case that breaks the "leave control params readable" shortcut: a pre-v16
-        // row whose formerly-secret input has since been renamed matches neither the
-        // current flags nor a snapshot, so it cannot be proven non-secret.
+        // The case that breaks the "leave control params readable" shortcut: a renamed formerly-secret input of a
+        // pre-v16 row matches neither the current flags nor a snapshot, so it cannot be proven non-secret.
         val agent = agentWith(Param(paramName = "mr", envName = "MR_IID"))
 
         assertEquals(
@@ -122,9 +106,8 @@ class RedactStoredParamsTest {
 
     @Test
     fun `control parameters that were never declared inputs are left readable`() {
-        // Unlike a process's inputs, these maps legitimately carry control params. The
-        // snapshot covers a renamed secret input, so blanking unknown keys would cost
-        // the console its view for no gain.
+        // Unlike a process's inputs, these maps legitimately carry control params; the snapshot covers a renamed
+        // secret input, so blanking unknown keys would cost the console its view for no gain.
         val agent = agentWith(Param(paramName = "mr", envName = "MR_IID"))
 
         assertEquals(
@@ -177,10 +160,8 @@ class RedactStoredParamsTest {
 
     @Test
     fun `without a paramName snapshot the residual persists for a deleted input with an explicit paramName split`() {
-        // Documents the accepted residual this commit does NOT retroactively fix: a
-        // pre-v17 row (storedSecretParamNames = null) with an explicit paramName/envName
-        // split whose input was later deleted has no way to recover the historical
-        // paramName — the value comes back in cleartext until the row ages out (ADR-0052).
+        // The accepted residual: a pre-v17 row (storedSecretParamNames = null) whose paramName/envName split input
+        // was later deleted cannot recover the historical paramName, so the value stays in cleartext (ADR-0052).
         val agent = agentWith()
 
         assertEquals(
@@ -196,9 +177,8 @@ class RedactStoredParamsTest {
 
     @Test
     fun `a paramName snapshot closes the gap for a deleted input with an explicit paramName split`() {
-        // The recommended fix: a v17+ row's paramName-keyed snapshot is checked
-        // directly, so it needs no current input to translate through — unlike the
-        // sibling test above, this one is masked.
+        // A v17+ row's paramName-keyed snapshot is checked directly, needing no current input to translate through,
+        // unlike the sibling test above, so this one is masked.
         val agent = agentWith()
 
         assertEquals(

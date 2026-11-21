@@ -71,9 +71,8 @@ class AgentExecutorWhenTest : AgentExecutorTestBase() {
     @Test
     fun `execute redacts the skipped when predicate before it reaches errMsg`() =
         runTest {
-            // CWE-532: the Skip reason interpolates the raw
-            // expression, so a credential in a `when` expression must not survive into
-            // the skipped step's ExecutionInfo.errMsg.
+            // CWE-532: the Skip reason interpolates the raw expression, so a credential in a `when`
+            // expression must not survive into the skipped step's ExecutionInfo.errMsg.
             val secretToken = "sup3r-secret-token-value"
             val agent =
                 Agent(
@@ -216,10 +215,8 @@ class AgentExecutorWhenTest : AgentExecutorTestBase() {
     @Test
     fun `execute redacts the timed-out when predicate before it reaches errMsg`() =
         runTest {
-            // CWE-532: an operator puts a credential in a
-            // `when` expression (`curl -H "Authorization: @SYSENV:..."`); the exception
-            // message lands in ExecutionInfo.errMsg and is served raw by the status API,
-            // so the expression must be redacted before it is persisted.
+            // CWE-532: a credential in a `when` expression (`curl -H "Authorization: @SYSENV:..."`) reaches
+            // errMsg through the exception message, which the status API serves raw; redact before persisting.
             val secretToken = "sup3r-secret-token-value"
             val agent =
                 Agent(

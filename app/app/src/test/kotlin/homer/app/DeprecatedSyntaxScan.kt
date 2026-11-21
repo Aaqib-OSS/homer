@@ -20,10 +20,8 @@ private val yamlCommand = Regex("""^(\s*)-\s*!<(\w+)>""")
 private val jsonCommand = Regex("""^(\s*)\{?\s*"type"\s*:\s*"(agent|cmd|script|claude|codex|langgraph|runnerCmd)"""")
 
 /**
- * Scans the yaml/json fenced blocks of [markdown] for the deprecated param types and the
- * agent-level `queryParams` alias. Blocks preceded by the legacy marker line are counted
- * but not checked. JSON blocks that parse are checked structurally (key order does not
- * matter); unparseable JSON and YAML fall back to a line scan.
+ * Scans the yaml/json fenced blocks of [markdown] for the removed param types and the agent-level `queryParams` alias.
+ * Blocks after the `LEGACY_MARKER` line are counted but not checked; unparseable JSON and YAML get a line scan.
  */
 internal fun scanDeprecatedSyntax(markdown: String): DeprecatedSyntaxScan {
     val lines = markdown.lines()

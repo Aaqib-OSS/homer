@@ -77,9 +77,8 @@ class OtelTelemetryServiceTest {
                 warning.formattedMessage.contains("http://langfuse.invalid/api/public/otel/v1/traces"),
             "WARN must name the batch size and the endpoint: ${warning.formattedMessage}",
         )
-        // Cause named in the message, and NOT attached as a throwable: a stack trace
-        // from an OTLP HTTP client quotes the request URL, which would carry whatever
-        // the operator put in serverUrl straight past the endpoint sanitization.
+        // The cause is named in the message and not attached as a throwable: an OTLP client stack trace
+        // quotes the request URL, which carries serverUrl past endpoint sanitization.
         assertTrue(
             warning.formattedMessage.contains(cause.javaClass.name) &&
                 warning.formattedMessage.contains("connection refused"),
@@ -134,12 +133,8 @@ class OtelTelemetryServiceTest {
     // ========== The copy processor as wired in the service ==========
 
     /**
-     * The wiring only the real service has: [LangfuseTraceAttributesSpanProcessor] registered
-     * ahead of the batch processor in the service's own tracer provider. Deleting the
-     * registration — or moving it after the batch processor — must fail here, on what the
-     * exporter actually receives: a stamped root, a child started under it from the service's
-     * tracer, and the exported child carrying both keys. The batch processor is driven with the
-     * logging exporter (as the `LOG` export config builds it), whose output this captures.
+     * The real service registers [LangfuseTraceAttributesSpanProcessor] ahead of the batch processor; removing or
+     * reordering it must fail here, on what the logging exporter receives (a child carrying both keys).
      */
     @Test
     fun `a child span of a stamped root is exported with the trace name and tags`() {
@@ -157,9 +152,7 @@ class OtelTelemetryServiceTest {
             }
         exporterLogger.addHandler(handler)
         try {
-            // The JUL effective level is not this test's own state: an earlier test in the
-            // same JVM can leave the logger silenced, and the exported batch then never
-            // reaches the handler. Pin the level for the capture window, restore after.
+            // An earlier test in the same JVM can leave the JUL logger silenced; pin the level for the capture.
             exporterLogger.level = JulLevel.ALL
             val service = OtelTelemetryService(langfuseConfig, OpenTelemetryExport.LOG)
             val agent =
@@ -273,10 +266,8 @@ class OtelTelemetryServiceTest {
     // ========== OTLP export against a local stand-in for the Langfuse collector ==========
 
     /**
-     * What actually leaves the process. The ingestion header is the difference between Langfuse
-     * v4 showing a span within seconds and within minutes, and a collector is the only place it
-     * can be observed — it reaches no log and no span. Same stub pattern as
-     * `DefaultLangfuseClientTest`.
+     * What leaves the process: the ingestion header decides how fast Langfuse v4 shows a span, and only a
+     * collector can observe it. Same stub pattern as `DefaultLangfuseClientTest`.
      */
     @Test
     fun `an exported batch carries the ingestion version and the Basic authorization header`() =

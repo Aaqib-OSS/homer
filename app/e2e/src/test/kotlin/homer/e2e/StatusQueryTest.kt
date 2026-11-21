@@ -90,13 +90,8 @@ class StatusQueryTest : E2eTestBase() {
     @Test
     fun `status all tag filter does not expose a stored tag embedding a secret input value`() =
         runBlocking {
-            // CWE-203: `tagged-secret` tags from the public `mr` input
-            // only, but the run's secret `token` input is among its input params, so a
-            // stored tag whose value embeds that secret is exactly what the read-time
-            // screen must hide from `?tag=` — matched nowhere, `total` unchanged — while
-            // a sibling run on the same agent (the screen is per row, so the sibling's
-            // own params carry no secret needle) still filters through. Seen through a
-            // reader-scoped caller per ADR-0038. See ADR-0060.
+            // CWE-203: the read-time screen hides a tag embedding the secret `token` input from `?tag=`, per row,
+            // so a sibling run's tag still filters through (ADR-0060, reader-scoped caller per ADR-0038).
             val scopedAuth = "Bearer tagged-scoped-token"
             val nano = System.nanoTime().toString()
             val secretValue = "tokensecret$nano"
@@ -228,12 +223,7 @@ class StatusQueryTest : E2eTestBase() {
     @Test
     fun `costs by-tag reports the breakdown for a tracked key`() =
         runBlocking {
-            // "mr" is listed in costTrackedTagKeys (fixtures/config/config.json).
-            // The `tagged` fixture is a plain cmd run (e2e excludes Claude commands, see
-            // app/e2e/README.md), so its cost is 0 — this proves the HTTP-boundary wiring
-            // (route, config gate, tag join, response shape), not a real dollar figure;
-            // the sum arithmetic itself is covered at the unit level in
-            // ProcessRepositoryTest.
+            // The `tagged` cmd run costs 0: this proves the HTTP wiring, not the sum (ProcessRepositoryTest).
             val marker = "e2e-${System.nanoTime()}"
             Awaits.awaitTerminal(HomerApi.startRun("tagged", query = mapOf("mr" to marker)))
 
@@ -272,9 +262,7 @@ class StatusQueryTest : E2eTestBase() {
     @Test
     fun `status reports the serving backend alias for a local run`() =
         runBlocking {
-            // Every run that got a session records the backend that served it; the
-            // default local runner's alias is "local", with no pod fields. The e2e
-            // client sends the admin token, so the raw alias is still returned.
+            // The e2e client is admin, so the raw alias is returned.
             val id = HomerApi.startRun("echo", query = mapOf("message" to "runner-alias"))
             Awaits.awaitTerminal(id)
 
@@ -287,10 +275,7 @@ class StatusQueryTest : E2eTestBase() {
     @Test
     fun `status withholds the runner alias from a scoped non-admin caller`() =
         runBlocking {
-            // CWE-200: the alias is operator-chosen backend metadata
-            // that can name a host, tenant or environment. A non-admin principal who
-            // can see the run must get the generic backend type, never the raw alias —
-            // on the single-process and the list path alike.
+            // CWE-200: a non-admin who can see the run gets the backend type, never the alias, on both paths.
             val scopedAuth = "Bearer echo-scoped-token"
             val id =
                 HomerApi.startRun(
@@ -328,11 +313,7 @@ class StatusQueryTest : E2eTestBase() {
     @Test
     fun `health withholds the runner alias from a scoped non-admin caller`() =
         runBlocking {
-            // CWE-200: the configured runners' aliases and the sweep
-            // snapshot's `runnerAlias` are operator-chosen backend metadata, so a
-            // non-admin caller of GET /api/v1/health gets them nulled while the
-            // built-in `local` row keeps its fixed, non-sensitive alias. The admin
-            // caller still sees the raw values.
+            // CWE-200: a non-admin gets configured aliases and `runnerAlias` nulled, `local` keeps its alias.
             val scopedAuth = "Bearer echo-scoped-token"
 
             val nonAdmin =

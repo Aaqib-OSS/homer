@@ -37,7 +37,7 @@ import kotlin.test.assertTrue
 /**
  * The maintenance-mode gate: the durable flag, the bounded FIFO wait queue and the release
  * that drains it — plus the shutdown drain's refusal, which sheds an unadmitted start rather
- * than parking it. See ADR-0092, ADR-0102 and root §12 rules 4–5.
+ * than parking it. See ADR-0092, ADR-0102 and ADR-0047 rules 4–5.
  */
 class MaintenanceModeServiceTest {
     private lateinit var db: DatabaseService
@@ -130,8 +130,7 @@ class MaintenanceModeServiceTest {
     @Test
     fun `waiters are released in arrival order`() =
         runBlocking {
-            // One release slot at a time, so each waiter's turn is gated by the previous one
-            // letting go: the recorded order is the order the drain handed them out, not the
+            // One release slot at a time: the recorded order is the drain's hand-out order, not the
             // order three threads happened to resume in.
             newService(MaintenanceConfig(releaseConcurrency = 1))
             svc.setEnabled(true)
@@ -153,7 +152,7 @@ class MaintenanceModeServiceTest {
             assertEquals(listOf("first", "second", "third"), order)
         }
 
-    // --- bounds (root §12 rules 4-5) ---
+    // --- bounds (ADR-0047 rules 4-5) ---
 
     @Test
     fun `a start past the total cap is shed`() =
@@ -345,18 +344,15 @@ class MaintenanceModeServiceTest {
 
             svc.setEnabled(false)
             withTimeout(5_000) { firstReleased.await() }
-            // Mid-drain: the second waiter may already have been handed its slot, but the
-            // third is still parked. The drain stops at the flag, so the third is not
-            // released while the mode is on.
+            // Mid-drain the second waiter may already hold its slot, but the third stays parked: the
+            // drain stops at the flag.
             svc.setEnabled(true)
             hold.complete(Unit)
             withTimeout(5_000) { first.await() }
             assertFalse(rest[1].isCompleted, "a waiter still queued must not be released while the mode is on")
 
-            // The next release drains the rest. `second` may have been handed out by the
-            // first drain before the mode flipped back on, so `second` and `third` can be
-            // released by different drains — the global order across drains is scheduling,
-            // not arrival. Every waiter completing is what must hold.
+            // `second` and `third` can be released by different drains, so the order across drains is
+            // scheduling, not arrival; only every waiter completing must hold.
             svc.setEnabled(false)
             withTimeout(5_000) { rest.awaitAll() }
             assertTrue(order.containsAll(listOf("first", "second", "third")))
@@ -365,11 +361,8 @@ class MaintenanceModeServiceTest {
     @Test
     fun `two switches-off in quick succession release every waiter once and drain the queue`() =
         runBlocking {
-            // One release slot at a time, so within one drain the waiters leave in arrival
-            // order. Two rapid toggles start two overlapping drains, though, and which
-            // drain's acquire suspends first — scheduling, not arrival — decides the global
-            // release order. What must hold is that every waiter is handed out exactly once
-            // and the queue empties; per-drain order is pinned by the single-toggle test.
+            // Two rapid toggles start overlapping drains, so the global release order is scheduling, not
+            // arrival: only exactly-once release and an empty queue hold (order: the single-toggle test).
             newService(MaintenanceConfig(releaseConcurrency = 1))
             svc.setEnabled(true)
 
@@ -385,9 +378,7 @@ class MaintenanceModeServiceTest {
             yield()
             assertEquals(3, svc.queueDepth())
 
-            // The second toggle starts a second drain while the first may still be running;
-            // both must take waiters from the head of the queue, so none is skipped or
-            // handed out twice.
+            // Both overlapping drains take from the queue head, so none is skipped or handed out twice.
             svc.setEnabled(false)
             svc.setEnabled(false)
             withTimeout(5_000) { waiters.awaitAll() }
@@ -549,7 +540,7 @@ class MaintenanceModeServiceTest {
     fun `gated sheds an unadmitted start while the drain is running instead of parking it`() =
         runBlocking {
             // A start queued behind a process that is going away could only end UNKNOWN, so it
-            // is shed at once — and shed means shed: it never enters the queue (root §12 rule 5).
+            // is shed at once — and shed means shed: it never enters the queue (ADR-0047 rule 5).
             newService(isDraining = { true })
             var ran = false
 

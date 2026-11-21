@@ -91,9 +91,8 @@ class DispatchGroupServiceTest {
 
     // ── create: the size bounds, checked before any other work ────────────────────────
 
-    // The group is the multiplication §12 rule 4 asks a local, explicit bound for: N questions
-    // from one call. Both refusals must land before any row exists, so a refused group is never
-    // observably partial.
+    // ADR-0047 rule 4: N questions from one call need a local bound; both refusals land before any
+    // row exists, so a refused group is never observably partial.
     @Test
     fun `create refuses an empty group and a group over maxGroupSize, registering nothing`() =
         runTest {
@@ -168,9 +167,8 @@ class DispatchGroupServiceTest {
             coVerify(exactly = 0) { repo.createGroup(any(), any(), any(), any()) }
         }
 
-    // The target's inputs are gated exactly as a single dispatch's: a required input neither the
-    // caller's params nor the answer nor the origin run's stored inputs can supply refuses the
-    // whole group before any row exists. ADR-0101.
+    // The target's inputs are gated as a single dispatch's: an unsatisfiable required input refuses
+    // the whole group before any row exists. ADR-0101.
     @Test
     fun `create refuses a target whose required inputs cannot be satisfied`() =
         runTest {
@@ -339,9 +337,8 @@ class DispatchGroupServiceTest {
             assertNull(service().aggregateAnswers(5))
         }
 
-    // QuestionsService.answer bounds no answer's length, so N unbounded answers are the one way
-    // the aggregate can outgrow what a start should carry. The refusal is an exception the fire
-    // path settles FAILED — never a silently truncated payload.
+    // `QuestionsService.answer` bounds no answer's length, so the aggregate is capped here; the
+    // refusal settles the fire FAILED, never a truncated payload.
     @Test
     fun `aggregateAnswers refuses an aggregate over the byte bound`() =
         runTest {
@@ -368,11 +365,8 @@ class DispatchGroupServiceTest {
 
     // ── secrets ───────────────────────────────────────────────────────────────────────
 
-    // The two values a group carries — a secret `params` entry and the operator's answers — are
-    // stored and delivered by name, never echoed: not in a log line, not in a refusal message, and
-    // not in the failure the group settles with, which `markFailed` stores and the dispatch API
-    // serves. The param name is snapshotted with the row so the fire path can redact the value it
-    // delivers. §12 rule 7, ADR-0052.
+    // ADR-0047 rule 7, ADR-0052: a secret param and the operator's answers are never echoed in a log
+    // line, a refusal, or the failure `markFailed` stores and the dispatch API serves.
     @Test
     fun `a secret param value and a secret answer reach no log line or failure message`() =
         runTest {

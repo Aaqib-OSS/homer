@@ -88,10 +88,8 @@ class AgentFilePathResolverTest {
 
     @Test
     fun `a path that does not exist is gated against the real agent root, not the lexical one (ADR-0047)`() {
-        // The search path is reached through a symlink, so the agent directory's lexical path and its
-        // real path differ: the nested-agent gate must still run on the LEXICAL candidate for a path
-        // that does not exist, or the realpath relativization below the real root reads as a nested
-        // agent and refuses a legitimate new file.
+        // The search path is a symlink, so lexical and real paths differ: for a missing path the nested-agent gate must
+        // run on the LEXICAL candidate, or realpath relativization reads a legitimate new file as a nested agent.
         val linkParent = Files.createTempDirectory("agent-file-paths-link")
         try {
             val linkedRoot = Files.createSymbolicLink(linkParent.resolve("link"), root)

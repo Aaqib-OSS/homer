@@ -8,19 +8,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Tests for [matchesTokenConstantTime] and a static regression guard for its
- * use in the production bearer-auth path.
- *
- * **Important honesty note:** because [matchesTokenConstantTime] returns the
- * same boolean as `expected == provided`, behavioural assertions alone cannot
- * detect a silent revert of the production call site to plain string
- * equality. Wall-clock timing assertions are too flaky on a JIT runtime to
- * stand in as a regression guard. We therefore combine:
- *
- *  1. Behavioural tests proving the helper itself returns false for any
- *     mismatch position and length, and true for equal strings, and
- *  2. A static source-grep test that fails if `AuthWiring.kt` reverts the
- *     auth lookup to `it.value.token ==` or stops referencing the helper.
+ * Tests for [matchesTokenConstantTime], plus a source-grep guard that `AuthWiring.kt` still uses it.
+ * The helper returns the same boolean as `==`, so behaviour cannot catch a revert and timing is too flaky.
  */
 class MatchesTokenConstantTimeTest {
     private val expected = "s3cret-bearer-token-XYZ"
@@ -65,12 +54,7 @@ class MatchesTokenConstantTimeTest {
         assertFalse(matchesTokenConstantTime(expected, ""))
     }
 
-    /**
-     * Regression guard: fails if [matchesTokenConstantTime] is removed from
-     * the production auth path or if the lookup reverts to plain string
-     * equality. This catches silent reverts that behavioural tests alone
-     * cannot, since `==` returns the same boolean as the helper.
-     */
+    /** Fails if [matchesTokenConstantTime] leaves the production auth path or the lookup reverts to `==`. */
     @Test
     fun `production auth path uses matchesTokenConstantTime not equality`() {
         val bearerTokenKt = Paths.get("src/main/kotlin/homer/app/auth/BearerToken.kt")
