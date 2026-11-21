@@ -191,11 +191,9 @@ class HmacAuthTest {
         }
 
     @Test
-    fun `hmac mode authenticates on a path outside key (deprecated) endpoints scope`() =
+    fun `hmac mode authenticates on a path outside key removed endpoints field`() =
         testApplication {
-            // A valid signature now authenticates regardless of the key's endpoints
-            // field — that field is deprecated and unenforced here; authorization
-            // by grants moves to the route (ADR-0037).
+            // `endpoints` is removed (startup rejects it, ADR-0037); the provider ignores it.
             val secret = "shh"
             val body = "{}"
             val sig = hexSha256(secret, body)

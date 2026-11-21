@@ -6,7 +6,7 @@ import java.io.File
 import kotlin.test.Test
 
 /**
- * Report-only architecture rules (ADR-0082). Every rule restates one that app/CLAUDE.md or the root
+ * Architecture rules (ADR-0082). Every rule restates one that app/CLAUDE.md or the root
  * CLAUDE.md documents; the rule table in app/CLAUDE.md "Architecture tests" names each source.
  */
 class ArchitectureRulesTest {

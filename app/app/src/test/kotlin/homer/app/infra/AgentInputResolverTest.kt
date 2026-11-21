@@ -602,10 +602,7 @@ class AgentInputResolverTest {
 
     @Test
     fun `resolve - two JsonPath params with different raw values - each uses its own raw`() {
-        // Regression: prior implementation cached the first param's parsed JsonPath
-        // DocumentContext across the entire loop, so a second JsonPath param would
-        // read from the first param's raw value instead of its own. This will matter
-        // once BODY params land — each param must parse its own raw exactly once.
+        // Each param must parse its own raw value, not reuse the first param's JsonPath document.
         val agent =
             AgentFixtures.simpleAgent().copy(
                 inputs =

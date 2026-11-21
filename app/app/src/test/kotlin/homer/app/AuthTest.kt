@@ -29,8 +29,8 @@ import kotlin.test.assertEquals
  *
  * Runs the production provider("auth-bearer") ([buildBearerProvider]): a
  * valid token authenticates regardless of request path. `TokenConfig.endpoints`
- * is a deprecated, tolerated-but-unenforced field here (see ADR-0037);
- * authorization by grants happens at the route, not in this provider.
+ * is removed (startup rejects it, ADR-0037) and ignored here; authorization
+ * by grants happens at the route, not in this provider.
  */
 class AuthTest {
     // Token definitions used across tests
@@ -110,7 +110,7 @@ class AuthTest {
             )
         }
 
-    // ===== Test 3: a valid token authenticates regardless of its (deprecated) endpoints scope =====
+    // ===== Test 3: a valid token authenticates regardless of its removed `endpoints` field =====
 
     @Test
     fun `valid token with prefix wildcard authenticates on a route outside that prefix`() =
@@ -162,7 +162,7 @@ class AuthTest {
             )
         }
 
-    // ===== Test 6: a token scoped (deprecated field) to one prefix authenticates on both routes =====
+    // ===== Test 6: a token carrying a removed `endpoints` prefix authenticates on both routes =====
 
     @Test
     fun `prefix-scoped token authenticates both on its prefix and outside it`() =
@@ -191,7 +191,7 @@ class AuthTest {
             )
         }
 
-    // ===== Test 7: a token scoped (deprecated field) to one exact path authenticates on another too =====
+    // ===== Test 7: a token carrying a removed exact-path `endpoints` entry authenticates on another too =====
 
     @Test
     fun `exact-path-scoped token authenticates both on that path and on other paths`() =
