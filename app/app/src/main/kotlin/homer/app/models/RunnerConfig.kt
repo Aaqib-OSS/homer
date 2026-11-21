@@ -393,9 +393,9 @@ data class ExtraUploadSpec(
     companion object {
         // workdir/artifacts are synced down; .homer/agent is the uploaded agent
         // dir; .homer/bin + .homer/mcp.json are the question tooling uploaded
-        // with the workspace — an extra landing there would overwrite it.
+        // with the workspace; .homer/env holds the ssh runner's env files.
         private val RESERVED_REMOTE_PATHS =
-            listOf("workdir", "artifacts", ".homer/agent", ".homer/bin", ".homer/mcp.json")
+            listOf("workdir", "artifacts", ".homer/agent", ".homer/bin", ".homer/mcp.json", ".homer/env")
     }
 }
 

@@ -158,7 +158,7 @@ extraUploads:
 
     @Test
     fun `extraUploads rejects reserved remote paths`() {
-        listOf("workdir", "artifacts", ".homer/agent", ".homer/bin", ".homer/mcp.json").forEach { reserved ->
+        listOf("workdir", "artifacts", ".homer/agent", ".homer/bin", ".homer/mcp.json", ".homer/env").forEach { reserved ->
             assertFailsWith<IllegalArgumentException>("expected '$reserved' to be reserved") {
                 validate(ExtraUploadSpec(local = "/a", remote = reserved))
             }
@@ -174,6 +174,7 @@ extraUploads:
         validate(ExtraUploadSpec(local = "/a", remote = "workdir-tools"))
         validate(ExtraUploadSpec(local = "/a", remote = ".homer/binaries"))
         validate(ExtraUploadSpec(local = "/a", remote = ".homer/scripts"))
+        validate(ExtraUploadSpec(local = "/a", remote = ".homer/envs"))
     }
 
     @Test

@@ -958,7 +958,7 @@
       "required": ["local", "remote"],
       "properties": {
         "local": { "type": "string", "minLength": 1, "description": "Host file or directory; must exist at startup." },
-        "remote": { "type": "string", "minLength": 1, "description": "Destination relative to the remote projectRoot, in normalized form (no '.', '..', '//', or trailing '/'); must not equal, live under, or be an ancestor of workdir/, artifacts/, .homer/agent, .homer/bin, .homer/mcp.json." },
+        "remote": { "type": "string", "minLength": 1, "description": "Destination relative to the remote projectRoot, in normalized form (no '.', '..', '//', or trailing '/'); must not equal, live under, or be an ancestor of workdir/, artifacts/, .homer/agent, .homer/bin, .homer/mcp.json, .homer/env." },
         "env": { "type": ["string", "null"], "description": "Workspace env var repointed at the remote copy. Must not start with HMR_." }
       }
     },
