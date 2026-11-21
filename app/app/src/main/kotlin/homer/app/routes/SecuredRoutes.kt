@@ -47,6 +47,13 @@ internal suspend fun ApplicationCall.respondNoStore(body: Any) {
 }
 
 /**
+ * The denial: the exact body-less `404` a path that was never mounted answers. An `ErrorResponse`
+ * here would let a grant-probing caller tell a denied handler from a missing route, which is the
+ * existence the denial exists to hide (ADR-0047 rule 3).
+ */
+internal suspend fun ApplicationCall.respondNotFound() = respond(HttpStatusCode.NotFound)
+
+/**
  * The secured /api/v1 routes (everything under the bearer/HMAC authenticate wrapper), mounting the
  * per-resource files under routes/ in registration order.
  */

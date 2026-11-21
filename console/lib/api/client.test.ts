@@ -701,6 +701,7 @@ describe('HomerApiClient — endpoints', () => {
     ['getAgents', () => homerApi.getAgents(), '/api/v1/agents', undefined],
     ['getAgentLangGraph', () => homerApi.getAgentLangGraph('a b'), '/api/v1/agents/a%20b/langgraph', undefined],
     ['reloadAgents', () => homerApi.reloadAgents(), '/api/v1/agents/reload', 'POST'],
+    ['getAgentLoadErrors', () => homerApi.getAgentLoadErrors(), '/api/v1/agents/load-errors', undefined],
     ['retryProcess', () => homerApi.retryProcess(7), '/api/v1/processes/7/retry', 'POST'],
     ['cancelContinuation', () => homerApi.cancelContinuation(5), '/api/v1/continuations/5', 'DELETE'],
     ['getHeartbeat', () => homerApi.getHeartbeat(), '/api/v1/heartbeat', undefined],

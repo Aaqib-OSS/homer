@@ -4,6 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import {
   useAgents,
+  useAgentLoadErrors,
+  useReloadAgents,
   useSaveAgentFile,
   useDeleteAgentFile,
   useCreateAgent,
@@ -56,6 +58,8 @@ const { HomerApiError } = vi.hoisted(() => {
 vi.mock('./client', () => ({
   homerApi: {
     getAgents: vi.fn(),
+    getAgentLoadErrors: vi.fn(),
+    reloadAgents: vi.fn(),
     writeAgentFile: vi.fn(),
     deleteAgentFile: vi.fn(),
     createAgent: vi.fn(),
@@ -121,6 +125,58 @@ describe('useAgents', () => {
       'Mike',
       'zeta',
     ]);
+  });
+});
+
+describe('useAgentLoadErrors', () => {
+  let client: QueryClient;
+
+  beforeEach(() => {
+    client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    vi.clearAllMocks();
+  });
+
+  it('reads the last scan errors for an admin', async () => {
+    vi.mocked(homerApi.getAgentLoadErrors).mockResolvedValue({ errors: ['bad.yaml'], truncated: 2 });
+
+    const { result } = renderHook(() => useAgentLoadErrors(true), { wrapper: wrapper(client) });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual({ errors: ['bad.yaml'], truncated: 2 });
+    expect(homerApi.getAgentLoadErrors).toHaveBeenCalled();
+  });
+
+  it('never calls the admin-only endpoint when it is disabled', () => {
+    const { result } = renderHook(() => useAgentLoadErrors(false), { wrapper: wrapper(client) });
+
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(homerApi.getAgentLoadErrors).not.toHaveBeenCalled();
+  });
+});
+
+describe('useReloadAgents', () => {
+  let client: QueryClient;
+
+  beforeEach(() => {
+    client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    vi.clearAllMocks();
+  });
+
+  it('invalidates the agent list and the load errors it just rescanned', async () => {
+    vi.mocked(homerApi.reloadAgents).mockResolvedValue({
+      added: [],
+      updated: [],
+      removed: [],
+      errors: [],
+    });
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+
+    const { result } = renderHook(() => useReloadAgents(), { wrapper: wrapper(client) });
+    await result.current.mutateAsync();
+
+    const keys = invalidate.mock.calls.map((c) => c[0]?.queryKey);
+    expect(keys).toContainEqual(queryKeys.agents());
+    expect(keys).toContainEqual(queryKeys.agentLoadErrors());
   });
 });
 

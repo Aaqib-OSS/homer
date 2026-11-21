@@ -145,6 +145,7 @@ internal val ROUTE_AUTHZ: List<RouteAuthz> =
         operator("POST /api/v1/maintenance", "admin; 404 like an unmounted path", 404, body = """{"enabled":true}"""),
         operator("GET /api/v1/agents", "rows filtered to agents with any grant", 200, listFiltered = true),
         operator("POST /api/v1/agents/reload", "admin", 403),
+        operator("GET /api/v1/agents/load-errors", "admin; 404 like an unmounted path", 404),
         operator("POST /api/v1/agents", "EDIT on the body's name", 403, body = """{"name":"{agentName}"}"""),
         operator("GET /api/v1/agents/{agentName}/files", EDIT_FILES, 404),
         operator("GET /api/v1/agents/{agentName}/files/{...}", EDIT_FILES, 404),

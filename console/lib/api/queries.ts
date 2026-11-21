@@ -25,6 +25,7 @@ export const queryKeys = {
   allProcessDetails: () => ['process'] as const,
   process: (id: number) => ['process', id] as const,
   agents: () => ['agents'] as const,
+  agentLoadErrors: () => ['agent-load-errors'] as const,
   artifactContent: (processId: number, filename: string) =>
     ['artifact-content', processId, filename] as const,
   // Prefix of every artifactContent key for one process — used to invalidate
@@ -130,6 +131,19 @@ export function useAgents() {
   });
 }
 
+/**
+ * The last agent scan's load errors, admin-only: [enabled] is false for a non-admin, whose request
+ * would 404. No poll — a scan only runs on startup and on reload, which invalidates this key.
+ */
+export function useAgentLoadErrors(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.agentLoadErrors(),
+    queryFn: () => homerApi.getAgentLoadErrors(),
+    enabled,
+    staleTime: appConfig.polling.agentsCacheTime,
+  });
+}
+
 // Single Agent Query (derived from cached agents list)
 export function useAgent(name: string) {
   const { data, ...rest } = useAgents();
@@ -154,6 +168,8 @@ export function useReloadAgents() {
     mutationFn: () => homerApi.reloadAgents(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.agents() });
+      // The reload rescanned, so the served errors are the new scan's.
+      queryClient.invalidateQueries({ queryKey: queryKeys.agentLoadErrors() });
     },
   });
 }

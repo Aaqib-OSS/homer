@@ -1,9 +1,6 @@
 package homer.app.routes
 
 import homer.app.models.SetMaintenanceRequest
-import io.ktor.http.HttpStatusCode
-import io.ktor.server.application.ApplicationCall
-import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
@@ -28,10 +25,3 @@ internal fun Route.maintenanceRoutes(deps: MaintenanceDeps) {
         }
     }
 }
-
-/**
- * The denial: the exact `404` a path that was never mounted answers, body included — an
- * `ErrorResponse` here would let a grant-probing caller tell a denied handler from a
- * missing route, which is the existence the denial exists to hide.
- */
-private suspend fun ApplicationCall.respondNotFound() = respond(HttpStatusCode.NotFound)

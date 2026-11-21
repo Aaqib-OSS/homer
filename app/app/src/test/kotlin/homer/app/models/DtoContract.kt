@@ -36,6 +36,7 @@ internal object DtoContract {
             ExecuteResponse.serializer(),
             AgentsListResponse.serializer(),
             AgentReloadResult.serializer(),
+            AgentLoadErrorsResponse.serializer(),
             AgentReloadFrame.serializer(),
             LangGraphGraphInfo.serializer(),
             LangGraphRunStatus.serializer(),
