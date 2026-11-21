@@ -116,6 +116,8 @@ tasks.test {
     useJUnitPlatform()
     jvmArgs("-XX:+EnableDynamicAgentLoading")
     jvmArgs("-Dnet.bytebuddy.experimental=true")
+    // DescriptorOpen's FFM downcalls; without this the JDK warns on the restricted methods.
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
     maxHeapSize = "2g"
     // Parallel forks; test capture files are per worker.
     maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
@@ -268,6 +270,7 @@ pitest {
 application {
     // Define the Fully Qualified Name for the application main class
     mainClass = "homer.app.ApplicationKt"
+    applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
 }
 
 dependencyCheck {
@@ -379,6 +382,8 @@ tasks.shadowJar {
     archiveVersion.set("0.0.2")
     manifest {
         attributes["Main-Class"] = "homer.app.ApplicationKt"
+        // Grants `java -jar` the native access DescriptorOpen's FFM downcalls need, whatever the launcher.
+        attributes["Enable-Native-Access"] = "ALL-UNNAMED"
     }
     // Exclude signature files to avoid conflicts
     exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")

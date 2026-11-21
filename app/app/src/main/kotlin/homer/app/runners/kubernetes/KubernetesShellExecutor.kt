@@ -1,5 +1,6 @@
 package homer.app.runners.kubernetes
 
+import homer.app.exceptions.CommandExecutionException
 import homer.app.exceptions.OutputCapExceededException
 import homer.app.exceptions.PodFailedDuringExecutionException
 import homer.app.infra.KillCause
@@ -71,8 +72,8 @@ class KubernetesShellExecutor(
             val argv = envPrefix(env) + (pgidFile?.let { podControl.setsidLaunch(it, command) } ?: command)
             val remote = execClient.start(namespace, podName, argv, stdin = stdIn != null)
 
-            val outPump = OutputPump(remote.inputStream, stdOut, stdOutFilter)
-            val errPump = OutputPump(remote.errorStream, stdErr, filter = null)
+            val outPump = OutputPump(remote.inputStream, stdOut, stdOutFilter, "stdout")
+            val errPump = OutputPump(remote.errorStream, stdErr, filter = null, stream = "stderr")
 
             val stdInJob = stdIn?.let { feedStdin(remote, it) }
 
@@ -94,6 +95,13 @@ class KubernetesShellExecutor(
             errPump.join(pumpJoinMs)
 
             failIfOverCap(stdOut, stdErr)
+
+            // A pump that lost its artifact fails the step whatever the command's exit code: an
+            // output that fit the exec buffer leaves a clean exit behind a lost stream (ADR-0063).
+            val lost = listOf(outPump, errPump).firstOrNull { it.failed }
+            if (lost != null) {
+                throw CommandExecutionException("${lost.stream} could not be written", -1, command.first())
+            }
 
             CommandResult(exitCode = exitCodeOf(remote, env), stdOut = stdOut, stdErr = stdErr)
         }
@@ -300,10 +308,17 @@ class KubernetesShellExecutor(
         private val source: InputStream,
         private val target: Path,
         filter: OutputLineFilter?,
+        /** The stream [target] holds, as the failure reason names it. */
+        val stream: String,
     ) {
         private val lock = Any()
         private var file: OutputStream? = null
         private var abandoned = false
+
+        /** Set when the pump lost [target] while not abandoned: the step fails on it (ADR-0063). */
+        @Volatile
+        var failed = false
+            private set
 
         private val thread =
             Thread {
@@ -317,6 +332,7 @@ class KubernetesShellExecutor(
                     out.use { source.copyTo(it) }
                 } catch (e: Exception) {
                     logger.warn("Failed to pump pod output to {}", target, e)
+                    synchronized(lock) { if (!abandoned) failed = true }
                     // Nobody drains the stream any more: close it so the pod command is not left
                     // blocked on a full buffer until its timeout.
                     runCatching { source.close() }

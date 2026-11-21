@@ -4,6 +4,7 @@
 
 ### Homer
 
+- **Fixed: `agentdebug run --cmd N` with an out-of-range N** — An index below 0 or at/above the agent's command count now fails before anything runs instead of silently running nothing.
 - **Added: `isErrorExitCode` on `!<claude>` commands** — An `is_error` result returns this exit code instead of failing as malformed, and is not retried.
 - **Added: `GET /api/v1/auth/me` answers a bearer token** — A request carrying a bearer token gets that token's name, role and grants, and the route is mounted whenever a `bearer` or `password` scheme is configured.
 - **BREAKING: an agent's `@SYSENV:` names only allowed host variables** — An agent whose `env` references a host variable that neither the new `agentSysEnvAllowlist` config lists nor `globalEnv` references with `@SYSENV:` fails to load, and an agent-file write of one is refused with `422`. See [ADR-0037](docs/adr/0037-grants-authorization.md).
@@ -18,6 +19,7 @@
 - **Fixed: LangGraph run status reads a bounded identity file** — An oversized, linked or non-regular `langgraph.json`, or one behind a symlinked artifacts directory, is ignored instead of read whole on every status poll.
 - **Security: artifacts behind a symlinked artifacts directory are not served** — Artifact downloads and listings, the log tail and the LLM-event stream treat a run's files as not found, and a continuation resumes without the watched run's result, when the run replaced its artifacts directory with a symlink before the read began.
 - **Fixed: a continuation result file that is a FIFO, a link or outside the artifacts directory** — The fire no longer blocks on a FIFO and resumes with no result instead of reading such a file.
+- **Security: artifact reads check the opened file, not its path** — Artifact downloads, the log tail, the LLM-event stream, the LangGraph identity read and a continuation's result read refuse a FIFO, link or other non-regular file swapped in at any time without waiting on it, so such files can no longer hang a stream or make every artifact download fail; on platforms other than Linux and macOS on x86_64 or aarch64 these reads are refused.
 - **Fixed: a failed capacity-eviction workspace delete is retried by the purge sweeps** — The directory is no longer left on disk for good; at most 256 deletes wait for a retry.
 - **BREAKING: `maxQueuedRuns` defaults to 10 × `maxParallelRuns`** — Runs waiting for a parallel-run slot or, under `WAIT`, a lock share a cap that is bounded by default; a surplus run fails fast, and `null` (unbounded) is no longer accepted.
 - **BREAKING: runner limits are finite by default** — `concurrency` (default 100 on `server.localRunner`, 10 on `ssh` and `kubernetes`), `kubernetes.maxRunSeconds` (default 86400) and `ssh.sftpTransferTimeoutSeconds` no longer accept `null`. See [ADR-0066](docs/adr/0066-external-pull-runners-and-unified-claim-queue.md).
@@ -31,6 +33,7 @@
 - **Changed: a continuation marks a transformed result too large to deliver** — A resume payload whose result is over the 4 MiB transform cap now carries `resultTooLarge: true`, and `homer_fanout` reports it on stderr. See [ADR-0025](docs/adr/0025-capability-token-result-read.md).
 - **Fixed: a refused ssh exec request is named in the step's error** — A step whose exec request the ssh server refuses (a `ForceCommand`, a restricted shell or a session limit) fails saying the server refused it, instead of only that the channel closed without an exit status.
 - **Fixed: the log streams' `cmd` parameter means the command index everywhere** — `GET /api/v1/stream/processes/{id}/logs` and `/llm-events` serve the step whose command index `cmd` names, on a live run and after a restart, instead of the step at that position in the run's rows — so a run that executes only some of its commands streams each one's own output.
+- **Fixed: a step whose stdout or stderr file cannot be written fails** — The step fails naming the stream instead of reporting the child's exit code when its output fit the pipe buffer.
 
 ### Console
 

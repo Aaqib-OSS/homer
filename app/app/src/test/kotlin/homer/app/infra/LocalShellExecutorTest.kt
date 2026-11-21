@@ -1,5 +1,6 @@
 package homer.app.infra
 
+import homer.app.exceptions.CommandExecutionException
 import homer.app.exceptions.OutputCapExceededException
 import homer.app.fixtures.awaitProcessExit
 import homer.app.models.CommandResult
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.readText
@@ -930,18 +932,63 @@ class LocalShellExecutorTest {
         // its target; the child never stops writing, so it outgrows any pipe size.
         val missingDir = tmp.resolve("no-such-dir")
         val started = System.currentTimeMillis()
-        val result =
+        val thrown =
+            assertFailsWith<CommandExecutionException> {
+                LocalShellExecutor(tmp).cmd(
+                    command = listOf("bash", "-c", "cat /dev/zero"),
+                    stdOut = missingDir.resolve("cmd_0.out"),
+                    stdErr = tmp.resolve("cmd_0.err"),
+                    stdIn = null,
+                    env = emptyMap(),
+                    timeout = 20.seconds,
+                    stdOutFilter = OutputLineFilter { true },
+                )
+            }
+        val elapsedMs = System.currentTimeMillis() - started
+        assertTrue(elapsedMs < 10_000, "child should die of EPIPE quickly, took $elapsedMs ms")
+        assertTrue(thrown.message.orEmpty().contains("stdout"), "the failure must name the lost stream: ${thrown.message}")
+    }
+
+    @Test
+    fun `a pump failure fails the step even when the child exits 0 with a few bytes`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        // The whole output fits the pipe buffer, so the child exits 0 with its stdout lost:
+        // the step must not report that exit code as success (ADR-0063).
+        val thrown =
+            assertFailsWith<CommandExecutionException> {
+                LocalShellExecutor(tmp).cmd(
+                    command = listOf("bash", "-c", "printf hi"),
+                    stdOut = tmp.resolve("no-such-dir/cmd_0.out"),
+                    stdErr = tmp.resolve("cmd_0.err"),
+                    stdIn = null,
+                    env = mapOf("SECRET" to "s3cr3t"),
+                    timeout = 20.seconds,
+                    stdOutFilter = OutputLineFilter { true },
+                )
+            }
+        val reason = thrown.message.orEmpty()
+        assertTrue(reason.contains("stdout"), "the failure must name the lost stream: $reason")
+        assertFalse(reason.contains("hi"), "the failure must not carry the child's output: $reason")
+        assertFalse(reason.contains("s3cr3t"), "the failure must not carry an env value: $reason")
+        assertEquals(-1, thrown.exitCode, "a step that failed without the child's exit contributing records the sentinel")
+    }
+
+    @Test
+    fun `without a filter an unopenable stderr target fails the command`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        // No filter: stdout and stderr are OS redirects ProcessBuilder.start() opens, so an
+        // unopenable target throws there and the step fails (ADR-0063).
+        assertFailsWith<IOException> {
             LocalShellExecutor(tmp).cmd(
-                command = listOf("bash", "-c", "cat /dev/zero"),
-                stdOut = missingDir.resolve("cmd_0.out"),
-                stdErr = tmp.resolve("cmd_0.err"),
+                command = listOf("bash", "-c", "echo hi"),
+                stdOut = tmp.resolve("cmd_0.out"),
+                stdErr = tmp.resolve("no-such-dir/cmd_0.err"),
                 stdIn = null,
                 env = emptyMap(),
                 timeout = 20.seconds,
-                stdOutFilter = OutputLineFilter { true },
             )
-        val elapsedMs = System.currentTimeMillis() - started
-        assertTrue(elapsedMs < 10_000, "child should die of EPIPE quickly, took $elapsedMs ms")
-        assertTrue(result.exitCode != 0, "a child killed by EPIPE must not report success; got ${result.exitCode}")
+        }
     }
 }
