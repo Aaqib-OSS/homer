@@ -443,7 +443,7 @@ commands:
 | `label` | `String` | No | `"cmd"` | Human-readable label shown in the console execution list |
 | `timeout` | `Long` | No | `60` (60 sec) | Command timeout in seconds |
 | `onTimeout` | `OnTimeout` | No | `fail` | What this step's `timeout` does when it expires: `fail` fails the run at once; `stop` stops the run gracefully, running the agent's `onStop:` steps before the run ends. `stop` requires a non-empty agent `onStop:`. See [Graceful stop](#graceful-stop). |
-| `interruptGraceSeconds` | `Int` | No | `30` | Seconds a stopped command may take to exit after Homer signals its process group, before it is killed. `0`..`600`; `0` kills at once. Consulted on any timeout interrupt — the step's own with `onTimeout: stop`, or any step's when the run has a soft deadline (e.g. Kubernetes `gracefulStopSeconds`), even with `onTimeout: fail`; without either, a timeout kills at once. |
+| `interruptGraceSeconds` | `Int` | No | `30` | Seconds a stopped command may take to exit after Homer signals its process group, before it is killed. `0`..`600`; `0` kills at once. Consulted on any timeout interrupt — the step's own with `onTimeout: stop`, or any step's when the run has a soft deadline (e.g. Kubernetes `gracefulStopSeconds`), even with `onTimeout: fail`, and an `onStop:` stop step's own `timeout`, even with `onTimeout: fail`; on a regular step with neither, a timeout kills at once. |
 | `continueIfFail` | `Boolean` | No | `false` | Continue when the command exits non-zero. Timeouts, output-cap kills and other thrown errors fail the agent regardless, even with `continueIfFail`; a `timeout` with `onTimeout: stop` stops the run gracefully instead. |
 | `finishExitCode` | `Int` | No | `null` | Exit code that causes the agent to finish early (successfully) instead of failing |
 | `resultEnvParam` | `List<ResultEnvParam>` | No | `[]` | Extract command outputs to environment variables |
@@ -554,7 +554,7 @@ commands:
 | `label` | `String` | No | `"script"` | Human-readable label shown in the console execution list |
 | `timeout` | `Long` | No | `60` (60 sec) | Script timeout in seconds |
 | `onTimeout` | `OnTimeout` | No | `fail` | What this step's `timeout` does when it expires: `fail` fails the run at once; `stop` stops the run gracefully, running the agent's `onStop:` steps before the run ends. `stop` requires a non-empty agent `onStop:`. See [Graceful stop](#graceful-stop). |
-| `interruptGraceSeconds` | `Int` | No | `30` | Seconds a stopped command may take to exit after Homer signals its process group, before it is killed. `0`..`600`; `0` kills at once. Consulted on any timeout interrupt — the step's own with `onTimeout: stop`, or any step's when the run has a soft deadline (e.g. Kubernetes `gracefulStopSeconds`), even with `onTimeout: fail`; without either, a timeout kills at once. |
+| `interruptGraceSeconds` | `Int` | No | `30` | Seconds a stopped command may take to exit after Homer signals its process group, before it is killed. `0`..`600`; `0` kills at once. Consulted on any timeout interrupt — the step's own with `onTimeout: stop`, or any step's when the run has a soft deadline (e.g. Kubernetes `gracefulStopSeconds`), even with `onTimeout: fail`, and an `onStop:` stop step's own `timeout`, even with `onTimeout: fail`; on a regular step with neither, a timeout kills at once. |
 | `continueIfFail` | `Boolean` | No | `false` | Continue when the command exits non-zero. Timeouts, output-cap kills and other thrown errors fail the agent regardless, even with `continueIfFail`; a `timeout` with `onTimeout: stop` stops the run gracefully instead. |
 | `finishExitCode` | `Int` | No | `null` | Exit code that causes the agent to finish early (successfully) instead of failing |
 | `resultEnvParam` | `List<ResultEnvParam>` | No | `[]` | Extract script outputs to environment variables |
@@ -687,7 +687,7 @@ commands:
 | `label` | `String` | No | `"claude"` | Human-readable label shown in the console execution list |
 | `timeout` | `Long` | No | `60` (60 sec) | Command timeout in seconds |
 | `onTimeout` | `OnTimeout` | No | `fail` | What this step's `timeout` does when it expires: `fail` fails the run at once; `stop` stops the run gracefully, running the agent's `onStop:` steps before the run ends. `stop` requires a non-empty agent `onStop:`. See [Graceful stop](#graceful-stop). |
-| `interruptGraceSeconds` | `Int` | No | `30` | Seconds a stopped command may take to exit after Homer signals its process group, before it is killed. `0`..`600`; `0` kills at once. Consulted on any timeout interrupt — the step's own with `onTimeout: stop`, or any step's when the run has a soft deadline (e.g. Kubernetes `gracefulStopSeconds`), even with `onTimeout: fail`; without either, a timeout kills at once. A stopped `!<claude>` attempt is still cost-accounted. |
+| `interruptGraceSeconds` | `Int` | No | `30` | Seconds a stopped command may take to exit after Homer signals its process group, before it is killed. `0`..`600`; `0` kills at once. Consulted on any timeout interrupt — the step's own with `onTimeout: stop`, or any step's when the run has a soft deadline (e.g. Kubernetes `gracefulStopSeconds`), even with `onTimeout: fail`, and an `onStop:` stop step's own `timeout`, even with `onTimeout: fail`; on a regular step with neither, a timeout kills at once. A stopped `!<claude>` attempt is still cost-accounted. |
 | `continueIfFail` | `Boolean` | No | `false` | Continue when the command exits non-zero. Timeouts, output-cap kills and other thrown errors fail the agent regardless, even with `continueIfFail`; a `timeout` with `onTimeout: stop` stops the run gracefully instead. |
 | `finishExitCode` | `Int` | No | `null` | Exit code that causes the agent to finish early (successfully) instead of failing |
 | `resultEnvParam` | `List<ResultEnvParam>` | No | `[]` | Extract Claude outputs to environment variables |
@@ -935,7 +935,7 @@ commands:
 | `label` | `String` | No | `"codex"` | Human-readable label shown in the console execution list |
 | `timeout` | `Long` | No | `60` (60 sec) | Command timeout in seconds |
 | `onTimeout` | `OnTimeout` | No | `fail` | What this step's `timeout` does when it expires: `fail` fails the run at once; `stop` stops the run gracefully, running the agent's `onStop:` steps before the run ends. `stop` requires a non-empty agent `onStop:`. See [Graceful stop](#graceful-stop). |
-| `interruptGraceSeconds` | `Int` | No | `30` | Seconds a stopped command may take to exit after Homer signals its process group, before it is killed. `0`..`600`; `0` kills at once. Consulted on any timeout interrupt — the step's own with `onTimeout: stop`, or any step's when the run has a soft deadline (e.g. Kubernetes `gracefulStopSeconds`), even with `onTimeout: fail`; without either, a timeout kills at once. A stopped `!<codex>` attempt is still cost-accounted. |
+| `interruptGraceSeconds` | `Int` | No | `30` | Seconds a stopped command may take to exit after Homer signals its process group, before it is killed. `0`..`600`; `0` kills at once. Consulted on any timeout interrupt — the step's own with `onTimeout: stop`, or any step's when the run has a soft deadline (e.g. Kubernetes `gracefulStopSeconds`), even with `onTimeout: fail`, and an `onStop:` stop step's own `timeout`, even with `onTimeout: fail`; on a regular step with neither, a timeout kills at once. A stopped `!<codex>` attempt is still cost-accounted. |
 | `continueIfFail` | `Boolean` | No | `false` | Continue when the command exits non-zero. Timeouts, output-cap kills and other thrown errors fail the agent regardless, even with `continueIfFail`; a `timeout` with `onTimeout: stop` stops the run gracefully instead. |
 | `finishExitCode` | `Int` | No | `null` | Exit code that causes the agent to finish early (successfully) instead of failing |
 | `resultEnvParam` | `List<ResultEnvParam>` | No | `[]` | Extract Codex outputs to environment variables |
@@ -1089,7 +1089,7 @@ commands:
 | `label` | `String` | No | `"opencode"` | Human-readable label shown in the console execution list |
 | `timeout` | `Long` | No | `60` (60 sec) | Command timeout in seconds |
 | `onTimeout` | `OnTimeout` | No | `fail` | What this step's `timeout` does when it expires: `fail` fails the run at once; `stop` stops the run gracefully, running the agent's `onStop:` steps before the run ends. `stop` requires a non-empty agent `onStop:`. See [Graceful stop](#graceful-stop). |
-| `interruptGraceSeconds` | `Int` | No | `30` | Seconds a stopped command may take to exit after Homer signals its process group, before it is killed. `0`..`600`; `0` kills at once. Consulted on any timeout interrupt — the step's own with `onTimeout: stop`, or any step's when the run has a soft deadline (e.g. Kubernetes `gracefulStopSeconds`), even with `onTimeout: fail`; without either, a timeout kills at once. A stopped `!<opencode>` attempt is still cost-accounted. |
+| `interruptGraceSeconds` | `Int` | No | `30` | Seconds a stopped command may take to exit after Homer signals its process group, before it is killed. `0`..`600`; `0` kills at once. Consulted on any timeout interrupt — the step's own with `onTimeout: stop`, or any step's when the run has a soft deadline (e.g. Kubernetes `gracefulStopSeconds`), even with `onTimeout: fail`, and an `onStop:` stop step's own `timeout`, even with `onTimeout: fail`; on a regular step with neither, a timeout kills at once. A stopped `!<opencode>` attempt is still cost-accounted. |
 | `continueIfFail` | `Boolean` | No | `false` | Continue when the command exits non-zero. Timeouts, output-cap kills and other thrown errors fail the agent regardless, even with `continueIfFail`; a `timeout` with `onTimeout: stop` stops the run gracefully instead. |
 | `finishExitCode` | `Int` | No | `null` | Exit code that causes the agent to finish early (successfully) instead of failing |
 | `resultEnvParam` | `List<ResultEnvParam>` | No | `[]` | Extract opencode outputs to environment variables |
@@ -1295,7 +1295,7 @@ commands:
 | `label` | `String` | No | `"langgraph"` | Human-readable label shown in the console execution list |
 | `timeout` | `Long` | No | `60` (60 sec) | Command timeout in seconds |
 | `onTimeout` | `OnTimeout` | No | `fail` | What this step's `timeout` does when it expires: `fail` fails the run at once; `stop` stops the run gracefully, running the agent's `onStop:` steps before the run ends. `stop` requires a non-empty agent `onStop:`. See [Graceful stop](#graceful-stop). |
-| `interruptGraceSeconds` | `Int` | No | `30` | Seconds a stopped command may take to exit after Homer signals its process group, before it is killed. `0`..`600`; `0` kills at once. Consulted on any timeout interrupt — the step's own with `onTimeout: stop`, or any step's when the run has a soft deadline (e.g. Kubernetes `gracefulStopSeconds`), even with `onTimeout: fail`; without either, a timeout kills at once. |
+| `interruptGraceSeconds` | `Int` | No | `30` | Seconds a stopped command may take to exit after Homer signals its process group, before it is killed. `0`..`600`; `0` kills at once. Consulted on any timeout interrupt — the step's own with `onTimeout: stop`, or any step's when the run has a soft deadline (e.g. Kubernetes `gracefulStopSeconds`), even with `onTimeout: fail`, and an `onStop:` stop step's own `timeout`, even with `onTimeout: fail`; on a regular step with neither, a timeout kills at once. |
 | `continueIfFail` | `Boolean` | No | `false` | Continue when the command exits non-zero. Timeouts, output-cap kills and other thrown errors fail the agent regardless, even with `continueIfFail`; a `timeout` with `onTimeout: stop` stops the run gracefully instead. |
 | `finishExitCode` | `Int` | No | `null` | Exit code that causes the agent to finish early (successfully) instead of failing |
 | `resultEnvParam` | `List<ResultEnvParam>` | No | `[]` | Extract runtime outputs to environment variables |
@@ -1405,7 +1405,7 @@ commands:
 | `label` | `String` | No | `"runnerCmd"` | Human-readable label shown in the console execution list |
 | `timeout` | `Long` | No | `60` (60 sec) | `execute` timeout in seconds (`check` expressions each get a fixed 60 s, not configurable) |
 | `onTimeout` | `OnTimeout` | No | `fail` | What this step's `timeout` does when it expires: `fail` fails the run at once; `stop` stops the run gracefully, running the agent's `onStop:` steps before the run ends. `stop` requires a non-empty agent `onStop:`. See [Graceful stop](#graceful-stop). |
-| `interruptGraceSeconds` | `Int` | No | `30` | Seconds a stopped `execute` may take to exit after Homer signals its process group, before it is killed. `0`..`600`; `0` kills at once. Consulted on any timeout interrupt — the step's own with `onTimeout: stop`, or any step's when the run has a soft deadline (e.g. Kubernetes `gracefulStopSeconds`), even with `onTimeout: fail`; without either, a timeout kills at once. |
+| `interruptGraceSeconds` | `Int` | No | `30` | Seconds a stopped `execute` may take to exit after Homer signals its process group, before it is killed. `0`..`600`; `0` kills at once. Consulted on any timeout interrupt — the step's own with `onTimeout: stop`, or any step's when the run has a soft deadline (e.g. Kubernetes `gracefulStopSeconds`), even with `onTimeout: fail`, and an `onStop:` stop step's own `timeout`, even with `onTimeout: fail`; on a regular step with neither, a timeout kills at once. |
 | `continueIfFail` | `Boolean` | No | `false` | Continue when the command exits non-zero. Timeouts, output-cap kills and other thrown errors fail the agent regardless, even with `continueIfFail`; a `timeout` with `onTimeout: stop` stops the run gracefully instead. |
 | `finishExitCode` | `Int` | No | `null` | Exit code that causes the agent to finish early (successfully) instead of failing |
 | `resultEnvParam` | `List<ResultEnvParam>` | No | `[]` | Extract command outputs to environment variables |
@@ -1549,9 +1549,11 @@ agent definition. A stop step's `resultEnvParam` `envName`s are checked at load 
 **Interrupting the step.** `interruptGraceSeconds` (default `30`, `0`..`600`) is how long an
 interrupted step may take to exit after Homer signals its process group, before it is killed; `0`
 kills at once. It applies whenever a **timeout** interrupts the step — the step's own `timeout`
-with `onTimeout: stop`, and every step of a run with a soft deadline, whose timeout is capped at
-that deadline, even with `onTimeout: fail`. A run with neither still kills an expired step at
-once, exactly as it always has, and no other failure path uses the grace. A
+with `onTimeout: stop`, every step of a run with a soft deadline, whose timeout is capped at
+that deadline, even with `onTimeout: fail`, and every `onStop:` stop step, whose own `timeout`
+runs under the grace even with `onTimeout: fail` (a stop step cannot declare `onTimeout: stop`).
+A regular step of a run with neither still kills an expired step at once, exactly as it always
+has, and no other failure path uses the grace. A
 stopped `!<claude>` / `!<codex>` / `!<opencode>` step is still **cost-accounted**: its spend and CLI
 session id are recorded on the interrupted step, so the run's cost is complete even though the run
 failed, and the session id is handed to the stop steps as `HMR_STOP_SESSION_ID`.
