@@ -93,7 +93,7 @@ internal class SessionSpendPricing(
                 null
             } catch (e: CancellationException) {
                 throw e
-            } catch (_: Throwable) {
+            } catch (_: Exception) {
                 return SessionSpendOutcome.Failed("lookup failed")
             }
         val total = sumNumbers(value) ?: return SessionSpendOutcome.Failed("costPath yielded no number")
@@ -129,7 +129,7 @@ internal class SessionSpendPricing(
             null
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Throwable) {
+        } catch (_: Exception) {
             null
         }
 
@@ -213,7 +213,7 @@ internal class SessionSpendPricing(
             null
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Throwable) {
+        } catch (_: Exception) {
             null
         }
 
@@ -226,7 +226,7 @@ internal class SessionSpendPricing(
             JsonPath.using(JSONPATH_CONF).parse(row).read<Any?>(field)
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Throwable) {
+        } catch (_: Exception) {
             null
         }
 
