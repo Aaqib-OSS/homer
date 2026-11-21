@@ -204,9 +204,11 @@ The per-exec `env KEY=VAL … argv` delivery above, and the residual audit-log s
   the exec request URI's length as a bound on it.
 - **Reserved path.** `.homer/env` is reserved from `extraUploads`
   ([ADR-0042](0042-runner-extra-uploads.md)).
-- **`tar` behavior relied on.** GNU tar and BusyBox tar are expected to create with
-  `open(O_CREAT|O_EXCL, mode)` and unlink an existing entry first, so neither would write through a
-  planted symlink; unverified here, checked only with macOS bsdtar.
+- **`tar` behavior relied on.** GNU tar and BusyBox tar create with `open(O_CREAT|O_EXCL, mode)`
+  and unlink an existing entry first, so neither writes through a planted symlink. The upload was
+  checked in containers with GNU tar 1.35 and BusyBox 1.37, each as uid 0 and uid 1000: a 0600 file
+  in a 0700 directory, values intact, the file gone before the command. The `O_EXCL` and
+  unlink-first behavior is from their sources.
 
 ## Relationship to ADR-0003
 

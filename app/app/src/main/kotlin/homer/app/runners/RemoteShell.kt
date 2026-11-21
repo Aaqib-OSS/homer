@@ -21,7 +21,7 @@ object RemoteShell {
         env: Map<String, String>,
     ): String {
         val invalid = ShellEnvNames.firstInvalid(env.keys)
-        require(invalid == null) { "env name '$invalid' is not a POSIX shell identifier, which a remote runner can export" }
+        require(invalid == null) { "env name '$invalid' is not a POSIX shell identifier, the only kind a remote runner can export" }
         val withNul = env.entries.firstOrNull { '\u0000' in it.value }?.key
         require(withNul == null) { "env value of '$withNul' contains a NUL byte, which no process environment can hold" }
         return buildString {

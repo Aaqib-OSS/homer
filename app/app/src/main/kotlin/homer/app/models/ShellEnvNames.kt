@@ -1,6 +1,9 @@
 package homer.app.models
 
-/** Env names the ssh and Kubernetes runners can deliver through a sourced shell file: POSIX shell identifiers. */
+/**
+ * POSIX shell identifiers: the names agent inputs and result captures must use at load, and the only env names the
+ * ssh and Kubernetes runners can deliver through a sourced shell file.
+ */
 object ShellEnvNames {
     const val PATTERN = "^[A-Za-z_][A-Za-z0-9_]*$"
 
