@@ -208,10 +208,9 @@ internal fun validateExplicitApiAuth(config: AppConfig) {
 }
 
 /**
- * A runner-domain token and an operator `apiAuth` credential are distinct principal classes (ADR-0066); equal
- * values would let one satisfy both, so startup refuses the collision and names the alias, never the value.
- * Every secret an `apiAuth` scheme accepts as proof counts (HMAC key secret, session signing secret);
- * a password hash does not.
+ * Refuses a runner-domain token equal to any secret an `apiAuth` scheme accepts as proof (HMAC key secret,
+ * session signing secret; not a password hash): the two are distinct principal classes (ADR-0066). The error
+ * names the alias, never the value.
  */
 internal fun validateRunnerDomainTokens(config: AppConfig) {
     val apiAuthSecrets =
@@ -247,9 +246,9 @@ internal fun validateCorsForCookieAuth(config: AppConfig) {
 }
 
 /**
- * Fail-fast on an HMAC key whose signature does not bind the request path while its grants reach more than one
- * agent (`role: admin`, a `*` pattern, or two or more exact agents): a captured request replays against every
- * other agent it reaches. Only that config is rejected; the scheme is unchanged. See ADR-0037.
+ * Fail-fast on an HMAC key whose signature does not bind the request path while its grants (ADR-0037) reach more
+ * than one agent (`role: admin`, a `*` pattern, or two or more exact agents): a captured request replays against
+ * every other agent it reaches. Only that config is rejected; the scheme is unchanged.
  */
 internal fun validateHmacSignatureScope(config: AppConfig) {
     flattenAuthSchemes(config.server.apiAuth)

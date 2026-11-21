@@ -182,7 +182,7 @@ private fun Application.installPasswordAuthSessions(
         // timing-stable as later ones.
         passwordVerifier.dummyHashAtCost(passwordScheme.bcryptCost)
         // Per-IP login limiter defaults to 5/min, so a bcryptCost above ~13 (about 8 s/verify) lets a burst block
-        // legitimate logins for over a minute; ADR-0011 permits 4..15, so warn above 13.
+        // legitimate logins for over a minute; the model permits 4..15, so warn above 13.
         if (passwordScheme.bcryptCost > 13) {
             logger.warn(
                 "AuthConfig.Password.bcryptCost = {} is operationally fragile: each verify takes seconds, " +
