@@ -26,7 +26,8 @@ internal enum class CanaryPayload {
  * [target] and [body] fill the route's placeholders from the canary run the way `ROUTE_AUTHZ`'s samples
  * do (`{processId}`, `{watchedId}`, `{questionId}`, `{dispatchId}`, `{continuationId}`, `{agentName}`,
  * `{...}`); [expect] is the status the probe must answer before its body is read. [startsRun] marks a
- * row whose request launches a run: the sweep waits for that run, so none outlives the test.
+ * row whose request launches a run: the sweep waits for that run, so none outlives the test, and reads
+ * its stored row back.
  *
  * A route the canary agent cannot exercise — a callback credential the test does not hold, a
  * runner-protocol endpoint, a command type the agent does not declare — is exempt. An exemption is a
@@ -69,9 +70,9 @@ private const val RUNNER_PROTOCOL = "runner protocol; the canary run is local"
  */
 internal const val CANARY_START_BODY = """{"canary":"{canary}","tagged":"{canary}"}"""
 
-/** A JSON-RPC `tools/call` of the canary agent's MCP tool, carrying the canary run's start body as its arguments. */
+/** A JSON-RPC `tools/call` of the MCP run tool `get_run_info` on the canary run. */
 private const val CANARY_MCP_CALL_BODY =
-    """{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"{agentName}","arguments":$CANARY_START_BODY}}"""
+    """{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_run_info","arguments":{"runId":{processId}}}}"""
 
 /**
  * Every route `configureRouting` mounts with every optional surface on, in registration order, each
@@ -241,9 +242,8 @@ internal val CANARY_ROUTES: List<CanaryRoute> =
         served(
             "POST /mcp",
             CanaryPayload.JSON,
-            "the canary agent's MCP tool result; the call's arguments are where both canaries enter the run",
+            "the canary run read back over the MCP transport by the get_run_info tool",
             body = CANARY_MCP_CALL_BODY,
-            startsRun = true,
         ),
         exempt("GET /mcp", "static-405: every method but POST is a handler answering a static 405 error body, no run data"),
         exempt("DELETE /mcp", "static-405: every method but POST is a handler answering a static 405 error body, no run data"),

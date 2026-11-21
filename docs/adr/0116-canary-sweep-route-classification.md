@@ -79,10 +79,11 @@ touched:
 
    > **Amendment (2026-11-21) — the MCP transport and the debug route are served.** No tool test
    > checked the run tools for redaction, and the debug route runs any agent's command, so both
-   > reasons were wrong. `POST /mcp` is probed with a `tools/call` of the canary agent's tool and
-   > `POST …/debug` with a one-command debug run, each carrying both canaries as input, like the
-   > run-start row; `McpRunToolsTest` asserts that `get_run_info` serves no input value or tag.
-   > Class 3 keeps the runner protocol and the LangGraph and cron surfaces.
+   > reasons were wrong. `POST /mcp` reads the canary run back through the `get_run_info` tool.
+   > `POST …/debug` starts a one-command debug run with both canaries as input; like every row that
+   > starts a run, the sweep reads that run's stored status row back as well as the start response.
+   > `McpRunToolsTest` asserts that `get_run_info` serves no input value or tag. Class 3 keeps the
+   > runner protocol and the LangGraph and cron surfaces.
 
 4. **Static-405** — every method but the data-carrying one is a registered handler whose only
    answer is a static `405` error body: the `GET`/`DELETE` rows of the POST-only MCP endpoints

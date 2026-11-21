@@ -42,6 +42,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -333,22 +334,44 @@ class SecretRedactionCanaryTest {
                 readBody = true,
             )
         if (status != row.expect) return "${row.route}: expected ${row.expect}, got $status ${preview(body.orEmpty())}"
-        if (row.startsRun) {
-            // The row really starts a run; wait it out, so no run of the canary agent outlives the
-            // test and fails its teardown through a closed scope.
-            awaitStatus(startedProcessId(body.orEmpty()), ProcessStatus.FINISHED)
-        }
-        val leaked = canaries.count { it in body.orEmpty() }
-        return "${row.route}: leaks $leaked canary value(s) in ${preview(body.orEmpty())}".takeIf { leaked > 0 }
+        if (mcpToolFailed(body.orEmpty())) return "${row.route}: the MCP tool call failed: ${preview(body.orEmpty())}"
+        val served = body.orEmpty() + (if (row.startsRun) storedRowOfStartedRun(body.orEmpty()) else "")
+        val leaked = canaries.count { it in served }
+        return "${row.route}: leaks $leaked canary value(s) in ${preview(served)}".takeIf { leaked > 0 }
     }
 
-    /** The run a start response's [body] reports: `processId`, or an MCP tool result's structured `runId`. */
-    private fun startedProcessId(body: String): Int {
-        val response = parseJsonObject("a run-start response", body)
-        val mcpResult = response["result"]?.jsonObject
-        val id = mcpResult?.getValue("structuredContent")?.jsonObject?.getValue("runId") ?: response.getValue("processId")
-        return id.jsonPrimitive.int
+    /**
+     * The status row of the run a start response's [body] reports, read once the run finished: a run of
+     * the canary agent must not outlive the test, and its stored inputs are where the canaries rest.
+     */
+    private suspend fun ApplicationTestBuilder.storedRowOfStartedRun(body: String): String {
+        val started = startedProcessId(body)
+        awaitStatus(started, ProcessStatus.FINISHED)
+        val (status, stored) = send("GET", "/api/v1/status/$started", ADMIN_TOKEN, readBody = true)
+        assertTrue(
+            status == 200 && "CANARY_IN" in stored.orEmpty(),
+            "run $started must read back with its stored inputs: $status ${preview(stored.orEmpty())}",
+        )
+        return stored.orEmpty()
     }
+
+    /** Whether [body] is a JSON-RPC tool result flagged `isError`, which still answers `200`. */
+    private fun mcpToolFailed(body: String): Boolean =
+        runCatching {
+            json
+                .parseToJsonElement(body)
+                .jsonObject["result"]
+                ?.jsonObject
+                ?.get("isError")
+                ?.jsonPrimitive
+                ?.boolean
+        }.getOrNull() == true
+
+    /** The run a start response's [body] reports. */
+    private fun startedProcessId(body: String): Int =
+        parseJsonObject("a run-start response", body)
+            .getValue("processId")
+            .jsonPrimitive.int
 
     /**
      * [body] as a JSON object, for a caller that asserts on its fields. A non-JSON or non-object
@@ -496,7 +519,6 @@ class SecretRedactionCanaryTest {
         buildString {
             append("name: $CANARY_AGENT\n")
             append("dispatch:\n  enabled: true\n")
-            append("mcp:\n  enabled: true\n")
             append("inputs:\n")
             append("  - paramName: canary\n    envName: CANARY_IN\n    src: body\n    type: string\n    required: true\n    secret: true\n")
             append("  - paramName: tagged\n    envName: TAGGED_IN\n    src: body\n    type: string\n    required: false\n")
