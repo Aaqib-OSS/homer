@@ -14,7 +14,7 @@ import kotlin.test.assertTrue
 private const val BEGIN = "<!-- BEGIN GENERATED: backend -->"
 private const val END = "<!-- END GENERATED: backend -->"
 
-// Shared truth table for the copyright-line rule, also asserted by console/scripts/third-party-licenses.mjs.
+// Shared truth table for the copyright-line rule, also asserted by console/scripts/third-party-licenses.test.mjs.
 // Relative to the buildSrc project directory (a Gradle Test task's working directory).
 private val COPYRIGHT_CASES_FILE = File("../config/third-party-copyright-cases.json")
 

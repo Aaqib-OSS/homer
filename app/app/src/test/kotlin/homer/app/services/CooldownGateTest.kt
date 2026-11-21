@@ -208,7 +208,7 @@ class CooldownGateTest {
     }
 
     @Test
-    fun `a cooldown key naming a secret legacy queryParams input is rejected at load`() {
+    fun `a cooldown key naming a secret input declared only through the queryParams alias is rejected at load`() {
         // The guard must read the `queryParams` alias too (ADR-0031): a regression to `inputs.orEmpty()`
         // would let an alias-only agent store a secret input's value in `processes.cooldown_key` (ADR-0106).
         @Suppress("DEPRECATION")

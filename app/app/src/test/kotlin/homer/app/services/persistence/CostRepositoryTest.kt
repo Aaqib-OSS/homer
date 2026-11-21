@@ -97,7 +97,7 @@ class CostRepositoryTest {
     ) = runTest {
         val path = dir.resolve("failing.db").toString()
         DatabaseService(path, LoggerFactory.getLogger("t")).migrate()
-        // commit() lands then throws; the ledger has no dedupe key (ADR-0035), so a replay would
+        // commit() lands then throws; the ledger has no dedupe key (ADR-0020), so a replay would
         // double-count the spend window.
         val failing = DatabaseService(path, LoggerFactory.getLogger("t"), wrapWriterConnection = PostCommitFailureConnection::wrap)
 

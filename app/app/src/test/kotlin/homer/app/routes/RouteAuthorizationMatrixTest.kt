@@ -406,8 +406,8 @@ class RouteAuthorizationMatrixTest {
                 ?.get("isError")
                 ?.jsonPrimitive
                 ?.content == "true"
-        // Refused exactly like a resource (or, for an unlisted tool, a tool name) that does not exist (ADR-0047 rule
-        // 3).
+        // Refused exactly like a resource (or, for an unlisted tool, a tool name) that does not exist
+        // (ADR-0047 rule 3).
         val ghost = seeds.ghost()
         val ghostTool = if (tool.denial == McpDenial.UNLISTED) ghost.agentName else tool.tool
         val unknown = seeds.fromGhost(ghost, callTool(path, bearer, ghostTool, ghost, tool.arguments).toString())

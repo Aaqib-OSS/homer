@@ -145,8 +145,8 @@ class PasswordAuthTest {
     @Test
     fun `login issues a session expiring sessionTtlMin minutes after the login second`() =
         testApplication {
-            // sessionTtlMin = 7 keeps `*` and `/` apart: 7 / 60 is 0, so a mutant that divides
-            // would stamp the login second itself instead of a lifetime of 420 s (`sessionAuthRoutes` in UnsecuredRoutes.kt).
+            // sessionTtlMin = 7 keeps `*` and `/` apart: 7 / 60 is 0, so a mutant that divides would stamp
+            // the login second itself instead of a lifetime of 420 s (`sessionAuthRoutes`).
             val ttlScheme = scheme.copy(sessionTtlMin = 7)
             application {
                 installAuthRoutes(ttlScheme)

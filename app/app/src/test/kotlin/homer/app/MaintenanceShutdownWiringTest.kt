@@ -101,7 +101,7 @@ class MaintenanceShutdownWiringTest {
     @Test
     fun `configureServer clears a drain flag left set in the JVM`() {
         // `isDraining` is JVM-global and never cleared on stop, so a second application in the JVM would start
-        // draining unless configureServer clears it; no other test fails if that clear is deleted (ADR-0102).
+        // draining unless configureServer clears it, which this test pins (ADR-0102).
         isDraining.set(true)
         try {
             testApplication {

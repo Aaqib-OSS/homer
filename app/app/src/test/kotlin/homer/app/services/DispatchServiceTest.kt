@@ -161,7 +161,7 @@ class DispatchServiceTest {
             }
         }
 
-    // ADR-0019: create enforces the `ask` question contract via `validateQuestionInput`, so a dispatch
+    // `create` enforces the `ask` question contract via `validateQuestionInput`, so a dispatch
     // never registers a question the ask path would refuse.
     @Test
     fun `create refuses question input the questions service rejects and registers nothing`() =

@@ -450,7 +450,7 @@ class CallbackRoutesTest {
     ) = runBlocking {
         assertEquals(HttpStatusCode.BadRequest, response.status)
         assertTrue(response.bodyAsText().contains("secret"))
-        // A refused value must not be persisted; the child mock is resolved outside verify so the accessor is uncounted.
+        // A refused value is not persisted; the child mock is resolved outside verify so the accessor is uncounted.
         val pm = deps.processManager
         coVerify(exactly = 0) { pm.addRuntimeTag(any(), any(), any(), any()) }
     }

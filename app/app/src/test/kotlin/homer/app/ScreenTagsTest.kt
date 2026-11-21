@@ -45,7 +45,7 @@ class ScreenTagsTest {
     }
 
     @Test
-    fun `a renamed secret with null storedSecretKeys is screened — AUwjzGsW`() {
+    fun `a renamed secret with null storedSecretKeys is screened`() {
         // Pre-v15 rows carry no snapshot and the agent no longer declares OLD_TOKEN: fail closed,
         // like redactInputParams, which redacts keys unknown to the current definition.
         val agent = agentWith(Param(paramName = "token", envName = "NEW_TOKEN", secret = true))

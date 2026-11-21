@@ -70,7 +70,7 @@ class JdwpNetworkExposureTest {
         }
     }
 
-    /** The `ports:` entries of the block at [index]: one list per entry — its `- ` line plus any long-syntax key lines. */
+    /** The `ports:` entries of the block at [index]: one list per entry: its `- ` line plus long-syntax keys. */
     private fun portEntries(
         lines: List<String>,
         index: Int,

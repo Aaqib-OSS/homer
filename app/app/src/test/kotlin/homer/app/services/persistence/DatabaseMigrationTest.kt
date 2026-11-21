@@ -576,7 +576,7 @@ class DatabaseMigrationTest {
 
     // ProcessRepository.tagsForTx and tagsByProcessTx sort explicitly so tag order is a guarantee; both must
     // stay served by the process_tags primary key with no sort step.
-    private val aif85TagOrderShapes =
+    private val tagOrderShapes =
         listOf(
             // ProcessRepository.tagsForTx / getTags
             "SELECT tag FROM process_tags WHERE process_id = 12345 ORDER BY tag",
@@ -584,8 +584,8 @@ class DatabaseMigrationTest {
             "SELECT process_id, tag FROM process_tags WHERE process_id IN (12345, 12346, 12347) ORDER BY process_id, tag",
         )
 
-    private fun assertAif85TagOrderPlans(st: java.sql.Statement) {
-        for (sql in aif85TagOrderShapes) {
+    private fun assertTagOrderPlans(st: java.sql.Statement) {
+        for (sql in tagOrderShapes) {
             val p = plan(st, sql)
             assertTrue(p.any { it.startsWith("SEARCH process_tags") && "INDEX" in it }, "'$sql' not index-driven: $p")
             assertTrue(p.none { it.startsWith("USE TEMP B-TREE") }, "'$sql' sorts in a temp b-tree: $p")
@@ -607,12 +607,12 @@ class DatabaseMigrationTest {
                         "INSERT INTO process_tags (process_id, tag) " +
                         "SELECT i, 'k' || (i % 7) || ':v' || j FROM n, (SELECT 0 AS j UNION SELECT 1 UNION SELECT 2)",
                 )
-                assertAif85TagOrderPlans(st)
+                assertTagOrderPlans(st)
             }
         }
         svc.optimize()
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
-            c.createStatement().use { st -> assertAif85TagOrderPlans(st) }
+            c.createStatement().use { st -> assertTagOrderPlans(st) }
         }
         svc.close()
     }

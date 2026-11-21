@@ -664,8 +664,8 @@ class TarStreamsTest {
 
     @Test
     fun `the directory branch still writes through a contained symlink at a destination path`() {
-        // The k8s sync-down (ADR-0055) extracts into a live workspace where contained links are normal; assertContained
-        // blocks escapes, so a dangling link (target arrives later in the tar) must not fail the whole sync.
+        // A live workspace holds contained links; assertContained blocks escapes, so a dangling in-tar link
+        // (its target arrives later in the tar) must not fail the sync.
         val src = tmp.resolve("src").createDirectories()
         src.resolve("a.txt").writeText("remote")
         val dst = tmp.resolve("dst").createDirectories()

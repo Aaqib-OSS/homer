@@ -2302,7 +2302,7 @@ class ProcessRepositoryTest {
     @Test
     fun `a pre-start refusal does not arm afterFailure`() =
         runTest {
-            // Every pre-start cause (ADR-0098, all five of PreStartFailureReason) stores a reason: such a run never
+            // Each pre-start cause below (ADR-0098) stores a reason: such a run never
             // executed (a dropped duplicate is the healthy path), so it must not back the agent off for any subject.
             val repo = repo()
             val cooldown = Cooldown(afterFailure = "1m")

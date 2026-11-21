@@ -97,7 +97,7 @@ class HookRepositoryTest {
     @Test
     fun `the global pending cap stops the insert at maxPending and reports the rest as shed`() =
         runTest {
-            // A burst over the cap sheds without failing the run (ADR-0047 rule 4); the shed entries
+            // A burst over the cap sheds without failing the run (ADR-0047 rule 4, ADR-0107); the shed entries
             // are what the caller logs after the commit.
             val recorded = recordResult(hook(target = "a"), hook(target = "b"), hook(target = "c"), maxPending = 2)
 
