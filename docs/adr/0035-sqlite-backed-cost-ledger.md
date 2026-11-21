@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-07-28
 deciders: Lukáš Vlk
-amended: 2026-09-10
+amended: 2026-09-10, 2026-11-21
 ---
 # ADR-0035: SQLite-backed cost ledger
 
@@ -77,3 +77,6 @@ authoritative with no in-memory cache.
   runs for every accounted attempt, not only a successful command. The ledger
   now receives one row per accounted Claude attempt — including non-zero exits
   and attempts a shell aborted (TTL timeout, output cap) — not only exit-0 runs.
+- 2026-11-21: A Claude command's `maxBudgetUsd` and `maxMcpOutputTokens` stay opt-in (`null`). Spend is bounded
+  without them by the run timeout and the `llmPrice` cost caps, and the Claude CLI applies its own MCP output cap.
+  No default is set, so existing agents behave as before.
