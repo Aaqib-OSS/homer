@@ -21,9 +21,8 @@ class WorkspaceConfigFactory(
     // Injected for testability; production wiring passes `System::getenv`.
     private val hostEnvSupplier: () -> Map<String, String> = { emptyMap() },
     private val maxOutputBytes: Long = Long.MAX_VALUE,
-    // `globalEnv` keys the operator sourced from the host env via `@SYSENV:`.
-    // Folded into every run's redacted set: pulling a value out of the host env
-    // is the operator declaring it a credential, and Homer must not export it.
+    // `globalEnv` keys sourced from the host env via `@SYSENV:`: that declares them credentials, so every run
+    // redacts them.
     private val sysEnvBackedGlobalEnvNames: Set<String> = emptySet(),
     // Same contract, per runner alias: names behind a runner's `env` whose raw
     // value referenced `@SYSENV:`. Resolved by alias in createWorkspaceConfig.
@@ -40,21 +39,15 @@ class WorkspaceConfigFactory(
         secretEnvNames: Set<String> = emptySet(),
         parentProcessId: Int? = null,
         rootProcessId: Int? = null,
-        // Per-runner env from the agent's RunnerConfig; layered between
-        // globalEnv and agentEnv. Remote runners carry their host's values here.
+        // Per-runner env, layered between globalEnv and agentEnv; remote runners carry their host's values (ADR-0065).
         runnerEnv: Map<String, String> = emptyMap(),
-        // False for remote runners: allowlisted host env keys describe Homer's
-        // own host, not the remote one, and must not be forwarded. See
-        // SERVER.md's `parentEnvAllowlist` section.
+        // False for remote runners: allowlisted host env keys describe Homer's host, not theirs (ADR-0065).
         includeParentEnv: Boolean = true,
         // Resolves [sysEnvBackedRunnerEnvNames]; the factory holds the alias-keyed
         // map because the `@SYSENV:` placeholders are resolved before it is built.
         runnerAlias: String = "",
     ): WorkspaceConfig {
-        // A blank alias silently drops every @SYSENV:-backed runner env name from
-        // the redacted set. The production call site always passes runner.alias (the
-        // queued runner's alias); guard against a future call site that omits it while
-        // runner env names exist.
+        // A blank alias would silently drop every @SYSENV:-backed runner env name from the redacted set.
         require(runnerAlias.isNotBlank() || sysEnvBackedRunnerEnvNames.isEmpty()) {
             "runnerAlias must not be blank when sysEnvBackedRunnerEnvNames is non-empty"
         }
@@ -94,10 +87,8 @@ class WorkspaceConfigFactory(
             ancestorLockKeys = ancestorLockKeys,
             maxOutputBytes = maxOutputBytes,
             parentEnvLayerNames = if (includeParentEnv) parentEnvLayerNames(hostEnv, env) else emptySet(),
-            // Union, not replace: the agent's declared `secret: true` inputs plus
-            // every host-sourced global, plus the per-process callback token Homer
-            // mints itself (appended to env after this call — the redactor resolves
-            // names to values at redact time, so a name registered here still hits).
+            // Union of declared secrets, host-sourced globals and the callback token Homer appends to env after this
+            // call; the redactor resolves names at redact time, so the name still hits.
             secretEnvNames =
                 secretEnvNames +
                     sysEnvBackedGlobalEnvNames +
@@ -160,25 +151,16 @@ class WorkspaceConfigFactory(
                     e,
                 )
             }
-        // Strict descent: a template that normalizes back to the server root itself
-        // passes containment (root contains itself) but would make projectRoot ==
-        // serverRoot, so a later purge deleting projectRoot would wipe every run's
-        // workspace. Require a real subdirectory. Compare both canonical and lexical
-        // forms: once the root exists, assertContained returns its toRealPath(), while
-        // serverRoot is never canonicalized — so behind a symlinked workspace root a
-        // naive `projectRoot == serverRoot` silently fails to fire.
+        // Strict descent: a template normalizing to the server root would let a purge wipe every run (ADR-0053).
+        // serverRoot is never canonicalized, so behind a symlinked root the canonical comparison alone misses.
         val normalizedServerRoot = serverRoot.toAbsolutePath().normalize()
         if (projectRoot == normalizedServerRoot || requestedRoot.toAbsolutePath().normalize() == normalizedServerRoot) {
             throw WorkspaceException(
                 "workspace path '$workspacePath' must resolve to a subdirectory of the workspace root, not the root itself",
             )
         }
-        // Reject a per-run path reached through a symlink component: assertContained
-        // follows symlinks and only checks the target stays in root, so a symlink an
-        // earlier same-UID run plants at a predictable future per-run path would alias
-        // two runs onto one directory across owner boundaries. §12.
-        // Pass the lexical requestedRoot (not the symlink-resolved projectRoot) so the
-        // walk lstat's each real component under serverRoot.
+        // A per-run path through a symlink component would alias two runs onto one directory (ADR-0053); the lexical
+        // requestedRoot is passed so the walk lstat's each real component below serverRoot.
         try {
             PathSafety.assertNoSymlinkComponentsBelow(serverRoot, requestedRoot)
         } catch (e: SecurityException) {
@@ -192,11 +174,8 @@ class WorkspaceConfigFactory(
     }
 
     /**
-     * Allowlist keys still holding the host value they were layered with —
-     * a higher layer (globalEnv/runnerEnv/agentEnv) overrode the rest. This
-     * set, not the raw allowlist, is what a cross-runner step strips before
-     * handing the env to a remote target: an explicitly re-set value is the
-     * operator's own and must survive.
+     * Allowlist keys still holding the host value they were layered with. A cross-runner step strips exactly these
+     * for a remote target; a key a higher layer re-set is the operator's own and survives (ADR-0065).
      */
     private fun parentEnvLayerNames(
         hostEnv: Map<String, String>,
@@ -205,10 +184,8 @@ class WorkspaceConfigFactory(
 }
 
 /**
- * Renders a templated key over [env], refusing one whose `{{NAME}}` placeholders the env cannot
- * resolve — every run of the agent would otherwise compute the same literal key (ADR-0098). The
- * check reads the template's placeholder names, never the rendered text: a param value that
- * itself holds `{{X}}` is data, not a placeholder.
+ * Renders a templated key over [env], refusing one whose `{{NAME}}` placeholders the env cannot resolve (ADR-0098).
+ * Only the template's placeholder names are checked, never the rendered text: a param value holding `{{X}}` is data.
  */
 internal fun renderTemplatedKey(
     template: String,
@@ -235,11 +212,7 @@ data class WorkspaceConfig(
     // Env var names whose values should be redacted from telemetry (see
     // LlmHarnessExecutor's SecretRedactor use); populated from `Param.secret` inputs.
     val secretEnvNames: Set<String> = emptySet(),
-    // Allowlisted host-env keys still carrying the host value they were layered
-    // with. RunnerCmdExecutor strips exactly these before handing this env to a
-    // remote runnerCmd target — the host values describe Homer's machine, not
-    // the target's (same rule that keeps them out of a remote run's composed
-    // env; ADR-0065). Keys the operator re-set via globalEnv/runnerEnv/agentEnv
-    // are absent and survive the strip.
+    // Allowlisted host-env keys still carrying the host value they were layered with; RunnerCmdExecutor strips
+    // exactly these for a remote runnerCmd target (ADR-0065).
     val parentEnvLayerNames: Set<String> = emptySet(),
 )

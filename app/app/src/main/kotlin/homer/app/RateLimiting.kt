@@ -27,7 +27,7 @@ import kotlin.time.Duration.Companion.seconds
 internal fun isProbePath(path: String): Boolean = path == "/api/v1/livez" || path == "/api/v1/readyz"
 
 // Request keys for the global limiter: three constants plus one RunnerDomainLimitKey per configured
-// domain, so it caches a bounded set of limiter instances (§12 rule 4). See ADR-0014.
+// domain, so it caches a bounded set of limiter instances (ADR-0047 rule 4). See ADR-0014.
 internal const val PROBE_LIMIT_KEY = "probe"
 internal const val LOGIN_LIMIT_KEY = "login"
 internal const val GLOBAL_LIMIT_KEY = "global"
@@ -101,7 +101,7 @@ internal fun Application.configureRateLimiting(config: AppConfig) {
     val loginMounted = flattenAuthSchemes(config.server.apiAuth).any { it is AuthConfig.Password }
     install(RateLimit) {
         // Ktor caches one limiter per (provider, key), so every exemption is a bounded-set key
-        // (see globalRateLimitKey), never raw request data. See ADR-0014, §12.
+        // (see globalRateLimitKey), never raw request data. See ADR-0014, ADR-0047 rule 4.
         global {
             requestKey { call ->
                 globalRateLimitKey(
@@ -131,7 +131,7 @@ private fun globalRateLimiter(
         }
 
         // The aggregate login ceiling: one bucket for every peer, the size of
-        // the global one, so per-peer keys cannot multiply it (§12 rule 4).
+        // the global one, so per-peer keys cannot multiply it (ADR-0047 rule 4).
         LOGIN_LIMIT_KEY -> {
             RateLimiter.default(
                 limit = config.server.rateLimit.limit,

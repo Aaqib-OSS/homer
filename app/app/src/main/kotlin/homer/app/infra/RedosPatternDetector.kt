@@ -1,20 +1,15 @@
 package homer.app.infra
 
 /**
- * Load-time heuristic flagging regex patterns prone to catastrophic backtracking
- * (ReDoS). Author-supplied `inputSchema` patterns go to the networknt
- * JSON-Schema validator, which compiles them to `java.util.regex` and matches
- * them against caller bodies; unlike [ParamValidator]'s `pattern` (bounded at
- * match time by [BoundedRegex]), the library owns the `Matcher` and feeds it a
- * plain `String`, so the runtime bound cannot apply — hence this load-time lint. See ADR-0040.
+ * Load-time lint flagging `inputSchema` regex patterns prone to catastrophic backtracking (ReDoS), which the
+ * schema validator would otherwise match unbounded against caller bodies. See ADR-0040.
  */
 internal object RedosPatternDetector {
     private class Group(
         val branchStarts: MutableList<Int>,
         var bodyHasUnbounded: Boolean = false,
-        // Set when this group's body contains an overlapping alternation — either
-        // its own top-level branches, or one carried up from a nested group — so an
-        // enclosing quantifier flags e.g. ((a|ab))* the same as (a|ab)*.
+        // Overlapping alternation in the body, own or carried up from a nested group, so ((a|ab))* flags like
+        // (a|ab)* (ADR-0040).
         var overlapReason: String? = null,
     )
 
@@ -57,10 +52,8 @@ internal object RedosPatternDetector {
             }
 
             '(' -> {
-                // Start the first branch after any (?:, (?<name>, (?=, (?<=, (?flags:
-                // prefix so a non-capturing/named/lookaround group is analysed by its
-                // real body — otherwise the prefix chars pollute the branch strings and
-                // defeat the overlap check (e.g. (?:a|ab)* would read "?:a" | "ab").
+                // Branches start after a (?…) prefix so it cannot pollute the branch strings and defeat the
+                // overlap check, e.g. (?:a|ab)* (ADR-0040).
                 val bodyStart = groupBodyStart(pattern, i)
                 stack.addLast(Group(mutableListOf(bodyStart)))
                 bodyStart
@@ -85,7 +78,7 @@ internal object RedosPatternDetector {
             }
         }
 
-    /** Skips the `{n,m}` interval at [i], marking the open group unbounded when it is; a literal '{' is one character. */
+    /** Skips the `{n,m}` interval at [i], marking the open group unbounded when it is; a literal '{' is one char. */
     private fun skipInterval(
         pattern: String,
         stack: ArrayDeque<Group>,
@@ -127,10 +120,8 @@ internal object RedosPatternDetector {
     }
 
     /**
-     * Index where a group's body (its first branch) begins, skipping a `(?…)`
-     * prefix: `(?:`, `(?=`, `(?!`, `(?<=`, `(?<!`, `(?<name>`, `(?'name'`, and
-     * flag-scoped `(?flags:`. A plain capturing group, a bare inline-flag
-     * directive `(?flags)`, or an unrecognised form falls back to `open + 1`.
+     * Index where a group's body (its first branch) begins, skipping a `(?…)` prefix; a plain group, a bare
+     * `(?flags)` directive or an unrecognised form falls back to `open + 1`.
      */
     private fun groupBodyStart(
         pattern: String,

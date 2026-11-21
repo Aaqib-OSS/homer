@@ -53,10 +53,7 @@ class OtelTelemetryService(
         val exporter =
             if (export == OpenTelemetryExport.LANGFUSE && langfuseConfig.serverUrl.isNotBlank()) {
                 val endpoint = "${langfuseConfig.serverUrl}/api/public/otel/v1/traces"
-                // Log the sanitized form only: `serverUrl` is operator-supplied, and a
-                // `https://user:pass@host` or `?token=` form would otherwise put a
-                // credential in app.log — which, in the container layout, sits in the
-                // workspace an agent can read. The exporter still gets the real URL.
+                // Only the sanitized endpoint is logged; the exporter gets the real URL. See ADR-0050.
                 val loggableEndpoint = sanitizeEndpointForLog(endpoint)
                 logger.info("Exporting OpenTelemetry traces to {}", loggableEndpoint)
                 FailureLoggingSpanExporter(
@@ -64,9 +61,7 @@ class OtelTelemetryService(
                         .builder()
                         .setEndpoint(endpoint)
                         .addHeader("Authorization", authHeader)
-                        // Langfuse v4 ingests an OTLP batch within seconds only when it declares
-                        // this version; without it spans show up 10-15 minutes late. v3 ignores an
-                        // unknown header, so one value serves both. See ADR-0050.
+                        // Declares the ingestion version Langfuse v4 needs to ingest within seconds. See ADR-0050.
                         .addHeader(LANGFUSE_INGESTION_VERSION_HEADER, LANGFUSE_INGESTION_VERSION)
                         .build(),
                     loggableEndpoint,
@@ -84,8 +79,6 @@ class OtelTelemetryService(
             SdkTracerProvider
                 .builder()
                 .setResource(resource)
-                // Before the batch processor: the copy runs on span start, and the batch
-                // processor must never see a span whose trace name/tags are not on it yet.
                 .addSpanProcessor(LangfuseTraceAttributesSpanProcessor())
                 .addSpanProcessor(BatchSpanProcessor.builder(exporter).build())
                 .build()
@@ -110,11 +103,8 @@ class OtelTelemetryService(
 }
 
 /**
- * Blanks any URL in [message]. OTLP HTTP client exceptions routinely quote the request
- * URL, which carries whatever the operator put in `langfuse.serverUrl` — so sanitizing
- * the endpoint string and then logging the raw throwable beside it would defeat the
- * point. The endpoint is already logged separately in its sanitized form, so nothing
- * readable is lost by blanking the copy inside the message.
+ * Blanks any URL in [message]: OTLP HTTP client exceptions quote the request URL, which may
+ * carry credentials from `langfuse.serverUrl`. See ADR-0050.
  */
 internal fun redactUrls(message: String?): String =
     message?.replace(Regex("[a-zA-Z][a-zA-Z0-9+.-]*://\\S*"), "<redacted-url>") ?: "<no message>"
@@ -123,10 +113,8 @@ internal fun redactUrls(message: String?): String =
 internal fun sanitizeEndpointForLog(raw: String): String = stripUrlSecrets(raw) ?: "<unparseable endpoint>"
 
 /**
- * Reports a failed span export through Homer's own logger. The SDK's own report
- * goes out on `java.util.logging`, which nothing here bridges into logback: it
- * bypasses the `io.opentelemetry` logger, names no endpoint, and is throttled to
- * once a minute under a sustained outage.
+ * Reports a failed span export through Homer's own logger, naming the endpoint, because the
+ * SDK's own report goes unseen on `java.util.logging`. See ADR-0050.
  */
 internal class FailureLoggingSpanExporter(
     private val delegate: SpanExporter,
@@ -138,10 +126,7 @@ internal class FailureLoggingSpanExporter(
         val result = delegate.export(spans)
         return result.whenComplete {
             if (!result.isSuccess) {
-                // Type and a URL-stripped message, never the raw throwable: OTLP HTTP
-                // client exceptions quote the request URL, so attaching it would undo
-                // the endpoint sanitization two lines up. Not demoted to DEBUG either —
-                // docker-compose.dev.yml runs at DEBUG, so that still writes it.
+                // Type and a URL-stripped message, never the raw throwable. See ADR-0050.
                 val cause = result.failureThrowable
                 logger.warn(
                     "Failed to export {} OpenTelemetry span(s) to {}; this batch is lost (cause={}: {})",

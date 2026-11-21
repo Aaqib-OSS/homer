@@ -14,8 +14,11 @@ import homer.app.models.NewRunRecord
 import homer.app.models.OpenTelemetryExport
 import homer.app.models.PasswordUserConfig
 import homer.app.models.RateLimitConfig
+import homer.app.models.ResultEnvParam
+import homer.app.models.ResultTransformer
 import homer.app.models.RunnerConfig
 import homer.app.models.Server
+import homer.app.models.SrcType
 import homer.app.models.TokenConfig
 import homer.app.runners.RunnerRegistry
 import homer.app.runners.external.RegisterInstanceRequest
@@ -193,7 +196,14 @@ class RouteAuthorizationMatrixTest {
         val watched = processes.obtainProcessId(NewRunRecord(HIDDEN_AGENT, owner = ADMIN))
         val continuation =
             app.get<ContinuationService>().create(hidden, watched, HIDDEN_AGENT, emptyMap(), "result", null, null)
-        val resultToken = app.get<ResultTokenService>().mint(watched, "out.txt", null, 1, HIDDEN_AGENT)
+        val resultToken =
+            app.get<ResultTokenService>().mint(
+                watched,
+                "out.txt",
+                ResultEnvParam(SrcType.STD_OUT, "OUT", ResultTransformer.JsonPath("$.x")),
+                1,
+                HIDDEN_AGENT,
+            )
         val workers = app.get<RunnerRegistry>().externalDomains.single { it.alias == "workers" }
         val instance = workers.register(RegisterInstanceRequest(name = "workers-host"))
         val own = processes.obtainProcessId(NewRunRecord(VISIBLE_AGENT, owner = NO_GRANT))

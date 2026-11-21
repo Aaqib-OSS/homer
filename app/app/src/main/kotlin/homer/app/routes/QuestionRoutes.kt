@@ -19,9 +19,7 @@ private val logger = LoggerFactory.getLogger("homer.app.routes.QuestionRoutes")
 
 /** Operator questions: `GET /questions` and `POST /questions/{id}/answer`. */
 internal fun Route.questionRoutes(deps: QuestionRouteDeps) {
-    // Operator view of agent questions (ADR-0019). Answering a
-    // non-OPEN question or an unknown id maps to 409/404 via the
-    // QuestionNotOpen/QuestionNotFound exceptions in StatusPages.
+    // Operator view of agent questions (ADR-0019); a non-OPEN or unknown question maps to 409/404 in StatusPages.
     questionListRoute(deps)
     questionAnswerRoute(deps)
 }
@@ -48,9 +46,8 @@ private fun Route.questionListRoute(deps: QuestionRouteDeps) {
                 }
             val (limit, offset) = call.recordPageParams()
             val principal = call.principalName()
-            // Visibility runs in SQL before the limit — the asking process's owner, or a read grant
-            // on the question's agent — so the page and `total` hold only questions this caller can
-            // see (§12, ADR-0039).
+            // Visibility runs in SQL before the limit (the asking process's owner, or a read grant on the question's
+            // agent), so the page and `total` hold only questions this caller can see (ADR-0038).
             val page =
                 questionsService.page(
                     status = status,

@@ -163,7 +163,7 @@ class ContinuationServiceTest {
             service().validate(7, "h", resumeParam = "HMR_LG_RESUME", params = emptyMap(), ttlSec = 1)
         }
 
-    // The caller's ttl wins over the configured default, and a null default means no expiry.
+    // The caller's ttl wins over the configured default.
     @Test
     fun `validate refuses a non-positive caller ttl even when a default is configured`() =
         runTest {
@@ -185,8 +185,11 @@ class ContinuationServiceTest {
     // construction, so the effective-ttl refusal above is only ever the caller's ttl.
     @Test
     fun `a non-positive default ttl is refused by DispatchConfig, never reaching validate`() {
-        val refused = assertFailsWith<IllegalArgumentException> { DispatchConfig(defaultTtlSec = 0) }
-        assertTrue(refused.message?.contains("server.dispatch.defaultTtlSec") == true)
+        listOf(0, -1).forEach { ttl ->
+            val refused = assertFailsWith<IllegalArgumentException> { DispatchConfig(defaultTtlSec = ttl) }
+            assertTrue(refused.message?.contains("server.dispatch.defaultTtlSec") == true)
+        }
+        assertEquals(604_800, DispatchConfig().defaultTtlSec)
     }
 
     @Test
@@ -542,7 +545,7 @@ class ContinuationServiceTest {
 
             service()
                 .create(7, 42, "h", emptyMap(), "HMR_LG_RESUME", null, ttlSec = null)
-            assertNull(stored.captured.expiresAt)
+            assertEquals(1000L + 604_800, stored.captured.expiresAt)
         }
 
     @Test

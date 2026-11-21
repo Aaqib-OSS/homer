@@ -28,10 +28,8 @@ internal suspend fun ApplicationCall.deniedUnlessAdmin(authorizer: Authorizer): 
 }
 
 /**
- * The server-state read gate, called explicitly at the top of each handler that reports runner
- * state (`GET /runners`, `/runners/queue`): answers 403 and returns true when the caller holds
- * neither the admin role nor a `read` grant on `*`. The denial names no alias or instance.
- * See ADR-0111.
+ * The server-state read gate for handlers reporting runner state (`GET /runners`, `/runners/queue`): answers 403
+ * and returns true without admin or a `read` grant on `*`, naming no alias or instance (ADR-0111).
  */
 internal suspend fun ApplicationCall.deniedUnlessServerReader(authorizer: Authorizer): Boolean {
     if (authorizer.canReadServerState(principalName())) return false
@@ -49,11 +47,8 @@ internal suspend fun ApplicationCall.respondNoStore(body: Any) {
 }
 
 /**
- * The secured /api/v1 routes (everything mounted under the bearer/HMAC
- * authenticate wrapper). Extracted from Application.kt's configureServer
- * for separation of concerns; behavior is unchanged.
- *
- * The endpoints live in per-resource files under routes/; this mounts them in registration order.
+ * The secured /api/v1 routes (everything under the bearer/HMAC authenticate wrapper), mounting the
+ * per-resource files under routes/ in registration order.
  */
 internal fun Route.apiV1Routes(deps: ApiDeps) {
     with(deps) {
@@ -78,10 +73,8 @@ internal fun Route.apiV1Routes(deps: ApiDeps) {
 }
 
 /**
- * The loaded agents [principal] holds READ on, for the SQL visibility filter of a list read; null
- * for an admin (no filter). Paired with an `owner = principal` clause this is the union rule of
- * [Authorizer.canSee], narrowed to loaded agents; shared by `GET /status/all` and the dispatch and
- * continuation lists (ADR-0037).
+ * The loaded agents [principal] holds READ on, for the SQL visibility filter of a list read; null for an admin.
+ * With an `owner = principal` clause it is the union rule of [Authorizer.canSee] (ADR-0037).
  */
 internal fun visibleAgentNames(
     authorizer: Authorizer,

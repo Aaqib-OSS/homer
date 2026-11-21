@@ -46,9 +46,8 @@ class WhenActionTest {
 
     @Test
     fun `EvalError redacts a credential carried in the expression`() {
-        // CWE-532: the timeout EvalError names an
-        // expression that was still mid-execution, and an operator's `when` can
-        // carry a credential. The debug console must not print it raw.
+        // CWE-532: a timeout EvalError names the expression that was mid-execution, which can carry a credential;
+        // the debug console must not print it raw.
         val secret = "sup3r-secret-token-value"
         val redactor = SecretRedactor.from(mapOf("TOKEN" to secret), setOf("TOKEN"))
 

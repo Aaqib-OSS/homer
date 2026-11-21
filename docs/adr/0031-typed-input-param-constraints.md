@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-07-12
 deciders: Lukáš Vlk
+amended: 2026-11-21
 ---
 # ADR-0031: Typed input-param constraints, validated by a dedicated `ParamValidator`
 
@@ -120,3 +121,11 @@ optional param silently.
 - Default resolution: [`AgentInputResolver.kt`](../../app/app/src/main/kotlin/homer/app/infra/AgentInputResolver.kt).
 - MCP schema mapping: [`McpToolFactory.kt`](../../app/app/src/main/kotlin/homer/app/services/McpToolFactory.kt).
 - Field reference: [`app/AGENT.md`](../../app/AGENT.md).
+
+## Amendment (2026-11-21): legacy `STRING` also rejects control characters
+
+"Unchanged semantics" for the legacy types held for `NUMBER` and `ANY`, not for `STRING`. A
+newline in a value that Homer templates into a `when` bash predicate injects a second predicate
+line (CWE-93), so legacy `STRING` rejects any control character as well as a space. Legacy `ANY`
+stays unvalidated by definition, and `AGENT.md` tells authors never to template it into a
+predicate unsanitized.

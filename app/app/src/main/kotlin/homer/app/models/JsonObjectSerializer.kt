@@ -22,12 +22,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
- * Serializes/deserializes [JsonObject] from both JSON (via [JsonDecoder]) and
- * YAML (via [YamlInput]). Used for [Agent.inputSchema] so an agent author can
- * declare a JSON Schema inline in either a `.yaml` or `.json` agent file.
- * Serialization (write) delegates to [JsonObject.serializer()], which only
- * works in a JSON context; that is fine because agent files are read-only at
- * runtime — we never re-serialize an Agent back to disk.
+ * [JsonObject] serializer for [Agent.inputSchema], reading from JSON ([JsonDecoder]) and YAML ([YamlInput]) agent
+ * files. Writing delegates to `JsonObject.serializer()`, which only works in a JSON context; an Agent is never
+ * re-serialized to disk.
  */
 object JsonObjectSerializer : KSerializer<JsonObject> {
     @OptIn(ExperimentalSerializationApi::class, InternalSerializationApi::class)
@@ -89,12 +86,8 @@ object JsonObjectSerializer : KSerializer<JsonObject> {
 
     private fun yamlScalarToJsonPrimitive(node: YamlScalar): JsonPrimitive {
         val content = node.content
-        // Try to preserve numeric and boolean types. YAML scalars lose their
-        // original type tag, so we infer: booleans first, then long, then double,
-        // then fall back to string. Limitation: a quoted YAML scalar that looks
-        // like a bool/number (e.g. "true", "123") is indistinguishable from the
-        // unquoted form here and is coerced to that type — acceptable because the
-        // result feeds a JSON Schema where such values are interchangeable.
+        // A kaml scalar keeps no quote style, so a quoted "123" or "true" becomes a number or boolean:
+        // in `enum` or `const` it matches that, not the string. Write such a schema as JSON.
         if (content == "true" || content == "false") return JsonPrimitive(content.toBoolean())
         content.toLongOrNull()?.let { return JsonPrimitive(it) }
         content.toDoubleOrNull()?.let { return JsonPrimitive(it) }

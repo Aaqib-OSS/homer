@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-15
 deciders: Lukáš Vlk
-amended: 2026-06-24, 2026-09-30, 2026-10-09, 2026-11-20
+amended: 2026-06-24, 2026-09-30, 2026-10-09, 2026-11-20, 2026-11-21
 ---
 # ADR-0021: ask-and-dispatch — deferred dispatch from a question answer
 
@@ -244,3 +244,18 @@ whose `expires_at` has passed, whether or not the TTL sweep has moved it yet. Th
 every `sweepIntervalSec`, so a claim on status alone would let an answer fire a dispatch whose TTL
 lapsed since the last tick. The continuations of ADR-0023 share the same claim, so a lapsed
 continuation does not fire when its watched run ends either.
+
+## Amendment (2026-11-21): the default TTL is finite
+
+`server.dispatch.defaultTtlSec` is a non-nullable `Int` defaulting to `604800` (7 days), still `> 0`. A dispatch or
+continuation without its own `ttlSec` now expires after the default instead of staying PENDING forever; an operator
+who needs a longer wait raises the setting or passes `ttlSec`. Schema v35 gives a PENDING row created before the
+upgrade with no expiry `created_at + 604800`, so none stays pending forever. Every pending row is thus bounded in
+time (ADR-0047).
+
+The v35 backfill pins `604800` from `created_at`, not the configured default: the schema upgrade takes no
+configuration, so it cannot see `server.dispatch.defaultTtlSec`. A row's `expires_at` is fixed when the row is
+written, so raising the setting after the upgrade does not reach a row that was already pending, backfilled or not;
+a longer wait for such a row needs a re-create with its own `ttlSec`. The 7-day figure therefore lives in three
+places: `DispatchConfig`, the `default` in `homer-config.schema.json`, and the v35 SQL. The first two describe the
+current default and change together; the SQL records the default at v35 and stays as written.

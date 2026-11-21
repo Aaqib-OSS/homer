@@ -12,12 +12,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 
 /**
- * Reads one session-spend response body into a [SessionSpendOutcome] for
- * [LlmCostResolver]: the session-cumulative [SessionSpendConfig.costPath] figure,
- * completed by `callsPath` when set, or — with the three request-window keys set —
- * the sum of the attempt's own in-window rows (ADR-0061). The body is
- * operator-endpoint output: every read degrades to a fixed-vocabulary failure,
- * never an exception.
+ * Reads one session-spend response body into a [SessionSpendOutcome] for [LlmCostResolver]: the cumulative
+ * `costPath` figure, completed by `callsPath`, or the sum of the attempt's own in-window rows when the
+ * request-window keys are set. Every failed read degrades to a fixed-vocabulary failure; an `Error` propagates. See ADR-0061.
  */
 internal class SessionSpendPricing(
     val config: SessionSpendConfig,
@@ -45,7 +42,7 @@ internal class SessionSpendPricing(
         val requestSpend: JsonPath,
     )
 
-    /** True when a reading can tell whether it is complete (callsPath or the request window), so it is worth polling for. */
+    /** True when a reading can tell whether it is complete (callsPath or the request window): worth polling for. */
     val pollsForCompleteness: Boolean get() = callsPath != null || window != null
 
     /** Prices one response [body]; [startedAtMs]/[endedAtMs] bound the attempt's request window. */
@@ -67,12 +64,9 @@ internal class SessionSpendPricing(
 
     /** [body] as a JsonPath document; null when it is not a JSON object or array. */
     private fun parseDocument(body: String): DocumentContext? {
-        // Jayway's default provider parses leniently — even single-token garbage like
-        // "<html>nope</html>" comes back as a bare scalar "document" instead of throwing.
-        // A costPath can only ever match inside an object or array, so requiring the
-        // strict-parsed top level to be one of those rejects non-JSON bodies without
-        // rejecting any body an object/array-shaped costPath could actually match.
-        val strictParse = runCatching { Json.parseToJsonElement(body) }.getOrNull()
+        // Jayway parses leniently ("<html>nope</html>" becomes a bare scalar document), and a path only matches
+        // inside an object or array, so a strict-parsed top level of either kind is required.
+        val strictParse = coRunCatching { Json.parseToJsonElement(body) }.getOrNull()
         if (strictParse !is JsonObject && strictParse !is JsonArray) return null
         return try {
             JsonPath.using(JSONPATH_CONF).parse(body)
@@ -93,7 +87,7 @@ internal class SessionSpendPricing(
                 null
             } catch (e: CancellationException) {
                 throw e
-            } catch (_: Throwable) {
+            } catch (_: Exception) {
                 return SessionSpendOutcome.Failed("lookup failed")
             }
         val total = sumNumbers(value) ?: return SessionSpendOutcome.Failed("costPath yielded no number")
@@ -109,9 +103,7 @@ internal class SessionSpendPricing(
     ): SessionSpendOutcome {
         val path = callsPath ?: return SessionSpendOutcome.Complete(total)
         val ingestedValue = readOrNull(document, path)
-        // A missing path or a non-number says nothing about progress — it is a broken
-        // callsPath, not zero ingested. Fail the attempt so the schedule retries it and,
-        // if it never improves, the CLI figure is charged with this reason.
+        // A missing or non-numeric callsPath is a failed attempt, not zero ingested (ADR-0061).
         val ingested =
             (ingestedValue as? Number)?.toDouble()?.takeIf { it.isFinite() && it >= 0.0 }?.toInt()
                 ?: return SessionSpendOutcome.Failed("callsPath yielded no number")
@@ -129,7 +121,7 @@ internal class SessionSpendPricing(
             null
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Throwable) {
+        } catch (_: Exception) {
             null
         }
 
@@ -146,12 +138,9 @@ internal class SessionSpendPricing(
         }
 
     /**
-     * Prices one attempt from the [SessionSpendConfig.requestsPath] rows whose start time
-     * falls inside the attempt window, and uses the row count as the ingested figure for the
-     * completeness comparison — the whole point of the window: on a resumed (`--continue`)
-     * session the session-wide `$.calls` already satisfies `expectedCalls` before this
-     * attempt's requests are ingested, so the count must be the window's, not the session's.
-     * See ADR-0061 (Amendment 2026-10-06).
+     * Prices one attempt from the [SessionSpendConfig.requestsPath] rows inside the attempt window, using their
+     * count as the ingested figure so a resumed session's earlier calls cannot satisfy `expectedCalls`.
+     * See ADR-0061.
      */
     private fun windowOutcome(
         document: DocumentContext,
@@ -160,18 +149,14 @@ internal class SessionSpendPricing(
         startedAtMs: Long?,
         endedAtMs: Long?,
     ): SessionSpendOutcome {
-        // Without the attempt's own boundaries the window is unknowable: every row would
-        // look in-window and the figure would be the session total again. Degrade rather
-        // than misprice. The executor always passes both.
+        // Without both attempt boundaries every row would look in-window; fail rather than misprice (ADR-0061).
         if (startedAtMs == null || endedAtMs == null) return SessionSpendOutcome.Failed("attempt window unavailable")
         val rows = readRequestRows(document, paths.requests) ?: return SessionSpendOutcome.Failed("requestsPath yielded no rows")
         val grace = config.windowGraceMs
         val from = startedAtMs - grace
         val until = endedAtMs + grace
-        // An absent/unreadable `started` says nothing about which attempt a row belongs to —
-        // including it would risk charging this attempt an earlier one's spend, and skipping
-        // it would drop a possibly in-window row from the charge (CWE-840), so the whole
-        // window is refused rather than priced from an unplaceable row.
+        // A row with no readable `started` cannot be placed: including or skipping it misattributes spend
+        // (CWE-840), so the whole window is refused (ADR-0061).
         val timestamps =
             rows.map { row ->
                 parseEpochMs(readRowField(row, paths.started))
@@ -213,7 +198,7 @@ internal class SessionSpendPricing(
             null
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Throwable) {
+        } catch (_: Exception) {
             null
         }
 
@@ -226,16 +211,13 @@ internal class SessionSpendPricing(
             JsonPath.using(JSONPATH_CONF).parse(row).read<Any?>(field)
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Throwable) {
+        } catch (_: Exception) {
             null
         }
 
     /**
-     * Parses a `started` field to epoch milliseconds. Accepts an ISO-8601 instant or offset
-     * date-time (what a spend API's row carries), or a number already in milliseconds or
-     * seconds. Anything else — including a value with no zone, which would be ambiguous — is
-     * unreadable and returns null: reading it as UTC would risk placing the row in the wrong
-     * attempt's window and charging that attempt another one's spend (see ADR-0061).
+     * Parses a `started` field to epoch milliseconds: an ISO-8601 instant or offset date-time, or a number in
+     * milliseconds or seconds. Anything else, including a zone-less value, is unreadable (null). See ADR-0061.
      */
     private fun parseEpochMs(value: Any?): Long? {
         if (value is Number) {
@@ -246,11 +228,11 @@ internal class SessionSpendPricing(
             return if (d < 1e11) (d * 1000.0).toLong() else d.toLong()
         }
         val text = (value as? String)?.trim().takeUnless { it.isNullOrEmpty() } ?: return null
-        return runCatching {
+        return coRunCatching {
             java.time.Instant
                 .parse(text)
                 .toEpochMilli()
-        }.recoverCatching {
+        }.getOrNull() ?: coRunCatching {
             java.time.OffsetDateTime
                 .parse(text)
                 .toInstant()
@@ -269,9 +251,8 @@ internal class SessionSpendPricing(
                 if (value.isEmpty() || value.any { it !is Number }) {
                     null
                 } else if (value.any { (it as Number).toDouble() < 0.0 }) {
-                    // A negative element makes the whole figure untrustworthy even if the
-                    // sum happens to land non-negative; surface the same "negative number"
-                    // fallback reason a negative scalar produces (checked by the caller).
+                    // A negative element makes the figure untrustworthy even when the sum is non-negative; the caller
+                    // reports it like a negative scalar (ADR-0061).
                     NEGATIVE_SENTINEL
                 } else {
                     value.sumOf { (it as Number).toDouble() }.takeIf { it.isFinite() }

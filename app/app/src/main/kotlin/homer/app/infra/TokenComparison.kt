@@ -3,12 +3,9 @@ package homer.app.infra
 import java.security.MessageDigest
 
 /**
- * Constant-time comparison of an expected and provided bearer token.
- * Plain `==` on Strings short-circuits at the first mismatching char, so the
- * wall-clock time to reject a wrong token leaks the length of the matching
- * prefix. [MessageDigest.isEqual] is documented to run in time independent of
- * input contents (and is safe on byte arrays of unequal length), closing that
- * side channel.
+ * Constant-time comparison of an expected and provided bearer token: unlike `==`, [MessageDigest.isEqual] runs in
+ * time independent of input contents, so the time to reject a token does not leak the length of its matching
+ * prefix (CWE-208).
  */
 internal fun matchesTokenConstantTime(
     expected: String,
