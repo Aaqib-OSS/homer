@@ -150,9 +150,8 @@ class ProcessRepositoryTest {
                     ),
                 )
 
-            // The root row itself is not a descendant of itself: `?rootProcessId=N` answers
-            // "runs in N's flow below N", so the caller lists N separately or filters with
-            // roots=true. Owner-scoped callers pass N's own id as visibleOwner anyway.
+            // The root row is not its own descendant: `?rootProcessId=N` lists the runs below N.
+            // Callers list N separately or filter with roots=true.
             assertEquals(listOf(child, grandchild), page.processes.map { it.id })
             assertEquals(2, page.total)
             // Composes with the visibility union like every other predicate.
@@ -176,8 +175,8 @@ class ProcessRepositoryTest {
             val repo = repo()
             repo.obtainProcessId(NewRunRecord("a"), 100).processId
 
-            // An invisible or evicted root id must read as "nothing you can see", never as
-            // an error and never as the whole list (§12: hide existence).
+            // An invisible or evicted root id reads as nothing visible, never as an error or the whole list
+            // (ADR-0047 rule 3).
             val page =
                 repo.getAllProcesses(
                     ProcessListQuery(
@@ -430,9 +429,7 @@ class ProcessRepositoryTest {
             assertEquals(listOf("mr:15", "projectId:4711"), repo.getProcessInfo(id)?.tags)
         }
 
-    // Tags come back sorted by tag (served by the process_tags primary
-    // key), not in insertion order — these insert deliberately out of order so a
-    // regression to insertion/rowid order would fail them.
+    // Tags come back sorted by tag (process_tags primary key), not in insertion order; these insert out of order.
     @Test
     fun `getTags returns a run's tags in tag order, not insertion order`() =
         runTest {
@@ -583,10 +580,8 @@ class ProcessRepositoryTest {
     fun `getAllProcesses tag filter hides a tag carried only by a run the caller cannot see`() =
         runTest {
             val repo = repo()
-            // The tag exists solely on a run owned by another principal, on an agent the
-            // caller holds no grant on. Resolving the id set must be scoped to the caller's
-            // visibility, so the tag matches nothing — never leaking the invisible run's
-            // existence, and never materializing its id. See ADR-0060 (CWE-400).
+            // The tag exists only on another principal's run the caller holds no grant on: it must match nothing,
+            // neither leaking that run's existence nor materializing its id (ADR-0060, CWE-400).
             repo.obtainProcessId(NewRunRecord("a", tags = listOf("secret:x"), owner = "other"), 100).processId
 
             val page =
@@ -632,9 +627,8 @@ class ProcessRepositoryTest {
                 statements.any { "LIMIT $MAX_TAG_SCREENED_ROWS" in it },
                 "screened fetch must be SQL-bounded, ran: $statements",
             )
-            // Tags for the surviving page arrive in one batched IN-list read, not one
-            // per-row query per candidate row.
-            // The candidate query itself carries the tag subquery; a tag read is a statement over process_tags.
+            // Tags for the surviving page arrive in one batched IN-list read, not one query per row.
+            // The candidate query carries the tag subquery; a tag read is a statement over process_tags.
             val batchedTagReads = statements.filter { it.trimStart().startsWith("SELECT process_tags.") && " IN (" in it }
             assertEquals(1, batchedTagReads.size, "expected one batched tag read, ran: $statements")
             val perRowTagReads = statements.filter { Regex("""process_tags\.process_id = (?!processes)""").containsMatchIn(it) }
@@ -645,9 +639,8 @@ class ProcessRepositoryTest {
     fun `denial_of_service - screened tag filter reads tags in chunks past SQLite's parameter limit`() =
         runTest {
             val repo = repo()
-            // A visible candidate set wider than SQLITE_LIMIT_VARIABLE_NUMBER (999,
-            // default) must degrade to repeated chunked reads, not throw on a single
-            // oversized IN-list. 513 ids force two 512-id chunks.
+            // A candidate set wider than SQLITE_LIMIT_VARIABLE_NUMBER (999) must degrade to chunked reads, not throw;
+            // 513 ids force two 512-id chunks.
             repeat(513) { repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 1000) }
             val screen: (ProcessInfo) -> List<String> = { info -> info.tags }
 
@@ -677,10 +670,8 @@ class ProcessRepositoryTest {
     fun `tag filter drops a run whose matched tag is screened, hiding the oracle`() =
         runTest {
             val repo = repo()
-            // The stored tag `mr:supersecret` was derived from an input later flipped to
-            // secret; the display screen would drop it. Probing by that value must return
-            // an empty page / total=0 even though the row exists — otherwise `total`
-            // discloses that the guessed secret is stored (CWE-203).
+            // `mr:supersecret` came from an input later flipped to secret: probing by it must return an empty page
+            // and total=0, else `total` discloses that the guessed secret is stored (CWE-203).
             repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:supersecret")), 100).processId
             val screen: (ProcessInfo) -> List<String> = { info ->
                 info.tags.filterNot { it.contains("supersecret") }
@@ -704,8 +695,7 @@ class ProcessRepositoryTest {
     fun `tag filter with a screen keeps a run whose tag survives and counts it accurately`() =
         runTest {
             val repo = repo()
-            // A non-secret tag still matches and the total is accurate: the screen only
-            // drops screened values, it must not over-hide legitimate tags (AC #3).
+            // A non-secret tag still matches and the total is accurate: the screen must not over-hide.
             val visible = repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 100).processId
             repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:99")), 100).processId
             val screen: (ProcessInfo) -> List<String> = { info ->
@@ -731,9 +721,8 @@ class ProcessRepositoryTest {
     fun `tag filter screen drops only the run whose value is secret, keeping a sibling with the same key`() =
         runTest {
             val repo = repo()
-            // Two runs share the tag *key* `token`, but the value is a secret needle only
-            // on the first run. A per-row screen must hide only that run, not the sibling —
-            // a global reject of the value would over-hide the legitimate one (AC #3).
+            // Two runs share the tag key `token`; the value is a secret needle only on the first. The per-row screen
+            // must hide only that run: a global reject of the value would over-hide the sibling.
             repo
                 .obtainProcessId(
                     NewRunRecord(
@@ -770,9 +759,8 @@ class ProcessRepositoryTest {
             val repo = repo()
             repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 100).processId
 
-            // The screen is what keeps the filter path from re-opening the CWE-203 oracle,
-            // so a caller that filters by tag must not be able to skip it by leaving the
-            // parameter unset — the read fails closed instead of counting unredacted rows.
+            // The screen keeps the filter path from re-opening the CWE-203 oracle, so leaving the parameter unset
+            // must fail closed rather than count unredacted rows.
             val error =
                 assertFailsWith<IllegalArgumentException> {
                     repo.getAllProcesses(ProcessListQuery(orderAsc = true, limit = 10, tags = listOf("mr:15")))
@@ -784,9 +772,8 @@ class ProcessRepositoryTest {
     fun `addRuntimeTag refuses a write when the run row is gone`() =
         runTest {
             val repo = repo()
-            // No process 999 exists (e.g. purged before a late callback). Without the
-            // existence guard the tag would INSERT an orphan row that outlives the run,
-            // since process_tags has no foreign key. The write must fail closed.
+            // No process 999 exists (e.g. purged before a late callback): without the existence guard the tag would
+            // INSERT an orphan row, since process_tags has no foreign key. The write must fail closed.
             val result = repo.addRuntimeTag(999, "decision:approved", maxTags = 20)
 
             assertFalse(result.written)
@@ -824,10 +811,8 @@ class ProcessRepositoryTest {
     fun `denial_of_service - tag filter is one SQL subquery, no app-side id list`() =
         runTest {
             val repo = repo()
-            // Many visible runs share the tag; the page is one row. Regardless of how many
-            // match, the filter must not first pull every matching id into the application
-            // and feed it back as `id IN (?, ?, ...)` — that list grows with the match set
-            // and hits SQLite's bound-parameter cap. See ADR-0060 (CWE-400).
+            // The filter must not pull every matching id into the application and feed it back as `id IN (...)`:
+            // that list hits the bound-parameter cap (ADR-0060, CWE-400).
             repeat(25) { repo.obtainProcessId(NewRunRecord("a", tags = listOf("mr:15")), 100) }
 
             SqlStatementRecorder.reset()
@@ -1282,7 +1267,7 @@ class ProcessRepositoryTest {
                             rs.next()
                             rs.getString(1)
                         }
-                    // The type the v18 migration adds the column with, so a fresh database matches an upgraded one (#232).
+                    // The type the v18 migration adds the column with, so a fresh database matches an upgraded one.
                     assertEquals("INTEGER", declared)
                 }
             }
@@ -1402,8 +1387,7 @@ class ProcessRepositoryTest {
             repo.transitionStatus(id, ProcessStatus.WORKING, 1, guard = null)
             repo.killTransition(id, 2)
 
-            // A concurrent kill between step start and step end: the append still
-            // lands (the run did execute the step), but the boundary must not
+            // A concurrent kill between step start and end: the append still lands, but the boundary must not
             // resurrect the current command the kill cleared.
             val live = repo.completeStep(id, execution("cmd-1"), nextLabel = "cmd-2", nextStart = 4242L)
 
@@ -1417,10 +1401,8 @@ class ProcessRepositoryTest {
     @Test
     fun `completeStep on any other terminal row records the execution but keeps the command cleared`() =
         runTest {
-            // The guard covers the row's whole terminal class, not just KILLED: a late step
-            // boundary after a FAILED run or a restart-UNKNOWN one must not resurrect a
-            // running command either. Each remaining terminal status is exercised so
-            // narrowing the guard back to `status != KILLED` fails here.
+            // The guard covers the whole terminal class, not just KILLED: a late step boundary must not resurrect a
+            // running command. Each remaining terminal status runs so narrowing the guard fails here.
             for (terminal in listOf(ProcessStatus.FINISHED, ProcessStatus.FAILED, ProcessStatus.UNKNOWN)) {
                 val repo = repo()
                 val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
@@ -1440,9 +1422,8 @@ class ProcessRepositoryTest {
     @Test
     fun `setCurrentCommand on a terminal row writes nothing and returns false`() =
         runTest {
-            // The step-start write carries the same guard as completeStep: a kill landing
-            // between the run's WORKING transition and the step's start must not leave a
-            // terminal row holding a running command.
+            // The step-start write carries the same guard: a kill between WORKING and the step's start must not
+            // leave a terminal row holding a running command.
             for (terminal in listOf(ProcessStatus.FINISHED, ProcessStatus.FAILED, ProcessStatus.KILLED, ProcessStatus.UNKNOWN)) {
                 val repo = repo()
                 val id = repo.obtainProcessId(NewRunRecord("a"), 100).processId
@@ -1934,11 +1915,8 @@ class ProcessRepositoryTest {
     @Test
     fun `latestRunStartedAt sees a just-created row, before any history is written`() =
         runTest {
-            // The defect this pins: the value used to come from the first `history`
-            // entry, which the launched coroutine writes later. Since the query takes
-            // the newest row only, a row inserted moments ago read back empty and
-            // shadowed the real previous run — `latestRunStartedAt` returned null and
-            // the whole `minInterval` check was skipped.
+            // The value once came from the first `history` entry, which the launched coroutine writes later, so a new
+            // row read back empty, shadowed the real previous run and skipped the `minInterval` check.
             val repo = repo()
             repo.obtainProcessId(NewRunRecord("a"), 100, nowSec = 1_000)
 
@@ -1984,11 +1962,8 @@ class ProcessRepositoryTest {
 
     @Test
     fun `concurrent starts of a cooled-down agent admit exactly one`() =
-        // The bound only holds if the check and the INSERT share a transaction. With
-        // the check outside it, every one of these writers observed "no previous run"
-        // and all 20 were admitted. Real parallel writers on Dispatchers.IO, so this
-        // exercises the BEGIN IMMEDIATE serialization rather than a single-threaded
-        // interleaving that could never race.
+        // The bound holds only if the check and the INSERT share a transaction; real parallel writers on
+        // Dispatchers.IO exercise the BEGIN IMMEDIATE serialization.
         runBlocking {
             val repo = repo(PersistenceTestSupport.tempDatabase(dispatcher = Dispatchers.IO))
             val cooldown = Cooldown(minInterval = "1h")
@@ -2040,10 +2015,8 @@ class ProcessRepositoryTest {
     @Test
     fun `latestFailureEndedAt follows failure time, not row order, when runs overlap`() =
         runTest {
-            // Same-agent runs overlap by default (lockStrategy.key is per process,
-            // maxParallelRuns is 10), so the newest row id is not the newest failure.
-            // Ordering by id picked run B's EARLIER failure and let a start through
-            // inside the afterFailure window.
+            // Same-agent runs overlap by default, so the newest row id is not the newest failure: ordering by id
+            // picked run B's earlier failure and let a start through inside the afterFailure window.
             val repo = repo()
             val a = repo.obtainProcessId(NewRunRecord("flaky"), 100, nowSec = 1).processId
             val b = repo.obtainProcessId(NewRunRecord("flaky"), 100, nowSec = 2).processId
@@ -2262,9 +2235,8 @@ class ProcessRepositoryTest {
             val withoutKeys = repo.obtainProcessId(NewRunRecord("a", mapOf("MR" to "1")), 100).processId
 
             assertEquals(setOf("TOKEN"), repo.getProcessInfo(withKeys)?.secretInputKeys)
-            // A caller that captured no snapshot stores null, which reads back as
-            // "ask the current definition". An empty set is different and meaningful:
-            // it says the agent had no secret inputs at run time.
+            // No captured snapshot stores null ("ask the current definition"); an empty set differs: the agent had
+            // no secret inputs at run time.
             assertEquals(null, repo.getProcessInfo(withoutKeys)?.secretInputKeys)
             val noSecrets = repo.obtainProcessId(NewRunRecord("a", secretInputKeys = emptySet()), 100).processId
             assertEquals(emptySet(), repo.getProcessInfo(noSecrets)?.secretInputKeys)
@@ -2273,10 +2245,8 @@ class ProcessRepositoryTest {
     @Test
     fun `a pre-v14 FAILED row with no terminal time never masks a real one`() =
         runTest {
-            // latestFailureEndedAtTx orders by ended_at DESC and takes one row, which is
-            // only correct because SQLite sorts NULLs last under DESC. Migrated rows carry
-            // a null ended_at, so if that assumption were wrong one of them would win the
-            // ordering and report "no recent failure" for an agent that just failed.
+            // latestFailureEndedAtTx takes the top row of ended_at DESC, correct only because SQLite sorts NULLs last
+            // under DESC; migrated rows carry a null ended_at and must not win.
             val repo = repo()
             val migrated = repo.obtainProcessId(NewRunRecord("flaky"), 100, nowSec = 1).processId
             repo.transitionStatus(migrated, ProcessStatus.FAILED, 100, guard = null)
@@ -2298,7 +2268,7 @@ class ProcessRepositoryTest {
             assertEquals(null, repo.latestFailureEndedAt("flaky"))
         }
 
-    // ========== Only a run that actually executed arms afterFailure (GH-141) ==========
+    // ========== Only a run that actually executed arms afterFailure ==========
 
     /** A run refused before it started: FAILED with no execution, carrying its stored reason. */
     private suspend fun refusedRun(
@@ -2332,10 +2302,8 @@ class ProcessRepositoryTest {
     @Test
     fun `a pre-start refusal does not arm afterFailure`() =
         runTest {
-            // Every pre-start cause stores a reason (ADR-0098) — all five of
-            // PreStartFailureReason's causes. Such a run never executed, and dropping a
-            // duplicate is the healthy path — it must not back the agent off, for itself
-            // or another subject.
+            // Every pre-start cause (ADR-0098, all five of PreStartFailureReason) stores a reason: such a run never
+            // executed (a dropped duplicate is the healthy path), so it must not back the agent off for any subject.
             val repo = repo()
             val cooldown = Cooldown(afterFailure = "1m")
             val reasons =
@@ -2361,9 +2329,8 @@ class ProcessRepositoryTest {
     @Test
     fun `a run that failed while executing a command still arms afterFailure`() =
         runTest {
-            // A pre-v30 row and a kill-raced failure read exactly like this one — FAILED
-            // with a recorded execution and a NULL reason — so the discriminator is the
-            // column, not history parsing.
+            // A pre-v30 row and a kill-raced failure look like this one (FAILED, an execution, NULL reason), so the
+            // discriminator is the column, not history parsing.
             val repo = repo()
             val cooldown = Cooldown(afterFailure = "1m")
             val id = executedFailure(repo, "a", endedAt = 1_000)
@@ -2399,9 +2366,8 @@ class ProcessRepositoryTest {
     @Test
     fun `a FAILED row arms afterFailure until its reason write lands`() =
         runTest {
-            // The reason is written in a second transaction after FAILED commits (ADR-0098),
-            // so a read in that gap still sees NULL and counts the row as an executed
-            // failure. Fail-closed: the gap arms the window, it never opens a hole in it.
+            // The reason is written after FAILED commits (ADR-0098), so a read in that gap sees NULL and counts an
+            // executed failure: the gap arms the window, it never opens a hole in it.
             val repo = repo()
             val cooldown = Cooldown(afterFailure = "1m")
             val id = repo.obtainProcessId(NewRunRecord("a"), 100, nowSec = 1_000).processId
@@ -2508,9 +2474,8 @@ class ProcessRepositoryTest {
             val workspacePurgeable = repo.getWorkspacePurgeableProcesses(terminal, nowSec = 1000)
             val recordPurgeable = repo.getRecordPurgeableProcesses(terminal, nowSec = 1000)
 
-            // The two sweep reads surface no history, executions or runner state, so they
-            // must not drag those blobs off disk — a sweep at a full `maxProcesses` table
-            // would otherwise decode every row's blobs.
+            // The two sweep reads surface no history, executions or runner state, so they must not decode those
+            // blobs: a sweep at a full `maxProcesses` table would otherwise read every row's.
             val selects = SqlStatementRecorder.statements().filter { it.startsWith("SELECT processes.") }
             assertEquals(2, selects.size, selects.toString())
             for (sql in selects) {
@@ -2577,11 +2542,8 @@ class ProcessRepositoryTest {
                 .toInt()
         }
 
-    // sqlite-jdbc can throw SQLITE_BUSY from the re-BEGIN IMMEDIATE it issues
-    // inside commit(), after the commit already landed. Exposed counts that as a failed
-    // attempt and re-runs the block, which for these append-shaped writes would duplicate
-    // durable state. Each test below drives that failure through the real DatabaseService
-    // and asserts the write happened exactly once.
+    // A commit that lands then throws SQLITE_BUSY must not replay append-shaped writes (ADR-0020):
+    // each test drives it through the real DatabaseService and asserts the write happened exactly once.
 
     /** A fresh writer handle on [path] whose commit() lands and then throws. */
     private fun failingDb(path: String) =
@@ -2796,8 +2758,7 @@ class ProcessRepositoryTest {
         }
 
     // ── Agent-level status hooks (ADR-0107) ──────────────────────────────────────────────
-    // The hook rows a status write records ride that write's own transaction, so a restart
-    // between the two loses nothing and a guard-rejected CAS records none of them.
+    // The hook rows ride the status write's transaction: a restart loses none, a guard-rejected CAS records none.
 
     /** The hooks the agent catalog declares, keyed by the status that fires them. */
     private fun recording(

@@ -466,9 +466,7 @@ class ContinuationRepositoryTest {
     fun `page maps SINGLE and JOIN rows to identical Continuation objects, watch order included`() =
         runTest {
             val single = repo.create(continuation(7), maxPending = 10)!!
-            // Deliberately not in ascending watched-process-id order: watches fire in the
-            // caller-supplied (registration) order, not pid order, so the mapping must not
-            // silently re-sort them.
+            // Not in ascending process-id order: watches keep registration order, which must not be re-sorted.
             val watches =
                 listOf(
                     JoinWatch(watchedProcessId = 30, interruptId = "int-c"),
