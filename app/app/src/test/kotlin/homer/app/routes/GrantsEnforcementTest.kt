@@ -292,7 +292,26 @@ class GrantsEnforcementTest {
                 }
             }
             verify(exactly = 0) { agentFilesService.list(any()) }
+            verify(exactly = 0) { agentFilesService.read(any(), any()) }
             verify(exactly = 0) { agentFilesService.write(any(), any(), any(), any()) }
+            verify(exactly = 0) { agentFilesService.delete(any(), any()) }
+        }
+
+    @Test
+    fun `agent file routes answer an unknown agent with 404 even to a caller whose grant pattern matches it`() =
+        testApplication {
+            val starReader = TokenConfig(token = "star-token", grants = listOf(Grant(listOf("*"), listOf(Action.READ))))
+            val tokens = mapOf("star-reader" to starReader)
+            val agentFilesService = mockk<AgentFilesService>(relaxed = true)
+            application { installGrantsApp(tokens, deps(authorizerFor(tokens), agentFilesService = agentFilesService)) }
+
+            val unknown = client.get("/api/v1/agents/ghost/files") { header(HttpHeaders.Authorization, "Bearer star-token") }
+            val known = client.get("/api/v1/agents/echo/files") { header(HttpHeaders.Authorization, "Bearer star-token") }
+
+            assertEquals(HttpStatusCode.NotFound, unknown.status)
+            assertContains(unknown.bodyAsText(), "Agent 'ghost' not found")
+            assertEquals(HttpStatusCode.Forbidden, known.status)
+            verify(exactly = 0) { agentFilesService.list(any()) }
         }
 
     @Test

@@ -15,6 +15,7 @@ import homer.app.models.CronInfo
 import homer.app.models.ErrorResponse
 import homer.app.models.SchemaErrorResponse
 import homer.app.services.AgentFilesService
+import homer.app.services.AgentsService
 import homer.app.services.Authorizer
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
@@ -111,7 +112,7 @@ private fun Route.agentFileReadRoutes(deps: AgentRouteDeps) {
     with(deps) {
         get("/agents/{agentName}/files") {
             val name = call.pathParameter("agentName")
-            if (!call.mayEditAgentFiles(authorizer, name)) return@get
+            if (!call.mayEditAgentFiles(authorizer, agentsService, name)) return@get
             respondFileOpResult(call, agentFilesService.list(name), schemaInvalidMsg = "Invalid") { r ->
                 call.respond(
                     AgentFileListResponse(
@@ -132,7 +133,7 @@ private fun Route.agentFileReadRoutes(deps: AgentRouteDeps) {
         get("/agents/{agentName}/files/{path...}") {
             val name = call.pathParameter("agentName")
             val path = call.parameters.getAll("path")?.joinToString("/") ?: ""
-            if (!call.mayEditAgentFiles(authorizer, name)) return@get
+            if (!call.mayEditAgentFiles(authorizer, agentsService, name)) return@get
             respondFileOpResult(call, agentFilesService.read(name, path), schemaInvalidMsg = "Invalid") { r ->
                 call.respond(AgentFileContentResponse(path = path, content = r.value))
             }
@@ -146,7 +147,7 @@ private fun Route.agentFileWriteRoutes(deps: AgentRouteDeps) {
         put("/agents/{agentName}/files/{path...}") {
             val name = call.pathParameter("agentName")
             val path = call.parameters.getAll("path")?.joinToString("/") ?: ""
-            if (!call.mayEditAgentFiles(authorizer, name)) return@put
+            if (!call.mayEditAgentFiles(authorizer, agentsService, name)) return@put
             val body = call.receiveOr400<AgentFileWriteRequest>("Invalid JSON body: expected { content }")
             respondFileOpResult(
                 call,
@@ -165,7 +166,7 @@ private fun Route.agentFileWriteRoutes(deps: AgentRouteDeps) {
         delete("/agents/{agentName}/files/{path...}") {
             val name = call.pathParameter("agentName")
             val path = call.parameters.getAll("path")?.joinToString("/") ?: ""
-            if (!call.mayEditAgentFiles(authorizer, name)) return@delete
+            if (!call.mayEditAgentFiles(authorizer, agentsService, name)) return@delete
             respondFileOpResult(call, agentFilesService.delete(name, path), schemaInvalidMsg = "Invalid") {
                 call.respond(HttpStatusCode.NoContent)
             }
@@ -219,15 +220,16 @@ private fun Route.agentToolingRoutes(deps: AgentRouteDeps) {
 }
 
 /**
- * Whether the caller may edit [name]'s files: else a `404` identical to an unknown agent's when it holds no
- * grant on [name] (ADR-0047 rule 3), or a `403` when it holds another grant but not EDIT.
+ * Whether the caller may edit [name]'s files: else the unknown-agent `404` for an unknown agent or one it holds
+ * no grant on (ADR-0047 rule 3), as on `/debug`, or a `403` when it holds another grant but not EDIT.
  */
 private suspend fun ApplicationCall.mayEditAgentFiles(
     authorizer: Authorizer,
+    agentsService: AgentsService,
     name: String,
 ): Boolean {
     val principal = principalName()
-    if (!authorizer.anyGrant(principal, name)) {
+    if (agentsService.agents[name] == null || !authorizer.anyGrant(principal, name)) {
         respond(HttpStatusCode.NotFound, ErrorResponse(msg = "Agent '$name' not found"))
         return false
     }

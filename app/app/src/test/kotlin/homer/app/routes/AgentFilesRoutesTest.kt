@@ -73,7 +73,11 @@ class AgentFilesRoutesTest {
 
     private fun ApplicationTestBuilder.wireRoutes() {
         val svc = service
-        mountApiV1Routes { every { agentFilesService } returns svc }
+        val agents = agentsService
+        mountApiV1Routes {
+            every { agentFilesService } returns svc
+            every { agentsService } returns agents
+        }
     }
 
     @Test
