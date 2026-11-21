@@ -39,7 +39,9 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.unmockkAll
 import io.mockk.verify
+import io.mockk.verifyOrder
 import io.opentelemetry.api.trace.Span
+import io.opentelemetry.api.trace.StatusCode
 import io.opentelemetry.context.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -457,9 +459,8 @@ class ProcessTest {
     // ========== Span Management Tests ==========
 
     @Test
-    fun `execute should end span on successful execution`() =
+    fun `execute ends the command span with status OK after a successful command`() =
         runTest {
-            val mockWorkspaceConfig = TestFixtures.mockWorkspaceConfig()
             every {
                 mockWorkspaceConfigFactory.createWorkspaceConfig(
                     any(),
@@ -476,24 +477,21 @@ class ProcessTest {
                     any(),
                     any(),
                 )
-            } returns mockWorkspaceConfig
+            } returns TestFixtures.mockWorkspaceConfig()
+            val commandSpan = TestFixtures.mockSpan()
+            val tracedProcess = processWithCommandSpan(commandSpan)
 
-            process.execute(1, mockSpan)
+            tracedProcess.execute(1, mockSpan)
 
-            verify { mockSpan.end() }
+            verifyOrder {
+                commandSpan.setStatus(StatusCode.OK)
+                commandSpan.end()
+            }
         }
 
     @Test
-    fun `execute should end span even when workspace create or cleanup fails`() =
+    fun `execute ends the command span with status ERROR after a failed command`() =
         runTest {
-            // Note: This test verifies that span.end() is called even if workspace operations fail
-            // However, if workspaceConfigFactory throws, the span won't be ended because
-            // the exception occurs before the try-finally block
-
-            // For this test, we'll mock the workspace config to succeed, but we can't easily
-            // mock the Workspace or AgentExecutor to fail without extensive mocking
-            // So we just verify that in normal flow, span.end() is called
-            val mockWorkspaceConfig = TestFixtures.mockWorkspaceConfig()
             every {
                 mockWorkspaceConfigFactory.createWorkspaceConfig(
                     any(),
@@ -510,12 +508,29 @@ class ProcessTest {
                     any(),
                     any(),
                 )
-            } returns mockWorkspaceConfig
+            } returns TestFixtures.mockWorkspaceConfig()
+            coEvery {
+                mockExecutorFactory.getExecutor<Command>(any()).execute(any(), any(), any())
+            } throws IllegalStateException("command failed")
+            // A relaxed mock would hand the failed step synthetic artifact paths that break relativeTo().
+            coEvery { mockProcessManager.getCommandArtifacts(any(), any()) } returns null
+            val commandSpan = TestFixtures.mockSpan()
+            val tracedProcess = processWithCommandSpan(commandSpan)
 
-            process.execute(1, mockSpan)
+            assertFailsWith<IllegalStateException> { tracedProcess.execute(1, mockSpan) }
 
-            verify { mockSpan.end() }
+            verifyOrder {
+                commandSpan.setStatus(StatusCode.ERROR, "command failed")
+                commandSpan.end()
+            }
         }
+
+    /** A process whose command spans are [commandSpan], kept apart from the process span. */
+    private fun processWithCommandSpan(commandSpan: Span): Process =
+        Process(
+            processDeps().copy(telemetryService = TestFixtures.mockTelemetryService(commandSpan)),
+            RunSpec(agent = testAgent, queryParams = testQueryParams, parentContext = testContext),
+        )
 
     // ========== Integration Tests ==========
 
@@ -651,20 +666,13 @@ class ProcessTest {
                 )
             } throws IllegalStateException("Config creation failed")
 
-            try {
-                process.execute(1, mockSpan)
-                throw AssertionError("Expected exception was not thrown")
-            } catch (e: IllegalStateException) {
-                assertEquals("Config creation failed", e.message)
-            }
+            val failure = assertFailsWith<IllegalStateException> { process.execute(1, mockSpan) }
 
-            // Note: span.end() is NOT called when workspaceConfigFactory throws
-            // because the exception occurs before the try-finally block
-            verify(exactly = 0) { mockSpan.end() }
+            assertEquals("Config creation failed", failure.message)
         }
 
     @Test
-    fun `execute should not end span when workspace config creation fails`() =
+    fun `a workspace config failure runs no command`() =
         runTest {
             every {
                 mockWorkspaceConfigFactory.createWorkspaceConfig(
@@ -684,15 +692,9 @@ class ProcessTest {
                 )
             } throws RuntimeException("Workspace config creation failed")
 
-            try {
-                process.execute(1, mockSpan)
-            } catch (e: RuntimeException) {
-                // Expected
-            }
+            assertFailsWith<RuntimeException> { process.execute(1, mockSpan) }
 
-            // span.end() is only called in the finally block of the try statement
-            // If workspaceConfigFactory throws before the try block, span.end() won't be called
-            verify(exactly = 0) { mockSpan.end() }
+            coVerify(exactly = 0) { mockExecutorFactory.getExecutor<Command>(any()).execute(any(), any(), any()) }
         }
 
     // ========== Query Params Tests ==========
