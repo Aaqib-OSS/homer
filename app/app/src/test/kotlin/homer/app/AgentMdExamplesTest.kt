@@ -11,29 +11,9 @@ import kotlin.test.assertTrue
 import kotlin.test.fail
 
 /**
- * Structural backstop for [`app/AGENT.md`](../../../../../AGENT.md).
- *
- * Every complete-agent YAML/JSON code block in AGENT.md must:
- *  1. Deserialize via [Agent.serializer] (matches how `AgentsService`
- *     loads agents from disk).
- *  2. Re-validate against `homer-agent.schema.json`.
- *
- * Catches structural drift like:
- *  - `agents: [code-reviewer]` list form when the model expects a map.
- *  - `resultEnvParam: { ... }` object form when the model expects an array.
- *  - Renamed/removed kaml tags after a `Command` sealed-class refactor.
- *
- * A second test (scan in `DeprecatedSyntaxScan.kt`) scans every yaml/json block (partial snippets included, any
- * indent, flow style too) and fails on a `type` of `STRING`/`NUMBER`/`ANY` and on
- * a `queryParams` key that does not belong to a `!<agent>` / `"type": "agent"`
- * command (that one is a different, non-deprecated field; it is recognised by
- * nesting deeper than the nearest preceding command header). A block that
- * deliberately shows the legacy syntax opts out with
- * `<!-- legacy-syntax-example -->` on the line before its fence.
- *
- * Does NOT catch table or prose drift: field-table rows, required flags
- * and schema-stated defaults are [SchemaDocTableContractTest]'s job;
- * misdescribed validation semantics rely on review (root §10).
+ * Structural backstop for [`app/AGENT.md`](../../../../../AGENT.md): every complete-agent YAML/JSON block must
+ * deserialize via [Agent.serializer] and validate against `homer-agent.schema.json`. Field-table drift is
+ * [SchemaDocTableContractTest]'s job; misdescribed validation semantics rely on review.
  */
 class AgentMdExamplesTest {
     private val agentMd = File(repoRoot, "app/AGENT.md")

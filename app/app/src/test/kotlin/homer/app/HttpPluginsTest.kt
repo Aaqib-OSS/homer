@@ -64,7 +64,7 @@ class HttpPluginsTest {
                 routing { get("/test") { call.respond(HttpStatusCode.OK) } }
             }
             // Empty origins keep anyHost() but without credential reflection, so
-            // Ktor answers `*` rather than echoing the request Origin (H3 / ADR-0016).
+            // Ktor answers `*` rather than echoing the request Origin (ADR-0016).
             val response1 =
                 client.get("/test") {
                     header(HttpHeaders.Origin, "http://anything.example.com")
@@ -115,9 +115,8 @@ class HttpPluginsTest {
     @Test
     fun `CORS preflight does not break when SecurityHeaders runs after CORS completes the response`() =
         testApplication {
-            // Real install order: CORS first, then SecurityHeaders. CORS completes the
-            // preflight response before SecurityHeaders' onCall runs; the plugin must
-            // skip header append on the already-committed response instead of throwing.
+            // Real install order: CORS completes the preflight before SecurityHeaders' onCall, which must skip the
+            // header append on the already-committed response instead of throwing.
             application {
                 configureCors(listOf("http://console.example.com"))
                 configureSecurityHeaders()
@@ -160,9 +159,8 @@ class HttpPluginsTest {
                     header(HttpHeaders.Origin, "http://localhost:3000")
                 }
 
-            // Without Access-Control-Expose-Headers the browser hides these
-            // custom headers from JS, so the console reads `null` and treats
-            // every finished artifact as still streaming (stuck Live badge).
+            // Without Access-Control-Expose-Headers the browser hides these custom headers from JS, so the console
+            // reads `null` and treats every finished artifact as still streaming.
             val exposed = response.headers["Access-Control-Expose-Headers"] ?: ""
             assertTrue(
                 exposed.contains("X-File-Complete"),

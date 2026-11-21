@@ -32,19 +32,9 @@ import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 
 /**
- * Verifies the `perCaller` rate limiter wired in `RateLimiting.kt`
- * (`configureRateLimiting`, keyed by `callerKey`):
- *
- *  - **Per-caller isolation** — the bucket is keyed on the authenticated
- *    identity (`UserIdPrincipal.name`), so exhausting one token's budget does
- *    not affect another token. This only holds if `rateLimit` is nested
- *    *inside* `authenticate` so the principal is populated before the limiter's
- *    `requestKey` runs. If the nesting regressed (limiter wrapping auth), the
- *    principal would be null at key time, both tokens would collapse onto the
- *    shared IP bucket, and the isolation assertion below would fail.
- *  - **Unsecured fallback** — with no auth provider there is no principal, so
- *    the key falls back to `local.remoteHost`; same-host requests share one
- *    bucket. Mirrors the login limiter's IP stance (ADR-0011 / ADR-0014).
+ * Verifies the `perCaller` limiter wired in `RateLimiting.kt`: the bucket is keyed on the authenticated identity, so
+ * one token's budget does not affect another's, which holds only while `rateLimit` nests inside `authenticate`. With
+ * no auth provider the key falls back to `local.remoteHost`; same-host requests share a bucket (ADR-0011, ADR-0014).
  */
 class PerCallerRateLimitTest {
     private val tokens =
@@ -121,7 +111,7 @@ class PerCallerRateLimitTest {
         }
 
     /**
-     * The widened runner-state read is a polled path (§12 rule 5): the reader's own bucket
+     * The widened runner-state read is a polled path (ADR-0047 rule 5): the reader's own bucket
      * sheds the excess, and a shed response is never cached.
      */
     @Test

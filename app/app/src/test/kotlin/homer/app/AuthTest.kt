@@ -25,12 +25,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.test.assertEquals
 
 /**
- * Integration tests for bearer token authentication.
- *
- * Runs the production provider("auth-bearer") ([buildBearerProvider]): a
- * valid token authenticates regardless of request path. `TokenConfig.endpoints`
- * is removed (startup rejects it, ADR-0037) and ignored here; authorization
- * by grants happens at the route, not in this provider.
+ * Integration tests for bearer token authentication: the production provider("auth-bearer") ([buildBearerProvider])
+ * authenticates a valid token on any path. The removed `TokenConfig.endpoints` is ignored here (startup rejects it,
+ * ADR-0037); grants authorize at the route.
  */
 class AuthTest {
     // Token definitions used across tests
@@ -187,7 +184,7 @@ class AuthTest {
                 HttpStatusCode.OK,
                 offPrefix.status,
                 "Expected 200 on /api/v1/agents — the auth provider authenticates any valid token " +
-                    "regardless of its (deprecated) endpoints scope; authorization moves to the route (ADR-0037)",
+                    "regardless of its removed endpoints scope; authorization moves to the route (ADR-0037)",
             )
         }
 
@@ -216,7 +213,7 @@ class AuthTest {
                 HttpStatusCode.OK,
                 offPath.status,
                 "Expected 200 on /api/v1/agents with a status-only token — the auth provider authenticates " +
-                    "any valid token regardless of its (deprecated) endpoints scope; authorization moves to " +
+                    "any valid token regardless of its removed endpoints scope; authorization moves to " +
                     "the route (ADR-0037)",
             )
         }
@@ -232,9 +229,8 @@ class AuthTest {
             application {
                 installAuthApp(allTokens)
                 routing {
-                    // The production probe routes, mounted OUTSIDE authenticate(...)
-                    // as configureRouting does, so kubelet (which never sends
-                    // Authorization) can hit them.
+                    // The production probe routes, mounted outside authenticate(...) as configureRouting does,
+                    // so kubelet (which sends no Authorization) can reach them.
                     install(ContentNegotiation) { json(apiJson) }
                     apiV1UnsecuredRoutes(deps)
                 }

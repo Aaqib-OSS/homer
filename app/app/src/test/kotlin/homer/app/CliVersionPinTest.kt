@@ -10,14 +10,9 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * Guards the agent-CLI version pins (CWE-1357). The `runner` stage installs three global npm
- * packages that run agent prompts with the workspace's secrets in their environment, so each
- * build must ship a release someone chose, not whatever the registry published that day.
- *
- * Each pin is declared three times — `app/Dockerfile`, the `docker-compose.build.yml` build
- * overlay and the `DOCKER.md` build-arguments table — and this test is what keeps the three
- * from drifting apart. The Claude Code pin is also tied to the newest committed capture, so a
- * bump cannot ship a release no recorded stream was taken from (ADR-0057).
+ * Guards the agent-CLI version pins (CWE-1357): each npm package the `runner` stage installs is pinned identically in
+ * `app/Dockerfile`, `docker-compose.build.yml` and the `DOCKER.md` table, and the Claude Code pin matches the newest
+ * committed capture, so a bump cannot ship a release no recorded stream came from (ADR-0057).
  */
 class CliVersionPinTest {
     /** Build argument → the npm package it pins. */
@@ -93,7 +88,7 @@ class CliVersionPinTest {
             )
         }
         // A credential in the install instruction would land in `docker history` of the pushed
-        // image (root CLAUDE.md §12 rule 7). The three version args are plain releases.
+        // image (ADR-0047 rule 7). The three version args are plain releases.
         val credential = Regex("""(?i)(_auth|npm_config_|registry\.json|password|secret|api[_-]?key|token)""")
         assertFalse(
             credential.containsMatchIn(install),

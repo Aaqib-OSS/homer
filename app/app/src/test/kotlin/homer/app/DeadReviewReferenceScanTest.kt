@@ -8,25 +8,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * No tracked file may cite the gitignored `docs/`-subtree security review document by the
- * citation forms that cleanup removed — the parenthesised citation, the gitignored path
- * itself, the numbered `Audit #` narration, or a `See M<number>` finding label — because
- * an outside contributor cannot open that document, so every such pointer is dead. A
- * surviving explanation names the ADR that records it instead (`ADR-0047`, or the
- * specific one).
- *
- * The scope is deliberately the citation forms the cleanup removed, not every way a file
- * could allude to a review: an unparenthesised prose mention ("the 2026-06-08 security
- * review found…"), a comma form, and a bare label not introduced by "See" (e.g.
- * parenthesised) pass, because the ADRs record those findings under their own provenance
- * and widening the patterns would flag that historical narration. Adjacent lines are
- * joined before matching — each line stripped of the comment prefix a continuation line
- * carries — so a citation wrapped across a line break inside a comment block is still
- * caught.
- *
- * `.gitignore` is exempt — one of its lines *is* the ignore rule for that subtree — and so
- * is this file, which has to spell the patterns out. They are assembled by concatenation
- * anyway, so the guard's own source reads clean under it.
+ * No tracked file may cite the gitignored `docs/`-subtree security review by the citation forms that cleanup removed,
+ * because an outside contributor cannot open it; an explanation names the ADR that records it instead (ADR-0047).
+ * `.gitignore` and this file, which spells the patterns out, are exempt; adjacent comment lines are joined first.
  */
 class DeadReviewReferenceScanTest {
     @Test
@@ -72,9 +56,8 @@ class DeadReviewReferenceScanTest {
 
     @Test
     fun `spares a reworded mention, an unrelated audit label and a bare date`() {
-        // Unparenthesised prose mentions: the ADRs record those findings under their own
-        // provenance (e.g. the 2026-06-08 review's H3/H4 in the cookie-auth ADR), and the
-        // guard's scope is deliberately the removed citation forms, not every allusion.
+        // Unparenthesised prose mentions pass: the ADRs record those findings under their own provenance,
+        // and the guard's scope is the removed citation forms, not every allusion.
         assertEquals(emptyList(), deadReviewOffenders("the security review found (finding H5) that"))
         assertEquals(emptyList(), deadReviewOffenders("H3 (security review 2026-06-08, ADR-0016)"))
         assertEquals(emptyList(), deadReviewOffenders("the 2026-07-12 review, H3"))
@@ -106,10 +89,8 @@ class DeadReviewReferenceScanTest {
 }
 
 /**
- * The guard patterns, each one's canonical citation form concatenated so this file does not
- * match itself, paired with the regex that finds it. The `See M` label requires a finding
- * number — `See M12` — so prose such as `See MCP tools` is not a citation; the other three
- * are anchored to text unique to the dead citations.
+ * The guard patterns, each one's canonical citation concatenated so this file does not match itself, paired with its
+ * regex. The `See M` label requires a finding number (`See M12`), so `See MCP tools` is not a citation.
  */
 private val GUARD_PATTERNS =
     listOf(
@@ -150,8 +131,7 @@ internal fun deadReviewOffenders(content: String): List<String> {
 }
 
 /**
- * [line] without the comment prefix a continuation line carries, so that a citation wrapped
- * inside a comment block joins the way the citation is written. A line that is nothing but a
- * prefix is kept as it is: the `#` of a wrapped `Audit #` can be the line's whole content.
+ * [line] without the comment prefix a continuation line carries, so a citation wrapped inside a comment block joins
+ * as written. A line that is only a prefix is kept: the `#` of a wrapped numbered citation can be its whole content.
  */
 private fun withoutCommentPrefix(line: String): String = COMMENT_PREFIX.replaceFirst(line, "").ifEmpty { line }.trimEnd()

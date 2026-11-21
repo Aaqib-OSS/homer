@@ -24,11 +24,9 @@ import java.io.File
 import kotlin.test.assertEquals
 
 /**
- * The shutdown drain's wiring of the maintenance gate: `ApplicationStopping` must call
- * `MaintenanceModeService.stop()`, so the parked starts fail with their wait-timeout error
- * instead of holding their requests for the whole `queueWaitSec` and burning the drain
- * window (ADR-0092). The service is constructed through Koin during the boot, so the
- * constructor is intercepted and the drain's call verified on the constructed instance.
+ * `ApplicationStopping` must call `MaintenanceModeService.stop()`, so parked starts fail with their wait-timeout error
+ * instead of holding requests for the whole `queueWaitSec` and burning the drain window (ADR-0092). Koin builds the
+ * service during boot, so its constructor is intercepted and the call verified on the constructed instance.
  */
 class MaintenanceShutdownWiringTest {
     @TempDir
@@ -72,11 +70,8 @@ class MaintenanceShutdownWiringTest {
 
     @Test
     fun `the drain joins the run jobs before the runner consumers are stopped`() {
-        // The order is the whole fix: stopping the consumers first (as it was) is what left a
-        // run queued at SIGTERM with nobody to claim it, burning the drain window and ending
-        // UNKNOWN. The drain's end is observable as `ActiveSessionsRegistry.closeAll`, its last
-        // statement. Recorded through `answers` rather than `verifyOrder`, which MockK refuses
-        // to combine with `anyConstructed`. See ADR-0066, ADR-0102.
+        // Consumers must stop only after the drain, whose end is `ActiveSessionsRegistry.closeAll` (ADR-0066,
+        // ADR-0102); recorded through `answers` because MockK refuses `verifyOrder` with `anyConstructed`.
         val order = mutableListOf<String>()
         mockkConstructor(MaintenanceModeService::class)
         every { anyConstructed<MaintenanceModeService>().isEnabled() } returns false
@@ -105,10 +100,8 @@ class MaintenanceShutdownWiringTest {
 
     @Test
     fun `configureServer clears a drain flag left set in the JVM`() {
-        // `isDraining` is JVM-global and ApplicationStopping never clears it on the way out,
-        // so a second application configured in the same JVM would start up already draining
-        // — /readyz answering 503 and every run start refused — unless configureServer
-        // clears it. Deleting that clear leaves this green. See ADR-0102.
+        // `isDraining` is JVM-global and never cleared on stop, so a second application in the JVM would start
+        // draining unless configureServer clears it; no other test fails if that clear is deleted (ADR-0102).
         isDraining.set(true)
         try {
             testApplication {

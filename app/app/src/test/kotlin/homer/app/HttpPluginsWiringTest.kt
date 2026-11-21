@@ -22,11 +22,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /**
- * The `installHttpPlugins` wiring: the hardening headers, the configured CORS policy and the
- * request body limit must reach a real response served by the booted module, so dropping
- * `configureSecurityHeaders`, `configureCors` or the `RequestBodyLimit` install from
- * `installHttpPlugins` fails a test. The plugins' own unit cases are in `CorsConfigTest`,
- * `HttpPluginsTest` and (the body limit) `RunHandlersTest`; these go through `configureServer`.
+ * The `installHttpPlugins` wiring: the hardening headers, the CORS policy and the request body limit must reach a
+ * real response from the booted module, so dropping one install fails a test. The plugins' own cases are in
+ * `CorsConfigTest`, `HttpPluginsTest` and `RunHandlersTest` (body limit).
  */
 @ExtendWith(ResetDrainingExtension::class)
 class HttpPluginsWiringTest {

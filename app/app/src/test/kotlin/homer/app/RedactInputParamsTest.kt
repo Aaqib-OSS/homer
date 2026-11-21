@@ -6,21 +6,16 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * API-response redaction of a run's stored inputs.
- *
- * The property that matters: what was secret *when the run happened* stays
- * redacted, whatever the agent definition says now. Records outlive their
- * workspace (ADR-0048), so the definition has plenty of time to change under
- * them. See ADR-0052.
+ * API-response redaction of a run's stored inputs: what was secret when the run happened stays redacted whatever the
+ * agent definition says now, because records outlive their workspace (ADR-0048). See ADR-0052.
  */
 class RedactInputParamsTest {
     private fun agentWith(vararg inputs: Param) = AgentFixtures.simpleAgent(name = "a").copy(inputs = inputs.toList())
 
     @Test
     fun `an input flipped to non-secret since the run stays redacted`() {
-        // The exposure this closes: the value was collected under `secret: true`,
-        // the agent was later edited, and the retained record would have started
-        // serving the historical credential in the clear.
+        // The value was collected under `secret: true`, the agent was later edited, and the retained record would
+        // otherwise serve the historical credential in the clear.
         val agent = agentWith(Param(paramName = "token", envName = "TOKEN", secret = false))
 
         val redacted =
@@ -35,10 +30,8 @@ class RedactInputParamsTest {
 
     @Test
     fun `marking an input secret now also protects records already retained`() {
-        // The other direction, and the one an operator reaches for on DISCOVERING that
-        // a value was sensitive. Preferring the snapshot alone would make `secret: true`
-        // useless as a remediation: the records that already hold the value are exactly
-        // the ones that need covering.
+        // The other direction, reached on discovering a value was sensitive: preferring the snapshot alone would make
+        // `secret: true` useless as remediation for records that already hold the value.
         val agent = agentWith(Param(paramName = "mr", envName = "MR_IID", secret = true))
 
         val redacted =

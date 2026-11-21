@@ -7,9 +7,9 @@ import java.io.File
 import kotlin.test.assertTrue
 
 /**
- * Denial-path guard (root CLAUDE.md §12 rule 8): no compose file binds JDWP off
+ * Denial-path guard (ADR-0047 rule 8): no compose file binds JDWP off
  * container loopback or publishes port 5005, and the opt-in overlay is not
- * dropped. CWE-489. See ADR-0076 and DOCKER.md § Development Mode.
+ * dropped. CWE-489. See ADR-0076 and DOCKER.md Development Mode.
  */
 class JdwpNetworkExposureTest {
     /** The whole `-agentlib:jdwp=…` token; it carries no whitespace, so this ends at the next space. */
@@ -83,15 +83,9 @@ class JdwpNetworkExposureTest {
     }
 
     /**
-     * The container-side port of one compose `ports:` entry — short syntax
-     * (`host:container`, `ip:host:container`, bare) or long syntax (`target:` / `published:`).
-     *
-     * Inline YAML comments are stripped first: a port value never contains ` #`, but a
-     * trailing `# …` would otherwise ride into the returned port and defeat the `5005` guard.
-     *
-     * Long syntax reads the `target:` key, not whichever of `target`/`published` comes first:
-     * YAML mapping order is free, so a `published:` listed first must not stand in for the
-     * container-side port (CWE-693).
+     * The container-side port of one compose `ports:` entry, in short (`host:container`, `ip:host:container`, bare)
+     * or long (`target:` / `published:`) syntax. A trailing ` #` comment is stripped first, and long syntax reads
+     * `target:` whatever the mapping order (CWE-693).
      */
     private fun containerPortOf(entry: List<String>): String {
         val uncommented = entry.map { it.substringBefore(" #").trim() }
@@ -140,7 +134,7 @@ class JdwpNetworkExposureTest {
                         "container loopback. A wildcard (`*`) or host-less bind is reachable from every " +
                         "peer on homer-network, so the unauthenticated agent is remote code execution " +
                         "there (CWE-489); bind `address=127.0.0.1:5005` and attach " +
-                        "through a tunnel instead (ADR-0076, DOCKER.md § Development Mode).",
+                        "through a tunnel instead (ADR-0076, DOCKER.md Development Mode).",
                 )
             }
         }
@@ -193,9 +187,8 @@ class JdwpNetworkExposureTest {
                     "syntax; it parsed $block as ${ports.map { portEntries(lines, it) }}",
             )
         }
-        // CWE-693: YAML mapping order is free, so the guard must read the
-        // `target:` key even when `published:` is listed first, and a range covering 5005
-        // must be flagged, not matched literally.
+        // CWE-693: YAML mapping order is free, so the guard must read `target:` even when `published:` is
+        // listed first, and flag a range covering 5005 rather than match it literally.
         val publishedFirst = listOf("    ports:", "      - published: 9000", "        target: 5005")
         val range = listOf("    ports:", "      - \"127.0.0.1:9000:5005-5010\"")
         val longRange =
@@ -242,9 +235,8 @@ class JdwpNetworkExposureTest {
             "docker-compose.debug.yml is missing, so the JDWP denial checks above pass vacuously " +
                 "while the host-side IDE debug path is silently gone.",
         )
-        // Scope to the surface DOCKER.md documents — services.backend.environment —
-        // not any line of the file: a clause nested under another service or key
-        // would merge no agent into `backend` while this check stayed green.
+        // Scope to the surface DOCKER.md documents, services.backend.environment: a clause under another
+        // service would merge no agent into `backend` while this check stayed green.
         val lines = contentLines(debug)
         val services = lines.indexOfFirst { indentOf(it) == 0 && it.trimStart() == "services:" }
         assertTrue(services >= 0, "docker-compose.debug.yml has no `services:` block.")
@@ -266,10 +258,8 @@ class JdwpNetworkExposureTest {
 
     @Test
     fun `the debug overlay keeps the dev JAVA_OPTS base`() {
-        // Compose's list-style `environment` overrides a base value wholesale rather
-        // than merging, so the overlay re-specifies the dev value plus the agent
-        // clause; pin that it keeps the dev flags as its prefix so the two copies
-        // cannot drift apart silently.
+        // List-style `environment` overrides a base value wholesale, so the overlay re-specifies the dev value plus
+        // the agent clause; pin that it keeps the dev flags as its prefix so the two copies cannot drift.
         val dev = javaOptsValue(File(repoRoot, "docker-compose.dev.yml"))
         val debug = javaOptsValue(File(repoRoot, "docker-compose.debug.yml"))
         assertTrue(
@@ -282,9 +272,8 @@ class JdwpNetworkExposureTest {
 
     @Test
     fun `the documented tunnel reaches the loopback-bound agent`() {
-        // The attach path in DOCKER.md opens /dev/tcp/127.0.0.1/5005 inside the
-        // backend container, so the overlay's agent must bind exactly that loopback
-        // port, and the runtime image must ship a bash to expand /dev/tcp.
+        // DOCKER.md's attach path opens /dev/tcp/127.0.0.1/5005 in the backend container: the overlay's agent must
+        // bind that loopback port and the runtime image must ship a bash to expand /dev/tcp.
         val debug = File(repoRoot, "docker-compose.debug.yml")
         val addresses =
             contentLines(debug).mapNotNull { line ->
@@ -294,7 +283,7 @@ class JdwpNetworkExposureTest {
             addresses.size == 1 && addresses.single() == "127.0.0.1:5005",
             "the documented tunnel opens /dev/tcp/127.0.0.1/5005, so docker-compose.debug.yml must " +
                 "load the agent on exactly one loopback address `127.0.0.1:5005` (found $addresses); " +
-                "a different bind silently breaks the IDE attach path (ADR-0076, DOCKER.md § " +
+                "a different bind silently breaks the IDE attach path (ADR-0076, DOCKER.md " +
                 "Development Mode).",
         )
         val apkPackages = DockerfileStages.app.chain("runner").flatMap { DockerfileStages.apkPackages(it) }
@@ -302,13 +291,13 @@ class JdwpNetworkExposureTest {
             "bash" in apkPackages,
             "the tunnel's container half runs `bash -c \"exec 3<>/dev/tcp/127.0.0.1/5005 …\"`, so the " +
                 "runtime image (app/Dockerfile's runner stage or a stage it is built FROM) must install bash; without it the " +
-                "documented attach path fails (ADR-0076, DOCKER.md § Development Mode).",
+                "documented attach path fails (ADR-0076, DOCKER.md Development Mode).",
         )
         val dockerMd = File(repoRoot, "DOCKER.md").readText()
         assertTrue(
             dockerMd.contains("/dev/tcp/127.0.0.1/5005") && dockerMd.contains("docker exec -i homer-backend bash"),
             "DOCKER.md no longer documents the `docker exec` tunnel this test pins; update the test, " +
-                "the doc and ADR-0076 together (root CLAUDE.md §9).",
+                "the doc and ADR-0076 together (root CLAUDE.md doc map).",
         )
     }
 }

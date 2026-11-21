@@ -16,7 +16,7 @@ internal data class TestRef(
 /**
  * Reads the `Constraint:` bullets of the backend CLAUDE.md guides and the tests they name. A bullet
  * ends with `Enforced by `Class#test name`.`: one or more backticked refs, a bare `Class` meaning
- * the whole class, joined by `,` or `and`. See app/CLAUDE.md § Key service responsibilities.
+ * the whole class, joined by `,` or `and`. See the "Key service responsibilities" section of app/CLAUDE.md.
  */
 internal object ConstraintTestRefs {
     const val MARKER = "**Constraint:**"
@@ -127,12 +127,9 @@ internal object ConstraintTestRefs {
     }
 
     /**
-     * The annotations of the function declared on line [at], read by indentation (test sources are
-     * ktlint-formatted): those inline before `fun`, and those on the lines directly above that are an
-     * annotation line at the function's indentation that declares nothing, an argument continuation
-     * (deeper, or a closing `)` at the function's indentation), or a comment. The scan stops at a blank
-     * line, a line whose code (string literals blanked) contains `fun `, and any other line at the
-     * function's indentation or shallower.
+     * The annotations of the function declared on line [at], read by indentation (test sources are ktlint-formatted):
+     * inline before `fun`, and on directly preceding lines that are annotations, argument continuations or comments.
+     * The scan stops at a blank line, a line containing `fun `, and any other line at the function's indentation.
      */
     private fun annotationsOf(
         body: List<String>,

@@ -16,10 +16,9 @@ import kotlin.io.path.writeText
 import kotlin.test.assertEquals
 
 /**
- * The image entrypoint (`app/entrypoint.sh`) hands the JVM `JAVA_OPTS` split into its flags and
- * `CONFIG_PATH` as exactly one argument, or none when it is unset or empty -- in both the root
- * (`su-exec` drop) and the non-root branch. Stubs on PATH stand in for `id`, `stat`, `mkdir`,
- * `chown`, `su-exec` and `java`; the `java` stub prints each argument it got in brackets.
+ * The image entrypoint (`app/entrypoint.sh`) hands the JVM `JAVA_OPTS` split into its flags and `CONFIG_PATH` as
+ * exactly one argument, or none when unset or empty, in the root (`su-exec` drop) and the non-root branch. Stubs on
+ * PATH stand in for `id`, `stat`, `mkdir`, `chown`, `su-exec` and `java` (which prints each argument in brackets).
  */
 class EntrypointScriptTest {
     @TempDir
