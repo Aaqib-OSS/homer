@@ -42,6 +42,9 @@ FROM eclipse-temurin:25-jre-alpine-3.24@sha256:69c2a26e9894016e274c880fa542956d0
 ARG HOMER_VERSION=dev
 ENV HOMER_VERSION=$HOMER_VERSION
 
+# The JVM launches carry no -XX:-UseBASE64Intrinsics, so a JRE without the Java4Shell fix fails the build (W-020).
+RUN --mount=type=bind,source=app/require-java4shell-fix.sh,target=/tmp/require-java4shell-fix.sh sh /tmp/require-java4shell-fix.sh
+
 RUN apk add --no-cache \
     bash \
     curl \
@@ -143,6 +146,9 @@ FROM eclipse-temurin:25-jre-alpine-3.24@sha256:69c2a26e9894016e274c880fa542956d0
 
 ARG HOMER_VERSION=dev
 ENV HOMER_VERSION=$HOMER_VERSION
+
+# The JVM launches carry no -XX:-UseBASE64Intrinsics, so a JRE without the Java4Shell fix fails the build (W-020).
+RUN --mount=type=bind,source=app/require-java4shell-fix.sh,target=/tmp/require-java4shell-fix.sh sh /tmp/require-java4shell-fix.sh
 
 RUN apk add --no-cache bash curl git tar gzip util-linux
 # zlib from the repository, newer than the base digest's build (W-022).
