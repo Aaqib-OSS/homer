@@ -173,7 +173,7 @@ class FiniteLimitsContractTest {
             mapOf(
                 "Agent.runnerClaimTimeoutSec" to "null inherits the finite server.runnerClaimTimeoutSec",
                 "ClaudeCmdOptions.maxBudgetUsd" to
-                    "opt-in per-command cap: the run timeout and the agent's costLimits bound spend without it",
+                    "opt-in per-command cap: the timeout bounds the run; the server's costLimits caps spend only when configured",
                 "ClaudeCmdOptions.maxMcpOutputTokens" to "opt-in override: unset leaves the Claude CLI's own MCP output cap in force",
                 "ClaudeCmdOptions.maxTurnsExitCode" to "an exit code, not a bound: the name matches the pattern by accident",
                 "Param.max" to "opt-in numeric value constraint on a caller's input, not a resource bound",
