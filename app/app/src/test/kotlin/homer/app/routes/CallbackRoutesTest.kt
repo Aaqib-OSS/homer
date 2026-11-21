@@ -11,6 +11,7 @@ import homer.app.exceptions.ValidationException
 import homer.app.fixtures.PersistenceTestSupport
 import homer.app.fixtures.TestFixtures
 import homer.app.fixtures.mountCallbackRoutes
+import homer.app.infra.LocalFileOperations
 import homer.app.infra.SecretRedactor
 import homer.app.models.AskQuestionResponse
 import homer.app.models.CreateDispatchGroupResponse
@@ -57,18 +58,19 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.slot
+import io.mockk.verify
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Test
-import java.io.OutputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class CallbackRoutesTest {
@@ -1012,8 +1014,10 @@ class CallbackRoutesTest {
 
     // --- read-by-reference result fetch (GET /api/v1/callback/results/{token}) ---
 
+    private val summary = ResultEnvParam(SrcType.STD_OUT, "OUT", ResultTransformer.JsonPath("$.summary"))
+
     private fun record(
-        transformer: ResultEnvParam? = null,
+        transformer: ResultEnvParam = summary,
         consumerAgent: String = "agent-a",
     ) = ResultTokenRecord(
         token = "tok-1",
@@ -1025,6 +1029,21 @@ class CallbackRoutesTest {
         expiresAt = null,
         consumerAgent = consumerAgent,
     )
+
+    /** Serves [file] as the token's artifact, checked at [size] bytes and read through the real bounded read. */
+    private fun ApiDeps.servesResult(
+        file: Path,
+        size: Long = Files.size(file),
+    ) {
+        coEvery { artifactService.resolveArtifactPath(42, "cmd_0.out") } returns Result.success(file)
+        every { fileOperations.fileExists(any()) } returns true
+        every { artifactService.checkArtifactSize(any()) } returns Result.success(size)
+        every { fileOperations.readTextBounded(any(), any()) } answers {
+            LocalFileOperations().readTextBounded(firstArg(), secondArg())
+        }
+    }
+
+    private fun resultFile(content: String): Path = Files.createTempFile("result", ".out").also { it.writeText(content) }
 
     @Test
     fun `result fetch without a callback token responds 401`() =
@@ -1055,44 +1074,15 @@ class CallbackRoutesTest {
         }
 
     @Test
-    fun `result fetch streams the raw artifact when there is no transformer`() =
-        testApplication {
-            val service = newService()
-            val token = runBlocking { service.registerProcess(1, "agent-a") }
-            mountCallbackRoutes {
-                every { questionsService } returns service
-                coEvery { resultTokenService.resolve("tok-1") } returns record()
-                coEvery { artifactService.resolveArtifactPath(42, "cmd_0.out") } returns Result.success(Path.of("/x/cmd_0.out"))
-                every { fileOperations.fileExists(any()) } returns true
-                every { artifactService.checkArtifactSize(any()) } returns Result.success(3L)
-                coEvery { artifactService.streamArtifact(any(), any()) } answers {
-                    secondArg<OutputStream>().write("RAW".toByteArray())
-                }
-            }
-
-            val response =
-                client.get("/api/v1/callback/results/tok-1") {
-                    header(HttpHeaders.Authorization, "Bearer $token")
-                }
-
-            assertEquals(HttpStatusCode.OK, response.status)
-            assertEquals("RAW", response.bodyAsText())
-        }
-
-    @Test
     fun `result fetch is reusable within the TTL`() =
         testApplication {
+            val file = resultFile("""{"summary":"DONE"}""")
             val service = newService()
             val token = runBlocking { service.registerProcess(1, "agent-a") }
             mountCallbackRoutes {
                 every { questionsService } returns service
                 coEvery { resultTokenService.resolve("tok-1") } returns record()
-                coEvery { artifactService.resolveArtifactPath(42, "cmd_0.out") } returns Result.success(Path.of("/x/cmd_0.out"))
-                every { fileOperations.fileExists(any()) } returns true
-                every { artifactService.checkArtifactSize(any()) } returns Result.success(3L)
-                coEvery { artifactService.streamArtifact(any(), any()) } answers {
-                    secondArg<OutputStream>().write("RAW".toByteArray())
-                }
+                servesResult(file)
             }
 
             repeat(2) {
@@ -1101,23 +1091,20 @@ class CallbackRoutesTest {
                         header(HttpHeaders.Authorization, "Bearer $token")
                     }
                 assertEquals(HttpStatusCode.OK, response.status)
-                assertEquals("RAW", response.bodyAsText())
+                assertEquals("DONE", response.bodyAsText())
             }
         }
 
     @Test
     fun `result fetch applies the transformer server-side`() =
         testApplication {
-            val file = Files.createTempFile("result", ".out").also { it.writeText("""{"summary":"DONE"}""") }
-            val transformer = ResultEnvParam(SrcType.STD_OUT, "OUT", ResultTransformer.JsonPath("$.summary"))
+            val file = resultFile("""{"summary":"DONE"}""")
             val service = newService()
             val token = runBlocking { service.registerProcess(1, "agent-a") }
             mountCallbackRoutes {
                 every { questionsService } returns service
-                coEvery { resultTokenService.resolve("tok-1") } returns record(transformer = transformer)
-                coEvery { artifactService.resolveArtifactPath(42, "cmd_0.out") } returns Result.success(file)
-                every { fileOperations.fileExists(any()) } returns true
-                every { artifactService.checkArtifactSize(any()) } returns Result.success(20L)
+                coEvery { resultTokenService.resolve("tok-1") } returns record()
+                servesResult(file)
             }
 
             val response =
@@ -1129,21 +1116,82 @@ class CallbackRoutesTest {
             assertEquals("DONE", response.bodyAsText())
         }
 
+    @Test
+    fun `result fetch reads the artifact bounded at the transform cap, never whole`() =
+        testApplication {
+            val file = resultFile("""{"summary":"DONE"}""")
+            val service = newService()
+            val token = runBlocking { service.registerProcess(1, "agent-a") }
+            val deps =
+                mountCallbackRoutes {
+                    every { questionsService } returns service
+                    coEvery { resultTokenService.resolve("tok-1") } returns record()
+                    servesResult(file)
+                }
+
+            client.get("/api/v1/callback/results/tok-1") {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+
+            val files = deps.fileOperations
+            verify { files.readTextBounded(file, RESULT_TRANSFORM_MAX_BYTES) }
+            verify(exactly = 0) { files.readText(any()) }
+        }
+
+    @Test
+    fun `result fetch of a hard-linked artifact responds 404 without serving it`() =
+        testApplication {
+            val file = resultFile("""{"summary":"ELSEWHERE"}""")
+            Files.createLink(file.resolveSibling("${file.fileName}.link"), file)
+            val service = newService()
+            val token = runBlocking { service.registerProcess(1, "agent-a") }
+            mountCallbackRoutes {
+                every { questionsService } returns service
+                coEvery { resultTokenService.resolve("tok-1") } returns record()
+                servesResult(file)
+            }
+
+            val response =
+                client.get("/api/v1/callback/results/tok-1") {
+                    header(HttpHeaders.Authorization, "Bearer $token")
+                }
+
+            assertEquals(HttpStatusCode.NotFound, response.status)
+            assertFalse(response.bodyAsText().contains("ELSEWHERE"))
+        }
+
+    @Test
+    fun `result fetch of an artifact grown past the transform cap after its size check responds 404`() =
+        testApplication {
+            val file = resultFile("""{"summary":"DONE"}""" + " ".repeat(RESULT_TRANSFORM_MAX_BYTES.toInt()))
+            val service = newService()
+            val token = runBlocking { service.registerProcess(1, "agent-a") }
+            mountCallbackRoutes {
+                every { questionsService } returns service
+                coEvery { resultTokenService.resolve("tok-1") } returns record()
+                servesResult(file, size = 18L)
+            }
+
+            val response =
+                client.get("/api/v1/callback/results/tok-1") {
+                    header(HttpHeaders.Authorization, "Bearer $token")
+                }
+
+            assertEquals(HttpStatusCode.NotFound, response.status)
+        }
+
     // The by-reference fetch reads through the same mapper as `resultEnvParam` (ADR-0025), so an
     // object-selecting transformer serves compact JSON as `text/plain` — opaque data, never a path.
     @Test
     fun `result fetch serializes a selected object as compact JSON`() =
         testApplication {
-            val file = Files.createTempFile("result", ".out").also { it.writeText("""{"summary":{"a":1,"b":"x"}}""") }
-            val transformer = ResultEnvParam(SrcType.STD_OUT, "OUT", ResultTransformer.JsonPath("$.summary"))
+            val file = resultFile("""{"summary":{"a":1,"b":"x"}}""")
             val service = newService()
             val token = runBlocking { service.registerProcess(1, "agent-a") }
             mountCallbackRoutes {
                 every { questionsService } returns service
-                coEvery { resultTokenService.resolve("tok-1") } returns record(transformer = transformer)
-                coEvery { artifactService.resolveArtifactPath(42, "cmd_0.out") } returns Result.success(file)
-                every { fileOperations.fileExists(any()) } returns true
-                every { artifactService.checkArtifactSize(any()) } returns Result.success(24L)
+                coEvery { resultTokenService.resolve("tok-1") } returns record()
+                servesResult(file)
             }
 
             val response =
@@ -1161,16 +1209,13 @@ class CallbackRoutesTest {
         testApplication {
             // The cap is inclusive: an artifact of exactly RESULT_TRANSFORM_MAX_BYTES is the
             // largest one that still transforms, so `>` (not `>=`) is the boundary to pin.
-            val file = Files.createTempFile("result", ".out").also { it.writeText("""{"summary":"DONE"}""") }
-            val transformer = ResultEnvParam(SrcType.STD_OUT, "OUT", ResultTransformer.JsonPath("$.summary"))
+            val file = resultFile("""{"summary":"DONE"}""")
             val service = newService()
             val token = runBlocking { service.registerProcess(1, "agent-a") }
             mountCallbackRoutes {
                 every { questionsService } returns service
-                coEvery { resultTokenService.resolve("tok-1") } returns record(transformer = transformer)
-                coEvery { artifactService.resolveArtifactPath(42, "cmd_0.out") } returns Result.success(file)
-                every { fileOperations.fileExists(any()) } returns true
-                every { artifactService.checkArtifactSize(any()) } returns Result.success(RESULT_TRANSFORM_MAX_BYTES)
+                coEvery { resultTokenService.resolve("tok-1") } returns record()
+                servesResult(file, size = RESULT_TRANSFORM_MAX_BYTES)
             }
 
             val response =
@@ -1185,16 +1230,14 @@ class CallbackRoutesTest {
     @Test
     fun `result fetch with a transformer over the transform cap responds 413 without reading the file`() =
         testApplication {
-            val transformer = ResultEnvParam(SrcType.STD_OUT, "OUT", ResultTransformer.JsonPath("$.summary"))
             val service = newService()
             val token = runBlocking { service.registerProcess(1, "agent-a") }
-            mountCallbackRoutes {
-                every { questionsService } returns service
-                coEvery { resultTokenService.resolve("tok-1") } returns record(transformer = transformer)
-                coEvery { artifactService.resolveArtifactPath(42, "cmd_0.out") } returns Result.success(Path.of("/x/cmd_0.out"))
-                every { fileOperations.fileExists(any()) } returns true
-                every { artifactService.checkArtifactSize(any()) } returns Result.success(RESULT_TRANSFORM_MAX_BYTES + 1)
-            }
+            val deps =
+                mountCallbackRoutes {
+                    every { questionsService } returns service
+                    coEvery { resultTokenService.resolve("tok-1") } returns record()
+                    servesResult(Path.of("/x/cmd_0.out"), size = RESULT_TRANSFORM_MAX_BYTES + 1)
+                }
 
             val response =
                 client.get("/api/v1/callback/results/tok-1") {
@@ -1202,22 +1245,21 @@ class CallbackRoutesTest {
                 }
 
             assertEquals(HttpStatusCode.PayloadTooLarge, response.status)
-            assertContains(response.bodyAsText(), "fetch is raw-only")
+            assertContains(response.bodyAsText(), "too large to transform")
+            val files = deps.fileOperations
+            verify(exactly = 0) { files.readTextBounded(any(), any()) }
         }
 
     @Test
     fun `result fetch whose transformer matches nothing responds an empty body`() =
         testApplication {
-            val file = Files.createTempFile("result", ".out").also { it.writeText("""{"other":"x"}""") }
-            val transformer = ResultEnvParam(SrcType.STD_OUT, "OUT", ResultTransformer.JsonPath("$.summary"))
+            val file = resultFile("""{"other":"x"}""")
             val service = newService()
             val token = runBlocking { service.registerProcess(1, "agent-a") }
             mountCallbackRoutes {
                 every { questionsService } returns service
-                coEvery { resultTokenService.resolve("tok-1") } returns record(transformer = transformer)
-                coEvery { artifactService.resolveArtifactPath(42, "cmd_0.out") } returns Result.success(file)
-                every { fileOperations.fileExists(any()) } returns true
-                every { artifactService.checkArtifactSize(any()) } returns Result.success(13L)
+                coEvery { resultTokenService.resolve("tok-1") } returns record()
+                servesResult(file)
             }
 
             val response =
@@ -1255,17 +1297,13 @@ class CallbackRoutesTest {
             // A resumed LangGraph segment re-runs the target agent as a NEW process and
             // re-fetches the same token. Audience binding is by agent, not process, so
             // that cross-segment re-fetch must keep working.
+            val file = resultFile("""{"summary":"DONE"}""")
             val service = newService()
             val secondSegmentToken = runBlocking { service.registerProcess(2, "agent-a") }
             mountCallbackRoutes {
                 every { questionsService } returns service
                 coEvery { resultTokenService.resolve("tok-1") } returns record(consumerAgent = "agent-a")
-                coEvery { artifactService.resolveArtifactPath(42, "cmd_0.out") } returns Result.success(Path.of("/x/cmd_0.out"))
-                every { fileOperations.fileExists(any()) } returns true
-                every { artifactService.checkArtifactSize(any()) } returns Result.success(3L)
-                coEvery { artifactService.streamArtifact(any(), any()) } answers {
-                    secondArg<OutputStream>().write("RAW".toByteArray())
-                }
+                servesResult(file)
             }
 
             val response =
@@ -1274,7 +1312,7 @@ class CallbackRoutesTest {
                 }
 
             assertEquals(HttpStatusCode.OK, response.status)
-            assertEquals("RAW", response.bodyAsText())
+            assertEquals("DONE", response.bodyAsText())
         }
 
     @Test

@@ -315,7 +315,9 @@ once all 8 are held every file read through the pool fails at once for every cal
 `ContinuationFireService.extractResult` reads a watched run's stdout into a continuation's resume
 payload the same way. It refuses a symlinked artifacts directory and a recorded stdout path that is
 not a direct child of it, then reads at most the 64 KiB inline-result cap through
-`readTextBounded`, so a FIFO planted at `cmd_N.out` can no longer block the fire.
+`readTextBounded`, so a FIFO planted at `cmd_N.out` can no longer block the fire. The by-reference
+result fetch (`GET /callback/results/{token}`) reads that stdout through
+`ArtifactService.resolveArtifactPath`, then `readTextBounded` at the 4 MiB transform cap.
 
 The artifact download (`ArtifactService.resolveArtifactPath`, then `streamFile`), the log tail
 (`LogTailService.resolve`, then `tail`) and the LLM-event stream (`LlmEventStreamService.resolve`,
@@ -330,7 +332,7 @@ between `resolve` and the poll that opens the file. The fourth needs no race: a 
 at the run root or a directory above it is followed by every one of these reads. Each makes Homer
 read a different regular file: for an identity, at most 64 KiB whose fields it reports and whose
 thread a resume continues; for a continuation, at most 64 KiB it delivers as the watched run's
-result; for a download or stream, a file it serves to the caller (CWE-59/CWE-367).
+result, and for a result fetch at most 4 MiB; for a download or stream, a file it serves to the caller (CWE-59/CWE-367).
 
 **Accepted, not fixed**, like the tar walks above. Each case needs a local writer holding Homer's
 own UID, and that writer can already read any file the swap could lead to and copy its content

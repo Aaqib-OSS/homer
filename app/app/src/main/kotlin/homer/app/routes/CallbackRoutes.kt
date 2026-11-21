@@ -5,11 +5,11 @@ import homer.app.exceptions.QueryParamValidationException
 import homer.app.exceptions.QuestionNotFoundException
 import homer.app.exceptions.RunNotAcceptingMessagesException
 import homer.app.exceptions.ValidationException
+import homer.app.infra.FileOperations
 import homer.app.infra.ResultToEnvMapper
 import homer.app.models.Agent
 import homer.app.models.AskQuestionRequest
 import homer.app.models.AskQuestionResponse
-import homer.app.models.CommandResult
 import homer.app.models.CreateDispatchGroupRequest
 import homer.app.models.CreateDispatchGroupResponse
 import homer.app.models.CreateDispatchRequest
@@ -38,7 +38,6 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receive
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
-import io.ktor.server.response.respondOutputStream
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
@@ -308,15 +307,7 @@ private fun Route.callbackResultRoutes(deps: CallbackDeps) {
                         respondArtifactSizeFailure(call, failure)
                         return@get
                     }
-
-                val transformer = record.resultTransformer
-                if (transformer == null) {
-                    call.respondOutputStream(ContentType.Text.Plain, HttpStatusCode.OK) {
-                        artifactService.streamArtifact(artifactPath, this)
-                    }
-                    return@get
-                }
-                respondTransformedResult(call, artifactPath, size, transformer)
+                respondTransformedResult(call, fileOperations, artifactPath, size, record.resultTransformer)
             }
         }
     }
@@ -390,27 +381,31 @@ private fun refuseSecretTagValue(
 }
 
 /**
- * Answers a result fetch with [transformer] applied to the artifact at [artifactPath], [size]
- * bytes long; a transform that matches nothing yields an empty body.
+ * Answers a result fetch with [transformer] applied to the artifact at [artifactPath], [size] bytes long
+ * when checked; a transform that matches nothing yields an empty body. The read stops at the transform cap.
  */
 private suspend fun respondTransformedResult(
     call: ApplicationCall,
+    fileOperations: FileOperations,
     artifactPath: Path,
     size: Long,
     transformer: ResultEnvParam,
 ) {
-    // A JsonPath/regex transform parses the whole file in memory; cap it well below
-    // the raw-stream cap so a large-but-under-100-MiB artifact can't OOM the server.
     if (size > RESULT_TRANSFORM_MAX_BYTES) {
         call.respond(
             HttpStatusCode.PayloadTooLarge,
-            ErrorResponse(msg = "Result too large to transform ($size > $RESULT_TRANSFORM_MAX_BYTES); fetch is raw-only"),
+            ErrorResponse(msg = "Result too large to transform ($size > $RESULT_TRANSFORM_MAX_BYTES)"),
         )
+        return
+    }
+    val text = fileOperations.readTextBounded(artifactPath, RESULT_TRANSFORM_MAX_BYTES)
+    if (text == null) {
+        call.respond(HttpStatusCode.NotFound, ErrorResponse(msg = "Artifact file not found"))
         return
     }
     val value =
         runCatching {
-            ResultToEnvMapper(CommandResult(0, artifactPath, artifactPath))
+            ResultToEnvMapper(0, readStdOut = { text }, readStdErr = { "" })
                 .mapToEnv(listOf(transformer))[transformer.envName]
         }.getOrNull()
     call.respondText(value ?: "", ContentType.Text.Plain)
