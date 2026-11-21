@@ -389,6 +389,18 @@ where HSTS belongs; the API sends it only once deployment is HTTPS-only.
   for host files a swapped symlink points at; a symlink an agent drops among its artifacts is
   left out of the listing rather than listed with its target's size and time.
 
+## Amendment (2026-11-21): why `SecretRedactor` screens the way it does
+
+- **Env first, host second.** A workspace key shadows a same-named host variable, and the workspace
+  value is the one the child can echo.
+- **Escaped forms are needles too.** Callers redact JSON-encoded text, where a secret containing
+  `\n`, `"` or `\` appears escaped, so each value is also matched in its kotlinx-escaped form at two
+  levels: attribute encoding, and a JSON document carrying the secret as a string value.
+- **The artifact-stem screen has a length floor** (`ARTIFACT_STEM_MIN_NEEDLE_LENGTH`). A short
+  `@SYSENV`-sourced global (`0`, `prod`) matches as a substring of nearly any stem, including the
+  default `cmd_{{HMR_CMD_INDEX}}` template, and would hard-fail every command; availability is in
+  scope. Telemetry and tail redaction have no floor and screen every non-empty value.
+
 ## Pros and Cons of the Options
 
 ### Option A — SAST plus review, no written model

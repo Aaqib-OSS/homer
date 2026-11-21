@@ -4,10 +4,9 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Bounds the number of concurrent SSE / long-poll streams a single caller may hold
- * open, so one authenticated principal (or, in unsecured mode, one client host)
- * cannot exhaust server resources by opening streams without bound. In-memory,
- * single-node — the streams themselves are already single-node (ADR-0014 broadcaster).
+ * Bounds the concurrent SSE / long-poll streams one caller (an authenticated principal, or the client host when
+ * unsecured) may hold open, so streams cannot exhaust server resources. In-memory and single-node, like the
+ * streams themselves (ADR-0014).
  */
 class SseConnectionLimiter(
     private val maxPerCaller: Int = DEFAULT_MAX_PER_CALLER,
