@@ -7,6 +7,7 @@ import homer.app.fixtures.waitUnfinished
 import homer.app.infra.OutputLineFilter
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.spyk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelAndJoin
@@ -22,6 +23,7 @@ import org.apache.sshd.client.future.OpenFuture
 import org.apache.sshd.client.session.ClientSession
 import org.apache.sshd.client.session.ClientSessionImpl
 import org.apache.sshd.common.channel.exception.SshChannelOpenException
+import org.apache.sshd.sftp.client.SftpClientFactory
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.BeforeEach
@@ -255,6 +257,34 @@ class SshShellExecutorTest {
         val result = executor().cmd(listOf("sh", "-c", "exit 7"), local.resolve("o"), local.resolve("e"), null, SECRET_ENV, 10.seconds)
         assertEquals(7, result.exitCode)
         assertEquals(emptyList(), envFilesLeft())
+    }
+
+    @Test
+    fun `a failing env-file removal keeps the step's outcome and logs the path, never the value`(
+        @TempDir local: Path,
+    ) = runTest {
+        val session = server.newClientSession(client)
+        val failingRemove = { s: ClientSession ->
+            val real = SftpClientFactory.instance().createSftpClient(s)
+            spyk(real) { every { remove(any()) } throws IOException("remove failed") }
+        }
+        val executor =
+            SshShellExecutor(session, workdir.toString(), WorkspaceSync(session, 30.seconds, openSftp = failingRemove), envDir.toString())
+
+        val (result, events) =
+            captureAllEvents {
+                executor.cmd(listOf("sh", "-c", "exit 7"), local.resolve("o"), local.resolve("e"), null, SECRET_ENV, 10.seconds)
+            }
+
+        assertEquals(7, result.exitCode, "a failed removal must not replace the step's outcome")
+        val warning = events.single { it.formattedMessage.startsWith("Could not remove env file") }
+        assertContains(warning.formattedMessage, envDir.toString())
+        // The fixture's sshd logs in this JVM; the remote one whose log reaches app.log does not.
+        val leaking =
+            events
+                .filterNot { it.loggerName.startsWith("org.apache.sshd.server") }
+                .filter { it.formattedMessage.contains(SECRET_VALUE) }
+        assertTrue(leaking.isEmpty(), "log events quoting the env value: ${leaking.map { it.loggerName }}")
     }
 
     /** Every exec request the fixture saw quotes [SECRET_VALUE] nowhere, and at least one sourced an env file. */

@@ -715,6 +715,29 @@ class KubernetesWorkspaceSyncTest {
     }
 
     @Test
+    fun `a private file upload whose exec dies mid-stream is destroyed and names the directory, not the content`() {
+        val dying =
+            mockk<Process>(relaxed = true) {
+                every { inputStream } returns ByteArrayInputStream(ByteArray(0))
+                every { errorStream } returns ByteArrayInputStream(ByteArray(0))
+                every { outputStream } returns
+                    object : java.io.OutputStream() {
+                        override fun write(b: Int) = throw java.io.IOException("exec channel closed")
+                    }
+                every { waitFor(any<Long>(), any<TimeUnit>()) } answers {
+                    waitUnfinished(firstArg(), secondArg())
+                    false
+                }
+            }
+        val sync = KubernetesWorkspaceSync(KubernetesExecClient { _, _, _, _ -> dying }, "ns", "pod-1")
+
+        val e = assertFailsWith<IllegalStateException> { sync.writePrivateFile("/w/.homer/env/a1.env", "s3cr3t-Ab9".toByteArray()) }
+
+        assertEquals("private file upload to '/w/.homer/env' failed while streaming: IOException", e.message)
+        verify { dying.destroyForcibly() }
+    }
+
+    @Test
     fun `removeIfExists gives up at its bound when the exec reports no exit status`() {
         val hung =
             mockk<Process>(relaxed = true) {

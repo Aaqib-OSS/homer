@@ -19,14 +19,18 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readBytes
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
+import kotlin.test.assertContains
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 class WorkspaceSyncPrivateFileTest {
@@ -127,6 +131,32 @@ class WorkspaceSyncPrivateFileTest {
             sync.removeIfExists(file.toString(), 5.seconds)
             assertFalse(file.exists())
             sync.removeIfExists(file.toString(), 5.seconds)
+        }
+
+    @Test
+    fun `a removal the peer stalls fails at its deadline, closing the session to unblock it`() =
+        runBlocking {
+            val unblocked = CountDownLatch(1)
+            val sftp = mockk<SftpClient>(relaxed = true)
+            every { sftp.remove("/w/.homer/env/a.env") } answers {
+                // A blocked SFTP read returns only once its session is closed.
+                if (!unblocked.await(10, TimeUnit.SECONDS)) error("the deadline never closed the session")
+                throw IOException("session closed")
+            }
+            val session = mockk<ClientSession>(relaxed = true)
+            every { session.close(true) } answers {
+                unblocked.countDown()
+                mockk(relaxed = true)
+            }
+            val stalled = WorkspaceSync(session, 30.seconds, openSftp = { sftp })
+
+            val startedAt = System.nanoTime()
+            val e = assertThrows<IOException> { stalled.removeIfExists("/w/.homer/env/a.env", 1.seconds) }
+            val tookMs = (System.nanoTime() - startedAt) / 1_000_000
+
+            assertContains(e.message.orEmpty(), "timed out after 1s")
+            assertTrue(tookMs in 900..9_000, "the removal waited $tookMs ms; its deadline is 1 s")
+            verify { session.close(true) }
         }
 
     @Test
