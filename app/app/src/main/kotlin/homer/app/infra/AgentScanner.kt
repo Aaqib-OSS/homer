@@ -201,5 +201,5 @@ internal data class AgentScan(
     val presentDirNames: Set<String>,
     val errors: List<String>,
 ) {
-    fun toState() = AgentCatalogState(parsed, sourceDirs)
+    fun toState() = AgentCatalogState(parsed, sourceDirs, AgentLoadErrors.of(errors))
 }

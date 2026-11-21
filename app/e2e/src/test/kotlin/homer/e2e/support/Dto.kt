@@ -172,6 +172,12 @@ data class ReloadResult(
 )
 
 @Serializable
+data class LoadErrors(
+    val errors: List<String>,
+    val truncated: Int = 0,
+)
+
+@Serializable
 data class FileEntry(
     val path: String,
     val size: Long,

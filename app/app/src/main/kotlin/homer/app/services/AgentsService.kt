@@ -3,6 +3,7 @@ package homer.app.services
 import homer.app.infra.AgentDefinitionValidator
 import homer.app.infra.AgentInputChecks
 import homer.app.infra.AgentInputResolver
+import homer.app.infra.AgentLoadErrors
 import homer.app.infra.AgentReloadDiff
 import homer.app.infra.AgentScanner
 import homer.app.infra.AgentSysEnvAllowlist
@@ -62,6 +63,13 @@ class AgentsService(
 
     val agents: Map<String, Agent>
         get() = stateRef.get().agents
+
+    /**
+     * The last completed scan's load errors, startup scan included; reads memory only, so a poll never
+     * rescans. A reload that loses every CAS race publishes nothing and leaves these in place (ADR-0068).
+     */
+    internal val loadErrors: AgentLoadErrors
+        get() = stateRef.get().loadErrors
 
     val rootPath: Path
         get() = Path.of(agentsSearchPath)

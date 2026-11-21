@@ -764,6 +764,31 @@ class ProcessVisibilityTest {
         }
 
     @Test
+    fun `langgraph returns 404 when the visible process's agent no longer exists, without reading the run state`() =
+        testApplication {
+            // The agent-removed branch sits between the visibility gate and the run-identity read (ADR-0047 rule 3):
+            // the owner still sees the run, but its agent is gone, so the state service is never consulted.
+            val tokens = mapOf("alice" to ownerToken)
+            val statusService = mockk<LangGraphRunStatusService>(relaxed = true)
+            application {
+                installGrantsApp(
+                    tokens,
+                    deps(
+                        authorizerFor(tokens),
+                        deployProcess(owner = "alice"),
+                        agents = mapOf("other" to otherAgent),
+                        langGraphRunStatusService = statusService,
+                    ),
+                )
+            }
+
+            val res = client.get("/api/v1/processes/42/langgraph") { header(HttpHeaders.Authorization, "Bearer owner-token") }
+            assertEquals(HttpStatusCode.NotFound, res.status)
+            assertTrue(res.bodyAsText().contains("Agent 'deploy' no longer exists"))
+            coVerify(exactly = 0) { statusService.status(any(), any(), any()) }
+        }
+
+    @Test
     fun `langgraph returns 404 with a specific message when the process has no run-identity artifact`() =
         testApplication {
             val tokens = mapOf("alice" to ownerToken)

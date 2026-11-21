@@ -2,6 +2,7 @@ package homer.app.services
 
 import homer.app.fixtures.AgentFixtures
 import homer.app.fixtures.TestFixtures
+import homer.app.infra.AgentLoadErrors
 import homer.app.loadStartupConfig
 import homer.app.models.AgentReloadResult
 import homer.app.models.AppConfig
@@ -2025,6 +2026,88 @@ class AgentsServiceTest {
         val errors = agentsService.reload().errors
         assertTrue(errors.any { "'PATH'" in it }, errors.toString())
         assertFalse(errors.any { System.getenv("PATH") in it }, "a refusal never carries the value")
+    }
+
+    // ========== the last scan's load errors ==========
+
+    /** A directory whose definition fails the name check, so every scan of it reports one error. */
+    private fun writeFailingAgent(dir: String) {
+        val agentDir = Files.createDirectories(testAgentsDir.resolve(dir))
+        Files.writeString(agentDir.resolve("agent.yaml"), "name: bad name $dir\ncommands:\n  - !<cmd>\n    cmd: echo hi\n")
+    }
+
+    @Test
+    fun `the startup scan's load errors are readable without a reload`() {
+        writeFailingAgent("broken")
+
+        agentsService = AgentsService(testAgentsPath, logger)
+
+        val loadErrors = agentsService.loadErrors
+        assertEquals(1, loadErrors.errors.size, loadErrors.toString())
+        assertTrue(loadErrors.errors.single().contains("broken"))
+        assertEquals(0, loadErrors.truncated)
+    }
+
+    @Test
+    fun `a reload that fixes the definition clears the load errors`() {
+        writeFailingAgent("broken")
+        agentsService = AgentsService(testAgentsPath, logger)
+        assertTrue(agentsService.loadErrors.errors.isNotEmpty())
+        Files.writeString(
+            testAgentsDir.resolve("broken/agent.yaml"),
+            "name: fixed\ncommands:\n  - !<cmd>\n    cmd: echo hi\n",
+        )
+
+        agentsService.reload()
+
+        assertEquals(AgentLoadErrors.EMPTY, agentsService.loadErrors)
+    }
+
+    @Test
+    fun `the load errors name a refused variable and never its value`() {
+        writeHostRefAgent()
+        val config = startupConfig("""{"PLAIN": "PATH"}""")
+
+        agentsService = AgentsService(testAgentsPath, logger, agentSysEnvNames = config.agentSysEnvNames)
+
+        val errors = agentsService.loadErrors.errors
+        assertTrue(errors.any { "'PATH'" in it }, errors.toString())
+        assertFalse(errors.any { System.getenv("PATH") in it }, "a refusal never carries the value")
+    }
+
+    @Test
+    fun `a scan past the kept cap reports the dropped errors in truncated`() {
+        repeat(AgentLoadErrors.MAX_KEPT + 100) { writeFailingAgent("broken-$it") }
+
+        agentsService = AgentsService(testAgentsPath, logger)
+
+        assertEquals(AgentLoadErrors.MAX_KEPT, agentsService.loadErrors.errors.size)
+        assertEquals(100, agentsService.loadErrors.truncated)
+    }
+
+    @Test
+    fun `repeated reloads of the same failures keep the list at the cap`() {
+        repeat(AgentLoadErrors.MAX_KEPT + 100) { writeFailingAgent("broken-$it") }
+        agentsService = AgentsService(testAgentsPath, logger)
+
+        repeat(3) { agentsService.reload() }
+
+        assertEquals(AgentLoadErrors.MAX_KEPT, agentsService.loadErrors.errors.size)
+        assertEquals(100, agentsService.loadErrors.truncated)
+    }
+
+    @Test
+    fun `a reload that publishes nothing leaves the last published load errors in place`() {
+        val broadcaster = mockk<ProcessEventBroadcaster>(relaxed = true)
+        val (service, arm) = overtakenService(broadcaster) { it.reload() }
+        writeFailingAgent("broken")
+        arm(RELOAD_CAS_ATTEMPTS)
+
+        val result = service.reload()
+
+        assertTrue(result.errors.single().contains("published nothing"))
+        assertTrue(service.loadErrors.errors.any { "broken" in it }, service.loadErrors.toString())
+        assertFalse(service.loadErrors.errors.any { "published nothing" in it }, "a give-up is not a scan error")
     }
 
     // ========== telemetry.traceTags declaration validation (ADR-0050) ==========

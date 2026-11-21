@@ -135,6 +135,21 @@ class SecretRedactionCanaryTest {
         }
 
     @Test
+    fun `the load-errors route serves the scan's messages without either canary value`() =
+        testApplication {
+            boot()
+
+            val (status, body) = send("GET", "/api/v1/agents/load-errors", ADMIN_TOKEN, readBody = true)
+            val served = body.orEmpty()
+
+            assertEquals(200, status, "the load errors must be readable: ${preview(served)}")
+            assertTrue("load-error-sysenv" in served, "the refused agent must be reported: ${preview(served)}")
+            assertTrue("'$SYSENV_KEY'" in served, "the refusal must name the variable: ${preview(served)}")
+            assertTrue("load-error-hostile" in served, "the unparseable definition must be reported: ${preview(served)}")
+            assertTrue(canaries.none { it in served }, "the load errors must carry no canary value: ${preview(served)}")
+        }
+
+    @Test
     fun `no SSE frame of the four streams carries either canary`() =
         testApplication {
             val canary = seedCanaryRun()
@@ -264,11 +279,33 @@ class SecretRedactionCanaryTest {
 
     private suspend fun ApplicationTestBuilder.boot() {
         writeAgent(phaseOne = true)
+        writeLoadErrorAgents()
         application {
             configureServer(config())
             app = this
         }
         startApplication()
+    }
+
+    /**
+     * Two directories every scan fails, so `/agents/load-errors` serves real messages: one whose `env` references
+     * the `@SYSENV`-backed [SYSENV_KEY] (refused by name, never by value), and one whose definition holds
+     * [secretCanary] above a malformed tail — the source snippet a YAML parse error echoes stays near its mark.
+     */
+    private fun writeLoadErrorAgents() {
+        val refused = File(dir, "agents/load-error-sysenv").apply { mkdirs() }
+        File(refused, "agent.yaml").writeText(
+            "name: load-error-sysenv\nenv:\n  TOKEN: \"@SYSENV:$SYSENV_KEY\"\ncommands:\n  - !<cmd>\n    cmd: echo hi\n",
+        )
+        val hostile = File(dir, "agents/load-error-hostile").apply { mkdirs() }
+        File(hostile, "agent.yaml").writeText(
+            buildString {
+                append("name: load-error-hostile\n")
+                append("description: $secretCanary\n")
+                repeat(40) { append("# filler line $it\n") }
+                append("commands: [\n")
+            },
+        )
     }
 
     /** Waits for the canary run to reach [status]; the run is local and its script is trivial. */

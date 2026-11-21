@@ -31,4 +31,24 @@ class AgentReloadDiffTest {
         assertEquals(emptySet(), AgentReloadDiff.removedAgentNames(state.agents, state.sourceDirs, scan))
         assertEquals(mapOf("b" to b), AgentReloadDiff.compute(scan, state).newState.agents)
     }
+
+    @Test
+    fun `a scan's load errors replace the state's, and the diff still reports the raw ones`() {
+        val state = AgentCatalogState(mapOf("a" to a), mapOf("a" to "a"), AgentLoadErrors.of(listOf("old error")))
+        val scan = AgentScan(mapOf("a" to a), mapOf("a" to "a"), setOf("a"), listOf("new error", "another"))
+
+        val computation = AgentReloadDiff.compute(scan, state)
+
+        assertEquals(AgentLoadErrors.of(listOf("new error", "another")), computation.newState.loadErrors)
+        assertEquals(listOf("new error", "another"), computation.result.errors)
+    }
+
+    @Test
+    fun `a scan that found no error publishes none, replacing the last scan's`() {
+        val state = AgentCatalogState(mapOf("a" to a), mapOf("a" to "a"), AgentLoadErrors.of(listOf("old error")))
+
+        val computation = AgentReloadDiff.compute(AgentScan(mapOf("a" to a), mapOf("a" to "a"), setOf("a"), emptyList()), state)
+
+        assertEquals(AgentLoadErrors.EMPTY, computation.newState.loadErrors)
+    }
 }
