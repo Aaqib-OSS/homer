@@ -521,7 +521,7 @@ server:
 | `maxRequestBodyBytes` | `Long` | No | `10485760` (10 MiB) | Maximum request body size in bytes; requests over the cap get `413 Payload Too Large`. Exempted: `/api/v1/runner/sessions/.../tar`, bounded instead by the `maxTransferBytes` of the domain whose token the request presents (this cap still applies when no domain token matches), `/api/v1/runner/sessions/.../output`, bounded by the 1 MiB output chunk cap, and `/api/v1/runner/sessions/.../next`, bounded at 64 KiB — see [External runners (pull mode)](#external-runners-pull-mode). |
 | `maxArtifactBytes` | `Long` | No | `104857600` (100 MiB) | Maximum size in bytes of a single artifact file served by `GET /api/v1/artifacts`. Files larger than this are rejected pre-flight with `413 Payload Too Large` so a misbehaving agent cannot turn an artifact fetch into a sustained bandwidth/time DoS. Range / partial-download support is not implemented — raise the cap (or split the artifact at the agent) if a use case needs >100 MiB downloads. |
 | `maxRetainedArtifactBytes` | `Long` | No | `16777216` (16 MiB) | Per-run byte cap on artifacts retained past the workspace purge (`workspace.retain.artifacts`). The retained set is agent-written and lives until the record dies, so the operator's disk ceiling is `maxProcesses` x this value. Overflow keeps what fits in declared-glob order and flags the record `retainedTruncated`. See [ADR-0053](../docs/adr/0053-declared-artifacts-ride-the-record-lifetime.md). |
-| `maxConfigFileBytes` | `Long` | No | `1048576` (1 MiB) | Maximum size in bytes of a single agent definition file (`agent.json` / `agent.yaml`) or a file read or written via the agent files API. The top-level config file is not governed by this setting: it is capped at a fixed 1 MiB, checked before the config (and so this value) is read. Files larger than the cap are rejected pre-flight, before kaml / kotlinx.serialization parse them. Real agent definitions are kilobytes; this cap bounds DoS exposure from a pathological YAML (oversized strings, huge anchor lists) regardless of what the underlying parser allows. The kaml parser ships on top of snakeyaml-engine 2.7, which already enforces `nestingDepthLimit=50` and `maxAliasesForCollections=50`, so deep-nesting / billion-laughs vectors are already bounded — this cap is the missing piece for total input size. Raise it if your agent definitions legitimately exceed 1 MiB (rare). |
+| `maxConfigFileBytes` | `Long` | No | `1048576` (1 MiB) | Maximum size in bytes of a single agent definition file (`agent.json` / `agent.yaml`) or a file read or written via the agent files API. The top-level config file is not governed by this setting: it is capped at a fixed 1 MiB, checked before the config (and so this value) is read. Files larger than the cap are rejected pre-flight, before kaml / kotlinx.serialization parse them. Real agent definitions are kilobytes; this cap bounds DoS exposure from a pathological YAML (oversized strings, deeply nested structures) regardless of what the underlying parser allows. The kaml parser ships on top of `it.krzeminski:snakeyaml-engine-kmp` 4.0.1 and, in its default configuration, rejects anchors and aliases outright, so a billion-laughs vector cannot be expressed — this cap is the missing piece for total input size. Raise it if your agent definitions legitimately exceed 1 MiB (rare). |
 | `maxOutputBytes` | `Long` | No | `10485760` (10 MiB) | Maximum size in bytes of a single command's stdout file (`cmd_N.out`) or stderr file (`cmd_N.err`). Each stream is capped independently at this value; either exceeding the cap kills the command via the same `destroyForcibly` + descendants path used for TTL timeouts, appends an `[HOMER] Output cap exceeded ($cap bytes)` line to the command's stderr, and surfaces through the per-command `ExecutionInfo.outputTruncated` flag returned by `GET /api/v1/status/{processId}`. The cap is checked every 250 ms alongside the TTL check, so the effective on-disk size at kill time may exceed the cap by one polling window's worth of writes — treat it as a soft ceiling. For Claude steps, `system` events listed in `claudeDropSystemSubtypes` are dropped before they reach the file and so never count toward this cap. Default 10 MiB. |
 | `claudeStreamPollMs` | `Int` | No | `150` | Polling interval (ms) of the stdout file poll behind `GET /api/v1/stream/processes/{id}/llm-events`. Lower = lower first-event latency, higher = less CPU. Coerced to `50..2000` at startup. |
 | `mcp` | `McpServerConfig` | No | `{enabled=false, maxWaitSec=300, maxInlineArtifactBytes=65536}` | Streamable HTTP MCP endpoint at `/mcp` exposing opted-in agents as MCP tools — see [MCP endpoint](#mcp-endpoint). |
@@ -2837,6 +2837,9 @@ Emits process lifecycle and question events, filtered to the runs the caller can
 | `question.asked` | `{"processId": int, "questionId": string, "agentName": string}` |
 | `question.answered` | `{"processId": int, "questionId": string}` |
 | `question.expired` | `{"processId": int, "questionId": string}` |
+| `message.queued` | `{"processId": int, "messageId": string}` |
+| `message.delivered` | `{"processId": int, "messageId": string}` |
+| `message.undelivered` | `{"processId": int, "messageId": string}` |
 
 ```bash
 curl -N "http://localhost:8080/api/v1/stream/processes" \
@@ -3658,9 +3661,10 @@ auth: !<key>
 #### Security posture
 
 - **Strict host-key checking is the default** (`strictHostKeyChecking:
-  true`) and requires `knownHostsPath` — Homer refuses to connect if
-  the flag is left `true` without a known-hosts file, rather than
-  silently accepting an unverified host key. Setting
+  true`) and requires `knownHostsPath` — Homer fails to start if the
+  flag is left `true` without a known-hosts file (the runner registry
+  build refuses it), rather than silently accepting an unverified host
+  key. Setting
   `strictHostKeyChecking: false` accepts any host key and should only
   be used on trusted networks or for local testing.
 - **The operator is responsible for the remote host's toolchain** —
@@ -3780,9 +3784,13 @@ and is taken by the first runner that matches it and has a free permit
    waiting. `concurrency` defaults to `100` on the local runner and `10` on `ssh` and `kubernetes` runners.
 3. One claim TTL (`server.runnerClaimTimeoutSec`, or the agent's
    `runnerClaimTimeoutSec`) covers the whole wait. At expiry the run fails and
-   the failure names what was observed, for example
-   `No runner claimed the run within 300 s (runner 'build-host'): runner 'build-host' at concurrency 2/2`
-   or `... (tags [gpu, linux]): no registered runner matches tags [gpu, linux]`.
+   the stored reason names the filter and what was observed, in the alias-free
+   form the run itself sees, for example
+   `No runner claimed this run within 300 s (pinned runner filter): every matching runner was at its concurrency limit.`
+   or `... (tags [gpu, linux]): no registered runner matches those tags.`
+   The alias-and-capacity detail (`runner 'build-host' at concurrency 2/2`)
+   reaches only the server log and the run's span, never the stored reason
+   (ADR-0077).
    The TTL bounds the wait for a *claim*. A run claimed just before the TTL
    expired is given the same time again for its runner to open the session,
    so a run whose runner claims it and then never delivers a session fails
