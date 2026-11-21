@@ -76,8 +76,6 @@ val serverId = UUID.randomUUID().toString()
 val isDraining: AtomicBoolean = AtomicBoolean(false)
 
 fun main(args: Array<String>) {
-    applyLogLevelOverrides(System.getenv(), LoggerFactory.getILoggerFactory())
-
     val resolvedConfig = loadStartupConfig(args) ?: return
 
     logger.info(
@@ -100,6 +98,7 @@ internal fun loadStartupConfig(
     args: Array<String>,
     sysEnvResolver: SysEnvResolver = SysEnvResolver(),
 ): AppConfig? {
+    applyLogLevelOverrides(System.getenv(), LoggerFactory.getILoggerFactory())
     val config = readStartupConfig(args) ?: return null
     return resolveStartupConfig(config, sysEnvResolver)
 }
