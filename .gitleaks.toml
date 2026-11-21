@@ -45,10 +45,3 @@ targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^clients/python/homer_langgraph/tests/test_gates\.py$''']
 regexes = ['''^s3cr3t-api-key$''']
-
-[[allowlists]]
-description = "SshShellExecutorTest: marker value the test asserts never reaches a step error or a log line"
-targetRules = ["generic-api-key"]
-condition = "AND"
-paths = ['''^app/app/src/test/kotlin/homer/app/runners/ssh/SshShellExecutorTest\.kt$''']
-regexes = ['''^SECRET-MARK-3f9a1c$''']
