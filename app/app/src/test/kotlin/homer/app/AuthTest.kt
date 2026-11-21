@@ -222,7 +222,7 @@ class AuthTest {
         }
 
     @Test
-    fun `livez and readyz are reachable without bearer token under bearer auth (audit P1 #12)`() =
+    fun `livez and readyz are reachable without bearer token under bearer auth`() =
         testApplication {
             val deps =
                 mockk<ApiDeps>(relaxed = true) {

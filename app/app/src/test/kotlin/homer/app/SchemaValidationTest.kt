@@ -199,7 +199,7 @@ class SchemaValidationTest {
     @Test
     fun `homer-agent schema validates all example agents (JSON and YAML)`() {
         // Use the shared production validator so local-debug (agentdebug validate)
-        // and this backstop check the exact same schema + code path (audit P2 #28).
+        // and this backstop check the exact same schema + code path.
         val validator = AgentSchemaValidator()
         val agentsDir = File(repoRoot, "example/agents")
         val fixtures =

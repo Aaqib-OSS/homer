@@ -77,7 +77,7 @@ class HttpPluginsTest {
             assertEquals("*", response2.headers[HttpHeaders.AccessControlAllowOrigin])
         }
 
-    // ========== Security headers (audit P1 #13) ==========
+    // ========== Security headers (ADR-0047) ==========
 
     @Test
     fun `responses include hardening headers on every request`() =

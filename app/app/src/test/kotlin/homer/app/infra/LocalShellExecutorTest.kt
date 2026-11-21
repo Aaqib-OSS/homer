@@ -695,7 +695,7 @@ class LocalShellExecutorTest {
         }
 
     @Test
-    fun `cmd should throw OutputCapExceededException when stdout exceeds maxOutputBytes (audit P1 #17)`(
+    fun `cmd should throw OutputCapExceededException when stdout exceeds maxOutputBytes`(
         @TempDir tmp: Path,
     ) = runTest {
         val workDir = tmp
@@ -765,7 +765,7 @@ class LocalShellExecutorTest {
     }
 
     @Test
-    fun `cmd should throw OutputCapExceededException when stderr exceeds maxOutputBytes (audit P1 #17)`(
+    fun `cmd should throw OutputCapExceededException when stderr exceeds maxOutputBytes`(
         @TempDir tmp: Path,
     ) = runTest {
         val workDir = tmp
