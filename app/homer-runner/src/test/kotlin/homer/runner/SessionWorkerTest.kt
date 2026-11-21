@@ -592,6 +592,27 @@ class SessionWorkerTest {
         }
 
     @Test
+    fun `a transfer before the workspace exists is refused because the session root has no resolved path`() =
+        live {
+            val w = worker()
+            val run = async { w.run() }
+
+            api.ops.send(RunnerOp.Upload("u1", "workdir"))
+            val upload = api.result()
+            assertFalse(upload.ok, "an upload before CreateWorkspace is refused")
+            assertEquals("path 'workdir' refused: the session root has no resolved path", upload.error)
+
+            api.ops.send(RunnerOp.Download("d1", "workdir", DownloadMode.OVERLAY))
+            val download = api.result()
+            assertFalse(download.ok, "a download before CreateWorkspace is refused, not reported missing")
+            assertEquals("path 'workdir' refused: the session root has no resolved path", download.error)
+            assertTrue(api.postedTars.isEmpty())
+
+            api.ops.send(RunnerOp.Close("cl", "done"))
+            run.await()
+        }
+
+    @Test
     fun `losing Homer for the heartbeat timeout kills the running command and ends the worker`() =
         live {
             val w = worker(heartbeat = 500.milliseconds)
