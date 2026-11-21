@@ -11,6 +11,7 @@ import homer.app.executors.ArtifactNameResolver
 import homer.app.executors.CommandExecutorFactory
 import homer.app.executors.ExecutionContext
 import homer.app.infra.DefaultTextCompiler
+import homer.app.infra.DescriptorOpen
 import homer.app.infra.LlmCostResolver
 import homer.app.infra.OtelTelemetryService
 import homer.app.infra.ProcessJobRegistry
@@ -64,14 +65,19 @@ class DebugAgentRunner(
             secretKey = "sk-debug",
         )
 
-    /** Runs the agent's commands; `true` = a command failed or a `when` aborted the run. */
+    /** Runs the agent's commands; `true` = a command failed, a `when` aborted the run, or [cmdIndex] is out of range. */
     suspend fun run(): Boolean {
+        val commands = agent.commands
+        val totalCmds = commands.size
+        if (cmdIndex != null && cmdIndex !in commands.indices) {
+            println("[ERROR] ${outOfRangeMessage(totalCmds)}")
+            return true
+        }
+
         val textCompiler = DefaultTextCompiler()
         val executorFactory = debugExecutorFactory()
         val workspace = debugWorkspace(textCompiler)
 
-        val commands = agent.commands
-        val totalCmds = commands.size
         val globalEnvCount = appConfig.globalEnv.size
         val agentEnvCount = agent.env.size
         val inputCount = inputMap.size
@@ -87,13 +93,19 @@ class DebugAgentRunner(
         val indicesToRun = if (cmdIndex != null) listOf(cmdIndex) else commands.indices.toList()
 
         for (i in indicesToRun) {
-            val cmd = commands.getOrNull(i) ?: break
-            if (tally.record(runCommand(i, cmd, totalCmds, workspace, executorFactory, textCompiler, executionConfig))) break
+            if (tally.record(runCommand(i, commands[i], totalCmds, workspace, executorFactory, textCompiler, executionConfig))) break
         }
 
         finish(tally, workspace)
 
         return tally.hadError
+    }
+
+    /** The `[ERROR]` line for a `--cmd` index outside the agent's commands; it names only the index, agent and count. */
+    private fun outOfRangeMessage(totalCmds: Int): String {
+        val count = "$totalCmds command${if (totalCmds != 1) "s" else ""}"
+        val range = if (totalCmds == 0) "" else " (0..${totalCmds - 1})"
+        return "--cmd $cmdIndex is out of range: agent '${agent.name}' has $count$range"
     }
 
     /**
@@ -103,7 +115,7 @@ class DebugAgentRunner(
     private fun debugExecutorFactory(): CommandExecutorFactory {
         val telemetryService = OtelTelemetryService(dummyLangfuseConfig, OpenTelemetryExport.LOG)
         val llmTelemetryService = LlmTelemetryService(telemetryService, logger)
-        val fileOperations = DebugFileOperations()
+        val fileOperations = DebugFileOperations().also { DescriptorOpen.logStatus(logger) }
         val langfuseClient = DebugLangfuseClient()
         val skipRunAgentExecutor = SkipRunAgentExecutor()
         val skipLangGraphExecutor = SkipLangGraphExecutor()

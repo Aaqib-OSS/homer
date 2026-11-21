@@ -1,5 +1,6 @@
 package homer.app.runners.kubernetes
 
+import homer.app.exceptions.CommandExecutionException
 import homer.app.exceptions.OutputCapExceededException
 import homer.app.exceptions.PodFailedDuringExecutionException
 import homer.app.fixtures.waitUnfinished
@@ -518,7 +519,7 @@ class KubernetesShellExecutorTest {
     }
 
     @Test
-    fun `a pump that cannot write closes the exec stream so the command can finish`(
+    fun `a pump that cannot write closes the exec stream and fails the step`(
         @TempDir tmp: Path,
     ) = runTest {
         // The pod command only exits once its stderr is drained or closed, as one blocked on a full pipe would.
@@ -541,15 +542,52 @@ class KubernetesShellExecutorTest {
             )
 
         // The pump cannot open its file: the directory does not exist.
-        val result =
-            executor.cmd(
-                command = listOf("x"),
-                stdOut = tmp.resolve("out"),
-                stdErr = tmp.resolve("missing-dir/err"),
-                timeout = 3.seconds,
+        val thrown =
+            assertFailsWith<CommandExecutionException> {
+                executor.cmd(
+                    command = listOf("x"),
+                    stdOut = tmp.resolve("out"),
+                    stdErr = tmp.resolve("missing-dir/err"),
+                    timeout = 3.seconds,
+                )
+            }
+
+        assertTrue(stderrPipe.closed, "the failed pump must close the exec stream so the command can finish")
+        assertTrue(thrown.message.orEmpty().contains("stderr"), "the failure must name the lost stream: ${thrown.message}")
+    }
+
+    @Test
+    fun `a stdout pump failure fails the step even when the command exits 0 with a few bytes`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        // The output fits the exec buffer, so the command exits 0 with its stdout lost: the
+        // step must not report that exit code as success (ADR-0063).
+        val proc = fakeProcess(stdout = "hi\n", stderr = "", exit = 0)
+        val executor =
+            KubernetesShellExecutor(
+                { _, _, _, _ -> proc },
+                mockk(relaxed = true),
+                "homer",
+                "pod-1",
+                maxRunSeconds = RUN_LIMIT_SECONDS,
             )
 
-        assertEquals(0, result.exitCode)
+        val thrown =
+            assertFailsWith<CommandExecutionException> {
+                executor.cmd(
+                    command = listOf("x"),
+                    stdOut = tmp.resolve("missing-dir/out"),
+                    stdErr = tmp.resolve("err"),
+                    env = mapOf("SECRET" to "s3cr3t"),
+                    timeout = 5.seconds,
+                )
+            }
+
+        val reason = thrown.message.orEmpty()
+        assertTrue(reason.contains("stdout"), "the failure must name the lost stream: $reason")
+        assertFalse(reason.contains("hi"), "the failure must not carry the pod's output: $reason")
+        assertFalse(reason.contains("s3cr3t"), "the failure must not carry an env value: $reason")
+        assertEquals(-1, thrown.exitCode, "a step that failed without the command's exit contributing records the sentinel")
     }
 
     /** An exec stream that blocks every read until it is closed, then ends. */

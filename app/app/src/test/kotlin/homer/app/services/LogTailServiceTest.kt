@@ -2,6 +2,7 @@ package homer.app.services
 
 import homer.app.executors.CommandArtifactPaths
 import homer.app.fixtures.TestFixtures
+import homer.app.infra.DescriptorOpen
 import homer.app.models.ExecutionInfo
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
@@ -21,11 +22,9 @@ import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
-import java.nio.channels.FileChannel
+import java.nio.channels.SeekableByteChannel
 import java.nio.file.Files
-import java.nio.file.LinkOption
 import java.nio.file.Path
-import java.nio.file.StandardOpenOption
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -333,10 +332,10 @@ class LogTailServiceTest {
             )
 
         val opens = AtomicInteger(0)
-        val channels = mutableListOf<FileChannel>()
-        val factory: (Path) -> FileChannel = { p ->
+        val channels = mutableListOf<SeekableByteChannel>()
+        val factory: (Path) -> SeekableByteChannel = { p ->
             opens.incrementAndGet()
-            openNoFollow(p).also { channels.add(it) }
+            DescriptorOpen.openRegularChannel(p).also { channels.add(it) }
         }
 
         val service =
@@ -363,9 +362,9 @@ class LogTailServiceTest {
         path.writeText("data")
         coEvery { processManager.getProcessStatus(1) } returns ProcessStatus.WORKING
 
-        val channels = mutableListOf<FileChannel>()
-        val factory: (Path) -> FileChannel = { p ->
-            openNoFollow(p).also { channels.add(it) }
+        val channels = mutableListOf<SeekableByteChannel>()
+        val factory: (Path) -> SeekableByteChannel = { p ->
+            DescriptorOpen.openRegularChannel(p).also { channels.add(it) }
         }
 
         val service =
@@ -380,6 +379,29 @@ class LogTailServiceTest {
 
         assertEquals(1, channels.size)
         assertTrue(!channels.single().isOpen, "cached channel must be closed on flow cancellation")
+    }
+
+    @Test
+    fun `tail through the descriptor channel survives the file being truncated under it`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val processManager = processManagerWithoutJob()
+        val path = tmp.resolve("cmd_0.out")
+        path.writeText("hello world")
+        val polls = AtomicInteger(0)
+        coEvery { processManager.getProcessStatus(1) } answers {
+            when (polls.incrementAndGet()) {
+                1 -> ProcessStatus.WORKING
+                2 -> ProcessStatus.WORKING.also { path.writeText("hi") }
+                else -> ProcessStatus.FINISHED
+            }
+        }
+        val service = LogTailService(processManager, TestFixtures.mockLogger(), pollIntervalMs = 1L)
+
+        val events = service.tail(1, path, resumeFromOffset = 0L).toList()
+
+        assertEquals(listOf("hello world"), events.filterIsInstance<LogTailService.LogEvent.Chunk>().map { it.content })
+        assertEquals(LogTailService.LogEvent.End, events.last())
     }
 
     @Test
@@ -602,13 +624,48 @@ class LogTailServiceTest {
 
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
-    fun `tail refuses a FIFO without opening it`(
+    fun `tail refuses a FIFO without blocking on it`(
         @TempDir tmp: Path,
     ) = runTest {
         val dir = artifactsIn(tmp)
         val path = dir.resolve("cmd_0.out")
         TestFixtures.mkfifoOrSkip(path)
         val service = LogTailService(finishedProcess(dir), TestFixtures.mockLogger(), pollIntervalMs = 1L)
+        assertNothingServed(service.tail(1, path, resumeFromOffset = 0L).toList())
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    fun `tail refuses at once a FIFO swapped in after the check`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val dir = artifactsIn(tmp)
+        TestFixtures.mkfifoOrSkip(tmp.resolve("probe.fifo"))
+        val path = dir.resolve("cmd_0.out").also { it.writeText("own output") }
+        val logger = TestFixtures.mockLogger()
+        val service =
+            LogTailService(finishedProcess(dir), logger, pollIntervalMs = 1L) { p ->
+                Files.delete(p)
+                check(ProcessBuilder("mkfifo", p.toString()).start().waitFor() == 0) { "mkfifo failed" }
+                DescriptorOpen.openRegularChannel(p)
+            }
+
+        assertNothingServed(service.tail(1, path, resumeFromOffset = 0L).toList())
+        verify(exactly = 1) { logger.warn(match<String> { "refusing" in it }, 1, "cmd_0.out") }
+    }
+
+    @Test
+    fun `tail refuses a hard link made after the check`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val dir = artifactsIn(tmp)
+        val path = dir.resolve("cmd_0.out").also { it.writeText(secret) }
+        val service =
+            LogTailService(finishedProcess(dir), TestFixtures.mockLogger(), pollIntervalMs = 1L) { p ->
+                Files.createLink(tmp.resolve("elsewhere.txt"), p)
+                DescriptorOpen.openRegularChannel(p)
+            }
+
         assertNothingServed(service.tail(1, path, resumeFromOffset = 0L).toList())
     }
 
@@ -671,8 +728,6 @@ class LogTailServiceTest {
         assertEquals(content, chunks.joinToString("") { it.content })
         assertEquals(Files.size(path), chunks.last().offset)
     }
-
-    private fun openNoFollow(p: Path): FileChannel = FileChannel.open(p, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)
 
     private fun processInfo(
         id: Int,

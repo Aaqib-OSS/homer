@@ -119,15 +119,18 @@ Execute agent commands locally.
 |--------|-------------|
 | `--input <path>` | `key=value` file with input values |
 | `--dry-run` | Print what would run without executing; declared secret inputs and `@SYSENV:` values (agent `env:` and `globalEnv`) print as `***` |
-| `--cmd <N>` | Run only command at index N (0-based); an out-of-range N is silently a no-op (no command runs, no error) |
+| `--cmd <N>` | Run only command at index N (0-based); an N below 0 or at/above the command count fails before anything runs |
 | `--keep-workspace` | Don't delete the workspace after run |
 
 (`--env` is a global option — see [Global Options](#global-options) — but its values apply as the highest-priority env override on `run`.)
 
 `validate` exits 1 when the agent is not found or schema validation fails,
 and exits 0 when it passes. `run` exits 1 if a command fails (non-zero exit
-without `continueIfFail`) or a `when` predicate fails to evaluate; it exits
-0 otherwise, including when commands were skipped.
+without `continueIfFail`), a `when` predicate fails to evaluate, or `--cmd N`
+names an index outside `0..count-1` — that last one fails before anything
+runs, with an error naming the valid range (the range is omitted when the
+agent has no commands); `run` exits 0 otherwise,
+including when commands were skipped.
 
 Commands with a `when:` predicate are evaluated before each real run (dry-run
 only prints the predicate, never evaluates it): a false predicate prints
