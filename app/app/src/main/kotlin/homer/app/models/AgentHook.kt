@@ -24,7 +24,7 @@ data class AgentHook(
 ) {
     init {
         require(AGENT_NAME_PATTERN.matches(agent)) {
-            "hook target '$agent' is not a valid agent name: only letters, digits, '-', '_' allowed"
+            "hook target is not a valid agent name: only letters, digits, '-', '_' allowed"
         }
     }
 }

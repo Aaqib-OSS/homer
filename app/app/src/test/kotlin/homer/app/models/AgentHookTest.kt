@@ -6,6 +6,7 @@ import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class AgentHookTest {
@@ -100,10 +101,21 @@ class AgentHookTest {
 
     @Test
     fun `a target outside the agent-name character set is rejected without echoing the name into the status`() {
-        // The value is an untrusted definition's string; the error text reaches the load log
-        // and the definition-write response, so it names the offending value only as itself.
+        // The value is an untrusted definition's string; the error reaches the load log and the
+        // definition-write response, so it must not echo it.
         val ex = assertThrows<IllegalArgumentException> { decodeYaml("  - CREATED: \"not an agent\"") }
 
+        assertTrue(ex.message!!.contains("not a valid agent name"), ex.message)
+    }
+
+    @Test
+    fun `an invalid target does not appear in the error message`() {
+        val secretShaped = "sk-live-SECRET\u0007\u001b[31mx y"
+
+        val ex = assertThrows<IllegalArgumentException> { AgentHook(ProcessStatus.CREATED, secretShaped) }
+
+        assertFalse(ex.message!!.contains("SECRET"), ex.message)
+        assertFalse(ex.message!!.any { it.isISOControl() }, ex.message)
         assertTrue(ex.message!!.contains("not a valid agent name"), ex.message)
     }
 

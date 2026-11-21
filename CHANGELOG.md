@@ -4,6 +4,7 @@
 
 ### Homer
 
+- **Fixed: an invalid hook target is not echoed in the error** — The agent-load and definition-write error for a malformed `hooks` target no longer repeats the value.
 - **Added: `isErrorExitCode` on `!<claude>` commands** — An `is_error` result returns this exit code instead of failing as malformed, and is not retried.
 - **Added: `GET /api/v1/auth/me` answers a bearer token** — A request carrying a bearer token gets that token's name, role and grants, and the route is mounted whenever a `bearer` or `password` scheme is configured.
 - **BREAKING: the LangGraph runtime needs Python 3.12** — A runner host that runs `!<langgraph>` commands needs Python 3.12 or newer to install `homer_langgraph`.
