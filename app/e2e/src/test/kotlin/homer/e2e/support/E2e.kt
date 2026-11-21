@@ -19,7 +19,7 @@ object E2e {
     val token: String = System.getenv("E2E_TOKEN").orEmpty()
 
     /** Set by the E2E runner image: there a missing [baseUrl] fails the suite instead of skipping it. */
-    val required: Boolean = System.getenv("E2E_REQUIRED").toBoolean()
+    val required: Boolean = System.getenv("E2E_REQUIRED").orEmpty().toBoolean()
 
     val json =
         Json {
