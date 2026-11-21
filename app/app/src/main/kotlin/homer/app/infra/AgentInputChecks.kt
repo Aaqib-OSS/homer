@@ -236,10 +236,15 @@ internal class AgentInputChecks(
         agent: Agent,
         errors: MutableList<String>,
     ): Boolean {
+        // onStop steps run under the same caller-visible env as commands, so both binding
+        // guards below sweep the stop phase too — a stop step cannot opt out of a check
+        // the phase it runs in does not weaken (ADR-0047, ADR-0108).
+        val steps = agent.commands.map { "command" to it } + agent.onStop.map { "onStop step" to it }
+
         // A captured *value* is attacker-influenceable and merges into the env that later commands
         // and onStop steps consume, so both get the same reserved/malformed env-name guard (ADR-0047).
         val invalidResultEnvName =
-            (agent.commands.map { "command" to it } + agent.onStop.map { "onStop step" to it })
+            steps
                 .flatMap { (kind, cmd) -> cmd.resultEnvParam.map { Triple(kind, cmd, it) } }
                 .firstOrNull { (_, _, param) ->
                     ReservedEnvNames.isReserved(param.envName) || !envNamePattern.matches(param.envName)
@@ -269,19 +274,19 @@ internal class AgentInputChecks(
                 .map { it.envName }
                 .toSet()
         val inputBoundExecutable =
-            agent.commands
-                .filterIsInstance<Command.LlmCommand>()
-                .firstNotNullOfOrNull { cmd ->
+            steps
+                .mapNotNull { (kind, cmd) -> (cmd as? Command.LlmCommand)?.let { kind to cmd } }
+                .firstNotNullOfOrNull { (kind, cmd) ->
                     templatePlaceholderPattern
                         .findAll(cmd.cmd)
                         .map { it.groupValues[1] }
                         .firstOrNull { it in inputEnvNames }
-                        ?.let { cmd to it }
+                        ?.let { Triple(kind, cmd, it) }
                 }
         if (inputBoundExecutable != null) {
-            val (cmd, input) = inputBoundExecutable
+            val (kind, cmd, input) = inputBoundExecutable
             val msg =
-                "Agent '${agent.name}': command '${cmd.label}' cmd references input '{{$input}}'; " +
+                "Agent '${agent.name}': $kind '${cmd.label}' cmd references input '{{$input}}'; " +
                     "an input must not choose the executable"
             logger.error("{}. Skipping.", msg)
             errors.add(msg)
@@ -384,7 +389,7 @@ internal class AgentInputChecks(
      * Warn-only — existing agents keep loading.
      */
     fun warnOnUncontainedClaudeTools(agent: Agent) {
-        agent.commands.filterIsInstance<Command.Claude>().forEach { cmd ->
+        (agent.commands + agent.onStop).filterIsInstance<Command.Claude>().forEach { cmd ->
             if (cmd.options.bypassesPermissionsWithoutToolLimit()) {
                 logger.warn(
                     "Agent '{}': claude command '{}' skips permissions and sets only 'allowedTools', " +

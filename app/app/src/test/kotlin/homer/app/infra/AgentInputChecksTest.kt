@@ -127,6 +127,36 @@ class AgentInputChecksTest {
         assertEquals(emptyList(), errors)
     }
 
+    @Test
+    fun `an input templated into a command's cmd is refused`() {
+        val agent =
+            claudeAgent(claudeCommand(ClaudeCmdOptions(), label = "run").copy(cmd = "{{BIN}}"))
+                .copy(inputs = listOf(Param(paramName = "bin", envName = "BIN")))
+
+        assertFalse(checks.checkCommandBindings(agent, errors))
+        assertEquals(
+            listOf("Agent 'a': command 'run' cmd references input '{{BIN}}'; an input must not choose the executable"),
+            errors,
+        )
+    }
+
+    @Test
+    fun `an onStop step whose cmd references an input is refused, like a command step`() {
+        val agent =
+            claudeAgent(claudeCommand(ClaudeCmdOptions(), label = "run"))
+                .copy(
+                    inputs = listOf(Param(paramName = "bin", envName = "BIN")),
+                    onStop = listOf(claudeCommand(ClaudeCmdOptions(), label = "stop").copy(cmd = "{{BIN}}")),
+                )
+
+        assertFalse(checks.checkCommandBindings(agent, errors))
+        // Threat model (Secrets): the message names the step and the input's env key, never a value.
+        assertEquals(
+            listOf("Agent 'a': onStop step 'stop' cmd references input '{{BIN}}'; an input must not choose the executable"),
+            errors,
+        )
+    }
+
     /** An agent whose commands are the given claude steps. */
     private fun claudeAgent(vararg commands: Command.Claude) = Agent(name = "a", commands = commands.toList())
 
@@ -185,6 +215,24 @@ class AgentInputChecksTest {
         checks.warnOnUncontainedClaudeTools(agent)
 
         verify(exactly = 0) { logger.warn(any<String>(), any<Any>(), any<Any>()) }
+    }
+
+    @Test
+    fun `an onStop claude step that skips permissions with only allowedTools warns`() {
+        val stopStep =
+            claudeCommand(
+                ClaudeCmdOptions(dangerouslySkipPermissions = true, allowedTools = listOf("Read")),
+                label = "ship",
+            )
+        val agent =
+            claudeAgent(claudeCommand(ClaudeCmdOptions(), label = "run"))
+                .copy(onStop = listOf(stopStep))
+
+        checks.warnOnUncontainedClaudeTools(agent)
+
+        val labels = mutableListOf<String>()
+        verify(exactly = 1) { logger.warn(any<String>(), any<Any>(), capture(labels)) }
+        assertEquals(listOf("ship"), labels)
     }
 
     @Test
