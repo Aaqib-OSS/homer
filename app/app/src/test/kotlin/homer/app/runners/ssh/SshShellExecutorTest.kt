@@ -607,8 +607,8 @@ class SshShellExecutorTest {
         val session = server.newClientSession(client)
         val channel = session.createExecChannel("true")
         try {
-            // logback.xml pins these two logger names to keep the remote command out of app.log; a
-            // MINA upgrade that returned a subclass would escape the pin and log the command again.
+            // logback.xml pins these two logger names to keep the env file's bytes and the command out of app.log;
+            // a MINA upgrade that returned a subclass would escape the pin and log them again.
             assertEquals(ClientSessionImpl::class.java.name, session.javaClass.name)
             assertEquals(ChannelExec::class.java.name, channel.javaClass.name)
         } finally {

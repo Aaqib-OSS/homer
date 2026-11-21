@@ -51,9 +51,8 @@
     <logger name="io.ktor" level="INFO"/>
     <logger name="io.netty" level="INFO"/>
     <logger name="io.opentelemetry" level="INFO"/>
-    <!-- These quote the ssh remote command, which carries the run's env: the channel's
-         WARN/DEBUG lines, the session's DEBUG createExecChannel line and TRACE packet dump.
-         Explicit levels, so HOMER_LOG_LEVEL on the root cannot lower them. -->
+    <!-- The session's TRACE packet dump carries the ssh env file's bytes as SFTP writes them, and the
+         channel's lines quote the command. Explicit levels, so HOMER_LOG_LEVEL cannot lower them. -->
     <logger name="org.apache.sshd.client.channel.ChannelExec" level="ERROR"/>
     <logger name="org.apache.sshd.client.session.ClientSessionImpl" level="INFO"/>
 
