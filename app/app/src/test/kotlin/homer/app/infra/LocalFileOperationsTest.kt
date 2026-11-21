@@ -252,6 +252,33 @@ class LocalFileOperationsTest {
         }
 
     @Test
+    fun `an interrupted wait refuses the read and keeps the interrupt flag`() {
+        val file = tempDir.resolve("slow.txt").also { it.writeText("slow") }
+        val opening = CountDownLatch(1)
+        val slow =
+            LocalFileOperations(60_000) { _ ->
+                opening.countDown()
+                sleepUninterruptibly(500)
+            }
+        var result: String? = "unset"
+        var interruptKept = false
+        val caller =
+            Thread {
+                result = slow.readTextBounded(file, maxBytes = 64)
+                interruptKept = Thread.currentThread().isInterrupted
+            }
+
+        caller.start()
+        assertTrue(opening.await(5, TimeUnit.SECONDS), "the open must have started")
+        caller.interrupt()
+        caller.join(5_000)
+
+        assertFalse(caller.isAlive, "the interrupted caller must not keep waiting")
+        assertEquals(null, result)
+        assertTrue(interruptKept, "the interrupt flag must be restored")
+    }
+
+    @Test
     fun `a symlink swapped in after the check is refused at the descriptor`() =
         runTest {
             val outside = Files.createTempDirectory("lfo-outside")

@@ -13,6 +13,7 @@ import java.nio.file.attribute.BasicFileAttributes
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.ExecutorService
+import java.util.concurrent.Future
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadPoolExecutor
@@ -135,11 +136,24 @@ class LocalFileOperations internal constructor(
         return try {
             future.get(openTimeoutMs, TimeUnit.MILLISECONDS)
         } catch (_: TimeoutException) {
-            if (claimed.compareAndSet(false, true)) future.cancel(true) else discard(future.get())
+            abandon(future, claimed, discard)
             throw IOException("Timed out trying to $what $path")
+        } catch (_: InterruptedException) {
+            abandon(future, claimed, discard)
+            Thread.currentThread().interrupt()
+            throw IOException("Interrupted while trying to $what $path")
         } catch (e: ExecutionException) {
             throw (e.cause as? IOException ?: IOException("Failed to $what $path", e.cause))
         }
+    }
+
+    /** Gives up on [future]: cancels it if it has not produced yet, else [discard]s the result nobody will take. */
+    private fun <T> abandon(
+        future: Future<T>,
+        claimed: AtomicBoolean,
+        discard: (T) -> Unit,
+    ) {
+        if (claimed.compareAndSet(false, true)) future.cancel(true) else discard(future.get())
     }
 
     internal companion object {
