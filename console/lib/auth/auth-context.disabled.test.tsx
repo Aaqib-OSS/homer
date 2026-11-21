@@ -66,7 +66,7 @@ async function renderWithCurrentConfig() {
   resetInstancesStoreForTests();
 
   function Probe() {
-    const { status, user, login: doLogin, logout: doLogout } = useAuth();
+    const { status, user, login: doLogin, logout: doLogout, signOutAndSwitch } = useAuth();
     return (
       <div>
         <div data-testid="status">{status}</div>
@@ -89,6 +89,7 @@ async function renderWithCurrentConfig() {
         >
           do-logout
         </button>
+        <button onClick={() => void signOutAndSwitch('other-instance')}>do-sign-out-and-switch</button>
       </div>
     );
   }
@@ -146,6 +147,24 @@ describe.each([
     expect(screen.getByTestId('status')).toHaveTextContent('authed');
     expect(logout).not.toHaveBeenCalled();
     expect(logoutResult).toBe('ok');
+  });
+
+  it('switches to the target instance, stays authed, and calls no logout endpoint', async () => {
+    // Auth off has no session to end, so no logout may reach the backend; the
+    // pinned state survives the switch, and the switch must land on the target.
+    await renderWithCurrentConfig();
+    expect(screen.getByTestId('status')).toHaveTextContent('authed');
+
+    const { upsertInstance, getActiveInstance } = await import('@/lib/instances/store');
+    upsertInstance({ id: 'other-instance', label: 'Other', baseUrl: 'https://other.example.com', mode: 'cookie' });
+
+    await act(async () => {
+      screen.getByText('do-sign-out-and-switch').click();
+    });
+
+    expect(screen.getByTestId('status')).toHaveTextContent('authed');
+    expect(logout).not.toHaveBeenCalled();
+    expect(getActiveInstance().id).toBe('other-instance');
   });
 
   it('resolves login to ok, stays authed, and probes nothing', async () => {

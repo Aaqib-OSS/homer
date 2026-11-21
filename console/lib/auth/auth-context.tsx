@@ -53,6 +53,12 @@ interface AuthContextType {
    */
   login: (username: string, password: string) => Promise<LoginOutcome>;
   logout: () => Promise<LogoutOutcome>;
+  /**
+   * Sign out of the *current* active instance and switch to `instanceId` in one
+   * step. Unlike `logout()` + `switchInstance()`, the override is never pinned
+   * to `anon` mid-operation — the dashboard gate redirects on that status.
+   */
+  signOutAndSwitch: (instanceId: string) => Promise<void>;
   /** Points the active id at `instanceId`, drops the previous instance's cached data and re-probes auth. */
   switchInstance: (instanceId: string) => void;
 }
@@ -189,11 +195,11 @@ async function logoutActive({ queryClient, setOverride }: AuthSetters): Promise<
   return outcome;
 }
 
-/** login / logout / switchInstance, and the auth-expired listener, over the given override setter. */
+/** login / logout / signOutAndSwitch / switchInstance, and the auth-expired listener, over the given override setter. */
 function useAuthActions(
   queryClient: QueryClient,
   setOverride: (override: AuthOverride) => void,
-): Pick<AuthContextType, 'login' | 'logout' | 'switchInstance'> {
+): Pick<AuthContextType, 'login' | 'logout' | 'signOutAndSwitch' | 'switchInstance'> {
   const login = useCallback(
     async (username: string, password: string): Promise<LoginOutcome> => {
       if (authProbeDisabled) {
@@ -217,6 +223,18 @@ function useAuthActions(
     [queryClient, setOverride],
   );
 
+  // Sign-out-and-switch for removing the active instance: the override drops
+  // straight to null, never through `anon`, so the gate reads loading instead.
+  const signOutAndSwitch = useCallback(
+    async (instanceId: string) => {
+      if (!authProbeDisabled) {
+        await endSession();
+      }
+      switchInstance(instanceId);
+    },
+    [switchInstance],
+  );
+
   // A 401 elsewhere fires the auth-expired bus; pin the override to 'anon' so no stale 'authed' shows.
   useEffect(() => {
     return onAuthExpired(() => setOverride({ kind: 'anon' }));
@@ -229,7 +247,7 @@ function useAuthActions(
     return logoutActive({ queryClient, setOverride });
   }, [queryClient, setOverride]);
 
-  return { login, logout, switchInstance };
+  return { login, logout, signOutAndSwitch, switchInstance };
 }
 
 /** [probed] without the auth layer's own `unreported` flag, which never reaches plugins (ADR-0059). */
@@ -254,7 +272,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const { status, user: probed } = resolveAuthState(override, query);
   const user = useMemo(() => publicUser(probed), [probed]);
-  const { login, logout, switchInstance } = useAuthActions(queryClient, setOverride);
+  const { login, logout, signOutAndSwitch, switchInstance } = useAuthActions(
+    queryClient,
+    setOverride,
+  );
 
   return (
     <AuthContext.Provider
@@ -264,6 +285,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         principalUnreported: probed?.unreported === true,
         login,
         logout,
+        signOutAndSwitch,
         switchInstance,
       }}
     >

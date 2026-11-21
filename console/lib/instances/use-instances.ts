@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from 'react';
 import {
   getSnapshot,
+  removeInstance,
   setActiveInstance,
   subscribe,
   upsertInstance,
@@ -20,6 +21,7 @@ export function useInstances(): {
   activeInstanceId: string;
   setActiveInstance: (id: string) => void;
   upsertInstance: (instance: Instance) => void;
+  removeInstance: (id: string) => void;
 } {
   const state = useInstancesState();
   return {
@@ -27,6 +29,7 @@ export function useInstances(): {
     activeInstanceId: state.activeInstanceId,
     setActiveInstance,
     upsertInstance,
+    removeInstance,
   };
 }
 

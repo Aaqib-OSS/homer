@@ -10,10 +10,12 @@ import {
   getInstances,
   getSnapshot,
   removeActiveToken,
+  removeInstance,
   resetInstancesStoreForTests,
   setActiveInstance,
   setActiveToken,
   setInstanceToken,
+  subscribe,
   tokenKeyFor,
   upsertInstance,
   type Instance,
@@ -94,6 +96,84 @@ describe('instances store', () => {
     setInstanceToken('remote', 'remote-token');
     removeActiveToken();
     expect(getActiveToken()).toBeNull();
+    expect(getInstanceToken('remote')).toBe('remote-token');
+  });
+
+  it('removeInstance drops a non-active instance and only its token', () => {
+    upsertInstance(remote);
+    setActiveToken('default-token');
+    setInstanceToken('remote', 'remote-token');
+
+    removeInstance('remote');
+
+    expect(getInstances().map((i) => i.id)).toEqual([DEFAULT_INSTANCE_ID]);
+    expect(getActiveInstance().id).toBe(DEFAULT_INSTANCE_ID);
+    expect(localStorage.getItem(tokenKeyFor('remote'))).toBeNull();
+    expect(getInstanceToken(DEFAULT_INSTANCE_ID)).toBe('default-token');
+  });
+
+  it('removeInstance keeps the active id when a later instance is active', () => {
+    // Removing a background row must not re-point the active instance: the
+    // re-point branch only fires for the removed id itself.
+    upsertInstance(remote);
+    upsertInstance({ id: 'second', label: 'Second', baseUrl: 'https://c.example.com', mode: 'cookie' });
+    setActiveInstance('second');
+
+    removeInstance('remote');
+
+    expect(getInstances().map((i) => i.id)).toEqual([DEFAULT_INSTANCE_ID, 'second']);
+    expect(getSnapshot().activeInstanceId).toBe('second');
+    expect(getActiveInstance().id).toBe('second');
+  });
+
+  it('removeInstance of the active instance activates a remaining instance and notifies', () => {
+    upsertInstance(remote);
+    setInstanceToken('remote', 'remote-token');
+    setActiveInstance('remote');
+    const listener = vi.fn();
+    const unsubscribe = subscribe(listener);
+
+    removeInstance('remote');
+    unsubscribe();
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(getInstances().map((i) => i.id)).toEqual([DEFAULT_INSTANCE_ID]);
+    expect(getSnapshot().activeInstanceId).toBe(DEFAULT_INSTANCE_ID);
+    expect(getActiveInstance().id).toBe(DEFAULT_INSTANCE_ID);
+    expect(localStorage.getItem(tokenKeyFor('remote'))).toBeNull();
+    expect(JSON.parse(localStorage.getItem(INSTANCES_KEY)!).activeInstanceId).toBe(
+      DEFAULT_INSTANCE_ID,
+    );
+  });
+
+  it('removeInstance refuses the last remaining instance', () => {
+    setActiveToken('default-token');
+
+    removeInstance(DEFAULT_INSTANCE_ID);
+
+    expect(getInstances()).toHaveLength(1);
+    expect(getActiveInstance().id).toBe(DEFAULT_INSTANCE_ID);
+    expect(getInstanceToken(DEFAULT_INSTANCE_ID)).toBe('default-token');
+  });
+
+  it('removeInstance ignores an unknown id', () => {
+    upsertInstance(remote);
+    setActiveToken('default-token');
+    setInstanceToken('remote', 'remote-token');
+
+    const listener = vi.fn();
+    const unsubscribe = subscribe(listener);
+    const storedBefore = localStorage.getItem(INSTANCES_KEY);
+
+    removeInstance('ghost');
+    unsubscribe();
+
+    // Unknown id: no commit, no notification, no persisted write.
+    expect(listener).not.toHaveBeenCalled();
+    expect(localStorage.getItem(INSTANCES_KEY)).toBe(storedBefore);
+    expect(getInstances().map((i) => i.id)).toEqual([DEFAULT_INSTANCE_ID, 'remote']);
+    expect(getActiveInstance().id).toBe(DEFAULT_INSTANCE_ID);
+    expect(getInstanceToken(DEFAULT_INSTANCE_ID)).toBe('default-token');
     expect(getInstanceToken('remote')).toBe('remote-token');
   });
 

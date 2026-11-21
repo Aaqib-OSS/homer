@@ -167,6 +167,20 @@ export function setActiveInstance(id: string): void {
   commit({ ...s, activeInstanceId: id });
 }
 
+/**
+ * Drop an instance and its bearer token. Refuses the last remaining instance
+ * (the console's only route to a backend) and an unknown id; when the removed
+ * instance was active, the first remaining one becomes active.
+ */
+export function removeInstance(id: string): void {
+  const s = getState();
+  if (s.instances.length <= 1 || !s.instances.some((i) => i.id === id)) return;
+  const instances = s.instances.filter((i) => i.id !== id);
+  const activeInstanceId = s.activeInstanceId === id ? instances[0].id : s.activeInstanceId;
+  commit({ ...s, instances, activeInstanceId });
+  removeInstanceToken(id);
+}
+
 /* ---- Per-instance bearer token ---- */
 
 export function getInstanceToken(id: string): string | null {

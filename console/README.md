@@ -618,14 +618,20 @@ active one (one active at a time — not a merged dashboard).
   makes it active, and runs the normal login. An https console warns inline if
   you enter an `http://` endpoint (the browser blocks mixed content).
 - **Instance picker** — the server icon in the header lists known instances,
-  switches the active one (resetting cached data and re-probing auth), and
-  offers "Add instance" (routes to the login screen). Cookie sessions are
-  per-origin in the browser, so switching back to an already-authed instance
-  needs no re-login.
+  switches the active one (resetting cached data and re-probing auth), offers
+  "Add instance" (routes to the login screen), and removes an instance from its
+  row. The last remaining instance cannot be removed; removing the active one
+  signs out of it, switches to another remaining instance and lands on
+  `/processes`. Removing a **non-active** instance deletes only its stored
+  token — a cookie session with that backend is left running and stays valid
+  in the browser until it expires; re-adding the same instance goes through
+  the normal login again. Switch to the instance first (removing it as the
+  active one) if it should be signed out. Cookie sessions are per-origin in
+  the browser, so switching back to an already-authed instance needs no re-login.
 - **Per-instance tokens** — bearer tokens are namespaced per instance
-  (`homer_auth_token::{instanceId}`); a legacy single-instance token is
-  migrated into the seeded default instance on first load, so upgrades don't
-  log bearer users out.
+  (`homer_auth_token::{instanceId}`) and deleted with the instance; a legacy
+  single-instance token is migrated into the seeded default instance on first
+  load, so upgrades don't log bearer users out.
 - **Backend setup for cross-origin** — each instance must allow the console
   origin in `server.corsAllowedOrigins`, and cookie-mode instances must run
   HTTPS with `cookieSameSite: none`. See
