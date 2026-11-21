@@ -1907,7 +1907,7 @@ options:
     - Edit
 ```
 
-**Note:** A step that skips permissions is contained by `disallowedTools` (or `tools`), not by `allowedTools`. Homer warns at load for each such step that sets `allowedTools` and neither `tools` nor `disallowedTools`, naming the command and pointing at both containment options; `agentdebug validate` reports the same warning on the command's line. See the case study [Containing a Claude step](../docs/case-studies/claude-tool-limits.md).
+**Note:** A step that skips permissions is contained by `disallowedTools` (or `tools`), not by `allowedTools`. Homer warns at load for each such step that sets `allowedTools` and neither `tools` nor `disallowedTools`, naming the step's phase (`command` or `onStop step`) and label and pointing at both containment options; `agentdebug validate` reports the same warning on a `commands:` step's line. See the case study [Containing a Claude step](../docs/case-studies/claude-tool-limits.md).
 
 ### MCP Configuration
 

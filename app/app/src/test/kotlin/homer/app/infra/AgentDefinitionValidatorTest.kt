@@ -70,7 +70,7 @@ class AgentDefinitionValidatorTest {
 
         assertEquals(false, validator.checkDefinition(agent, "dir", errors))
         assertEquals(emptyList(), errors)
-        verify { logger.warn(match<String> { it.contains("allowedTools") }, "a", "claude") }
+        verify { logger.warn(match<String> { it.contains("allowedTools") }, "a", "command", "claude") }
     }
 
     // ========== Graceful-stop policy (ADR-0108) ==========

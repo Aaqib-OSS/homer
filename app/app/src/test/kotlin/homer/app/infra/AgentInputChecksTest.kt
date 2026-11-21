@@ -184,12 +184,14 @@ class AgentInputChecksTest {
         checks.warnOnUncontainedClaudeTools(agent)
 
         // The mock records the format and its arguments as passed, so the fields are asserted
-        // on the format and the command on the label argument.
+        // on the format and the step's phase and label on their arguments.
         val formats = mutableListOf<String>()
         val names = mutableListOf<String>()
+        val kinds = mutableListOf<String>()
         val labels = mutableListOf<String>()
-        verify(exactly = 2) { logger.warn(capture(formats), capture(names), capture(labels)) }
+        verify(exactly = 2) { logger.warn(capture(formats), capture(names), capture(kinds), capture(labels)) }
         assertEquals(listOf("a", "a"), names)
+        assertEquals(listOf("command", "command"), kinds)
         assertEquals(listOf("verify", "ship"), labels)
         assertTrue(formats.all { it.contains("allowedTools") && it.contains("disallowedTools: [Agent, Task]") }, formats.toString())
         // Threat model (Secrets): the message names the command and the fields, never a prompt or option value.
@@ -214,11 +216,11 @@ class AgentInputChecksTest {
 
         checks.warnOnUncontainedClaudeTools(agent)
 
-        verify(exactly = 0) { logger.warn(any<String>(), any<Any>(), any<Any>()) }
+        verify(exactly = 0) { logger.warn(any<String>(), any<Any>(), any<Any>(), any<Any>()) }
     }
 
     @Test
-    fun `an onStop claude step that skips permissions with only allowedTools warns`() {
+    fun `an onStop claude step that skips permissions with only allowedTools warns as a stop step`() {
         val stopStep =
             claudeCommand(
                 ClaudeCmdOptions(dangerouslySkipPermissions = true, allowedTools = listOf("Read")),
@@ -230,9 +232,12 @@ class AgentInputChecksTest {
 
         checks.warnOnUncontainedClaudeTools(agent)
 
+        val kinds = mutableListOf<String>()
         val labels = mutableListOf<String>()
-        verify(exactly = 1) { logger.warn(any<String>(), any<Any>(), capture(labels)) }
+        verify(exactly = 1) { logger.warn(any<String>(), any<Any>(), capture(kinds), capture(labels)) }
         assertEquals(listOf("ship"), labels)
+        // The phase is what tells the operator to look under `onStop:`, not `commands:`.
+        assertEquals(listOf("onStop step"), kinds)
     }
 
     @Test

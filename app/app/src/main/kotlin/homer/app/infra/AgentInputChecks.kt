@@ -383,22 +383,27 @@ internal class AgentInputChecks(
     }
 
     /**
-     * WARN per Claude command that skips permissions while `allowedTools` is its only
+     * WARN per Claude step that skips permissions while `allowedTools` is its only
      * tool setting: the step reads as scoped, but `allowedTools` pre-approves without
      * removing anything, so it can still write, run commands and spawn subagents.
      * Warn-only — existing agents keep loading.
      */
     fun warnOnUncontainedClaudeTools(agent: Agent) {
-        (agent.commands + agent.onStop).filterIsInstance<Command.Claude>().forEach { cmd ->
-            if (cmd.options.bypassesPermissionsWithoutToolLimit()) {
+        // Phase-tagged like checkCommandBindings: a stop step reported as a "command" sends
+        // the operator to the wrong block of the agent file (ADR-0108).
+        val steps = agent.commands.map { "command" to it } + agent.onStop.map { "onStop step" to it }
+        steps
+            .mapNotNull { (kind, cmd) -> (cmd as? Command.Claude)?.let { kind to it } }
+            .filter { (_, cmd) -> cmd.options.bypassesPermissionsWithoutToolLimit() }
+            .forEach { (kind, cmd) ->
                 logger.warn(
-                    "Agent '{}': claude command '{}' skips permissions and sets only 'allowedTools', " +
+                    "Agent '{}': claude {} '{}' skips permissions and sets only 'allowedTools', " +
                         "which pre-approves tools without removing any. Contain the step with 'tools' " +
                         "or 'disallowedTools: [Agent, Task]' (see AGENT.md).",
                     agent.name,
+                    kind,
                     cmd.label,
                 )
             }
-        }
     }
 }
