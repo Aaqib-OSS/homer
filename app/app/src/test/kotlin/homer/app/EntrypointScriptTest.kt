@@ -79,39 +79,39 @@ class EntrypointScriptTest {
     @Test
     fun `a CONFIG_PATH with a space is one argument`() =
         assertBothBranches(
-            "[-XX:-UseBASE64Intrinsics][--enable-native-access=ALL-UNNAMED][-jar][/app/homer.jar][/etc/homer conf/config.yaml]",
+            "[--enable-native-access=ALL-UNNAMED][-jar][/app/homer.jar][/etc/homer conf/config.yaml]",
             mapOf("CONFIG_PATH" to "/etc/homer conf/config.yaml"),
         )
 
     @Test
     fun `a CONFIG_PATH with a glob character is passed literally`() =
         assertBothBranches(
-            "[-XX:-UseBASE64Intrinsics][--enable-native-access=ALL-UNNAMED][-jar][/app/homer.jar][*.yaml]",
+            "[--enable-native-access=ALL-UNNAMED][-jar][/app/homer.jar][*.yaml]",
             mapOf("CONFIG_PATH" to "*.yaml"),
         )
 
     @Test
     fun `a CONFIG_PATH with parameter and command substitution is passed literally`() =
         assertBothBranches(
-            "[-XX:-UseBASE64Intrinsics][--enable-native-access=ALL-UNNAMED][-jar][/app/homer.jar][\$HOME/`id`/\$(id)/config.yaml]",
+            "[--enable-native-access=ALL-UNNAMED][-jar][/app/homer.jar][\$HOME/`id`/\$(id)/config.yaml]",
             mapOf("CONFIG_PATH" to "\$HOME/`id`/\$(id)/config.yaml"),
         )
 
     @Test
     fun `an empty CONFIG_PATH passes no argument`() =
         assertBothBranches(
-            "[-XX:-UseBASE64Intrinsics][--enable-native-access=ALL-UNNAMED][-jar][/app/homer.jar]",
+            "[--enable-native-access=ALL-UNNAMED][-jar][/app/homer.jar]",
             mapOf("CONFIG_PATH" to ""),
         )
 
     @Test
     fun `an unset CONFIG_PATH passes no argument`() =
-        assertBothBranches("[-XX:-UseBASE64Intrinsics][--enable-native-access=ALL-UNNAMED][-jar][/app/homer.jar]", emptyMap())
+        assertBothBranches("[--enable-native-access=ALL-UNNAMED][-jar][/app/homer.jar]", emptyMap())
 
     @Test
     fun `JAVA_OPTS is split into its flags`() =
         assertBothBranches(
-            "[-XX:-UseBASE64Intrinsics][-Xmx1g][-Dfoo=bar][--enable-native-access=ALL-UNNAMED][-jar][/app/homer.jar][config/config.json]",
+            "[-Xmx1g][-Dfoo=bar][--enable-native-access=ALL-UNNAMED][-jar][/app/homer.jar][config/config.json]",
             mapOf("JAVA_OPTS" to "-Xmx1g -Dfoo=bar", "CONFIG_PATH" to "config/config.json"),
         )
 }

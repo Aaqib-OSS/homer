@@ -7,8 +7,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Every JVM the images and the host launch scripts start runs with `-XX:-UseBASE64Intrinsics`, the
- * CVE-2026-114938 (Java4Shell) stopgap, placed before `$JAVA_OPTS` so an operator's `JAVA_OPTS` does not drop it.
+ * Every JVM the host launch scripts start runs with `-XX:-UseBASE64Intrinsics`, the CVE-2026-114938
+ * (Java4Shell) stopgap for a host JDK without the fix, placed before `$JAVA_OPTS` where one is passed (W-020).
  */
 class Base64IntrinsicsMitigationTest {
     private val launch = Regex("""exec (?:su-exec homer )?java\b[^\n]*""")
@@ -16,13 +16,9 @@ class Base64IntrinsicsMitigationTest {
     private fun launches(path: String): List<String> = launch.findAll(File(repoRoot, path).readText()).map { it.value }.toList()
 
     @Test
-    fun `every JVM launch in the images and host scripts carries the flag before JAVA_OPTS`() {
+    fun `every JVM launch in the host scripts carries the flag before JAVA_OPTS`() {
         val expected =
             mapOf(
-                // The root and the non-root branch.
-                "app/entrypoint.sh" to 2,
-                // The agentdebug wrapper and the homer-runner entrypoint.
-                "app/Dockerfile" to 2,
                 "app/homer-runner.sh" to 1,
                 "app/agentdebug.sh" to 1,
             )
