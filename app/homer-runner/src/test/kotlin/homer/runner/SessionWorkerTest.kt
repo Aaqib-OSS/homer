@@ -538,6 +538,36 @@ class SessionWorkerTest {
         }
 
     @Test
+    fun `a transfer after the session root itself was swapped for a symlink is refused`() =
+        live {
+            val outside = tmp.resolve("outside").createDirectories()
+            outside.resolve("workdir").createDirectories()
+            outside.resolve("workdir/host.txt").writeText("host secret")
+            val src = tmp.resolve("src").createDirectories()
+            src.resolve("in.txt").writeText("payload")
+            api.tarToServe = ByteArrayOutputStream().also { TarStreams.pack(it, src) }.toByteArray()
+
+            val w = worker()
+            val run = async { w.run() }
+            api.ops.send(RunnerOp.CreateWorkspace("cw"))
+            api.result()
+            Files.move(w.sessionRoot, tmp.resolve("moved-root"))
+            Files.createSymbolicLink(w.sessionRoot, outside)
+
+            api.ops.send(RunnerOp.Upload("u1", "workdir"))
+            assertFalse(api.result().ok, "an upload through a swapped root is refused")
+            assertFalse(outside.resolve("workdir/in.txt").exists(), "nothing is written outside the session root")
+
+            api.ops.send(RunnerOp.Download("d1", "workdir/host.txt", DownloadMode.OVERLAY))
+            assertFalse(api.result().ok, "a download through a swapped root is refused")
+            assertTrue(api.postedTars.isEmpty(), "no file outside the session root is posted")
+
+            Files.delete(w.sessionRoot)
+            api.ops.send(RunnerOp.Close("cl", "done"))
+            run.await()
+        }
+
+    @Test
     fun `losing Homer for the heartbeat timeout kills the running command and ends the worker`() =
         live {
             val w = worker(heartbeat = 500.milliseconds)

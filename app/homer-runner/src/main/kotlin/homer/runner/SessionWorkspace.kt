@@ -33,6 +33,10 @@ internal class SessionWorkspace(
     var createdRoot: Boolean = false
         private set
 
+    /** [sessionRoot]'s realpath as created; transfers are contained against it, never against a later lookup. */
+    @Volatile
+    private var realRoot: Path? = null
+
     suspend fun execute(op: RunnerOp): OpResult =
         coRunCatching {
             withContext(Dispatchers.IO) {
@@ -45,6 +49,7 @@ internal class SessionWorkspace(
                         sessionRoot.parent.createDirectories()
                         Files.createDirectory(sessionRoot, PosixFilePermissions.asFileAttribute(OWNER_ONLY))
                         createdRoot = true
+                        realRoot = sessionRoot.toRealPath()
                         listOf("workdir", "artifacts", ".homer").forEach { sessionRoot.resolve(it).createDirectory() }
                         OpResult(op.opId, root = sessionRoot.toString())
                     }
@@ -108,12 +113,13 @@ internal class SessionWorkspace(
     }
 
     /**
-     * [remoteRelative] under [sessionRoot], lexically and by realpath, so a symlink a run planted cannot steer a
-     * transfer outside the root (CWE-59); a link swapped in after this check is AR-04 and AR-05.
+     * [remoteRelative] under [sessionRoot] lexically and under the root's realpath as created, so a symlink a run
+     * planted, the root itself included, cannot steer a transfer outside it (CWE-59); a later swap is AR-04/AR-05.
      */
     private fun contained(remoteRelative: String): Path {
         val candidate = sessionRoot.resolve(remoteRelative).normalize()
-        require(candidate.startsWith(sessionRoot) && realPath(candidate).startsWith(sessionRoot.toRealPath())) {
+        val root = realRoot
+        require(root != null && candidate.startsWith(sessionRoot) && realPath(candidate).startsWith(root)) {
             "path '$remoteRelative' escapes the session root"
         }
         return candidate
