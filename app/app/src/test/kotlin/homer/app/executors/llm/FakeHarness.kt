@@ -86,13 +86,23 @@ open class FakeHarness(
         events: List<LlmEvent>,
         raw: List<JsonObject>,
         command: Command.Claude,
+        exitCode: Int,
     ): Inspection {
         inspectCalls += 1
         val end = events.filterIsInstance<LlmEvent.TurnEnd>().firstOrNull() ?: return Inspection.Malformed("no end")
         return when (end.status) {
-            TurnStatus.Success -> Inspection.Success
-            is TurnStatus.Stopped -> terminalExit?.let { Inspection.Terminal(it) } ?: Inspection.Malformed("stopped")
-            is TurnStatus.Failed -> Inspection.Malformed("failed")
+            TurnStatus.Success -> {
+                Inspection.Success
+            }
+
+            is TurnStatus.Stopped -> {
+                terminalExit?.let { Inspection.Terminal(it, "claude.max_turns_stop") }
+                    ?: Inspection.Malformed("stopped")
+            }
+
+            is TurnStatus.Failed -> {
+                Inspection.Malformed("failed")
+            }
         }
     }
 }

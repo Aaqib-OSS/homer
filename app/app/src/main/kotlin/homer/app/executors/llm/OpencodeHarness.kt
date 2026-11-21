@@ -47,6 +47,7 @@ class OpencodeHarness(
         events: List<LlmEvent>,
         raw: List<JsonObject>,
         command: Command.Opencode,
+        exitCode: Int,
     ): Inspection =
         inspectTurns(
             events,

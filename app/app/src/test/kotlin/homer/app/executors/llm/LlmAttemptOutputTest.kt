@@ -151,6 +151,29 @@ class LlmAttemptOutputTest {
     }
 
     @Test
+    fun `with both options set a non-zero exit carrying an is_error result keeps the exit's own failure`(
+        @TempDir dir: Path,
+    ) {
+        // The is_error mapping rides the exit-0 inspect path only: even with both exit-code options
+        // set, a non-zero exit is never rewritten to the is_error code (ADR-0070).
+        val both =
+            Command.Claude(prompt = LlmPrompt.Prompt("hi"), options = ClaudeCmdOptions(maxTurnsExitCode = 75, isErrorExitCode = 76))
+        val out =
+            dir.resolve("out").also {
+                it.writeText("""{"type":"result","subtype":"success","is_error":true,"stop_reason":"refusal"}""" + "\n")
+            }
+        val span = TestFixtures.mockSpan()
+
+        val failure =
+            assertIs<RetryOutcome.OtherFailure>(
+                claudeOutput.nonZeroOutcome(both, TestFixtures.mockCommandResult(exitCode = 1, stdOut = out), accounting, out, span),
+            )
+
+        assertEquals(1, failure.result.exitCode)
+        verify(exactly = 0) { span.setAttribute("claude.is_error_stop", any<Boolean>()) }
+    }
+
+    @Test
     fun `a harness that opts into a terminal stop is read on a non-zero exit too`(
         @TempDir dir: Path,
     ) {

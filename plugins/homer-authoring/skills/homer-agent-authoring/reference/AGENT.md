@@ -841,16 +841,20 @@ on an error it reported in place of a model response: a model refusal (`stop_rea
 deferred tool that was unavailable on resume, or a terminal API error (`terminal_reason`,
 `api_error_status`).
 
-Such a result fails the step, with the CLI's own diagnosis as the reason — for example
+By default the step fails on such a result, with the CLI's own diagnosis as the reason — for example
 `is_error (stop_reason=refusal)` or `is_error (terminal_reason=api_error, api_error_status=529)`. The
 `result` text of such a turn is an error string and never enters that reason.
 
-- `retry` retries the attempt like any other failed one, and `escalate` judges it `malformed` with
-  `HMR_LLM_EXIT_CODE` `-1`, so a stronger tier can take the step over.
-- Cost and usage from the result are still recorded, and the step is charged as usual.
-- `continueIfFail` does **not** catch it: the malformed verdict fails the run before that flag is
+- Default (`isErrorExitCode` unset): `retry` retries the attempt like any other failed one, and
+  `escalate` judges it `malformed` with `HMR_LLM_EXIT_CODE` `-1`, so a stronger tier can take the step
+  over. `continueIfFail` does **not** catch it: the malformed verdict fails the run before that flag is
   consulted, so `retry` and `escalate` are the only levers. An agent that treats a refusal as a valid
   answer (a classifier, say) has to escalate to a model that answers instead.
+- Opt-in (`isErrorExitCode` set, see the `ClaudeCmdOptions` field table below): the step instead ends
+  with that exit code. The verdict is judged `capped` (`HMR_LLM_OUTCOME`) with `HMR_LLM_EXIT_CODE` set to
+  the configured code, the attempt is never retried, and `continueIfFail: true` catches it, so the
+  agent's later steps run instead of the run ending `FAILED`.
+- Cost and usage from the result are still recorded, and the step is charged as usual either way.
 
 Results without `is_error` (older CLI releases) are unchanged, as are every `error_*` subtype, a
 non-zero exit and a stdout without a `result` event.

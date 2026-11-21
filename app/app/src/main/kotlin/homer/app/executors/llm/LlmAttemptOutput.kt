@@ -39,7 +39,7 @@ internal class LlmAttemptOutput<C>(
             } catch (e: MalformedLlmOutputException) {
                 return RetryOutcome.MalformedFailure(e)
             }
-        return when (val inspection = harness.inspect(stream.events, stream.raw, command)) {
+        return when (val inspection = harness.inspect(stream.events, stream.raw, command, exitCode = 0)) {
             Inspection.Success -> {
                 RetryOutcome.Success(result.copy(llmAccounting = accounting), attemptIndex, stream)
             }
@@ -74,7 +74,7 @@ internal class LlmAttemptOutput<C>(
             runCatching { readLeniently(attemptOut, span) }.getOrNull()
                 ?: return RetryOutcome.OtherFailure(result.copy(llmAccounting = accounting))
         val terminal =
-            runCatching { harness.inspect(stream.events, stream.raw, command) as? Inspection.Terminal }.getOrNull()
+            runCatching { harness.inspect(stream.events, stream.raw, command, result.exitCode) as? Inspection.Terminal }.getOrNull()
                 ?: return RetryOutcome.OtherFailure(result.copy(llmAccounting = accounting), stream)
         return cappedStop(result, accounting, terminal, stream, span)
     }

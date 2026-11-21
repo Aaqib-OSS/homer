@@ -431,8 +431,9 @@ class LlmHarnessExecutorTest {
             events: List<LlmEvent>,
             raw: List<JsonObject>,
             command: Command.Claude,
+            exitCode: Int,
         ): Inspection {
-            val inspection = super.inspect(events, raw, command)
+            val inspection = super.inspect(events, raw, command, exitCode)
             trash()
             return inspection
         }
@@ -508,6 +509,7 @@ class LlmHarnessExecutorTest {
                         events: List<LlmEvent>,
                         raw: List<JsonObject>,
                         command: Command.Claude,
+                        exitCode: Int,
                     ): Inspection = throw PinMismatch()
                 }
 

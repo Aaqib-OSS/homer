@@ -676,7 +676,7 @@ class ClaudeHarnessTest {
         val malformed = assertIs<Inspection.Malformed>(harness.inspect(stopped, emptyList(), command))
         assertEquals("result event is not a successful turn: error_max_turns", malformed.reason)
         val opted = Command.Claude(prompt = LlmPrompt.Prompt("hi"), options = ClaudeCmdOptions(maxTurnsExitCode = 7))
-        assertEquals(Inspection.Terminal(7), harness.inspect(stopped, emptyList(), opted))
+        assertEquals(Inspection.Terminal(7, "claude.max_turns_stop"), harness.inspect(stopped, emptyList(), opted))
     }
 
     @Test
@@ -717,6 +717,18 @@ class ClaudeHarnessTest {
         assertEquals(Inspection.Terminal(76, "claude.is_error_stop"), harness.inspect(listOf(e), raw, opted))
         // The pair is read from the raw result line, so a stream without one is never mapped.
         assertIs<Inspection.Malformed>(harness.inspect(listOf(e), emptyList(), opted))
+    }
+
+    @Test
+    fun `an is_error result is never mapped on a non-zero exit`() {
+        val json = """{"type":"result","subtype":"success","is_error":true,"stop_reason":"refusal"}"""
+        val e = events(json).single() as LlmEvent.TurnEnd
+        val raw = listOf(line(json))
+        val both =
+            Command.Claude(prompt = LlmPrompt.Prompt("hi"), options = ClaudeCmdOptions(maxTurnsExitCode = 75, isErrorExitCode = 76))
+
+        val malformed = assertIs<Inspection.Malformed>(harness.inspect(listOf(e), raw, both, exitCode = 1))
+        assertContains(malformed.reason, "result event is not a successful turn: is_error")
     }
 
     @Test
