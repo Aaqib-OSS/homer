@@ -3,6 +3,7 @@ package homer.app.runners.ssh
 import homer.app.exceptions.OutputCapExceededException
 import homer.app.exceptions.SshConnectionLostException
 import homer.app.exceptions.SshExecRefusedException
+import homer.app.exceptions.SshUnknownExitSignalException
 import homer.app.fixtures.pollUntil
 import homer.app.fixtures.waitUnfinished
 import homer.app.infra.OutputLineFilter
@@ -682,7 +683,7 @@ class SshShellExecutorTest {
     fun `an unknown exit signal fails the step naming the signal and quoting no command`(
         @TempDir local: Path,
     ) = runTest {
-        val exception = assertThrows<IllegalStateException> { exitWithSignal("BOGUS", local) }
+        val exception = assertThrows<SshUnknownExitSignalException> { exitWithSignal("BOGUS", local) }
         assertContains(exception.message.orEmpty(), "BOGUS")
         assertFalse(exception.message.orEmpty().contains("echo"), "the step error must quote no command")
     }
@@ -691,15 +692,30 @@ class SshShellExecutorTest {
     fun `OpenSSH's catch-all signal name fails the step with that name`(
         @TempDir local: Path,
     ) = runTest {
-        val exception = assertThrows<IllegalStateException> { exitWithSignal("SIG@openssh.com", local) }
+        val exception = assertThrows<SshUnknownExitSignalException> { exitWithSignal("SIG@openssh.com", local) }
         assertContains(exception.message.orEmpty(), "SIG@openssh.com")
+    }
+
+    @Test
+    fun `an unknown exit signal on a session that is gone is a lost connection quoting nothing from the server`(
+        @TempDir local: Path,
+    ) = runTest {
+        val exception = assertThrows<SshConnectionLostException> { exitWithSignal("BOGUS", local, sessionLive = false) }
+        assertFalse(exception.message.orEmpty().contains("BOGUS"))
+    }
+
+    @Test
+    fun `a known exit signal still reports 128 plus its number on a session that is closing`(
+        @TempDir local: Path,
+    ) = runTest {
+        assertEquals(137, exitWithSignal("KILL", local, sessionLive = false).exitCode)
     }
 
     @Test
     fun `an exit signal naming control characters is withheld from the step error`(
         @TempDir local: Path,
     ) = runTest {
-        val exception = assertThrows<IllegalStateException> { exitWithSignal("X\nINJECTED line", local) }
+        val exception = assertThrows<SshUnknownExitSignalException> { exitWithSignal("X\nINJECTED line", local) }
         assertFalse(exception.message.orEmpty().contains("INJECTED"))
     }
 
@@ -714,6 +730,7 @@ class SshShellExecutorTest {
     private suspend fun exitWithSignal(
         signal: String?,
         local: Path,
+        sessionLive: Boolean = true,
     ): CommandResult {
         val channel = mockk<ChannelExec>(relaxed = true)
         val openFuture = mockk<OpenFuture>()
@@ -724,8 +741,8 @@ class SshShellExecutorTest {
         every { channel.exitSignal } returns signal
         val session = mockk<ClientSession>(relaxed = true)
         every { session.createExecChannel(any()) } returns channel
-        every { session.isOpen } returns true
-        every { session.isClosing } returns false
+        every { session.isOpen } returns sessionLive
+        every { session.isClosing } returns !sessionLive
         return executorOn(session)
             .cmd(listOf("echo", "hello"), local.resolve("o"), local.resolve("e"), null, emptyMap(), 10.seconds)
     }

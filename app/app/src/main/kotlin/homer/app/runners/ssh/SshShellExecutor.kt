@@ -3,6 +3,7 @@ package homer.app.runners.ssh
 import homer.app.exceptions.OutputCapExceededException
 import homer.app.exceptions.SshConnectionLostException
 import homer.app.exceptions.SshExecRefusedException
+import homer.app.exceptions.SshUnknownExitSignalException
 import homer.app.infra.KillCause
 import homer.app.infra.LineFilteringOutputStream
 import homer.app.infra.OutputLineFilter
@@ -174,9 +175,17 @@ class SshShellExecutor(
     private fun signalExitCode(signal: String): Int {
         val number =
             SshExitSignals.number(signal)
-                ?: error("the remote command ended on an unknown signal '${SshExitSignals.quotable(signal)}'")
+                ?: throw unknownSignal(signal)
         return 128 + number
     }
+
+    /** A signal name that is not RFC 4254's is untrustworthy on a session that is gone, so it reads as a lost connection. */
+    private fun unknownSignal(signal: String): RuntimeException =
+        if (session.isOpen && !session.isClosing) {
+            SshUnknownExitSignalException(SshExitSignals.quotable(signal))
+        } else {
+            SshConnectionLostException("SSH channel closed with an unreadable exit signal")
+        }
 
     /**
      * A channel that yields no exit status on a session still open was refused by the server — MINA

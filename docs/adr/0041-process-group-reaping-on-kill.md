@@ -190,3 +190,11 @@ Both forms now report 128 + n, as the local runner does:
   (`kill -TERM -<pgid>`), as Homer's reapers do.
 - OpenSSH names every signal outside the 13 RFC 4254 names `SIG@openssh.com`, so such a death, for
   example SIGXCPU, fails the step with that name instead of reporting 128 + n.
+- That failure is a typed `SshUnknownExitSignalException`, like its siblings, not a bare
+  `IllegalStateException`. The refused-versus-lost session split of `noExitStatus` applies first:
+  on a session that is gone or closing the name is garbled data from a dead connection, so the step
+  fails as `SshConnectionLostException` and the name is not quoted; on a live session it fails with
+  the typed exception, which quotes the name only when it is short and printable (CWE-117). A known
+  name reports 128 + n whatever the session state, since it is a genuine report.
+  Rejected: reporting it as `SshExecRefusedException`. The server did run the command and reported
+  how it ended, so "refused the exec request" would mislead an operator.
