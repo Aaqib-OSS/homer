@@ -59,6 +59,7 @@ class AuthBoundaryTest : E2eTestBase() {
             Triple("artifacts", HttpMethod.Get, "/api/v1/artifacts/list?processId=1"),
             Triple("agent run", HttpMethod.Post, "/api/v1/agent/echo"),
             Triple("agent files", HttpMethod.Get, "/api/v1/agents/echo/files"),
+            Triple("agent files", HttpMethod.Get, "/api/v1/agents/load-errors"),
         )
 
     @Test

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Search, RefreshCw, X, Plus } from 'lucide-react';
 import { AgentCard } from '@/components/agents/agent-card';
+import { AgentLoadErrorsSection } from '@/components/agents/agent-load-errors-panel';
 import { RunAgentDialog } from '@/components/agents/run-agent-dialog';
 import { NewAgentDialog } from '@/components/agents/new-agent-dialog';
 import type { AgentInfo, AgentReloadResult } from '@/types/homer';
@@ -227,29 +228,32 @@ function AgentSearch({ value, onChange }: { value: string; onChange: (value: str
   );
 }
 
-// The reload mutation plus its last outcome: a result banner or an error banner.
+// The reload mutation plus its last outcome: a result banner or an error banner. Each reload is a
+// new scan, so [scanToken] tells the load-error panel that a fresh set of errors is worth showing.
 function useAgentReload() {
   const [reloadResult, setReloadResult] = useState<AgentReloadResult | null>(null);
   const [reloadError, setReloadError] = useState<string | null>(null);
+  const [scanToken, setScanToken] = useState(0);
   const { mutate: reloadAgents, isPending: isReloading } = useReloadAgents();
 
   function handleReload() {
     setReloadResult(null);
     setReloadError(null);
+    setScanToken((token) => token + 1);
     reloadAgents(undefined, {
       onSuccess: (result) => setReloadResult(result),
       onError: (err) => setReloadError(err.message),
     });
   }
 
-  return { reloadResult, setReloadResult, reloadError, setReloadError, isReloading, handleReload };
+  return { reloadResult, setReloadResult, reloadError, setReloadError, isReloading, handleReload, scanToken };
 }
 
 export default function AgentsPage() {
   const [selectedAgent, setSelectedAgent] = useState<AgentInfo | null>(null);
   const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [newAgentDialogOpen, setNewAgentDialogOpen] = useState(false);
-  const { reloadResult, setReloadResult, reloadError, setReloadError, isReloading, handleReload } =
+  const { reloadResult, setReloadResult, reloadError, setReloadError, isReloading, handleReload, scanToken } =
     useAgentReload();
   const { data, isLoading, error } = useAgents();
   const { isAdmin } = useCan();
@@ -275,6 +279,8 @@ export default function AgentsPage() {
       <GroupTabs groups={groups} activeGroup={activeGroup} onSelect={selectGroup} />
 
       {reloadError && <ReloadErrorBanner message={reloadError} onDismiss={() => setReloadError(null)} />}
+
+      <AgentLoadErrorsSection isAdmin={isAdmin} scanToken={scanToken} />
 
       {reloadResult && (
         <ReloadResultBanner result={reloadResult} onDismiss={() => setReloadResult(null)} />

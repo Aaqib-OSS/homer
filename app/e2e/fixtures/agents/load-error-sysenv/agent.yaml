@@ -1,0 +1,7 @@
+name: load-error-sysenv
+description: Never loads — its env references JAVA_OPTS, which the fixture config's agentSysEnvAllowlist does not list
+env:
+  HOST_VALUE: "@SYSENV:JAVA_OPTS"
+commands:
+  - !<cmd>
+    cmd: [echo, never-runs]

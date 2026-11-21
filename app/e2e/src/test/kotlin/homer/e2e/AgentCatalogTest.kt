@@ -259,7 +259,10 @@ class AgentCatalogTest : E2eTestBase() {
 
             SseCollector.open("/api/v1/stream/agents").use { sse ->
                 val reload: ReloadResult = HomerApi.decode(E2e.client.post("/api/v1/agents/reload"))
-                assertTrue(reload.errors.isEmpty(), "reload must not report agent load errors: ${reload.errors}")
+                assertFalse(
+                    reload.errors.any { name in it },
+                    "reload must not report a load error naming the agent it just loaded: ${reload.errors}",
+                )
                 sse.awaitEvent("agent.reload after POST /agents/reload") { it.event == "agent.reload" }
             }
 

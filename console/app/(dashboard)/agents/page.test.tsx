@@ -19,9 +19,11 @@ function renderWithUrl(query: string) {
 
 const useAgentsMock = vi.hoisted(() => vi.fn());
 const useReloadAgentsMock = vi.hoisted(() => vi.fn());
+const useAgentLoadErrorsMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/api/queries', () => ({
   useAgents: useAgentsMock,
+  useAgentLoadErrors: useAgentLoadErrorsMock,
   useReloadAgents: useReloadAgentsMock,
   useExecuteAgent: () => ({ mutateAsync: vi.fn(), isPending: false, error: null }),
   useCreateAgent: () => ({
@@ -39,6 +41,9 @@ import { fakeCapabilities } from '@/lib/auth/capabilities-test-utils';
 function mockCan(isAdmin: boolean) {
   vi.mocked(useCan).mockReturnValue(fakeCapabilities(isAdmin));
 }
+
+// Default: the last scan found nothing, so a test that is not about the panel renders none.
+useAgentLoadErrorsMock.mockReturnValue({ data: { errors: [], truncated: 0 } });
 
 describe('AgentsPage Reload gating', () => {
   beforeEach(() => {
@@ -151,6 +156,69 @@ describe('AgentsPage reload result', () => {
     const message = screen.getByText('Reload failed: forbidden');
     await user.click(message.parentElement!.querySelector('button')!);
     expect(screen.queryByText(/Reload failed/)).not.toBeInTheDocument();
+  });
+});
+
+describe('AgentsPage load errors', () => {
+  beforeEach(() => {
+    replace.mockReset();
+    useAgentsMock.mockReturnValue({ data: { agents: [] }, isLoading: false, error: null });
+    useReloadAgentsMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+    useAgentLoadErrorsMock.mockReturnValue({
+      data: { errors: ['bad.yaml: invalid agent name'], truncated: 0 },
+    });
+  });
+
+  it('shows the failed agents to an admin', () => {
+    mockCan(true);
+    renderWithUrl('');
+    expect(screen.getByText('1 agent failed to load')).toBeInTheDocument();
+    expect(screen.getByText('bad.yaml: invalid agent name')).toBeInTheDocument();
+  });
+
+  it('shows nothing to a non-admin, and asks the server for nothing', () => {
+    mockCan(false);
+    renderWithUrl('');
+    expect(screen.queryByText(/failed to load/)).toBeNull();
+    expect(useAgentLoadErrorsMock).toHaveBeenCalledWith(false);
+  });
+
+  it('renders no panel when the last scan found no error', () => {
+    mockCan(true);
+    useAgentLoadErrorsMock.mockReturnValue({ data: { errors: [], truncated: 0 } });
+    renderWithUrl('');
+    expect(screen.queryByText(/failed to load/)).toBeNull();
+  });
+
+  it('dismisses the panel, and a reload shows it again', async () => {
+    mockCan(true);
+    const user = userEvent.setup();
+    renderWithUrl('');
+    await user.click(screen.getByRole('button', { name: 'Dismiss agent load errors' }));
+    expect(screen.queryByText('1 agent failed to load')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: /reload/i }));
+
+    expect(screen.getByText('1 agent failed to load')).toBeInTheDocument();
+  });
+
+  it('keeps the reload result banner beside the panel', async () => {
+    mockCan(true);
+    const mutate = vi.fn();
+    useReloadAgentsMock.mockReturnValue({ mutate, isPending: false });
+    const user = userEvent.setup();
+    renderWithUrl('');
+    type ReloadCallbacks = {
+      onSuccess: (result: { added: string[]; updated: string[]; removed: string[]; errors: string[] }) => void;
+    };
+    mutate.mockImplementation((_vars: unknown, callbacks: ReloadCallbacks) =>
+      callbacks.onSuccess({ added: ['a'], updated: [], removed: [], errors: [] }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /reload/i }));
+
+    expect(screen.getByText('1 agent failed to load')).toBeInTheDocument();
+    expect(screen.getByText('Reloaded — 1 added · 0 updated · 0 removed')).toBeInTheDocument();
   });
 });
 

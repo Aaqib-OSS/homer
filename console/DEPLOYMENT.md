@@ -59,6 +59,15 @@ Build and run only the frontend in a Docker container.
 docker build -t homer-console:latest .
 ```
 
+The image bakes the console's version at build time. Pass it as a build arg —
+`docker build --build-arg CONSOLE_VERSION=1.2.3 -t homer-console:latest .` —
+and the Dockerfile exports it as `NEXT_PUBLIC_CONSOLE_VERSION` (default
+`dev`) for the version badge in the console's bottom-right corner. It is a
+`NEXT_PUBLIC_*` value, so it is compiled into the client bundle: changing it
+takes a rebuild, not a container restart. The
+[`docker-compose.build.yml`](../docker-compose.build.yml) overlay passes
+`CONSOLE_VERSION` from `APP_VERSION` when it builds the console from source.
+
 ### Run the Container
 
 #### Without Authentication
@@ -445,10 +454,21 @@ services:
 
 ### Rolling Updates
 
-Rebuild and recreate the console container:
+Pull the new release image and recreate the console container:
 
 ```bash
-docker compose up -d --build frontend
+docker compose pull frontend
+docker compose up -d frontend
+```
+
+The base `docker-compose.yml` pulls the published images and its `frontend`
+service has no `build:` section, so `docker compose up -d --build frontend`
+rebuilds nothing. To build the console from source instead, stack the
+`docker-compose.build.yml` overlay (ADR-0093):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml build frontend
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d frontend
 ```
 
 Compose stops the old container before starting the new one, so expect a
@@ -480,7 +500,7 @@ Backup important files:
 
 ## Dependency Security
 
-Two `overrides` entries pin patched copies of transitive dependencies:
+Seven `overrides` entries pin transitive dependencies:
 
 - **`dompurify` (via `monaco-editor`)** — `overrides.dompurify` pins the
   transitive copy Monaco bundles to `^3.4.16` (fixing the XSS / mXSS /
@@ -492,6 +512,10 @@ Two `overrides` entries pin patched copies of transitive dependencies:
 - **`postcss`** — `overrides.postcss` pins the transitive copy bundled by
   Next.js to the patched `8.5.x`, since the audit's automatic fix would
   otherwise downgrade Next.js itself.
+- **`brace-expansion@1`**, **`brace-expansion@5`**, **`minimatch@10`**,
+  **`qs`** and **`vite`** — pin the transitive copy to a patched release. The
+  `@1` / `@5` / `@10` suffix scopes an override to that one major, so a parent
+  depending on another major keeps the version it asked for.
 
 ### Licensing note: `lightningcss` (MPL-2.0)
 

@@ -135,6 +135,11 @@ internal val CANARY_ROUTES: List<CanaryRoute> =
         exempt("POST /api/v1/maintenance", "maintenance flag: no run data"),
         served("GET /api/v1/agents", CanaryPayload.JSON, "agent summaries; a secret input's default is dropped (ADR-0071)"),
         served("POST /api/v1/agents/reload", CanaryPayload.JSON, "the reload diff of the canary agent"),
+        served(
+            "GET /api/v1/agents/load-errors",
+            CanaryPayload.JSON,
+            "the last scan's load errors: names variables and directories, never values",
+        ),
         exempt("POST /api/v1/agents", "writes an agent definition: no run data"),
         served("GET /api/v1/agents/{agentName}/files", CanaryPayload.JSON, "the canary agent's file listing"),
         served(

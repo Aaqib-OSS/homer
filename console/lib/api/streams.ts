@@ -107,6 +107,9 @@ export function useAgentReloadStream() {
         // reload, so invalidate regardless of the diff.
         if (name === 'agent.reload') {
           queryClient.invalidateQueries({ queryKey: queryKeys.agents() });
+          // The frame is the same scan the load-errors endpoint serves, so the
+          // panel refetches even when someone else triggered the reload.
+          queryClient.invalidateQueries({ queryKey: queryKeys.agentLoadErrors() });
         }
       },
     });

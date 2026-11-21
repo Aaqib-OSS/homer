@@ -5,6 +5,7 @@
 ### Homer
 
 - **Fixed: an unsupported config file extension is refused with a clean error** — Startup prints which extension it got and that `.yaml` or `.json` is required, and exits like any other bad config instead of dying with an uncaught `UnknownError`.
+- **Added: `GET /api/v1/agents/load-errors`** — The last published agent scan's skipped definitions and their reasons, admin-only, at most 500 messages kept with the rest counted in `truncated`.
 - **Fixed: a Kubernetes step with a grace reports 128 + n when its command dies by a signal** — It no longer reports the bare signal number with a `setsid:` line on stderr. See [ADR-0108](docs/adr/0108-graceful-stop-of-a-run.md).
 - **Fixed: a Kubernetes step with a grace on a BusyBox `setsid` pod waits for its command** — It reports the command's exit code instead of 0 while the command ran on detached. See [ADR-0108](docs/adr/0108-graceful-stop-of-a-run.md).
 - **Security: Guava updated past a high-severity advisory** — The backend and `homer-runner` now ship Guava 33.8.0 (from 33.5.0, under the Kubernetes client's Google auth library).
@@ -59,6 +60,7 @@
 
 ### Console
 
+- **Added: an agent load-error panel on the Agents page** — An admin sees a dismissible "N agents failed to load" panel listing the last published scan's reasons, the startup scan's included, and a reload brings it back.
 - **Fixed: an expanded step subscribes with its own command index** — The process detail asks the log and LLM-event streams for the command the step ran, so a debug run's single step streams its output instead of the run's first command.
 
 - **Removed: package managers from the console image** — The release image no longer ships the Node.js base image's npm, npx, corepack and yarn, which nothing in it runs; the dev compose overlay builds a `dev` stage that keeps them.
