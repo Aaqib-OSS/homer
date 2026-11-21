@@ -14,7 +14,7 @@ import kotlinx.serialization.json.JsonObject
 /**
  * Reads one session-spend response body into a [SessionSpendOutcome] for [LlmCostResolver]: the cumulative
  * `costPath` figure, completed by `callsPath`, or the sum of the attempt's own in-window rows when the
- * request-window keys are set. Every read degrades to a fixed-vocabulary failure, never an exception. See ADR-0061.
+ * request-window keys are set. Every failed read degrades to a fixed-vocabulary failure; an `Error` propagates. See ADR-0061.
  */
 internal class SessionSpendPricing(
     val config: SessionSpendConfig,
@@ -66,7 +66,7 @@ internal class SessionSpendPricing(
     private fun parseDocument(body: String): DocumentContext? {
         // Jayway parses leniently ("<html>nope</html>" becomes a bare scalar document), and a path only matches
         // inside an object or array, so a strict-parsed top level of either kind is required.
-        val strictParse = runCatching { Json.parseToJsonElement(body) }.getOrNull()
+        val strictParse = coRunCatching { Json.parseToJsonElement(body) }.getOrNull()
         if (strictParse !is JsonObject && strictParse !is JsonArray) return null
         return try {
             JsonPath.using(JSONPATH_CONF).parse(body)
@@ -228,11 +228,11 @@ internal class SessionSpendPricing(
             return if (d < 1e11) (d * 1000.0).toLong() else d.toLong()
         }
         val text = (value as? String)?.trim().takeUnless { it.isNullOrEmpty() } ?: return null
-        return runCatching {
+        return coRunCatching {
             java.time.Instant
                 .parse(text)
                 .toEpochMilli()
-        }.recoverCatching {
+        }.getOrNull() ?: coRunCatching {
             java.time.OffsetDateTime
                 .parse(text)
                 .toInstant()
