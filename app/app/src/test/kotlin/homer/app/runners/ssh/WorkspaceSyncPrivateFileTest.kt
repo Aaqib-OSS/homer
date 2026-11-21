@@ -8,6 +8,7 @@ import kotlinx.coroutines.runBlocking
 import org.apache.sshd.client.SshClient
 import org.apache.sshd.client.session.ClientSession
 import org.apache.sshd.sftp.client.SftpClient
+import org.apache.sshd.sftp.common.SftpConstants
 import org.apache.sshd.sftp.common.SftpException
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -128,8 +129,25 @@ class WorkspaceSyncPrivateFileTest {
             sync.removeIfExists(file.toString(), 5.seconds)
         }
 
+    @Test
+    fun `a directory that turns into a symlink while it is created is refused and nothing is written`() =
+        runBlocking {
+            val sftp = mockk<SftpClient>(relaxed = true)
+            val missing = SftpException(SftpConstants.SSH_FX_NO_SUCH_FILE, "missing")
+            val symlink = SftpClient.Attributes().perms(S_IFLNK or permissions("rwxrwxrwx"))
+            every { sftp.lstat("/w/.homer/env") } throws missing andThen symlink
+            val racing = WorkspaceSync(mockk<ClientSession>(relaxed = true), 30.seconds, openSftp = { sftp })
+
+            assertThrows<SecurityException> { racing.writePrivateFile("/w/.homer/env/a.env", "x".toByteArray()) }
+            verify(exactly = 0) { sftp.setStat(any<String>(), any()) }
+            verify(exactly = 0) { sftp.open(any<String>(), *anyVararg<SftpClient.OpenMode>()) }
+        }
+
     private companion object {
         /** The directory type bit of an SFTP `permissions` field. */
         const val S_IFDIR = 0x4000
+
+        /** The symbolic-link type bits of an SFTP `permissions` field. */
+        const val S_IFLNK = 0xA000
     }
 }

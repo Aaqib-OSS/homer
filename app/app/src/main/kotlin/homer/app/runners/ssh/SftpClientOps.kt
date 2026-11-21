@@ -44,10 +44,14 @@ internal fun SftpClient.mkdirsIdempotent(path: String) {
  * A path that exists as anything but a directory, a symlink included, is refused.
  */
 internal fun SftpClient.ensurePrivateDir(dir: String) {
-    val attrs = lstatOrNull(dir)
-    if (attrs != null && !attrs.isDirectory) throw SecurityException("remote path '$dir' is not a directory")
-    if (attrs == null) mkdirsIdempotent(dir)
-    if (attrs == null || attrs.permissions and GROUP_OTHER_BITS != 0) setStat(dir, SftpClient.Attributes().perms(OWNER_ONLY_DIR))
+    // Checked again after the create: mkdirsIdempotent accepts a symlink to a directory swapped in meanwhile.
+    val attrs =
+        lstatOrNull(dir) ?: run {
+            mkdirsIdempotent(dir)
+            lstatOrNull(dir)
+        }
+    if (attrs == null || !attrs.isDirectory) throw SecurityException("remote path '$dir' is not a directory")
+    if (attrs.permissions and GROUP_OTHER_BITS != 0) setStat(dir, SftpClient.Attributes().perms(OWNER_ONLY_DIR))
 }
 
 /**
