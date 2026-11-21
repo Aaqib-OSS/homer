@@ -1,5 +1,6 @@
 package homer.app.infra
 
+import homer.app.fixtures.TestFixtures
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.byte
 import io.kotest.property.arbitrary.byteArray
@@ -185,12 +186,14 @@ class LocalFileOperationsTest {
     fun `readTextBounded refuses at once a FIFO that replaces the file after the check`() {
         val file = tempDir.resolve("langgraph.json")
         file.writeText("{}")
+        TestFixtures.mkfifoOrSkip(tempDir.resolve("probe.fifo"))
         val swapping = LocalFileOperations(openTimeoutMs = 60_000) { path -> swapForFifo(path) }
 
         val started = System.nanoTime()
         val result = swapping.readTextBounded(file, maxBytes = 1024)
         val elapsedMs = (System.nanoTime() - started) / 1_000_000
 
+        assertTrue(Files.exists(file, LinkOption.NOFOLLOW_LINKS), "the swap must have happened")
         assertFalse(Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS), "the swap must have happened")
         assertEquals(null, result)
         assertTrue(elapsedMs < 5_000, "the open must not block on the FIFO, took ${elapsedMs}ms")
@@ -199,6 +202,7 @@ class LocalFileOperationsTest {
     @Test
     fun `streamFile refuses FIFOs swapped in after the check without holding a pool thread`() =
         runTest {
+            TestFixtures.mkfifoOrSkip(tempDir.resolve("probe.fifo"))
             val pool = LocalFileOperations.newOpenPool()
             try {
                 val swapping = LocalFileOperations(60_000, pool) { path -> swapForFifo(path) }
@@ -416,10 +420,10 @@ class LocalFileOperationsTest {
         }
     }
 
+    // Runs on the pool thread, where an assumption cannot skip the test: callers probe mkfifo first.
     private fun swapForFifo(path: Path) {
         Files.delete(path)
-        val made = runCatching { ProcessBuilder("mkfifo", path.toString()).start().waitFor() == 0 }.getOrDefault(false)
-        assumeTrue(made, "needs mkfifo")
+        check(ProcessBuilder("mkfifo", path.toString()).start().waitFor() == 0) { "mkfifo failed" }
     }
 
     private companion object {
