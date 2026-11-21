@@ -11,9 +11,8 @@ import java.nio.file.attribute.BasicFileAttributes
 import java.util.PriorityQueue
 import kotlin.io.path.name
 
-/** The one implementation of the "what is an agent directory, and where are they" rule (ADR-0068):
- * identity is the path relative to the search-path root, never the leaf name (two nested `analysis/`
- * would collide). Bounds are local and explicit (§12 rule 4): depth/entry/raw-entry caps, hidden dirs skipped, symlinks never followed (CWE-400). */
+/** The one rule for "what is an agent directory, and where are they" (ADR-0068): identity is the path
+ * relative to the search-path root. Walk bounds are local and explicit (ADR-0047 rule 4, CWE-400). */
 internal object AgentDirs {
     /** How many levels below the search-path root are walked. A definition deeper than this is not an agent. */
     const val MAX_DEPTH: Int = 8
@@ -40,7 +39,7 @@ internal object AgentDirs {
 
     private val logger = LoggerFactory.getLogger(AgentDirs::class.java)
 
-    /** The agent-name charset (AGENT.md § Agent Fields, `name` row); an alias of the kernel pattern
+    /** The agent-name charset (AGENT.md Agent Fields, `name` row); an alias of the kernel pattern
      * ([homer.app.models.AGENT_NAME_PATTERN]) so the scanner and hook-target check cannot drift. */
     val AGENT_NAME_PATTERN: Regex = homer.app.models.AGENT_NAME_PATTERN
 
@@ -52,15 +51,14 @@ internal object AgentDirs {
      * [resolveSafe]'s deny (CWE-59). The walk refuses a symlinked directory before this runs. */
     fun isAgentDir(dir: Path): Boolean = definitionFile(dir) != null
 
-    /** The definition file discovery reads for [dir], under the same no-symlink rule as [isAgentDir]; null when there is none. */
+    /** The definition file discovery reads for [dir], under [isAgentDir]'s no-symlink rule; null when none. */
     fun definitionFile(dir: Path): Path? =
         DEFINITION_FILE_NAMES
             .map { dir.resolve(it) }
             .firstOrNull { Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) }
 
-    /** Walks [root] and yields every agent directory found, as paths relative to [root], depth-first
-     * and in sorted listing order. [root] itself is never yielded. The walk descends *through* an
-     * agent directory — a nested agent is found at its own position — except where a bound, a hidden name or a symlink stops it. */
+    /** Yields every agent directory under [root] as a relative path, depth-first in sorted order; [root] itself
+     * is never yielded. Descends through agent directories, except where a bound, hidden name or symlink stops it. */
     fun walkAgentDirs(
         root: Path,
         subtreeRawEntries: Int = MAX_SUBTREE_RAW_ENTRIES,
@@ -89,9 +87,7 @@ internal object AgentDirs {
         private var subtreeTruncated = false
 
         fun walkCatalog(root: Path) {
-            // Each top-level directory walks its own subtree with a fresh entry budget; the
-            // whole-catalog cap stays an outer ceiling. CWE-400: a shared budget let one principal's
-            // wide/deep subtree drop other principals' agents. Each top-level dir costs one total unit.
+            // Per-top-level budgets keep one principal's wide subtree from dropping others' agents (ADR-0068).
             val topLevel = readableChildren(root, MAX_TOTAL_ENTRIES, raw)
             if (topLevel.truncated) catalogTruncated = true
             for (top in topLevel.dirs) {
@@ -209,9 +205,7 @@ internal object AgentDirs {
                 }
                 raw.subtree--
                 raw.total--
-                // Hidden directories hold tooling (.git, .venv), not definitions. A symlinked
-                // directory is not a directory under NOFOLLOW_LINKS and is never followed: its
-                // target would be walked under a name that does not describe it (§12 rule 2, CWE-59).
+                // Symlinked directories are never followed (CWE-59); hidden ones hold tooling.
                 if (entry.name.startsWith(".")) continue
                 if (!Files.isDirectory(entry, LinkOption.NOFOLLOW_LINKS)) continue
                 if (keep <= 0) {
@@ -244,9 +238,7 @@ internal object AgentDirs {
         agentDir: Path,
         relPath: Path,
     ): Boolean {
-        // By index, not by iterator: an empty path iterates as one empty name (and
-        // `resolve("")` is the agent's own directory, which would match every call).
-        // Blank and "." segments carry no descent and are skipped.
+        // By index: an empty path iterates as one empty name, and `resolve("")` is the agent's own directory.
         val segments =
             (0 until relPath.nameCount)
                 .map { relPath.getName(it).toString() }
@@ -261,7 +253,7 @@ internal object AgentDirs {
 
     /** True when a definition landing at [landingRel] is a directory [walkAgentDirs] never reaches —
      * deeper than [MAX_DEPTH] or under a dot-prefixed component. Such a directory still counts as a
-     * nested-agent boundary, so leaving one behind makes the subtree unreadable (CWE-400). Mirrors the walk's stop exactly. */
+     * nested-agent boundary, so leaving one behind makes the subtree unreadable (CWE-400). Mirrors the walk's stop. */
     fun isUnreachableByDiscovery(
         agentDirDepth: Int,
         landingRel: Path,

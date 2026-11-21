@@ -11,12 +11,9 @@ import java.util.concurrent.TimeoutException
 import java.util.regex.PatternSyntaxException
 
 /**
- * Runs author-supplied regexes with a wall-clock bound so a catastrophic-backtracking pattern (ReDoS)
- * evaluated against attacker-influenceable input cannot pin a CPU indefinitely. The match runs on a
- * pooled worker thread reading an [InterruptibleCharSequence]; on timeout the worker is interrupted
- * (its next `charAt` throws) and [RegexTimeoutException] is raised. The pool is bounded too: past it
- * and its queue a submission is shed, never accumulated, as [RegexShedException], a distinct
- * [RegexTimeoutException] subclass so callers failing closed on either still work. See ADR-0047 rules 4–5.
+ * Runs author-supplied regexes under a wall-clock bound so ReDoS cannot pin a CPU; a timeout raises
+ * [RegexTimeoutException]. The pool and queue are bounded, and past them a submission is shed as
+ * [RegexShedException]. See ADR-0047 rules 4-5.
  */
 internal object BoundedRegex {
     const val DEFAULT_TIMEOUT_MS = 1000L
@@ -61,12 +58,8 @@ internal object BoundedRegex {
     ): Boolean = run(timeoutMs) { regex.matches(InterruptibleCharSequence(input)) }
 
     /**
-     * Compiles [pattern] and finds it in [input] under [DEFAULT_TIMEOUT_MS], returning `null`
-     * — omit the value — when the match exceeds the bound, is shed by pool saturation, or the
-     * pattern does not compile. Only [envName] is logged: [input] may hold a resolved secret
-     * (§12 rule 7). The log says which of the three happened. [onTimeout] runs when the match
-     * was shed (by the bound or by saturation) rather than matched, so a caller bounding a
-     * whole sequence of matches can stop submitting the rest.
+     * Compiles and finds [pattern] in [input], or `null` on timeout, shed or a non-compiling pattern;
+     * [onTimeout] runs on the first two. Only [envName] is logged, as [input] may hold a secret (ADR-0047 rule 7).
      */
     fun findOrOmit(
         pattern: String,

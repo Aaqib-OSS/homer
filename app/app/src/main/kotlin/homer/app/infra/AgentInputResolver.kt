@@ -26,19 +26,16 @@ import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Resolves agent inputs from query parameters, JSON request body, and HTTP headers
- * based on the agent's `inputs` (or legacy `queryParams`) configuration.
+ * based on the agent's `inputs` (or `queryParams` alias) configuration.
  */
 class AgentInputResolver(
     private val inputSchemaValidator: InputSchemaValidator = InputSchemaValidator(),
     private val paramValidator: ParamValidator = ParamValidator(),
 ) {
     /**
-     * Resolves agent inputs from one HTTP request (the route's extracted values), dispatching each
-     * [Param] to query string, JSON body or header. [readBody] is called only when an input has
-     * `src = BODY` or the agent has an `inputSchema`. When any input is `src = BODY` the body is parsed
-     * as a top-level JSON object and the method enforces POST (GET rejected), a JSON Content-Type and
-     * a well-formed object — but only for a non-blank body: without an `inputSchema` a body of no bytes
-     * is `{}` (checked from bytes read, so chunked is parsed); with one, a non-empty body is still required.
+     * Resolves agent inputs from one HTTP request, dispatching each [Param] to query, JSON body or header.
+     * [readBody] runs only for a `BODY` input or an `inputSchema`; a body then needs POST and JSON.
+     * See [readJsonBody].
      */
     suspend fun resolve(
         method: HttpMethod,
@@ -89,19 +86,14 @@ class AgentInputResolver(
             } catch (_: Exception) {
                 throw QueryParamValidationException("Invalid JSON body")
             }
-        // Blank counts as empty: callers piping a body (echo | curl --data-binary @-)
-        // or serializers that append a newline carry no more intent than zero bytes.
         if (text.isBlank() && agent.inputSchema == null) return JsonObject(emptyMap())
         requireJsonContentType(headers)
         return parseJsonObject(text)
     }
 
     /**
-     * Resolves agent inputs for the debug-execute endpoint, where the caller passes everything
-     * in the JSON payload rather than as a live HTTP request. Bridges to [resolveInternal] via
-     * the same code path as [resolve], so the debug endpoint exercises identical
-     * extraction/validation semantics for QUERY/BODY/HEADER sources. Header lookup is
-     * case-insensitive (matches Ktor) — the [headers] map is indexed by lower-cased key.
+     * Resolves inputs for the debug-execute endpoint from its JSON payload, with the same extraction and
+     * validation as [resolve]. Header lookup is case-insensitive; [headers] is indexed by lower-cased key.
      */
     fun resolveDebug(
         queryParams: Parameters,
@@ -125,12 +117,7 @@ class AgentInputResolver(
         )
     }
 
-    /**
-     * Validates [bodyJson] against the agent's `inputSchema` when both are
-     * present. The live `resolve` path guarantees a non-null body when a schema
-     * is set (it reads + parses the body first); `resolveDebug` may pass null,
-     * in which case validation is skipped.
-     */
+    /** Validates [bodyJson] against the agent's `inputSchema`; skipped when either is absent. */
     private fun applyInputSchema(
         agent: Agent,
         bodyJson: JsonObject?,
@@ -180,8 +167,7 @@ class AgentInputResolver(
     ): String? {
         val default = param.default
         if (default != null) {
-            // Load-time validation (validateDeclaration) guarantees the
-            // default satisfies the param's own constraints.
+            // Load-time validateDeclaration guarantees the default satisfies the param's constraints.
             return when (val v = paramValidator.validate(default, param)) {
                 is ParamValidation.Valid -> v.normalized
                 is ParamValidation.Invalid -> throw QueryParamValidationException(v.message, paramName = param.paramName)
@@ -196,16 +182,14 @@ class AgentInputResolver(
         return null
     }
 
-    /** An input the request carried: transformed and validated, or null (lenient) / a rejection (strict) when unusable. */
+    /** An input the request carried, transformed and validated; unusable is null (lenient) or a rejection (strict). */
     private fun resolvePresent(
         param: Param,
         raw: String,
         enforceRequired: Boolean,
         skipTransform: Boolean = false,
     ): String? {
-        // A stored value was transformed when its run resolved it; transforming again would
-        // run e.g. JsonPath over the already-extracted string and reject every inherited
-        // value of such an input. See [resolveFromParams], ADR-0101.
+        // A stored value is already transformed; transforming again would reject it (ADR-0101).
         val transformed = if (skipTransform) raw else transform(param.transformer, raw)
         val invalidMessage: String =
             if (transformed == null) {
@@ -216,27 +200,22 @@ class AgentInputResolver(
                     is ParamValidation.Invalid -> v.message
                 }
             }
-        // Present but unusable: strict callers reject instead of silently
-        // dropping — a value the caller explicitly sent must not vanish.
         if (enforceRequired) {
             throw QueryParamValidationException(invalidMessage, paramName = param.paramName)
         }
         return null
     }
 
-    /**
-     * Routes a String-valued param map into the shapes [resolveInternal] expects, by each param's
-     * declared src on [agent]: QUERY → query [Parameters]; HEADER and reserved control keys are
-     * dropped (headers carry transport auth an internal caller must not fabricate; reserved keys
-     * reach the run env via `reservedControlParams` on the fire path); everything else — declared
-     * BODY params and undeclared keys — becomes a JSON body field. Not a mirror of
-     * `McpToolFactory.classifyToolArgs`: it drops header keys and string-wraps values, so don't unify blindly.
-     */
+    /** The query and body shapes [resolveInternal] expects, as split by [classifyParams]. */
     class ClassifiedParams(
         val queryParams: Parameters,
         val bodyJson: JsonObject?,
     )
 
+    /**
+     * Routes a string param map by each param's declared src: QUERY to query parameters, everything else
+     * to a JSON body field; HEADER and reserved control keys are dropped so internal callers cannot forge them.
+     */
     fun classifyParams(
         agent: Agent,
         params: Map<String, String>,
@@ -267,12 +246,8 @@ class AgentInputResolver(
     }
 
     /**
-     * Resolves agent inputs from a plain param map (internal callers: RunAgent, dispatch,
-     * continuation), the same extraction/validation path as the HTTP route. [skipTransformFor]
-     * names params whose value is an **already-transformed stored input** (a fire inheriting the
-     * origin run's inputs, stored post-transformer): those are validated but the transformer is
-     * not applied again, and an own param of the same name wins the merge and is transformed as
-     * usual. See ADR-0101.
+     * Resolves inputs from a plain param map (RunAgent, dispatch, continuation) like the HTTP route.
+     * [skipTransformFor] names already-transformed stored inputs: validated, not transformed again (ADR-0101).
      */
     fun resolveFromParams(
         params: Map<String, String>,
@@ -292,12 +267,8 @@ class AgentInputResolver(
     }
 
     /**
-     * Display-ready names of the agent's inputs a scheduled (cron) run can never
-     * satisfy: every required declared input — a cron fire passes no caller params
-     * and no headers, and the model refuses `required` with a `default`
-     * (ParamValidator) — plus every `inputSchema.required` field (JSON Schema
-     * `default` is annotation-only). Schema-derived names carry the same
-     * ` (inputSchema)` marker [validateSatisfiable] reports them under.
+     * Display names of the inputs a cron run can never satisfy: every required declared input (a fire
+     * carries no params) and every `inputSchema.required` field, marked ` (inputSchema)`.
      */
     fun unsatisfiableWithoutDefaults(agent: Agent): List<String> =
         agent.effectiveInputs
@@ -307,10 +278,8 @@ class AgentInputResolver(
             schemaRequiredFields(agent).map { "'$it' (inputSchema)" }
 
     /**
-     * Presence-only registration check for internal dispatch: every required
-     * input (and every `inputSchema.required` field) must be coverable by
-     * [providedParamNames]. Required HEADER inputs are never satisfiable
-     * internally. Value validation still happens at fire time.
+     * Presence-only dispatch check: every required input and `inputSchema.required` field must be in
+     * [providedParamNames]; a required HEADER input never is.
      */
     fun validateSatisfiable(
         agent: Agent,
@@ -336,9 +305,8 @@ class AgentInputResolver(
     }
 
     /**
-     * A finished run's stored (envName-keyed, post-transformer) inputs re-validated by [ParamValidator] against the
-     * CURRENT input definitions for retry and resume; a missing required input rejects, removed inputs are dropped,
-     * control markers kept. Transformers are not re-applied; `inputSchema` is not re-checked (no body is stored).
+     * Re-validates a run's stored inputs against the current definitions for retry and resume: a missing
+     * required input rejects, removed inputs drop, control markers stay; no transformer or `inputSchema` re-run.
      */
     fun resolveRetryParams(
         agent: Agent,

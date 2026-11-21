@@ -3,28 +3,17 @@ package homer.app.infra
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Bounded, TTL-based set of recently-seen HMAC signatures for replay detection.
- *
- * A signature is remembered only for the length of its freshness window; once
- * that lapses the verifier's timestamp check rejects it anyway, so entries are
- * pruned on expiry. Single-node only (in-memory), matching the rest of Homer's
- * runtime state. See ADR-0010.
+ * Bounded, in-memory set of recently seen HMAC signatures, each kept for its freshness window only.
+ * See ADR-0010.
  */
 class HmacReplayCache(
     private val clock: () -> Long = System::currentTimeMillis,
     private val maxEntries: Int = DEFAULT_MAX_ENTRIES,
 ) {
-    // key -> expiry epoch millis. Only holds entries for keys the attacker cannot
-    // forge (a valid MAC is required to reach here), so growth is bounded by the
-    // legitimate signer's request rate over the (short) freshness window.
+    // key -> expiry epoch millis; only validly signed requests reach here (ADR-0010).
     private val seen = ConcurrentHashMap<String, Long>()
 
-    /**
-     * Records [key] with a lifetime of [ttlMillis] and reports whether this is
-     * its first use within that window. Returns `true` on first use (caller may
-     * proceed), `false` if the key was already recorded and is still live — a
-     * replay.
-     */
+    /** Records [key] for [ttlMillis]; `false` for a replay of a live key, or when the full cache cannot take it. */
     fun firstUse(
         key: String,
         ttlMillis: Long,
@@ -33,12 +22,8 @@ class HmacReplayCache(
         val newExpiry = now + ttlMillis
         val existing = seen.putIfAbsent(key, newExpiry)
         if (existing == null) {
-            // Newly recorded. If that pushed us over the cap, reclaim only *expired*
-            // entries — never evict a live marker: dropping an unexpired signature
-            // would silently re-open its replay window (an attacker could flood the
-            // cache to force-evict a victim's marker, then replay the victim's
-            // request). If nothing expired can be reclaimed, roll back this insert
-            // and fail closed rather than weaken replay protection for someone else.
+            // Over the cap, reclaim only expired entries: evicting a live marker re-opens its replay
+            // window (ADR-0010). Fail closed when none can be reclaimed.
             if (seen.size > maxEntries) {
                 seen.entries.removeIf { it.value <= now }
                 if (seen.size > maxEntries) {
@@ -48,7 +33,6 @@ class HmacReplayCache(
             }
             return true
         }
-        // A lingering expired entry (not yet pruned) counts as a first use.
         if (existing <= now) {
             seen[key] = newExpiry
             return true

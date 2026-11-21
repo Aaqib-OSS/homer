@@ -12,10 +12,8 @@ import kotlin.io.path.invariantSeparatorsPathString
 import kotlin.io.path.readText
 
 /**
- * One pass over `agentsSearchPath` for `AgentsService`: walks it with [AgentDirs]
- * (ADR-0068), reads each definition under the size cap, validates it with
- * [AgentDefinitionValidator] and claims its name. Every directory isolates its own
- * failure, so a broken agent never stops the rest of the catalog from loading.
+ * One pass over `agentsSearchPath`: walks it with [AgentDirs] (ADR-0068), reads each definition under
+ * the size cap, validates it and claims its name. Each directory isolates its own failure.
  */
 internal class AgentScanner(
     private val agentsSearchPath: String,
@@ -38,17 +36,10 @@ internal class AgentScanner(
         val sourceDirs = mutableMapOf<String, String>()
         val presentDirNames = mutableSetOf<String>()
         val errors = mutableListOf<String>()
-        // Names claimed by more than one directory. Directory iteration order is
-        // unspecified, so last-writer-wins would be nondeterministic and let a
-        // writable dir shadow a trusted agent — a collision fails ALL claimants.
+        // A name claimed by two directories fails every claimant, never a last-writer-wins (ADR-0068).
         val collidedNames = mutableSetOf<String>()
 
         try {
-            // Recursive, bounded, symlink-free walk: a multi-agent pipeline lives in
-            // one tree, so a directory holding a definition at any depth is an agent —
-            // including one nested inside another agent's directory. Every hit goes
-            // through the same parseAgentDir, which isolates its own failures, so a
-            // broken parent never stops its children from loading. See ADR-0068.
             AgentDirs.walkAgentDirs(basePath).forEach { rel ->
                 val relName = rel.invariantSeparatorsPathString
                 parseAgentDir(basePath.resolve(rel), relName, parsed, sourceDirs, presentDirNames, errors, collidedNames)
@@ -58,9 +49,7 @@ internal class AgentScanner(
             errors.add("Directory scan failed: ${e.message}")
         }
 
-        // Cross-agent `hooks` checks last, so they see the whole catalog: a hook target must be
-        // a loaded agent and the hook graph must be acyclic. A rejected agent's directory is
-        // still present (its files are on disk), so it stays in presentDirNames. See ADR-0107.
+        // Hook checks need the whole catalog; a rejected agent stays in presentDirNames (ADR-0107).
         for ((name, hookErrors) in AgentHookValidation.apply(parsed)) {
             sourceDirs.remove(name)
             for (error in hookErrors) {
@@ -73,13 +62,7 @@ internal class AgentScanner(
         return AgentScan(parsed, sourceDirs, presentDirNames, errors)
     }
 
-    /**
-     * Parse one agent directory. [rel] is the directory's path relative to
-     * `agentsSearchPath` and is its identity everywhere a name is not enough
-     * (the loaded-map key, the collision report, the messages below): the leaf
-     * name stops being unique once directories nest (ADR-0068). [dir] stays the
-     * filesystem path.
-     */
+    /** Parses one agent directory. [rel], its path below `agentsSearchPath`, is its identity (ADR-0068). */
     private fun parseAgentDir(
         dir: Path,
         rel: String,
@@ -98,13 +81,9 @@ internal class AgentScanner(
             val validatedName = validator.checkAgentName(agent, rel, errors) ?: return
             val cronDisabled = validator.checkDefinition(agent, rel, errors) ?: return
 
-            // HMR_AGENT_DIR is a Homer-owned system var (the agent's own config
-            // directory), injected last so it wins over any author-set value.
-            // The HMR_ prefix is reserved, so caller inputs cannot override it.
+            // HMR_AGENT_DIR is injected last so no author-set value can override it.
             val sysEnvBackedEnvNames = sysEnvResolver.secretNamesFor(agent.env)
-            // The keys half alone feeds the cooldown.key load check (Agent's init): the
-            // composite's host-variable half would refuse a placeholder that renders a
-            // non-host value. See `SysEnvResolver.secretEnvKeysFor`.
+            // Only the keys half feeds the cooldown.key load check; see `SysEnvResolver.secretEnvKeysFor`.
             val sysEnvBackedEnvKeys = sysEnvResolver.secretEnvKeysFor(agent.env)
             val resolvedEnv =
                 sysEnvResolver.resolveMapValues(agent.env) +
@@ -116,8 +95,6 @@ internal class AgentScanner(
                 agent.copy(
                     name = validatedName,
                     env = resolvedEnv,
-                    // A disabled schedule is dropped here so `CronSchedulerService.tick`
-                    // and `getScheduleStatus` (both keyed off `agent.cron`) need no change.
                     cron = agent.cron.takeUnless { cronDisabled },
                     writable = Files.isWritable(dir),
                     sysEnvBackedEnvNames = sysEnvBackedEnvNames,
@@ -172,10 +149,7 @@ internal class AgentScanner(
         collidedNames: MutableSet<String>,
         errors: MutableList<String>,
     ): Boolean {
-        // Deterministic duplicate-name guard: a name claimed by more than one
-        // directory fails ALL claimants (never silently shadows). Iteration
-        // order is unspecified, so picking a winner would be nondeterministic
-        // and a writable dir could shadow a trusted agent.
+        // A duplicate name fails all claimants so a writable dir cannot shadow a trusted agent (ADR-0068).
         if (validatedName in collidedNames) {
             val msg =
                 "Agent name '$validatedName' is declared by multiple directories (including $rel); " +
@@ -201,7 +175,7 @@ internal class AgentScanner(
     }
 }
 
-/** What one [AgentScanner.scan] found: the loaded agents, their directories, every definition directory present, and the errors. */
+/** What one [AgentScanner.scan] found: loaded agents, their directories, every directory present, and errors. */
 internal data class AgentScan(
     val parsed: Map<String, Agent>,
     val sourceDirs: Map<String, String>,

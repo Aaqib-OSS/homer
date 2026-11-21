@@ -9,10 +9,8 @@ import homer.app.models.RunnerFilter
 import org.slf4j.Logger
 
 /**
- * The load-time validation of one decoded agent definition for `AgentsService`: its
- * name, command shape, runner filter and runnerCmds, the [AgentInputChecks], the cron
- * schedule and the inputSchema. Each check reports its own failure into `errors`; a
- * failed check skips the agent, the rest of the catalog still loads.
+ * Load-time validation of one decoded agent definition: name, commands, runner filter, runnerCmds,
+ * inputs, cron and inputSchema. A failed check reports into `errors` and skips only that agent.
  */
 internal class AgentDefinitionValidator(
     private val logger: Logger,
@@ -65,7 +63,7 @@ internal class AgentDefinitionValidator(
         return cronDisabled
     }
 
-    /** The command, runner, input and tag checks, in order; false at the first failure, which reported itself into [errors]. */
+    /** The command, runner, input and tag checks, in order; false at the first failure (already in [errors]). */
     private fun passesShapeChecks(
         agent: Agent,
         rel: String,
@@ -81,12 +79,9 @@ internal class AgentDefinitionValidator(
             inputChecks.checkCommandBindings(agent, errors)
 
     /**
-     * Rejects a graceful-stop declaration that cannot work: `onTimeout: stop` with no `onStop:`
-     * steps, a stop step that is itself `onTimeout: stop` (a stop step is the run's last chance,
-     * so it may not hand the run back to a stop phase), an interrupt grace outside
-     * `0..MAX_INTERRUPT_GRACE_SECONDS`, and more stop steps than [MAX_ON_STOP_STEPS]. A bare
-     * `onStop:` is valid — an agent may declare stop steps while keeping the default
-     * `onTimeout: fail` and be stopped only by the run's deadline. See ADR-0108.
+     * Rejects a graceful-stop declaration that cannot work: `onTimeout: stop` without `onStop:` steps,
+     * a stop step that is itself `onTimeout: stop`, a grace outside `0..MAX_INTERRUPT_GRACE_SECONDS`,
+     * or more than [MAX_ON_STOP_STEPS] stop steps. See ADR-0108.
      */
     private fun checkStopPolicy(
         agent: Agent,
@@ -165,10 +160,7 @@ internal class AgentDefinitionValidator(
             return false
         }
         if (runnerFilter is RunnerFilter.Tags) {
-            // Warn-only: a throw from the provider (e.g. a registry read that
-            // outruns the schema) must never skip the agent. The warn-only
-            // extension is deviation (9) in ADR-0066; the migrate-before-first-
-            // access invariant that makes such a throw impossible is ADR-0020.
+            // A throwing tag provider must never skip the agent: ADR-0066 deviation (9), ADR-0020.
             val servedTagSets =
                 try {
                     runnerTagSets()

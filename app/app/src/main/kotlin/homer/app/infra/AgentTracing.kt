@@ -66,9 +66,10 @@ internal fun Span.stampLangfuseTrace(
     setAttribute(LANGFUSE_TRACE_TAGS, capped)
 }
 
-// `paramName:value` tags for the run's effective `fromInputs` — both a Langfuse trace tag and a
-// queryable process tag, from one derivation. [secretEnvNames] is required with no default: replay
-// paths must pass the source run's snapshot, or a since-unsecreted input leaks as cleartext. See ADR-0052.
+/**
+ * The `paramName:value` tags of the run's `fromInputs`, for Langfuse and the process tags alike.
+ * [secretEnvNames] has no default: replays pass the source run's snapshot (ADR-0052).
+ */
 internal fun langfuseTraceTags(
     agent: Agent,
     resolvedInputs: Map<String, String>,
