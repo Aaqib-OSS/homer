@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-11-12
+amended: 2026-11-21
 deciders: Lukáš Vlk
 consulted: ADR-0020, ADR-0041, ADR-0047, ADR-0066, ADR-0089, ADR-0100
 ---
@@ -140,3 +141,33 @@ no new decision: `stop` already says *why*, and says it in more detail than a st
   count and the exported label and session id, and the denial tests behind them.
 - [ADR-0089](0089-settle-llm-cost-in-the-background.md) — the accounting an interrupted LLM
   attempt keeps, now also recorded on the step it was interrupted in.
+
+## Amendment (2026-11-21): the Kubernetes group launch reports 128 + n and never detaches
+
+A Kubernetes exec'd process already leads its own session and group under runc, so the
+`setsid` prefix the launch used when it probed one did not start a group: it forked and reported
+its child's raw wait status. util-linux `setsid -w` gave the bare signal number (9 for SIGKILL)
+plus a `setsid: child N did not exit normally` stderr line. BusyBox `setsid` (no `-w`), called by
+a group leader, forked and exited 0 at once, so the step reported 0 and the command ran on
+detached (verified in a kind cluster).
+
+A launch with a grace now runs
+`[setsid -w] sh -c 'trap : INT TERM HUP; p="$0"; d="${p%/*}"; mkdir -p "$d" 2>/dev/null; rm -f "$p" 2>/dev/null; g=; read -r _ _ _ _ g _ 2>/dev/null < /proc/$$/stat; [ "$g" = "$$" ] && echo $$ > "$p" 2>/dev/null; <launch>; exit $?' <pgidFile> [<envFile>] <argv...>`,
+with `<launch>` = `(exec "$@")`, or `f=$1; shift; . "$f" && (exec "$@")` when the step has an env
+file. This is the ssh runner's reaping wrapper, with the same semantics (ADR-0041, 2026-11-21
+amendment).
+
+- The probe checks only `setsid -w`; the plain `setsid` form is dropped. Present, it is the
+  prefix. Absent, the wrapper runs with no prefix, as the exec's own group leader.
+- The wrapper removes any existing pgid file first and records its pid only when
+  `/proc/$$/stat` shows it leads its group. Otherwise there is no file, the existing pgid guard
+  refuses, and the stop falls back to the pod-wide `kill -KILL -1`. It fails closed, for a
+  runtime whose exec process is not a group leader or a pod without `/proc`.
+- A signal death now reports 128 + n, and the wrapper's own shell notice (`Killed`; bash prints a
+  job line naming the pgid file path) replaces the `setsid:` stderr line.
+- A TERM or HUP sent to the recorded pid alone now reaches the waiting wrapper, not the command;
+  Homer's reapers signal the group.
+- The `setsid -w` probe runs at the first launch with a grace, after the step's env file is
+  uploaded (previously before). A launch without a grace is byte-identical and never probes.
+- Trust boundary: none new. The pgid file stays agent-writable and is validated at its point of
+  use by the existing guard (ADR-0047 rule 2).
