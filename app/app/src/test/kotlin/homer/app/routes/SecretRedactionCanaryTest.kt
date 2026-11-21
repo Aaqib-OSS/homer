@@ -53,6 +53,7 @@ import org.koin.ktor.ext.get
 import java.io.File
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 import homer.app.models.Workspace as WorkspaceAgentConfig
@@ -324,17 +325,20 @@ class SecretRedactionCanaryTest {
         return stored.orEmpty()
     }
 
-    /** Whether [body] is a JSON-RPC tool result flagged `isError`, which still answers `200`. */
-    private fun mcpToolFailed(body: String): Boolean =
-        runCatching {
-            json
-                .parseToJsonElement(body)
-                .jsonObject["result"]
-                ?.jsonObject
-                ?.get("isError")
-                ?.jsonPrimitive
-                ?.boolean
-        }.getOrNull() == true
+    @Test
+    fun `the MCP guard fails a probe answered with a JSON-RPC error or an isError result`() {
+        assertTrue(mcpToolFailed("""{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"bad"}}"""))
+        assertTrue(mcpToolFailed("""{"jsonrpc":"2.0","id":1,"result":{"isError":true}}"""))
+        assertFalse(mcpToolFailed("""{"jsonrpc":"2.0","id":1,"result":{"content":[]}}"""))
+        assertFalse(mcpToolFailed("""{"id":1,"error":"a stored run error"}"""))
+    }
+
+    /** Whether [body] is a JSON-RPC `error` reply or a tool result flagged `isError`; both still answer `200`. */
+    private fun mcpToolFailed(body: String): Boolean {
+        val reply = runCatching { json.parseToJsonElement(body).jsonObject }.getOrNull() ?: return false
+        val flagged = (reply["result"] as? JsonObject)?.get("isError")?.jsonPrimitive?.boolean == true
+        return flagged || ("jsonrpc" in reply && "error" in reply)
+    }
 
     /** The run a start response's [body] reports. */
     private fun startedProcessId(body: String): Int =
