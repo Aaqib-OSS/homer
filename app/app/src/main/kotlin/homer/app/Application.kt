@@ -88,15 +88,19 @@ fun main(args: Array<String>) {
 }
 
 /**
- * Reads and parses the config file named by `args[0]`, runs [hardenJvm], then `@SYSENV`-resolves it.
- * Returns `null` after logging and printing why startup cannot continue.
+ * Applies `HOMER_LOG_LEVELS`, then reads and parses the config file named by `args[0]`, runs
+ * [hardenJvm], then `@SYSENV`-resolves it. Returns `null` after logging and printing why startup
+ * cannot continue.
  */
 internal fun loadStartupConfig(
     args: Array<String>,
     sysEnvResolver: SysEnvResolver = SysEnvResolver(),
+    env: Map<String, String> = System.getenv(),
     hardenJvm: () -> Unit,
 ): AppConfig? {
-    applyLogLevelOverrides(System.getenv(), LoggerFactory.getILoggerFactory())
+    // A logger built before the override keeps its initial level, so apply it before any
+    // DI-created logger exists.
+    applyLogLevelOverrides(env, LoggerFactory.getILoggerFactory())
     val config = readStartupConfig(args) ?: return null
     hardenJvm()
     return resolveStartupConfig(config, sysEnvResolver)
