@@ -129,7 +129,7 @@ internal class AgentDefinitionValidator(
             return false
         }
 
-        if (agent.commands.any { it is Command.LangGraph } && agent.dispatch?.enabled != true) {
+        if (agent.phaseTaggedSteps.any { (_, cmd) -> cmd is Command.LangGraph } && agent.dispatch?.enabled != true) {
             logger.error(
                 "Agent '{}' in {} has a langgraph command but dispatch.enabled is not true. Skipping.",
                 agent.name,
@@ -188,14 +188,15 @@ internal class AgentDefinitionValidator(
         return true
     }
 
-    /** Rejects runnerCmd commands off `runner: local`, on an unknown runner or with a bad sync path; `false` = skip. */
+    /** Rejects runnerCmd steps off `runner: local`, on an unknown runner or with a bad sync path; `false` = skip. */
     private fun checkRunnerCmds(
         agent: Agent,
         rel: String,
         errors: MutableList<String>,
     ): Boolean {
         val runnerFilter = agent.runnerFilter
-        val runnerCmds = agent.commands.filterIsInstance<Command.RunnerCmd>()
+        // A stop step runs on the Homer host exactly as a command does, so it gets the same rules (ADR-0034).
+        val runnerCmds = agent.phaseTaggedSteps.mapNotNull { (_, cmd) -> cmd as? Command.RunnerCmd }
         if (runnerCmds.isNotEmpty()) {
             if (runnerFilter != RunnerFilter.Alias("local")) {
                 val msg =

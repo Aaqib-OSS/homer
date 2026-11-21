@@ -1542,8 +1542,14 @@ of any type, with three differences:
 `onStop:` accepts at most 10 steps, and a step with `onTimeout: stop` may not itself be a stop step.
 `onTimeout: stop` on a command of an agent with no `onStop:` fails agent load — a stop request with
 nothing to run is a mistake, not a no-op. Both are rejected at load time, like any other invalid
-agent definition. A stop step's `resultEnvParam` `envName`s are checked at load exactly as a
-`commands:` step's are: a reserved (`HMR_*`, `PATH`, `LD_*`, …) or malformed name fails the agent.
+agent definition.
+
+A stop step is checked at load exactly as a `commands:` step is. A `resultEnvParam` `envName` that is
+reserved (`HMR_*`, `PATH`, `LD_*`, …) or malformed fails the agent, and so does a
+[`runnerCmd`](#commandrunnercmd---run-a-command-on-another-runner) step off `runner: local`, naming an
+unknown runner or carrying an absolute, `..` or blank `sync*` path, as does a `!<langgraph>` step in
+an agent without `dispatch.enabled: true`. The input-steering warning covers a stop step's `RunAgent`
+target and Claude path/mode options too, naming the step as `onStop step`.
 
 **Interrupting the step.** `interruptGraceSeconds` (default `30`, `0`..`600`) is how long an
 interrupted step may take to exit after Homer signals its process group, before it is killed; `0`
