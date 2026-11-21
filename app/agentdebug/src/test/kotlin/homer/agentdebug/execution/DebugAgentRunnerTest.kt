@@ -37,13 +37,14 @@ class DebugAgentRunnerTest {
         resultEnvParam = resultEnvParam,
     )
 
-    /** Runs [commands] for real; returns `run()`'s error flag and everything printed. */
+    /** Runs [commands]; returns `run()`'s error flag and everything printed. */
     private fun run(
         commands: List<Command>,
         cmdIndex: Int? = null,
         keepWorkspace: Boolean = false,
+        dryRun: Boolean = false,
     ): Pair<Boolean, String> {
-        val runner = runner(commands, cmdIndex, keepWorkspace)
+        val runner = runner(commands, cmdIndex, keepWorkspace, dryRun)
         val buffer = ByteArrayOutputStream()
         val original = System.out
         System.setOut(PrintStream(buffer, true))
@@ -60,6 +61,7 @@ class DebugAgentRunnerTest {
         commands: List<Command>,
         cmdIndex: Int? = null,
         keepWorkspace: Boolean = false,
+        dryRun: Boolean = false,
     ): DebugAgentRunner {
         val configPath = tempDir.resolve("app.yaml")
         configPath.writeText(
@@ -75,7 +77,7 @@ class DebugAgentRunnerTest {
             agent = Agent(name = "debug-agent", commands = commands),
             envOverrides = emptyMap(),
             inputMap = emptyMap(),
-            dryRun = false,
+            dryRun = dryRun,
             keepWorkspace = keepWorkspace,
             cmdIndex = cmdIndex,
             logger = LoggerFactory.getLogger("agentdebug-test"),
@@ -151,5 +153,44 @@ class DebugAgentRunnerTest {
         assertContains(out, "[OUT] second")
         assertContains(out, "[INFO] Done: 1 executed, 0 skipped")
         assertContains(out, "[INFO] Workspace kept at: ")
+    }
+
+    @Test
+    fun `cmdIndex at or above the command count fails naming the range before anything runs`() {
+        val (hadError, out) = run(listOf(sh("echo first"), sh("echo second")), cmdIndex = 2)
+
+        assertTrue(hadError, out)
+        assertContains(out, "[ERROR] --cmd 2 is out of range: agent 'debug-agent' has 2 commands (0..1)")
+        assertFalse("echo first" in out || "echo second" in out, out)
+        assertFalse("[INFO] Agent:" in out || "[INFO] Workspace:" in out, out)
+        assertFalse(tempDir.resolve("ws").toFile().exists(), out)
+    }
+
+    @Test
+    fun `a negative cmdIndex fails naming the range before anything runs`() {
+        val (hadError, out) = run(listOf(sh("echo first"), sh("echo second")), cmdIndex = -1)
+
+        assertTrue(hadError, out)
+        assertContains(out, "[ERROR] --cmd -1 is out of range: agent 'debug-agent' has 2 commands (0..1)")
+        assertFalse("echo first" in out || "echo second" in out, out)
+        assertFalse(tempDir.resolve("ws").toFile().exists(), out)
+    }
+
+    @Test
+    fun `an out-of-range cmdIndex fails in a dry run before anything is printed`() {
+        val (hadError, out) = run(listOf(sh("echo first"), sh("echo second")), cmdIndex = 5, dryRun = true)
+
+        assertTrue(hadError, out)
+        assertContains(out, "[ERROR] --cmd 5 is out of range: agent 'debug-agent' has 2 commands (0..1)")
+        assertFalse("[DRY ]" in out, out)
+    }
+
+    @Test
+    fun `a cmdIndex against an agent with no commands fails naming no range`() {
+        val (hadError, out) = run(emptyList(), cmdIndex = 0)
+
+        assertTrue(hadError, out)
+        assertContains(out, "[ERROR] --cmd 0 is out of range: agent 'debug-agent' has 0 commands")
+        assertFalse("(0.." in out, out)
     }
 }
