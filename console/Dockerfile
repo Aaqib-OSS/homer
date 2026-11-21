@@ -29,6 +29,9 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
+# zlib and OpenSSL from the repository, newer than the base digest's builds (W-023).
+RUN apk add --no-cache --upgrade zlib libcrypto3 libssl3
+
 # Create non-root user
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs

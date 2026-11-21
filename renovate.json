@@ -105,7 +105,8 @@
         "org.jetbrains.exposed:**",
         "dev.detekt:**",
         "dev.detekt",
-        "eclipse-temurin"
+        "eclipse-temurin",
+        "node"
       ],
       "groupName": null,
       "addLabels": ["workaround-pin"],

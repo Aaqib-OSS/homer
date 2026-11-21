@@ -50,6 +50,9 @@ RUN apk add --no-cache \
     py3-pip \
     py3-setuptools
 
+# zlib from the repository, newer than the base digest's build (W-022).
+RUN apk add --no-cache --upgrade zlib
+
 # The !<langgraph> runtime: the hash-pinned requirements.lock, never a resolve, which backtracks on
 # musl (ADR-0114). --break-system-packages: PEP 668 refuses a system-wide install on Alpine otherwise.
 COPY clients/python /tmp/homer_langgraph_src
@@ -138,6 +141,8 @@ ARG HOMER_VERSION=dev
 ENV HOMER_VERSION=$HOMER_VERSION
 
 RUN apk add --no-cache bash curl git tar gzip util-linux
+# zlib from the repository, newer than the base digest's build (W-022).
+RUN apk add --no-cache --upgrade zlib
 
 RUN addgroup -g 1000 homer && \
     adduser -u 1000 -G homer -h /home/homer -s /bin/bash -D homer && \

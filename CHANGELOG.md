@@ -4,6 +4,7 @@
 
 ### Homer
 
+- **Security: the server images ship zlib 1.4** — `homer-app` and `homer-runner` upgrade zlib past their base image's build, fixing CVE-2026-4738.
 - **Changed: the server images run Alpine 3.24** — `homer-app`, its slim variant and `homer-runner` move to Alpine 3.24 with Temurin 25.0.5.1, which carries the Java4Shell fix (CVE-2026-114938), so the bundled `python3` is now Python 3.14 and `glab` is 1.100.
 - **BREAKING: env names on the ssh and Kubernetes runners must be shell identifiers** — Runner `env` and `extraUploads.env` names must match `^[A-Za-z_][A-Za-z0-9_]*$` at startup, and a run fails before it reaches the host or creates a pod on a `globalEnv`, agent `env` or `onStop:` `resultEnvParam` name that does not.
 - **Security: the step env no longer travels on the ssh command line or the Kubernetes exec URI** — Each step's env no longer appears in remote process tables, `execve` audit records or Kubernetes audit logs.
@@ -46,6 +47,7 @@
 
 ### Console
 
+- **Security: the console image ships zlib 1.4 and OpenSSL 3.5.9-r1** — The image upgrades zlib, libcrypto3 and libssl3 past its Node.js base's builds, fixing their known advisories.
 - **Added: removing a saved instance from the instance switcher** — Each row of the header picker deletes the instance and its bearer token; the last instance cannot be removed, and removing the active one signs out of it and switches to another.
 - **Security: bearer-mode sign-in no longer grants admin** — A bearer token now sees only the pages, controls and plugins its own role and grants allow, and none of the admin ones against a server too old to report them. See [ADR-0059](docs/adr/0059-console-plugins-are-runtime-loaded-modules.md).
 - **Security: one strict Content-Security-Policy on every route** — The agent file editor route no longer allows inline scripts, `eval` or `blob:` workers; it gets the same nonce policy as every other page.
