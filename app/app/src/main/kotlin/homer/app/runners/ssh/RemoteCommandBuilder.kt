@@ -27,11 +27,11 @@ object RemoteCommandBuilder {
         argv: List<String>,
         pgidFile: String,
     ): String {
-        // $0 is the pgid file; $@ the argv, after the env file. A child argv lets `exit $?` report a signal death as 128+n;
-        // `trap :` outlives the group SIGINT, where `trap ''` would make the argv inherit an ignored SIGINT (ADR-0041).
-        val launch = if (envFile != null) "f=\$1; shift; " + sourceThenRun("\$f") else "\"\$@\""
+        // `(exec …)` keeps PATH lookup of argv[0] and lets `exit $?` report a signal death as 128+n. `trap :`, never
+        // `trap ''`, keeps the wrapper waiting through a group signal without the argv inheriting an ignore (ADR-0041).
+        val launch = if (envFile != null) "f=\$1; shift; " + sourceThenRun("\$f") else "(exec \"\$@\")"
         val parts = mutableListOf("cd", quote(remoteWorkdir), "&&", "exec", "setsid", "-w", "sh", "-c")
-        parts.add(quote("trap : INT; d=\$(dirname \"\$0\"); mkdir -p \"\$d\"; echo \$\$ > \"\$0\"; $launch; exit \$?"))
+        parts.add(quote("trap : INT TERM HUP; d=\$(dirname \"\$0\"); mkdir -p \"\$d\"; echo \$\$ > \"\$0\"; $launch; exit \$?"))
         parts.add(quote(pgidFile))
         envFile?.let { parts.add(quote(it)) }
         argv.forEach { parts.add(quote(it)) }

@@ -384,7 +384,7 @@ class SshShellExecutorTest {
     fun `a reaping command SIGKILLed from outside reports 137`(
         @TempDir local: Path,
     ) {
-        assumeTrue(setsidAvailable())
+        assumeTrue(setsidCanFormGroup())
         // The shell leads its session, as sshd's does, so `setsid -w` forks the wrapper and waits for it.
         val leading = EmbeddedSshServer(shellLeadsSession = true).also { it.start() }
         val childPid = workdir.resolve("child.pid")

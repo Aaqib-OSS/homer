@@ -19,8 +19,8 @@ class RemoteShellTest {
     }
 
     @Test
-    fun `sourceThenRun sources the file, then runs the argv without replacing the shell`() {
-        assertEquals(". \"\$f\" && \"\$@\"", RemoteShell.sourceThenRun("\$f"))
+    fun `sourceThenRun sources the file, then execs the argv in a subshell`() {
+        assertEquals(". \"\$f\" && (exec \"\$@\")", RemoteShell.sourceThenRun("\$f"))
     }
 
     @Test
