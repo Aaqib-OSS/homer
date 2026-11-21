@@ -57,7 +57,7 @@ class ParamValidatorTest {
         assertTrue(r.message.contains(messagePart), "message '${r.message}' should contain '$messagePart'")
     }
 
-    // Legacy generation — byte-for-byte parity with the old AgentsService.validateParameter.
+    // STRING, NUMBER and ANY keep byte-for-byte parity with the old AgentsService.validateParameter.
 
     @Test
     fun `legacy STRING rejects values containing a space`() {
@@ -77,7 +77,7 @@ class ParamValidatorTest {
         assertValid("-7", "-7", param(ParamType.NUMBER))
         assertInvalid("4.2", param(ParamType.NUMBER), "is not valid NUMBER")
         assertInvalid("abc", param(ParamType.NUMBER), "is not valid NUMBER")
-        // Long-range value overflows Int — legacy stays Int-ranged.
+        // A Long-range value overflows Int; NUMBER stays Int-ranged.
         assertInvalid("3000000000", param(ParamType.NUMBER), "is not valid NUMBER")
     }
 
@@ -261,7 +261,7 @@ class ParamValidatorTest {
             emptyList(),
             declErrors(Param(paramName = "p", type = ParamType.INT, required = false, default = "5", min = 1.0)),
         )
-        assertEquals(emptyList(), declErrors(param(ParamType.STRING))) // legacy, no constraints
+        assertEquals(emptyList(), declErrors(param(ParamType.STRING))) // STRING, no constraints
     }
 
     @Test

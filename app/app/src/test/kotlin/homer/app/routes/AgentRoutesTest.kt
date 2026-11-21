@@ -197,11 +197,8 @@ class AgentRoutesTest : ApiRouteTestBase() {
     @Test
     fun `GET agents reports no cron and reload carries the disable error for an unsatisfiable cron agent`() =
         testApplication {
-            // Black-box check of the load-time rule: an agent whose required input a
-            // cron fire can never satisfy loads with its schedule cleared, so the
-            // agents list must serve `cron: null` for it, and the reload result must
-            // carry the disable reason (CLAUDE.md §6). `agents` holds the agent as
-            // load produced it — schedule already stripped, per AgentsServiceTest.
+            // An agent whose required input a cron fire cannot satisfy loads with its schedule cleared, so the list
+            // serves `cron: null` and the reload result carries the reason; `agents` holds it as load produced it.
             val agent =
                 AgentFixtures.simpleAgent(name = "cron-unsatisfiable").copy(
                     inputs =
@@ -484,10 +481,8 @@ class AgentRoutesTest : ApiRouteTestBase() {
             val denied = client.post("/api/v1/agents/cron-run-agent/cron-run")
             val unknown = client.post("/api/v1/agents/no-such-agent/cron-run")
 
-            // Existence hiding (ADR-0047 rule 3) is the body, not the status alone:
-            // the denial must be the unknown-agent 404 apart from the name the
-            // caller itself supplied — no "not permitted" wording or extra field
-            // a grant-probing caller could read existence from.
+            // Existence hiding (ADR-0047 rule 3) is the body: the denial must equal the unknown-agent 404 bar the
+            // supplied name, with no "not permitted" wording or extra field to probe existence from.
             assertEquals(HttpStatusCode.NotFound, denied.status)
             assertEquals(unknown.bodyAsText().replace("no-such-agent", "cron-run-agent"), denied.bodyAsText())
             coVerify(exactly = 0) { scheduler.fireNow(any()) }

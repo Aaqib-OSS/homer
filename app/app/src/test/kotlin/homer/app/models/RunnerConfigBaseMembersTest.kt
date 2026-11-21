@@ -7,13 +7,8 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
- * The members the sealed base declares for every variant: `env`, `extraUploads`
- * and the alias-aware `validate`. Dispatch sites read them through
- * [RunnerConfig] instead of repeating a `when` arm per variant. See ADR-0042.
- *
- * The two variant maps below are keyed by serial name and checked against the
- * sealed descriptor, so a new variant fails `every variant of the sealed base is
- * listed here` until it is added — and then every test here runs for it.
+ * The members the sealed base declares for every variant: `env`, `extraUploads` and the alias-aware `validate`
+ * (ADR-0042). Both variant maps are checked against the sealed descriptor, so a new variant fails until listed.
  */
 class RunnerConfigBaseMembersTest {
     private val token = "t".repeat(32)

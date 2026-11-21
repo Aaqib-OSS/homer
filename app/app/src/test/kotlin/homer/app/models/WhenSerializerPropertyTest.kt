@@ -24,17 +24,9 @@ import org.junit.jupiter.api.assertThrows
 import kotlin.test.assertEquals
 
 /**
- * [WhenSerializer]'s wire contract over generated predicates (root CLAUDE.md §6): whatever a bash
- * expression contains — quotes, backslashes, `$`, brackets, non-ASCII — a printed `when` parses back
- * to the same clause, a scalar string is the `{all: [<string>]}` shorthand, and an object that names
- * both or neither key is refused. The example cases live in `WhenSerializerTest`; these drive the
- * spellings its author did not list.
- *
- * The YAML half covers parsing only: Homer reads agent YAML and writes JSON, so the printed shape is
- * asserted through JSON. YAML text here is written by kaml from a plain `all`/`any` holder — the
- * shape a user writes — and read back through [WhenSerializer]. Control characters are left out of
- * the YAML generators (kaml's block-scalar styles are a separate contract); the JSON property
- * carries them.
+ * [WhenSerializer]'s wire contract over generated predicates: any bash expression round-trips through the printed
+ * `when`, a scalar string is the `{all: [<string>]}` shorthand, and an object naming both or neither key is refused.
+ * The YAML half covers parsing only (Homer writes JSON); control characters stay in the JSON property alone.
  */
 class WhenSerializerPropertyTest {
     private val json =

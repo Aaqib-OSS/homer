@@ -42,10 +42,8 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
 /**
- * Mirrors [DispatchRoutesTest]: callback-side (`/callback/runs`) behavior runs
- * through [mountCallbackRoutes], operator-side (`/continuations`) through
- * [mountApiV1Routes], seeding via the shared service when only one side is
- * exercised. See that file's note on the dual mount points.
+ * Mirrors [DispatchRoutesTest]: callback-side (`/callback/runs`) behavior runs through [mountCallbackRoutes],
+ * operator-side (`/continuations`) through [mountApiV1Routes]; see that file's note on the dual mount points.
  */
 class ContinuationRoutesTest {
     /** A QuestionsService + ContinuationService + DispatchService sharing one database. */

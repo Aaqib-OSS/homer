@@ -9,21 +9,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Root discovery for the console DTO contract (ADR-0082): every `@Serializable` body a route in `routes/`
- * responds with must be a root in [DtoContract] — or reachable from one — or listed in
- * [DtoContract.routeBodiesNotMirrored] with a reason. Without this a new response body stays outside the
- * `dto-contract` check and can drift from its console mirror unnoticed.
- *
- * The scan reads source, not types. A `respond` argument is judged by the constructor it builds, by the
- * declared return types of the function it calls, or by the declarations binding the name it passes —
- * a lambda parameter included, through the call chain the lambda is an argument of. An SSE body is
- * judged the same way: the `data:` of every `sendEvent` call, and the frame constructors inside every
- * function that builds an [SseFrame] for `sendFrame`. It never guesses: an argument or payload it
- * cannot read is a finding of its own ([unreadRouteBodies], [unreadSsePayloads]), so no body passes
- * unjudged.
- *
- * Comments are not code: every source is read through [withoutComments], so a commented-out call is
- * no call site and a bracket inside a comment does not split an argument.
+ * Root discovery for the console DTO contract (ADR-0082): every `@Serializable` body a route in `routes/` responds
+ * with, JSON or SSE frame, must be a root in [DtoContract], reachable from one, or in
+ * [DtoContract.routeBodiesNotMirrored]. The scan reads source, and a body it cannot read is a finding of its own.
  */
 class DtoContractRootsTest {
     @Test
@@ -417,11 +405,9 @@ private fun unreadRouteBodies(
         .sorted()
 
 /**
- * The `@Serializable` types every SSE payload in [sources] streams that no root reaches and no
- * exemption covers. The payloads are read from source like the respond arguments: the `data:` of a
- * `sendEvent` call, and the frame constructors inside every function that builds an [SseFrame] —
- * the builders `sendFrame` hands the wire to. A hand-built JSON payload names no such type; it is
- * an unread finding of its own, so an SSE body cannot pass unjudged either.
+ * The `@Serializable` types every SSE payload in [sources] streams that no root reaches and no exemption covers:
+ * the `data:` of a `sendEvent` call and the frame constructors of every [SseFrame] builder. A hand-built JSON
+ * payload is an unread finding of its own.
  */
 private fun unrootedSsePayloads(
     sources: Map<String, String>,
@@ -561,11 +547,8 @@ private fun routeSources(): Map<String, String> =
         .associate { it.name to it.readText() }
 
 /**
- * Every `@Serializable` type the main sources declare, from their compiled classes. The whole tree,
- * not `homer.app.models` alone: a route may respond with a wire type another package declares — the
- * external runner's protocol DTOs are one — and such a body is judged like any other. Nested classes
- * included: a nested type shares its outer class's file (`Outer$Nested.class`), so a `$` filter would
- * drop every nested body from the judgement.
+ * Every `@Serializable` type the main sources declare, from their compiled classes: the whole tree, not only
+ * `homer.app.models`, and nested classes too (`Outer$Nested.class`), which a `$` filter would drop.
  */
 private fun serializableTypes(): Set<String> {
     val models = File(ErrorResponse::class.java.getResource("ErrorResponse.class")!!.toURI()).parentFile
@@ -604,11 +587,8 @@ private fun functionReturns(): Map<String, Set<String>> =
     )
 
 /**
- * Every `fun` in [sources], by name, with the capitalized names in its declared return type: a
- * `fun inspect(agent: Agent): List<LangGraphGraphInfo>` gives `inspect` → `LangGraphGraphInfo`. A route
- * that responds with a call's result (`respond(service.inspect(agent))`) is judged against these.
- * The lookup is by name, so every function of that name contributes and no caller is missed; a function
- * whose return type is inferred or a bare type parameter contributes no name of its own.
+ * Every `fun` in [sources], by name, with the capitalized names in its declared return type (`inspect` to
+ * `LangGraphGraphInfo`). The lookup is by name, so no caller is missed; an inferred return type adds none.
  */
 private fun functionReturns(sources: List<String>): Map<String, Set<String>> {
     val returns = mutableMapOf<String, MutableSet<String>>()
@@ -1040,10 +1020,8 @@ private fun endOfLiteral(
 }
 
 /**
- * [source] with every comment blanked to spaces, newlines kept: comment text is not code, so its
- * `respond` calls are no call sites and its brackets split no argument. String literals are copied
- * verbatim — a `//` inside one is text — and offsets are preserved, so an index into [source] is an
- * index into the result.
+ * [source] with every comment blanked to spaces, newlines kept, so comment text is no call site; string
+ * literals are copied verbatim and offsets are preserved.
  */
 private fun withoutComments(source: String): String {
     val out = StringBuilder(source.length)

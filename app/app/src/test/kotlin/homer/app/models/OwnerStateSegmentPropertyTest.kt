@@ -13,13 +13,9 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 /**
- * The owner-to-segment rule decides which principal's checkpoints a run can reach, so its
- * character classes are the security boundary of ADR-0046: a name accepted verbatim that a
- * second name can also produce merges two principals' state, and a name keeping a separator,
- * a leading dot or the reserved leading `_` reaches a bucket it must not. `AppConfigSerializerTest`
- * pins the named edges by example; these properties range over the classes themselves, mixing
- * valid characters with their boundary neighbours. The rule lives in a private function, so
- * every assertion goes through [AppConfig.resolveLangGraphStateDir].
+ * The owner-to-segment rule picks which principal's checkpoints a run reaches, so its character classes are the
+ * boundary of ADR-0046: a name accepted verbatim that another name also produces merges two principals' state.
+ * The properties range over the classes through [AppConfig.resolveLangGraphStateDir]; the rule is private.
  */
 class OwnerStateSegmentPropertyTest {
     private val root = "/srv/checkpoints"

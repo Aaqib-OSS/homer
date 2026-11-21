@@ -132,9 +132,7 @@ gracefulStopSeconds: 300""",
 
     @Test
     fun `AppConfig init reports a workload violation before an extraUploads one`() {
-        // The kubernetes rules fire in the order they always have — the workload
-        // bounds first, then extraUploads — so a config breaking both keeps naming
-        // the workload one. See ADR-0108.
+        // The kubernetes rules fire as workload bounds, then extraUploads, so a config breaking both names the workload.
         val ex =
             assertFailsWith<IllegalArgumentException> {
                 AppConfig(

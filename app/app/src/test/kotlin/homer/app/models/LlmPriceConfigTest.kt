@@ -78,9 +78,7 @@ class LlmPriceConfigTest {
 
     @Test
     fun `an underscore hostname is accepted`() {
-        // java.net.URI resolves a null host for this RFC-3986-legal reg-name (it can't
-        // parse it as server-based syntax); the SSRF check must not misread that as "no
-        // host" and reject an otherwise-safe URL.
+        // java.net.URI gives a null host for this legal reg-name; the SSRF check must not read that as "no host".
         cfg(url = "https://spend_svc.internal/session/{sessionId}")
     }
 
