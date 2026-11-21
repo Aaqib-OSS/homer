@@ -8,7 +8,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration
 
-/** Owns the pod's process control: the `setsid` launch wrapper, pgid file, probe, and interrupt-grace/pod-wide kill paths. */
+/** Owns the pod's process control: the process-group launch wrapper, pgid file, `setsid -w` probe, and grace/pod-wide kill paths. */
 internal class PodProcessControl(
     private val execClient: KubernetesExecClient,
     private val namespace: String,
@@ -18,34 +18,36 @@ internal class PodProcessControl(
 ) {
     private val pgidCounter = AtomicLong(0)
 
-    /** The pod's `setsid` argv prefix, or null where it has none. Probed only when a grace is used. */
-    private val setsidPrefix: List<String>? by lazy { probeSetsid() }
+    /** The pod's `setsid -w` argv prefix, or none where it lacks one. Probed only when a grace is used. */
+    private val setsidPrefix: List<String> by lazy { if (probeSetsidWait()) SETSID_WAIT else emptyList() }
 
     /**
      * The pod-side file this command's group leader records its pid (its pgid) in, under `HMR_WORK_DIR` or else a
-     * relative `.homer`; null without [interruptGrace] or a pod `setsid`, and the launch is then unchanged (ADR-0108).
+     * relative `.homer`; null without [interruptGrace], and the launch is then unchanged (ADR-0108).
      */
     fun pgidFileFor(
         env: Map<String, String>,
         interruptGrace: Duration?,
     ): String? {
-        if (interruptGrace == null || setsidPrefix == null) return null
+        if (interruptGrace == null) return null
         val dir = env[EnvConstants.WORK_DIR]?.takeIf { it.isNotBlank() } ?: FALLBACK_PGID_DIR
         return "$dir/homer-exec-${pgidCounter.incrementAndGet()}.pgid"
     }
 
     /**
-     * [command] wrapped to lead its own process group: under `setsid` an inner `sh` records its pid, the group id, to
-     * `$0`, sources a non-null [envFile] and `exec`s the argv, so the command keeps its pid, exit code, streams and
-     * stdin (ADR-0041).
+     * [command] run in its own process group: a wrapper `sh`, under `setsid -w` where the pod has it, records its pid
+     * to `$0` only when it leads its group, sources a non-null [envFile], and waits for the argv in a child, so a signal
+     * death exits 128 + n; the command keeps its exit code, streams and stdin (ADR-0041).
      */
-    fun setsidLaunch(
+    fun groupLaunch(
         pgidFile: String,
         envFile: String?,
         command: List<String>,
     ): List<String> {
-        val launch = if (envFile != null) "f=\$1; shift; " + RemoteShell.sourceThenExec("\$f") else "exec \"\$@\""
-        return setsidPrefix.orEmpty() + listOf("sh", "-c", PGID_RECORD + launch, pgidFile) + listOfNotNull(envFile) + command
+        val launch = if (envFile != null) "f=\$1; shift; " + RemoteShell.sourceThenRun("\$f") else "(exec \"\$@\")"
+        // `trap :`, never `trap ''`, keeps the wrapper waiting through a group signal without the argv inheriting an ignore.
+        val wrapper = "trap : INT TERM HUP; $PGID_RECORD$launch; exit \$?"
+        return setsidPrefix + listOf("sh", "-c", wrapper, pgidFile) + listOfNotNull(envFile) + command
     }
 
     /**
@@ -62,13 +64,11 @@ internal class PodProcessControl(
     }
 
     /**
-     * The pod's `setsid` prefix, or null where it has none. util-linux's needs `-w` to wait for a forked child, or the exec
-     * channel could close before the command ends; BusyBox's takes no `-w` and waits itself.
+     * Whether the pod has util-linux's `setsid -w`, which waits for the child it forks. BusyBox's refuses `-w` and does not
+     * wait, so such a pod launches without `setsid`: the exec'd `sh` already leads its own group there.
      */
-    private fun probeSetsid(): List<String>? = SETSID_FORMS.firstOrNull { probeRuns(it) }
-
-    private fun probeRuns(prefix: List<String>): Boolean {
-        val probe = runCatching { execClient.start(namespace, podName, prefix + "true", stdin = false) }.getOrNull()
+    private fun probeSetsidWait(): Boolean {
+        val probe = runCatching { execClient.start(namespace, podName, SETSID_WAIT + "true", stdin = false) }.getOrNull()
         if (probe == null) return false
         return try {
             probe.waitFor(PROBE_WAIT_MS, TimeUnit.MILLISECONDS) && probe.exitValue() == 0
@@ -138,12 +138,15 @@ internal class PodProcessControl(
         private const val SIGNAL_SCRIPT_NAME = "homer-signal"
         private const val FALLBACK_PGID_DIR = ".homer"
 
-        /** `setsid` forms to probe, most preferred first. */
-        private val SETSID_FORMS = listOf(listOf("setsid", "-w"), listOf("setsid"))
+        private val SETSID_WAIT = listOf("setsid", "-w")
 
-        /** $0 is the pgid file: record the group leader's pid there, before the launch sources or `exec`s anything. */
+        /**
+         * $0 is the pgid file: the wrapper records its pid there only when `/proc` shows it leads its group, before the
+         * launch sources or runs anything; `g=` first, so a failed read cannot match an inherited `g`.
+         */
         private const val PGID_RECORD =
-            "p=\"\$0\"; d=\"\${p%/*}\"; mkdir -p \"\$d\" 2>/dev/null; echo \$\$ > \"\$p\" 2>/dev/null; "
+            "p=\"\$0\"; d=\"\${p%/*}\"; mkdir -p \"\$d\" 2>/dev/null; " +
+                "g=; read -r _ _ _ _ g _ 2>/dev/null < /proc/\$\$/stat; [ \"\$g\" = \"\$\$\" ] && echo \$\$ > \"\$p\" 2>/dev/null; "
 
         private val logger = LoggerFactory.getLogger(PodProcessControl::class.java)
     }
