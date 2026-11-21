@@ -336,12 +336,9 @@ class AgentInputResolver(
     }
 
     /**
-     * Re-validates a finished run's stored (envName-keyed) inputs for retry against the CURRENT
-     * agent definition, so retry cannot bypass the fresh-request input policy: a required input
-     * with no stored value is rejected, each stored value is re-run through [ParamValidator], and
-     * values for removed inputs are dropped. Transformers are NOT re-applied, control markers
-     * ([ReservedEnvNames.isReserved]) are kept verbatim, and `inputSchema` is not re-checked — the
-     * envName-keyed, string-erased map cannot be validated against a paramName-keyed schema.
+     * A finished run's stored (envName-keyed, post-transformer) inputs re-validated by [ParamValidator] against the
+     * CURRENT input definitions for retry and resume; a missing required input rejects, removed inputs are dropped,
+     * control markers kept. Transformers are not re-applied; `inputSchema` is not re-checked (no body is stored).
      */
     fun resolveRetryParams(
         agent: Agent,
