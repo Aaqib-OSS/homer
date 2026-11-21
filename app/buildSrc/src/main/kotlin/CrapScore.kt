@@ -37,8 +37,8 @@ import kotlin.math.pow
 
 /**
  * CRAP score per Kotlin function body: `cc² × (1 − cov)³ + cc`, with `cc` counted from the source and
- * `cov` from Kover's per-line XML report (ADR-0081). Only [Parser] loads compiler classes, so use it
- * only inside `CrapReportTask`'s worker classloader; the rest works on already-read text.
+ * `cov` from Kover's per-line XML report. It references compiler (PSI) types, so call it only inside
+ * `CrapReportTask`'s worker classloader (ADR-0081); everything but [Parser] takes parsed or read input.
  */
 object CrapScore {
     const val DEFAULT_THRESHOLD = 30.0

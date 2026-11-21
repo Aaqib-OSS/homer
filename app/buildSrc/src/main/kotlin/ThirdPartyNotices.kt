@@ -116,7 +116,7 @@ object ThirdPartyNotices {
 
     /**
      * Parses jk1's `project-licenses-for-check-license-task.json`, dropping unnamed license entries
-     * (each duplicates a named sibling); a module left with none renders under [UNKNOWN_LICENSE].
+     * (each seen so far duplicates a named sibling); a module left with none renders under [UNKNOWN_LICENSE].
      */
     fun parseReport(json: String): List<Module> {
         val root = JsonSlurper().parseText(json) as Map<*, *>

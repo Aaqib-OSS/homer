@@ -1,6 +1,8 @@
 #!/bin/sh
 # homer-join — register a parallel fan-out join from a running command; the JSON body comes on stdin (ADR-0026).
-# Reads HMR_API_URL and HMR_CALLBACK_TOKEN from the environment; usage and exit codes: AGENT.md.
+# Exits 0 on success, 2 on a usage or transport error (dead origin process, unknown or undispatchable agent).
+
+# Reads HMR_API_URL and HMR_CALLBACK_TOKEN from the environment; usage: AGENT.md.
 
 set -u
 

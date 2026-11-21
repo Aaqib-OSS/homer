@@ -66,8 +66,8 @@ object ProcessRunner {
         }
 
         /**
-         * SIGINTs the command's own process group, waits up to [grace] (null: no wait), then [kill]s
-         * what is left; without a known group only the [kill] runs, never signalling the runner's group. ADR-0108.
+         * SIGINTs the command's own process group, waits up to [grace] (null: no wait), then [kill]s what
+         * is left; with no known group the SIGINT is skipped, never aimed at the runner's group. ADR-0108.
          */
         fun interrupt(grace: Duration?) {
             if (!process.isAlive) return
@@ -106,8 +106,8 @@ object ProcessRunner {
         }
 
         /**
-         * Waits for both pumps to hand over what they hold, within [PUMP_JOIN] plus what [remaining] of
-         * the op's timeout allows, and returns the streams abandoned with chunks unsent (ADR-0066).
+         * Waits for both pumps to hand over what they hold, for the longer of [PUMP_JOIN] and [remaining]
+         * (what is left of the op's timeout), and returns the streams abandoned with chunks unsent (ADR-0066).
          */
         private suspend fun reap(
             finished: Boolean,

@@ -350,7 +350,7 @@ internal sealed interface PollVerdict {
 
 /**
  * Judges a failed `next` poll of [sessionId], [unreachableMs] after the last success: 404 loses the
- * session, other 4xx, 5xx and connection errors retry until past [heartbeatTimeout] (ADR-0066).
+ * session, another 4xx is retried and logged, a 5xx or connection error is retried until past [heartbeatTimeout].
  */
 internal fun pollFailureVerdict(
     e: Exception,

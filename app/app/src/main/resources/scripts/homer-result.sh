@@ -1,6 +1,8 @@
 #!/bin/sh
 # homer-result — fetch a large continuation result by reference (ADR-0025).
-# Reads HMR_API_URL, HMR_CALLBACK_TOKEN and HMR_RESULT_TOKEN from the environment; usage and exit codes: AGENT.md.
+# Exits 0 on success, 2 on a usage or transport error (invalid or expired token, artifact gone, oversized).
+
+# Reads HMR_API_URL, HMR_CALLBACK_TOKEN and HMR_RESULT_TOKEN from the environment; usage: AGENT.md.
 
 set -u
 

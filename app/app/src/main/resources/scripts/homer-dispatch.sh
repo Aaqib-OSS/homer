@@ -1,6 +1,8 @@
 #!/bin/sh
 # homer-dispatch — start another agent immediately from a running command (ADR-0022, ADR-0023).
-# Reads HMR_API_URL and HMR_CALLBACK_TOKEN from the environment; usage and exit codes: AGENT.md.
+# Exits 0 on success, 2 on a usage or transport error (dead origin process, unknown or undispatchable agent).
+
+# Reads HMR_API_URL and HMR_CALLBACK_TOKEN from the environment; usage: AGENT.md.
 
 set -u
 

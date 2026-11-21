@@ -241,11 +241,12 @@ per-runner `env` values that reach the run through `RunnerSession.env` are maske
   post is itself a `next` long-poll racing the poller's: posting inline would park the dispatcher for a
   full poll window with the next op already queued. The op channel is small and bounded, as Homer hands
   out one op at a time; a hand-off that finds it full means Homer broke that, and the session is dropped
-  rather than an op discarded. A persistent 5xx counts as Homer being unreachable, against the same
-  heartbeat deadline as a connection error.
+  rather than an op discarded. A graceful finish waits for pending posts, which Homer answers at once
+  for a closed session. A persistent 5xx counts as Homer being unreachable, against the same heartbeat
+  deadline as a connection error.
 - **Output chunks.** A 5xx or 429 on a chunk post is retried: Homer may already hold an earlier attempt,
   and dropping the chunk would desync the stream's `seq` so Homer refuses every later chunk of the
-  command. A 404, 409 or 413 is a final refusal. A chunk given up on still counts, so the result's counts
+  command. Any other 4xx (404, 409, 413) is a final refusal. A chunk given up on still counts, so the result's counts
   show the shortfall.
 - **Draining after exit.** The pumps' tail is posted after the process is gone. A fixed 5 s join covers a
   post already in flight. A read still blocked after it is parked on a pipe a grandchild holds open,

@@ -1,6 +1,8 @@
 #!/bin/sh
 # homer-tag — declare a subject tag against the running command's own run (ADR-0060).
-# Reads HMR_API_URL and HMR_CALLBACK_TOKEN from the environment; usage and exit codes: AGENT.md.
+# Exits 0 on success, 2 on a usage, transport or rejection error (terminal run, undeclared key, bad value, tag cap).
+
+# Reads HMR_API_URL and HMR_CALLBACK_TOKEN from the environment; usage: AGENT.md.
 
 set -u
 

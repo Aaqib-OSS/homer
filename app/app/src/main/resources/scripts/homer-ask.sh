@@ -212,7 +212,7 @@ dispatch_question() {
 }
 
 # POSTs a dispatch group; prints the dispatch id, then one question id per line in ask order.
-# Args: questions-json, agent, answer_param, params-json-object-body, ttl.
+# Args: questions-json, agent, answer_param, params-json-object-body, ttl (optional).
 dispatch_group() {
     ttl_field=""
     [ -n "${5:-}" ] && ttl_field=",\"ttlSec\":$5"
