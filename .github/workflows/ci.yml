@@ -226,7 +226,8 @@ jobs:
           retention-days: 7
 
   # 3.12 is the package floor, 3.14 the images' interpreter (ADR-0114); the 3.14 leg also audits and reports.
-  homer-python-tests:
+  homer-python-test-legs:
+    name: homer-python-tests (${{ matrix.python }})
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -267,6 +268,17 @@ jobs:
           name: reports-homer-python-tests
           path: reports.tgz
           retention-days: 7
+
+  # The main ruleset requires the context homer-python-tests; a matrix job reports one context per leg.
+  homer-python-tests:
+    needs: homer-python-test-legs
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - run: test "$LEGS" = success
+        env:
+          LEGS: ${{ needs.homer-python-test-legs.result }}
 
   # tools/release/notes.sh writes the GitHub release page (release.yml's docs and release-notes
   # jobs), which run on tags only.
