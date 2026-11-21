@@ -990,13 +990,15 @@ all agents, a trailing `*` (e.g. `"deploy-*"`) matches by prefix, anything
 else is an exact match.
 
 **`role: admin`** grants every action on every agent plus server-wide
-operations: `POST /api/v1/agents/reload`, `GET /api/v1/costs*`, the
+operations: `POST /api/v1/agents/reload`, `GET /api/v1/agents/load-errors`,
+`GET /api/v1/costs*`, the
 server `GET /api/v1/status`, `GET /api/v1/runners`,
 `GET /api/v1/runners/queue`, and `POST /api/v1/agents/{agentName}/cron-run`
 (a non-admin gets `404` there, the same as an unknown agent; the others
 answer `403` — except the two runner reads, which a `read` grant on `*` also
 reaches with operator-chosen names withheld, see
-[ADR-0111](../docs/adr/0111-read-grant-on-star-reads-runner-state.md)), plus visibility of rows with no matching owner. It is mutually exclusive with a meaningful `grants` list — if
+[ADR-0111](../docs/adr/0111-read-grant-on-star-reads-runner-state.md)), plus visibility of rows with no matching owner. `GET /api/v1/agents/load-errors` answers a non-admin the body-less `404`
+of a path that was never mounted, not `403`. It is mutually exclusive with a meaningful `grants` list — if
 `role` is set, `grants` is ignored.
 
 **Validation at startup:** a principal with neither `role: admin` nor a

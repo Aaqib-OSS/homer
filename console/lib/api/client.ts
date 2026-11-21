@@ -15,6 +15,7 @@ import type {
   CostByTagResponse,
   ProcessFilters,
   AgentExecutionResponse,
+  AgentLoadErrorsResponse,
   AgentReloadResult,
   AgentFileListResponse,
   AgentFileContentResponse,
@@ -270,6 +271,11 @@ class HomerApiClient {
 
   async reloadAgents(): Promise<AgentReloadResult> {
     return this.request<AgentReloadResult>('/api/v1/agents/reload', { method: 'POST' });
+  }
+
+  // Admin-only: a caller without the admin role gets the 404 an unmounted path answers.
+  async getAgentLoadErrors(): Promise<AgentLoadErrorsResponse> {
+    return this.request<AgentLoadErrorsResponse>('/api/v1/agents/load-errors');
   }
 
   async executeAgent(

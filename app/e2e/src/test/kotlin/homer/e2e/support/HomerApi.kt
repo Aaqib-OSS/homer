@@ -60,6 +60,9 @@ object HomerApi {
 
     suspend fun agents(): AgentsList = decode(E2e.client.get("/api/v1/agents"))
 
+    /** The last completed agent scan's load errors; admin-only, and no credential gets the `401`. */
+    suspend fun agentLoadErrors(): LoadErrors = decode(E2e.client.get("/api/v1/agents/load-errors"))
+
     suspend fun questions(
         status: String? = null,
         processId: Int? = null,

@@ -6,24 +6,34 @@ import homer.app.executors.ProcessExecutor
 import homer.app.executors.ProcessFactory
 import homer.app.fixtures.AgentFixtures
 import homer.app.fixtures.ApiRouteTestBase
+import homer.app.fixtures.authorizerFor
+import homer.app.fixtures.installGrantsApp
 import homer.app.fixtures.mountApiV1Routes
+import homer.app.infra.AgentLoadErrors
+import homer.app.models.Action
 import homer.app.models.Agent
+import homer.app.models.AgentLoadErrorsResponse
 import homer.app.models.AgentReloadResult
 import homer.app.models.AgentsListResponse
 import homer.app.models.Command
 import homer.app.models.CronConfig
+import homer.app.models.Grant
 import homer.app.models.Param
 import homer.app.models.ParamSource
 import homer.app.models.ParamType
 import homer.app.models.ProcessCreationResult
+import homer.app.models.TokenConfig
+import homer.app.services.AgentsService
 import homer.app.services.Authorizer
 import homer.app.services.CronSchedulerService
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.testing.testApplication
@@ -41,8 +51,8 @@ import kotlin.test.assertTrue
 
 /**
  * The `AgentRoutes` endpoints through the real [apiV1Routes]: `GET /schemas/agent`, `GET /agents`,
- * `POST /agents/reload`, `POST /agents/{name}/debug`, `POST /agents/{name}/cron-run` and
- * `GET /agents/{name}/langgraph`. The agent-file endpoints are covered by `AgentFilesRoutesTest`.
+ * `POST /agents/reload`, `GET /agents/load-errors`, `POST /agents/{name}/debug` and
+ * `POST /agents/{name}/cron-run`. The agent-file endpoints are covered by `AgentFilesRoutesTest`.
  */
 class AgentRoutesTest : ApiRouteTestBase() {
     // ========== GET /schemas/agent Tests ==========
@@ -293,6 +303,73 @@ class AgentRoutesTest : ApiRouteTestBase() {
             verify(exactly = 1) { parallelRunsManager.onAgentsReloaded(emptySet(), emptySet()) }
         }
 
+    // ========== GET /agents/load-errors Tests ==========
+
+    private val loadErrorsTokens =
+        mapOf(
+            "admin" to TokenConfig(token = LOAD_ERRORS_ADMIN_TOKEN, role = "admin"),
+            "reader" to TokenConfig(token = LOAD_ERRORS_READER_TOKEN, grants = listOf(Grant(listOf("*"), listOf(Action.READ)))),
+        )
+
+    private fun loadErrorsDeps(loadErrors: AgentLoadErrors): ApiDeps {
+        val agentsService = mockk<AgentsService>(relaxed = true)
+        every { agentsService.loadErrors } returns loadErrors
+        return mockk<ApiDeps>(relaxed = true) {
+            every { authorizer } returns authorizerFor(loadErrorsTokens)
+            every { this@mockk.agentsService } returns agentsService
+        }
+    }
+
+    @Test
+    fun `GET agents load-errors serves the last scan's errors to an admin, uncached`() =
+        testApplication {
+            application { installGrantsApp(loadErrorsTokens, loadErrorsDeps(AgentLoadErrors(listOf("Agent 'a' failed"), 7))) }
+
+            val response =
+                client.get("/api/v1/agents/load-errors") { header(HttpHeaders.Authorization, "Bearer $LOAD_ERRORS_ADMIN_TOKEN") }
+
+            assertEquals(HttpStatusCode.OK, response.status)
+            assertEquals("no-store", response.headers[HttpHeaders.CacheControl])
+            assertEquals(
+                AgentLoadErrorsResponse(errors = listOf("Agent 'a' failed"), truncated = 7),
+                apiJson.decodeFromString<AgentLoadErrorsResponse>(response.bodyAsText()),
+            )
+        }
+
+    @Test
+    fun `GET agents load-errors serves no errors when the last scan found none`() =
+        testApplication {
+            mountApiV1Routes { every { agentsService.loadErrors } returns AgentLoadErrors.EMPTY }
+
+            val response = client.get("/api/v1/agents/load-errors")
+
+            assertEquals(HttpStatusCode.OK, response.status)
+            assertEquals(AgentLoadErrorsResponse(emptyList(), 0), apiJson.decodeFromString(response.bodyAsText()))
+        }
+
+    @Test
+    fun `a read grant that is not admin gets the body-less 404 an unknown path answers`() =
+        testApplication {
+            application { installGrantsApp(loadErrorsTokens, loadErrorsDeps(AgentLoadErrors(listOf("Agent 'a' failed"), 0))) }
+
+            val denied =
+                client.get("/api/v1/agents/load-errors") { header(HttpHeaders.Authorization, "Bearer $LOAD_ERRORS_READER_TOKEN") }
+            val unknown =
+                client.get("/api/v1/agents/no-such-path") { header(HttpHeaders.Authorization, "Bearer $LOAD_ERRORS_READER_TOKEN") }
+
+            assertEquals(HttpStatusCode.NotFound, denied.status)
+            assertEquals("", denied.bodyAsText(), "the denial carries no body")
+            assertEquals(unknown.status to unknown.bodyAsText(), denied.status to denied.bodyAsText())
+        }
+
+    @Test
+    fun `GET agents load-errors without credentials is a 401`() =
+        testApplication {
+            application { installGrantsApp(loadErrorsTokens, loadErrorsDeps(AgentLoadErrors.EMPTY)) }
+
+            assertEquals(HttpStatusCode.Unauthorized, client.get("/api/v1/agents/load-errors").status)
+        }
+
     // ========== POST /agents/{name}/debug Tests ==========
 
     @Test
@@ -514,4 +591,9 @@ class AgentRoutesTest : ApiRouteTestBase() {
 
             assertEquals(HttpStatusCode.NotFound, response.status)
         }
+
+    private companion object {
+        const val LOAD_ERRORS_ADMIN_TOKEN = "load-errors-admin-token-aaaaaaaaaaaaa"
+        const val LOAD_ERRORS_READER_TOKEN = "load-errors-reader-token-aaaaaaaaaaaa"
+    }
 }

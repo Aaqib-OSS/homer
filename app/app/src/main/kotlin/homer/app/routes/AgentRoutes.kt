@@ -8,6 +8,7 @@ import homer.app.models.AgentFileListResponse
 import homer.app.models.AgentFileWriteRequest
 import homer.app.models.AgentFileWriteResponse
 import homer.app.models.AgentInfo
+import homer.app.models.AgentLoadErrorsResponse
 import homer.app.models.AgentsListResponse
 import homer.app.models.CreateAgentRequest
 import homer.app.models.CreateAgentResponse
@@ -93,6 +94,14 @@ private fun Route.agentDefinitionRoutes(deps: AgentRouteDeps) {
             }
             parallelRunsManager.onAgentsReloaded(result.updated.toSet(), result.removed.toSet())
             call.respond(result)
+        }
+
+        // Admin-only; a denial is the body-less 404 an unmounted path answers (ADR-0047 rule 3), not
+        // `deniedUnlessAdmin`'s 403. Reads the last scan's errors from memory and never rescans.
+        get("/agents/load-errors") {
+            if (!authorizer.isAdmin(call.principalName())) return@get call.respondNotFound()
+            val loadErrors = agentsService.loadErrors
+            call.respondNoStore(AgentLoadErrorsResponse(loadErrors.errors, loadErrors.truncated))
         }
 
         post("/agents") {

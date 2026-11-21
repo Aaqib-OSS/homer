@@ -19,6 +19,8 @@ internal object AgentReloadDiff {
             AgentCatalogState(
                 agents = mergeAgents(state.agents, scan.parsed, removed),
                 sourceDirs = mergeSourceDirs(state.sourceDirs, scan.sourceDirs, removed),
+                // This scan's errors replace the last scan's, published in the same CAS as the catalog.
+                loadErrors = AgentLoadErrors.of(scan.errors),
             )
         return ReloadComputation(newState, result(state.agents, scan, removed))
     }
@@ -69,10 +71,14 @@ internal object AgentReloadDiff {
     }
 }
 
-/** The published agent catalog: the loaded agents and each one's directory relative to the search path. */
+/**
+ * The published agent catalog: the loaded agents, each one's directory relative to the search path,
+ * and the load errors of the scan that published it.
+ */
 internal data class AgentCatalogState(
     val agents: Map<String, Agent>,
     val sourceDirs: Map<String, String>,
+    val loadErrors: AgentLoadErrors = AgentLoadErrors.EMPTY,
 )
 
 /** One merge/diff computation of a scan against a state snapshot: the state to publish plus the caller-facing diff. */

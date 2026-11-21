@@ -638,6 +638,9 @@ export interface AgentReloadResult {
   errors: string[];
 }
 
+// The last agent scan's load errors, with the messages the server did not keep counted.
+export interface AgentLoadErrorsResponse { errors: string[]; truncated: number }
+
 // Password-auth — mirrors AuthConfig.Password's HTTP responses in app/SERVER.md.
 export interface LoginRequest {
   username: string;
