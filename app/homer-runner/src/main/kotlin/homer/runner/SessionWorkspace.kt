@@ -1,5 +1,7 @@
 package homer.runner
 
+import homer.app.infra.DanglingLinkException
+import homer.app.infra.PathSafety
 import homer.app.infra.coRunCatching
 import homer.app.runners.DownloadMode
 import homer.app.runners.TarStreams
@@ -8,6 +10,7 @@ import homer.app.runners.external.RunnerOp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
@@ -32,18 +35,21 @@ internal class SessionWorkspace(
     var createdRoot: Boolean = false
         private set
 
+    /** [sessionRoot]'s realpath as created; transfers are contained against it, never against a later lookup. */
+    @Volatile
+    private var realRoot: Path? = null
+
     suspend fun execute(op: RunnerOp): OpResult =
         coRunCatching {
             withContext(Dispatchers.IO) {
                 when (op) {
                     is RunnerOp.CreateWorkspace -> {
-                        // createDirectory, not createDirectories: an existing root is refused, never reused.
-                        // Owner-only, so another local user cannot read a run's files through a shared
-                        // --root; no silent fallback where the mode is unsupported, the op fails instead.
-                        // CWE-732.
+                        // An existing root is refused, never reused. Owner-only, with no fallback where the
+                        // mode is unsupported: another local user must not read a run's files. CWE-732.
                         sessionRoot.parent.createDirectories()
                         Files.createDirectory(sessionRoot, PosixFilePermissions.asFileAttribute(OWNER_ONLY))
                         createdRoot = true
+                        realRoot = sessionRoot.toRealPath()
                         listOf("workdir", "artifacts", ".homer").forEach { sessionRoot.resolve(it).createDirectory() }
                         OpResult(op.opId, root = sessionRoot.toString())
                     }
@@ -107,15 +113,26 @@ internal class SessionWorkspace(
     }
 
     /**
-     * Lexical containment only, no realpath: the commands this worker runs execute as the same
-     * UID with code Homer sent, so a symlink resolving outside the session root defends no
-     * boundary that code could not cross directly. Accepted risk.
+     * [remoteRelative] under [sessionRoot] lexically and under the root's realpath as created, so a symlink a run
+     * planted, the root itself included, cannot steer a transfer outside it (CWE-59); a dangling link on the path is
+     * refused. A later swap is AR-04/AR-05.
      */
     private fun contained(remoteRelative: String): Path {
         val candidate = sessionRoot.resolve(remoteRelative).normalize()
-        require(candidate.startsWith(sessionRoot)) { "path '$remoteRelative' escapes the session root" }
+        val root = realRoot ?: throw IllegalArgumentException("path '$remoteRelative' refused: the session root has no resolved path")
+        try {
+            PathSafety.assertContainedUnder(sessionRoot, root, candidate, failOnDanglingLink = true)
+        } catch (e: SecurityException) {
+            throw IllegalArgumentException("path '$remoteRelative' refused: ${refusalKind(e)}", e)
+        } catch (e: IOException) {
+            throw IllegalArgumentException("path '$remoteRelative' could not be checked: ${e::class.simpleName}", e)
+        }
         return candidate
     }
+
+    /** A fixed phrase for [e]; its own message carries host paths, which must not reach the server. */
+    private fun refusalKind(e: SecurityException): String =
+        if (e is DanglingLinkException) "passes through a dangling symlink" else "escapes the session root"
 
     fun deleteTree(path: Path) {
         if (!path.exists()) return

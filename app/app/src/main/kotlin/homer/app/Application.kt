@@ -2,7 +2,7 @@ package homer.app
 
 import com.charleskorn.kaml.Yaml
 import homer.app.auth.CsrfProtection
-import homer.app.config.logLevelSystemProps
+import homer.app.config.applyLogLevelOverrides
 import homer.app.config.resolveLlmPrice
 import homer.app.di.bootModules
 import homer.app.executors.ProcessExecutor
@@ -66,23 +66,13 @@ private val logger = LoggerFactory.getLogger("homer.app.Application")
 val serverId = UUID.randomUUID().toString()
 
 /**
- * Drain flag flipped to `true` at the very first instant of the
- * `ApplicationStopping` lifecycle event (before the in-flight job join loop).
- * Read by `GET /api/v1/readyz`, which returns `503` while draining and `200`
- * otherwise. Kept separate from `/livez` so a Kubernetes liveness probe does
- * **not** see 503 during drain and restart the pod mid-drain, defeating
+ * Drain flag set at the first instant of `ApplicationStopping`; `GET /api/v1/readyz` returns `503` while draining.
+ * Separate from `/livez` so a Kubernetes liveness probe does not restart the pod mid-drain, defeating
  * `server.shutdownDrainSec`.
  */
 val isDraining: AtomicBoolean = AtomicBoolean(false)
 
 fun main(args: Array<String>) {
-    // Apply HOMER_LOG_LEVELS overrides before any DI-created logger is built.
-    // Only set a property the operator hasn't pinned via -D, so a system
-    // property always wins over the env var.
-    logLevelSystemProps(System.getenv()).forEach { (key, value) ->
-        if (System.getProperty(key) == null) System.setProperty(key, value)
-    }
-
     val resolvedConfig = loadStartupConfig(args, hardenJvm = ::hardenServerJvm) ?: return
 
     logger.info(
@@ -105,7 +95,12 @@ internal fun loadStartupConfig(
     args: Array<String>,
     sysEnvResolver: SysEnvResolver = SysEnvResolver(),
     hardenJvm: () -> Unit,
-): AppConfig? = readStartupConfig(args)?.also { hardenJvm() }?.let { resolveStartupConfig(it, sysEnvResolver) }
+): AppConfig? {
+    applyLogLevelOverrides(System.getenv(), LoggerFactory.getILoggerFactory())
+    val config = readStartupConfig(args) ?: return null
+    hardenJvm()
+    return resolveStartupConfig(config, sysEnvResolver)
+}
 
 /** Loads the config file named by `args[0]`, capped at the bootstrap size; `null` = refused. */
 private fun readStartupConfig(args: Array<String>): AppConfig? {
@@ -127,13 +122,7 @@ private fun readStartupConfig(args: Array<String>): AppConfig? {
         return null
     }
 
-    // Cap the config file size at bootstrap before reading it into memory
-    // and handing it to kaml. We don't know the configured cap yet (it
-    // lives inside the file we're about to read), so use the same compile-
-    // time default that the model declares. Operators that legitimately
-    // need a larger config can split it or, once parsed, raise
-    // server.maxConfigFileBytes for subsequent reads (agent files,
-    // reload). Audit P1 #14.
+    // The configured cap lives inside this file, so the bootstrap read uses a fixed 1 MiB (CWE-400).
     val bootstrapConfigSizeCap: Long = 1L * 1024 * 1024
     val configSizeBytes = configFile.length()
     if (configSizeBytes > bootstrapConfigSizeCap) {
@@ -181,8 +170,8 @@ private fun resolveStartupConfig(
             )
         config.copy(
             globalEnv = resolvedGlobalEnv,
-            // Both from the RAW globalEnv, whose placeholders resolveMapValues erases; host-sourced
-            // values are secret so telemetry masks them (ADR-0047 §7), and agents may name them (ADR-0037).
+            // Both from the RAW globalEnv (resolveMapValues erases placeholders): host-sourced values are secret
+            // so telemetry masks them (ADR-0047 rule 7), and agents may name them (ADR-0037).
             sysEnvBackedGlobalEnvNames = sysEnvResolver.secretNamesFor(config.globalEnv),
             globalEnvSysEnvNames = SysEnvResolver.referencedNames(config.globalEnv),
             // Same resolution + secrecy contract as globalEnv, per runner: a
@@ -205,12 +194,9 @@ private fun resolveStartupConfig(
     }
 
 /**
- * Installs the routing-scoped ContentNegotiation and wires every API / MCP route
- * under the same rate-limit / authenticate / CSRF nesting as before.
- * ContentNegotiation is route-scoped (installed here, not at application level)
- * so /mcp can override it with McpJson. Ktor forbids mixing an application-level
- * install with a per-route one (DuplicatePluginException). StatusPages responds
- * outside routing and serializes apiJson explicitly.
+ * Installs the routing-scoped ContentNegotiation and wires every API / MCP route under the rate-limit /
+ * authenticate / CSRF nesting. Route-scoped so /mcp can override it with McpJson: Ktor forbids mixing an
+ * application-level install with a per-route one.
  */
 private fun Application.configureRouting(
     config: AppConfig,
@@ -223,12 +209,11 @@ private fun Application.configureRouting(
         }
 
         apiV1UnsecuredRoutes(deps)
-        // Token-authenticated at the route level (HMR_CALLBACK_TOKEN), NOT by
-        // the operator auth schemes — keep physically outside authenticate(...)
-        // so the two credential domains can never satisfy each other. ADR-0019.
+        // Token-authenticated at the route (HMR_CALLBACK_TOKEN), outside authenticate(...), so the callback and
+        // operator credential domains never satisfy each other. ADR-0019.
         callbackRoutes(deps.callbackDeps())
-        // Domain-token principal (runners.*.token), the same structural boundary
-        // as the callback token: outside authenticate(...). ADR-0066, §12.
+        // Domain-token principal (runners.*.token), outside authenticate(...) like the callback token, so the principal
+        // classes never satisfy each other. ADR-0066.
         runnerProtocolRoutes(deps.runnerRegistry.externalDomains, deps.runnerRegistry.queue)
         if (config.server.mcp.enabled) {
             questionsMcpRoutes(deps.mcpRouteDeps())
@@ -243,10 +228,8 @@ private fun Application.configureRouting(
             }
         } else {
             authenticate(*authNames.toTypedArray(), strategy = AuthenticationStrategy.FirstSuccessful) {
-                // Must nest INSIDE authenticate: both read the principal that
-                // authentication populates first. CsrfProtection guards session:
-                // callers (see ADR-0016); the rate limiter keys on the same
-                // principal (see ADR-0014).
+                // Must nest INSIDE authenticate: CsrfProtection (ADR-0016) and the rate limiter (ADR-0014) read the
+                // principal it populates.
                 install(CsrfProtection)
                 rateLimit(RateLimitName("perCaller")) {
                     apiV1Routes(deps)
@@ -262,10 +245,8 @@ private fun Application.configureRouting(
 }
 
 fun Application.configureServer(config: AppConfig) {
-    // `isDraining` is JVM-global and is never cleared on the way out, so clear it here: a freshly
-    // configured application is not draining. Without this, a second application configured in
-    // the same JVM starts up already draining — `/readyz` answering 503 and every run start
-    // refused with 503. See ADR-0102.
+    // `isDraining` is JVM-global and never cleared on exit, so reset it here: a second application in the same
+    // JVM would otherwise start draining (`/readyz` 503, runs refused). See ADR-0102.
     isDraining.set(false)
     validateStartupConfig(config)
     installKoin(config)
@@ -350,9 +331,8 @@ private fun Application.installHttpPlugins(config: AppConfig) {
     // Install RateLimit
     configureRateLimiting(config)
 
-    // Must be application-level and installed BEFORE configureAuth: the HMAC
-    // body-capture plugin reads the whole body in its onCall, before any
-    // routing-scoped limit would attach.
+    // Application-level, installed BEFORE configureAuth: the HMAC body-capture plugin reads the whole body in
+    // onCall, before any routing-scoped limit attaches.
     install(RequestBodyLimit) {
         bodyLimit { call -> runnerRouteBodyLimit(config, call.request.path(), call.request.runnerBearerToken()) }
     }
@@ -368,9 +348,7 @@ private fun Application.migrateDatabase(config: AppConfig): DatabaseService {
     try {
         databaseService.migrate()
     } catch (e: Exception) {
-        // Fail fast and loud: a boot that continues past a failed migration would
-        // serve with unreadable durable state. The alternative the ordering used
-        // to produce was worse but silent. See ADR-0020.
+        // Fail fast: continuing past a failed migration would serve with unreadable durable state. See ADR-0020.
         logger.error(
             "Database migration failed for {}; refusing to boot with unreadable durable state. See ADR-0020.",
             config.databasePath,
@@ -413,20 +391,14 @@ private fun Application.subscribeShutdownDrain(
     drainTimeout: Duration,
 ) {
     monitor.subscribe(ApplicationStopping) {
-        // Flip the readiness flag **first** so /readyz starts answering 503
-        // immediately, before we begin joining in-flight jobs. The load
-        // balancer / Kubernetes Service then stops sending new requests to
-        // this pod while the existing ones finish under the drain timeout.
-        // /livez stays 200 throughout, so the kubelet does not restart the
-        // pod mid-drain. Audit P1 #12.
+        // Readiness flips first so the load balancer stops routing here; /livez stays 200 so the
+        // kubelet does not restart the pod mid-drain.
         if (isDraining.compareAndSet(false, true)) {
             logger.info("Drain initiated; /api/v1/readyz will now answer 503")
         }
 
-        // The claim-queue consumers keep running **through** the drain: a run already queued for
-        // a static runner must still be claimed, or it burns the window and ends UNKNOWN. Their
-        // `while (isActive)` loops never complete on their own, so the drain excludes them from
-        // what it waits for and they are stopped right after it. See ADR-0066, ADR-0102.
+        // Claim-queue consumers run through the drain (a queued run must still be claimed) and are stopped right after
+        // it: their `while (isActive)` loops never complete, so the drain excludes them. See ADR-0066, ADR-0102.
         val consumerJobs = background.runnerRegistry.consumerJobs()
 
         background.cronSchedulerService.stop()
@@ -458,10 +430,8 @@ private fun Application.startBackgroundWork(
     databaseService: DatabaseService,
     background: BackgroundServices,
 ) {
-    // Reconcile interrupted runs BEFORE starting cron / sweep or accepting
-    // traffic, so a client never observes a CREATED/WORKING row that no
-    // coroutine on this instance is driving. The schema was opened and created
-    // above, before the first injection. See ADR-0020.
+    // Reconcile interrupted runs BEFORE cron / sweep start or traffic is accepted, so no client sees a
+    // CREATED/WORKING row that nothing on this instance drives. See ADR-0020.
     runBlocking { get<StartupReconciliation>().reconcile() }
 
     background.cronSchedulerService.start()

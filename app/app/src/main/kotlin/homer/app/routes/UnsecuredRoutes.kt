@@ -29,25 +29,15 @@ import io.ktor.server.sessions.sessions
 import io.ktor.server.sessions.set
 
 /**
- * The unsecured /api/v1 routes: liveness/readiness probes and the
- * /api/v1/auth login/logout/me endpoints — mounted outside the
- * bearer/HMAC authenticate wrapper so Kubernetes probes and the cookie
- * auth handshake work without a token.
+ * The unsecured /api/v1 routes: liveness/readiness probes and the /api/v1/auth login/logout/me endpoints, mounted
+ * outside the authenticate wrapper so probes and the cookie handshake work without a token.
  */
 internal fun Route.apiV1UnsecuredRoutes(deps: ApiDeps) {
-    // Probe endpoints must be reachable without a bearer token — kubelet
-    // and most reverse-proxy upstream checks don't send Authorization
-    // headers. Mounted **outside** the auth wrapper so Kubernetes can
-    // hit them on a bearer-secured deployment. Audit P1 #12.
+    // Outside the auth wrapper: kubelet and reverse-proxy probes send no Authorization header.
     probeRoutes(deps.unsecuredDeps())
 
-    // Auth routes — mounted OUTSIDE the authenticate(...) wrapper:
-    //  • /login is by definition unauthenticated;
-    //  • /logout must be idempotent and reachable even with a stale cookie;
-    //  • /me reads its one credential itself — a bearer token when the request
-    //    carries one, else the session cookie — and never FirstSuccessful, which
-    //    would answer one credential's request as the other's principal.
-    // Audit P0 #6 (long-term) / ADR-0011 (amended 2026-11-20), ADR-0059.
+    // Auth routes sit outside the wrapper: /login is unauthenticated, /logout works with a stale cookie, and
+    // /me reads its one credential itself, never FirstSuccessful, which would mix principals. See ADR-0011.
     val passwordScheme = deps.passwordScheme
     if (passwordScheme != null) {
         sessionAuthRoutes(deps.unsecuredDeps(), passwordScheme)
@@ -62,16 +52,13 @@ internal fun Route.apiV1UnsecuredRoutes(deps: ApiDeps) {
 private fun Route.probeRoutes(deps: UnsecuredDeps) {
     with(deps) {
         route("/api/v1") {
-            // Liveness — always 200. Wire `livenessProbe` here. Never wire
-            // it to /readyz: a 503 during drain would restart the pod
-            // mid-drain and defeat server.shutdownDrainSec.
+            // Liveness, always 200: wire `livenessProbe` here, never to /readyz, whose 503 during
+            // drain would restart the pod mid-drain.
             get("/livez") {
                 call.respond(LivenessResponse())
             }
-            // Readiness — 503 once ApplicationStopping fires, 200 otherwise.
-            // Wire `readinessProbe` and any upstream reverse-proxy health
-            // check here so the LB removes this pod from rotation as soon
-            // as drain starts while in-flight jobs finish.
+            // Readiness, 503 once ApplicationStopping fires: wire `readinessProbe` and upstream health checks
+            // here so the LB drops the pod when drain starts.
             get("/readyz") {
                 if (isDraining.get()) {
                     call.respond(HttpStatusCode.ServiceUnavailable, ReadinessResponse(status = "draining"))
@@ -137,7 +124,7 @@ private fun Route.meRoute(
     }
 }
 
-/** The `/me` answer for [credential]: `401` with no body, as every secured route refuses it, unless it is a token of [scheme]. */
+/** The `/me` answer for [credential]: `401` with no body, as every secured route does, unless a token of [scheme]. */
 private suspend fun ApplicationCall.respondBearerMe(
     authorizer: Authorizer,
     scheme: AuthConfig.Bearer,
@@ -152,7 +139,7 @@ private suspend fun ApplicationCall.respondBearerMe(
     respond(MeResponse(username = principal, role = if (held.admin) "admin" else null, grants = held.grants))
 }
 
-/** The `/me` answer for the session cookie: its user's role and grants, or `401` when it is absent, expired or revoked. */
+/** The `/me` answer for the session cookie: its user's role and grants, or `401` when absent, expired or revoked. */
 private suspend fun ApplicationCall.respondSessionMe(passwordScheme: AuthConfig.Password) {
     val session = sessions.get<HomerSession>()
     if (session == null ||
@@ -173,11 +160,8 @@ private suspend fun ApplicationCall.respondSessionMe(passwordScheme: AuthConfig.
 }
 
 /**
- * Whether [req] names a user of [passwordScheme] and that user's password. Constant-time-ish: when
- * the user does not exist, still run a bcrypt verify against a dummy hash so a 401 takes the same
- * wall-clock time as wrong-password. The dummy is bound to the configured `bcryptCost` (memoized in
- * PasswordVerifier) — a fixed cost-12 constant would leak which usernames exist whenever the
- * operator deviates from 12.
+ * Whether [req] names a user of [passwordScheme] and that user's password. A missing user still runs a bcrypt verify
+ * against a dummy hash bound to the configured `bcryptCost`, so a 401 takes the same time (ADR-0011).
  */
 private fun credentialsMatch(
     passwordVerifier: PasswordVerifier,

@@ -143,7 +143,7 @@ internal class ContinuationService(
         val inherited = inheritedOriginInputs({ origin }, registration.agentName, owner, agent, "Continuation", logger)
         agentInputResolver.validateSatisfiable(agent, params.keys + resumeParam + inherited.params.keys)
         val effectiveTtl = ttlSec ?: config.defaultTtlSec
-        if (effectiveTtl != null && effectiveTtl <= 0) {
+        if (effectiveTtl <= 0) {
             throw ValidationException("ttlSec must be > 0; got $effectiveTtl", "ttlSec")
         }
     }
@@ -296,7 +296,7 @@ internal class ContinuationService(
             resumeParam = resumeParam,
             originProcessId = originProcessId,
             originAgentName = registration.agentName,
-            expiresAt = effectiveTtl?.let { now + it },
+            expiresAt = now + effectiveTtl,
             createdAt = now,
             owner = owner,
         )

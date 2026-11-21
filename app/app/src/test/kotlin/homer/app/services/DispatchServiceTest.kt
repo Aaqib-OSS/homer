@@ -229,10 +229,10 @@ class DispatchServiceTest {
                 .create(7, "q", emptyList(), "h", "answer", emptyMap(), ttlSec = null)
             assertEquals(1300L, stored.captured.expiresAt)
 
-            // No ttl and no default: the dispatch never expires.
-            service(DispatchConfig(defaultTtlSec = null))
+            // No ttl and the stock config: the dispatch expires after seven days.
+            service()
                 .create(7, "q", emptyList(), "h", "answer", emptyMap(), ttlSec = null)
-            assertNull(stored.captured.expiresAt)
+            assertEquals(1000L + 604_800, stored.captured.expiresAt)
         }
 
     // ADR-0052: the target's `secret: true` names are snapshotted when the row is registered,

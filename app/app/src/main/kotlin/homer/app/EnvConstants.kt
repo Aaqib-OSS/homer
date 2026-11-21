@@ -18,13 +18,6 @@ object EnvConstants {
 
     const val PARENT_PROCESS_ID = "HMR_PARENT_PROCESS_ID"
     const val ROOT_PROCESS_ID = "HMR_ROOT_PROCESS_ID"
-    const val PARENT_PROCESS_HEADER = HomerHeaders.PARENT_PROCESS_ID
-
-    /** Read before `Authorization`: at an egress proxy that header belongs to the upstream. See ADR-0110. */
-    const val CALLBACK_TOKEN_HEADER = HomerHeaders.CALLBACK_TOKEN
-
-    const val AGENT_HEADER = HomerHeaders.AGENT
-    const val PROCESS_ID_HEADER = HomerHeaders.PROCESS_ID
 
     const val LG_THREAD = "HMR_LG_THREAD"
     const val LG_RESUME = "HMR_LG_RESUME"

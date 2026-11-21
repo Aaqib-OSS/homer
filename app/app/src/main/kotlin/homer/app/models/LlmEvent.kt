@@ -6,10 +6,9 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 
 /**
- * The harness-neutral event model every consumer of LLM harness output reads
- * (accounting, telemetry, the live stream, the console). A harness adapter
- * translates its CLI's own JSONL dialect into these; nothing downstream sees
- * the dialect. Six kinds, deliberately. See ADR-0070.
+ * The harness-neutral event model every consumer of LLM harness output reads (accounting, telemetry, live
+ * stream, console). A harness adapter translates its CLI's JSONL dialect into these six kinds; nothing
+ * downstream sees the dialect. See ADR-0070.
  */
 @Serializable
 sealed class LlmEvent {
@@ -140,5 +139,5 @@ val LlmEventJson: Json =
         classDiscriminator = "type"
     }
 
-/** Session ids are agent-controlled stdout (§12 rule 2): gate once, where they enter Homer. */
+/** Session ids are agent-controlled stdout (ADR-0047 rule 2): gate once, where they enter Homer. */
 fun gateSessionId(raw: String?): String? = raw?.takeIf { SESSION_ID_PATTERN.matches(it) }

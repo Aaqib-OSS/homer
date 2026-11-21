@@ -20,6 +20,7 @@ class ResultTokenServiceTest {
     private lateinit var db: DatabaseService
     private lateinit var repo: ResultTokenRepository
     private var now: Long = 1_000
+    private val summary = ResultEnvParam(SrcType.STD_OUT, "OUT", ResultTransformer.JsonPath("$.summary"))
 
     @BeforeEach
     fun setup(
@@ -73,7 +74,7 @@ class ResultTokenServiceTest {
     fun `resolve enforces TTL`() =
         runTest {
             val svc = service(ttlSec = 60)
-            val token = svc.mint(watchedProcessId = 1, path = "p", transformer = null, sizeBytes = 1, consumerAgent = "a")
+            val token = svc.mint(watchedProcessId = 1, path = "p", transformer = summary, sizeBytes = 1, consumerAgent = "a")
             // Still valid just before expiry, gone at/after expiry.
             now += 59
             assertTrue(svc.resolve(token) != null)
@@ -85,8 +86,8 @@ class ResultTokenServiceTest {
     fun `mint produces distinct tokens`() =
         runTest {
             val svc = service()
-            val a = svc.mint(1, "p", null, 1, "agent")
-            val b = svc.mint(1, "p", null, 1, "agent")
+            val a = svc.mint(1, "p", summary, 1, "agent")
+            val b = svc.mint(1, "p", summary, 1, "agent")
             assertTrue(a != b)
         }
 
@@ -94,7 +95,7 @@ class ResultTokenServiceTest {
     fun `sweepExpired reaps lapsed tokens`() =
         runTest {
             val svc = service(ttlSec = 60)
-            val token = svc.mint(1, "p", null, 1, "agent")
+            val token = svc.mint(1, "p", summary, 1, "agent")
             now += 120
             svc.sweepExpired()
             // The row is physically gone, not just TTL-guarded at resolve time.

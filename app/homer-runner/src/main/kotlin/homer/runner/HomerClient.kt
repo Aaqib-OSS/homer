@@ -45,12 +45,9 @@ import kotlin.time.Duration.Companion.seconds
 private const val ERROR_BODY_PREVIEW_BYTES = 512L
 
 /**
- * Ktor CIO client for the runner protocol. Long-polls run under [pollTimeout] (server `pollSec`
- * plus slack); tar transfers under [transferTimeout]. Error text never includes the token: it is
- * only ever placed in the header. Every call uses `prepareX(...).execute { }`, never the plain
- * `client.get`/`post`/`delete` shortcuts: those run Ktor's SaveBody step, which reads the *entire*
- * response body into memory before the call returns, defeating [toException]'s bounded read.
- * `execute`'s response is only ever consumed inside its own block, streamed.
+ * Ktor CIO client for the runner protocol: long-polls under [pollTimeout], tar transfers under
+ * [transferTimeout]. The token only rides the header, never error text. Calls use `prepareX(...).execute`,
+ * not the `client.get` shortcuts, whose SaveBody step buffers the whole body (ADR-0066).
  */
 class HomerClient(
     baseUrl: String,
@@ -208,11 +205,8 @@ class HomerClient(
 }
 
 /**
- * Every request carries the domain token, so the base URL must be `https://`, or plain
- * `http://` matching [LOOPBACK_HTTP_URL], the rule `langfuse.serverUrl` uses too, and it
- * may not carry userinfo — the shared rule refuses that too. The message names all three
- * causes and never echoes the URL, which may hold the userinfo.
- * CWE-319, CWE-522.
+ * Requires an `https://` base URL, or `http://` to a loopback host, without userinfo, as every request
+ * carries the domain token; the message never echoes the URL. CWE-319, CWE-522.
  */
 internal fun requireSecureBaseUrl(baseUrl: String) {
     require(isHttpsOrLoopbackHttpUrl(baseUrl)) {

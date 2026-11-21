@@ -12,15 +12,15 @@ import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 
 /**
- * A capability token for streaming [path] from one watched process's artifacts dir, through [resultTransformer]
- * when set, reusable until [expiresAt] and independent of the continuation that minted it. It is redeemed only
+ * A capability token for reading [path] from one watched process's artifacts dir through [resultTransformer],
+ * reusable until [expiresAt] and independent of the continuation that minted it. It is redeemed only
  * for a caller running [consumerAgent], so a leaked token is useless to any other agent. See ADR-0025.
  */
 data class ResultTokenRecord(
     val token: String,
     val watchedProcessId: Int,
     val path: String,
-    val resultTransformer: ResultEnvParam?,
+    val resultTransformer: ResultEnvParam,
     val sizeBytes: Long,
     val createdAt: Long,
     val expiresAt: Long?,
@@ -39,8 +39,7 @@ class ResultTokenRepository(
                 it[token] = record.token
                 it[watchedProcessId] = record.watchedProcessId
                 it[path] = record.path
-                it[resultTransformer] =
-                    record.resultTransformer?.let { t -> columnJson.encodeToString(ResultEnvParam.serializer(), t) }
+                it[resultTransformer] = columnJson.encodeToString(ResultEnvParam.serializer(), record.resultTransformer)
                 it[sizeBytes] = record.sizeBytes
                 it[createdAt] = record.createdAt
                 it[expiresAt] = record.expiresAt
@@ -79,16 +78,18 @@ class ResultTokenRepository(
         }
     }
 
-    private fun ResultRow.toRecord(): ResultTokenRecord =
-        ResultTokenRecord(
+    /** The row as a record; null for a row without a transformer, which no token can be redeemed through. */
+    private fun ResultRow.toRecord(): ResultTokenRecord? {
+        val transformer = this[ResultTokens.resultTransformer] ?: return null
+        return ResultTokenRecord(
             token = this[ResultTokens.token],
             watchedProcessId = this[ResultTokens.watchedProcessId],
             path = this[ResultTokens.path],
-            resultTransformer =
-                this[ResultTokens.resultTransformer]?.let { columnJson.decodeFromString(ResultEnvParam.serializer(), it) },
+            resultTransformer = columnJson.decodeFromString(ResultEnvParam.serializer(), transformer),
             sizeBytes = this[ResultTokens.sizeBytes],
             createdAt = this[ResultTokens.createdAt],
             expiresAt = this[ResultTokens.expiresAt],
             consumerAgent = this[ResultTokens.consumerAgent],
         )
+    }
 }

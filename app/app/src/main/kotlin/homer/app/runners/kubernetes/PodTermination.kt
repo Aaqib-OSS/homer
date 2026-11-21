@@ -58,7 +58,7 @@ private fun V1PodStatus.reasonOf(
 /**
  * The kubelet's message for the stop, else the main container's exit code, else `Pod phase <phase>`.
  * Never the main container's `terminated.message`: that is its termination log, which the agent can
- * write, so a secret it read would reach the run's failure text unredacted (ADR-0100 § Security).
+ * write, so a secret it read would reach the run's failure text unredacted (ADR-0100).
  */
 private fun V1PodStatus.messageOf(
     phase: String,

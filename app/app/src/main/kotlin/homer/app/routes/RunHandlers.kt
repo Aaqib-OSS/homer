@@ -1,6 +1,7 @@
 package homer.app.routes
 
 import homer.app.EnvConstants
+import homer.app.HomerHeaders
 import homer.app.SpanAttributes
 import homer.app.exceptions.QueryParamValidationException
 import homer.app.executors.ProcessExecutor
@@ -48,15 +49,12 @@ internal suspend fun handleAgentExecution(
     // Already validated against the caller's visibility by resolveParentProcessHeader;
     // a link is metadata only and never joins the chain or lock scope below. ADR-0058.
     parentProcessId: Int? = null,
-    // The validated parent's own root (`parent.rootProcessId ?: parent.id`), so an
-    // external run joins the parent's flow. Derived from the same already-validated
-    // row — no new caller-settable input. ADR-0058.
+    // The validated parent's own root (`parent.rootProcessId ?: parent.id`), so an external run joins the
+    // parent's flow; no new caller-settable input (ADR-0058).
     rootProcessId: Int? = null,
 ) {
-    // External callers always start a fresh invocation chain with no inherited
-    // ancestor lock keys. Internal RunAgent dispatch is in-process (it threads
-    // the chain and lock keys directly to AgentRunStarter), so this route no
-    // longer trusts any chain/lock headers. See ADR-0030.
+    // External callers always start a fresh chain with no inherited lock keys; the route trusts no
+    // chain or lock headers (ADR-0030).
     val processId =
         agentRunStarter.start(
             RunStartRequest(
@@ -87,10 +85,8 @@ internal suspend fun AgentInputResolver.resolve(
     )
 
 /**
- * Reads the optional `X-Homer-Parent-Process-Id` header of a run request and
- * resolves the parent row. The parent must exist AND be visible to the caller;
- * both failures answer the same 422 so process ids cannot be probed through this
- * header (§12: hide existence). A non-integer value is a plain 400. See ADR-0058.
+ * Reads the optional `X-Homer-Parent-Process-Id` header and resolves the parent row. A missing and an invisible
+ * parent answer the same 422, so ids cannot be probed (ADR-0058); a non-integer value is a 400.
  */
 internal suspend fun resolveParentProcessHeader(
     call: ApplicationCall,
@@ -98,13 +94,13 @@ internal suspend fun resolveParentProcessHeader(
     authorizer: Authorizer,
 ): ProcessInfo? {
     val raw =
-        call.request.headers[EnvConstants.PARENT_PROCESS_HEADER]
+        call.request.headers[HomerHeaders.PARENT_PROCESS_ID]
             ?.trim()
             ?.takeIf { it.isNotEmpty() } ?: return null
     val parentId =
         raw.toIntOrNull()?.takeIf { it > 0 }
             ?: throw QueryParamValidationException(
-                "Invalid ${EnvConstants.PARENT_PROCESS_HEADER} header. Must be a positive integer",
+                "Invalid ${HomerHeaders.PARENT_PROCESS_ID} header. Must be a positive integer",
                 HttpStatusCode.BadRequest,
             )
     val parent = processManager.getProcessInfo(parentId)
@@ -115,11 +111,8 @@ internal suspend fun resolveParentProcessHeader(
 }
 
 /**
- * The parent link and flow root for an external run, both derived from the one
- * parent row [resolveParentProcessHeader] fetched and visibility-checked: the
- * parent's id, and its root (`parent.rootProcessId ?: parent.id`, the shape of
- * [ProcessManager.visibleOriginRootProcessId]). One read per request, so the two links
- * cannot disagree. See ADR-0058.
+ * The parent id and flow root of an external run, both derived from the one visibility-checked parent row
+ * [resolveParentProcessHeader] fetched, so they cannot disagree (ADR-0058).
  */
 internal suspend fun resolveParentHeaderLinks(
     call: ApplicationCall,
@@ -127,10 +120,8 @@ internal suspend fun resolveParentHeaderLinks(
     authorizer: Authorizer,
 ): Pair<Int?, Int?> {
     val parent = resolveParentProcessHeader(call, processManager, authorizer) ?: return null to null
-    // [information_disclosure / CWE-200] The parent row is visible by construction;
-    // its flow root may not be. The derived root is carried only when this caller can
-    // see that row too — a hidden root is dropped, never replaced by the parent id,
-    // so the run is stored rootless rather than mis-rooted. §12.
+    // The parent is visible by construction, its root may not be: a hidden root is dropped, never replaced
+    // by the parent id, so the run is stored rootless rather than mis-rooted (CWE-200, ADR-0058).
     val rootId =
         if (parent.rootProcessId == null) {
             parent.id
@@ -174,12 +165,8 @@ internal suspend fun handleAgentDebug(
             agent,
             listOf("debug") + langfuseTraceTags(agent, resolvedQueryParams, agent.secretEnvNames),
         )
-        // Rendered from the merged-env agent with its cooldown still present — the same
-        // reduction retry and resume render from. `withoutFailureBackoff` above drops a keyed
-        // `afterFailure`-only cooldown entirely, which would render null here where the other
-        // paths store the subject, and a window read after the operator later adds
-        // `minInterval` would count this row for no subject. Fails the request before any row
-        // exists. See ADR-0106.
+        // Rendered from the merged-env agent with its cooldown intact, as retry and resume do:
+        // `withoutFailureBackoff` would drop an afterFailure-only cooldown and render a null key (ADR-0106).
         val cooldownKey = mergedEnvAgent.renderCooldownKey(resolvedQueryParams)
         val result =
             processExecutor.execute(
@@ -201,10 +188,8 @@ internal suspend fun handleAgentDebug(
 }
 
 /**
- * The debug request's inputs, resolved through the same extraction and validation a live run
- * uses — from this request's `queryParams`, `body` and `headers` rather than from storage, so
- * there is no historical value that could have been secret under an older definition. See
- * ADR-0052.
+ * The debug request's inputs, resolved through the same extraction and validation as a live run, from this
+ * request rather than storage, so no historical value could have been secret under an older definition (ADR-0052).
  */
 private fun resolveDebugParams(
     agentInputResolver: AgentInputResolver,
@@ -240,27 +225,22 @@ internal suspend fun handleRetry(
         // Re-validate the stored inputs against the CURRENT agent definition (a fresh
         // request would); retry must not replay values the current input policy rejects.
         val retryParams = agentInputResolver.resolveRetryParams(agent, sourceProcess.inputParams)
-        // What was secret for the SOURCE run stays secret for its replay, whatever the
-        // definition says now; union with the current flags so a newly-secret input is
-        // covered too. Drives both the trace tags and the new row's own snapshot.
+        // A replay keeps the SOURCE run's secret flags, unioned with the current ones; this drives the
+        // trace tags and the new row's own snapshot (ADR-0052).
         val retrySecretEnvNames = agent.secretEnvNames + sourceProcess.secretInputKeys.orEmpty()
         // Pre-flight cost cap check — same rationale as handleAgentExecution.
         if (agent.commands.any { it is Command.LlmCommand }) {
             costMeter.checkCaps(agent.name)
         }
-        // [information_disclosure / CWE-200] The replaying caller may see the source run
-        // without being able to see the flow root it points at; the root is carried only
-        // when they can. See ADR-0058.
+        // The replaying caller may see the source run but not its flow root; the root is carried
+        // only when they can (CWE-200, ADR-0058).
         val retryRootProcessId =
             processManager.visibleRootProcessId(call.principalName(), authorizer, sourceProcess.rootProcessId)
-        // Union, not the current definition alone: these values were collected under the source
-        // run's flags, and an input flipped to `secret: false` since would otherwise be tagged in
-        // the clear. Stamped before `execute` so the run's own spans inherit it. See ADR-0052.
+        // Union, not the current definition: an input flipped to `secret: false` since would be tagged
+        // in the clear. Stamped before `execute` so the run's own spans inherit it (ADR-0052).
         span.stampLangfuseTrace(agent, listOf("retry") + langfuseTraceTags(agent, retryParams, retrySecretEnvNames))
-        // A replay carries the source run's subject, so a keyed `minInterval` still paces it
-        // against that subject's other starts — and the stored-secret snapshot, so a key
-        // naming an input that was secret when the source run stored its inputs is refused
-        // instead of rendering the value into the row. See ADR-0106.
+        // A replay renders the cooldown key from the source run's subject and stored-secret snapshot, so a key
+        // naming a then-secret input is refused before any row exists (ADR-0106).
         val retryCooldownKey = agent.renderCooldownKey(retryParams, retrySecretEnvNames)
 
         val result =
@@ -310,10 +290,8 @@ internal suspend fun handleResume(
     maintenanceGate: MaintenanceModeService,
 ) {
     respondStartedUnderRootSpan(call, telemetryService, agent, "agent_resume_request", maintenanceGate) { context, span ->
-        // Same re-validation as retry, plus the recover markers. A stored
-        // HMR_LG_RESUME survives resolveRetryParams' reserved-name passthrough
-        // and wins over recover in the runtime -- the correct replay for a
-        // segment that crashed mid-interrupt-resume. See ADR-0044.
+        // Re-validated like retry, plus the recover markers; a stored HMR_LG_RESUME survives the reserved-name
+        // passthrough and wins over recover, replaying a segment that crashed mid-resume (ADR-0044).
         val resumeParams =
             agentInputResolver.resolveRetryParams(agent, sourceProcess.inputParams) +
                 mapOf(
@@ -333,9 +311,7 @@ internal suspend fun handleResume(
         // Same as retry: the stored inputs carry the source run's secrecy, and the stamp has to
         // land before `execute` for the run's own spans to inherit it.
         span.stampLangfuseTrace(agent, listOf("resume") + langfuseTraceTags(agent, resumeParams, resumeSecretEnvNames))
-        // Same as retry: the resumed segment keeps the source run's subject, and the
-        // stored-secret snapshot refuses a key naming an input that was secret when the
-        // source run stored its inputs. See ADR-0106.
+        // As retry: the stored-secret snapshot refuses a key naming an input that was secret when stored (ADR-0106).
         val resumeCooldownKey = agent.renderCooldownKey(resumeParams, resumeSecretEnvNames)
 
         val result =
@@ -369,10 +345,8 @@ internal suspend fun handleResume(
 }
 
 /**
- * The root span's attributes of a run one of the retry / resume / debug paths starts itself: the
- * run's identity, how it was started, the source run's parent and flow root when it has them, and
- * whatever [extra] adds for that path. The three paths share this shape, and a key typo here would
- * silently stop matching a trace query.
+ * The root span's attributes of a run a retry, resume or debug path starts itself: identity, start mode, the
+ * source run's parent and flow root, and [extra]. One shared shape, so a key typo cannot stop matching a trace query.
  */
 private fun startedRunAttributes(
     processId: Int,
@@ -395,12 +369,9 @@ private fun startedRunAttributes(
         .build()
 
 /**
- * Starts a run under a fresh root span [spanName] and answers its process id. [start] gets the span's context and the span
- * itself — it stamps the Langfuse trace name and tags with [stampLangfuseTrace] before calling `processExecutor.execute` —
- * and returns the started process id with the span's remaining attributes; a failure marks the span ERROR and propagates.
- * Debug, retry and resume build their own root span outside AgentRunStarter, so tracing gates (`telemetry.export: OFF`)
- * and [maintenanceGate]'s parking must be applied here too, as [AgentRunStarter.start] does — every start path queues.
- * ADR-0050, ADR-0092.
+ * Starts a run under a fresh root span [spanName] and answers its process id. [start] stamps the Langfuse trace and
+ * returns the process id with the span's remaining attributes; a failure marks the span ERROR and propagates.
+ * Applies the tracing gate and [maintenanceGate]'s parking, as [AgentRunStarter.start] does (ADR-0050, ADR-0092).
  */
 @Suppress("SuspendFunSwallowedCancellation") // records the span error and rethrows
 private suspend fun respondStartedUnderRootSpan(

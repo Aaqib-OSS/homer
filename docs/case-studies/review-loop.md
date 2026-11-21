@@ -209,7 +209,7 @@ answered in Homer's console.
   legacy `STRING` type rejects any value with a space, and a typed answer
   usually has one. Use `string`.
 - **Set the TTL on the question.** Without `--ttl`, the question takes
-  `server.dispatch.defaultTtlSec`, which may be a day or never
+  `server.dispatch.defaultTtlSec`, which defaults to seven days
   ([Ask-and-dispatch](../../app/SERVER.md#ask-and-dispatch)).
 - **Overlapping ticks are not skipped.** Cron fires every minute even while
   the previous tick runs, so the watcher's `lockStrategy` uses

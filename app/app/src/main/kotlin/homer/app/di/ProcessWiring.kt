@@ -13,7 +13,7 @@ import org.koin.dsl.module
 import kotlin.io.path.Path
 
 /**
- * The run-lifecycle core's Koin definition, in a subject file of its own (root CLAUDE.md §2).
+ * The run-lifecycle core's Koin definition, in a subject file of its own.
  * The hook rows it records are fired by [HookService], whose own definition is in `HookWiring`.
  */
 internal val processModule =
@@ -29,13 +29,11 @@ internal val processModule =
                 workspaceRoot = Path(get<TextCompiler>().replaceArguments(config.workspaceRootPath, config.globalEnv)),
                 onProcessEvicted = questionsService::removeForProcess,
                 maxProcesses = config.server.maxProcesses,
-                // Both resolved at call time, not construction, to break the cycle
-                // ProcessManager → HookService → AgentRunStarter → ProcessExecutor →
-                // ProcessManager. See ADR-0107.
+                // Both resolved at call time to break the cycle ProcessManager → HookService → AgentRunStarter →
+                // ProcessExecutor → ProcessManager. See ADR-0107.
                 hookRecording = { get<HookService>().recording() },
-                // Fired on the application scope, never awaited on the committing caller's
-                // coroutine — a start or kill response must not wait on the hook chain.
-                // See ADR-0107.
+                // Fired on the application scope, never awaited on the committing caller's coroutine: a start or kill
+                // response must not wait on the hook chain. See ADR-0107.
                 onHooksRecorded = { recorded ->
                     get<CoroutineScope>(named("applicationScope")).launch {
                         get<HookService>().onRowsRecorded(recorded)

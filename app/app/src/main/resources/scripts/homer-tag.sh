@@ -1,19 +1,8 @@
 #!/bin/sh
-# homer-tag — declare a subject tag against the running command's own run.
-#
-# Materialized by Homer into {projectRoot}/.homer/bin (on PATH) for every
-# process. Reads HMR_API_URL and HMR_CALLBACK_TOKEN from the environment at
-# call time. The run is identified by the callback token alone — there is no
-# run id to pass. See AGENT.md "Run tags" and ADR-0060.
-#
-# Usage:
-#   homer-tag KEY:VALUE
-#       Adds the `KEY:VALUE` tag to this run. KEY must be one the agent
-#       declared under `tags.runtime`; VALUE must match ^[A-Za-z0-9._-]{1,128}$.
-#       Re-declaring the same tag is idempotent. Returns immediately.
-#
-# Exit codes: 0 ok, 2 usage or transport error, or the run/tag was rejected
-# (terminal run, undeclared key, bad value, or the per-run tag ceiling).
+# homer-tag — declare a subject tag against the running command's own run (ADR-0060).
+# Exits 0 on success, 2 on a usage, transport or rejection error (terminal run, undeclared key, bad value, tag cap).
+
+# Reads HMR_API_URL and HMR_CALLBACK_TOKEN from the environment; usage: AGENT.md.
 
 set -u
 

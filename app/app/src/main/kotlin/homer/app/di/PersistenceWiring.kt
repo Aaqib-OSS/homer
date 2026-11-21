@@ -16,8 +16,8 @@ import org.koin.dsl.module
 
 /**
  * The SQLite-backed durable state: the database handle, the live job registry and one repository
- * per durable aggregate. Split out of [appModule] so each subject's bindings stay in one file
- * (root CLAUDE.md §2); the boot loads it beside the other subject modules.
+ * per durable aggregate. Split out of [appModule] so each subject's bindings stay in one file;
+ * the boot loads it beside the other subject modules.
  */
 internal val persistenceModule =
     module {

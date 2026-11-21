@@ -11,12 +11,9 @@ import io.ktor.server.request.header
 const val CSRF_HEADER = "X-Homer-CSRF"
 
 /**
- * Route-scoped CSRF guard, installed inside the `authenticate` block. The [AuthenticationChecked]
- * hook runs after the principal is populated (an `onCall` hook would see a null principal). Scoped
- * to `session:` principals: browsers auto-attach the session cookie cross-site but cannot set a
- * custom header cross-origin, so requiring [CSRF_HEADER] blocks the drive-by surface. Bearer/HMAC
- * and pre-login calls are a no-op (not browser-ambient), so the GET webhook/curl trigger keeps
- * working; guarding *all* session methods also covers GET-execute and SSE-GET. See ADR-0016.
+ * Route-scoped CSRF guard inside `authenticate`, on [AuthenticationChecked] (an `onCall` hook sees a null principal).
+ * Guards every method of `session:` principals by requiring [CSRF_HEADER], which browsers cannot set cross-origin;
+ * Bearer/HMAC and pre-login calls pass through. See ADR-0016.
  */
 val CsrfProtection =
     createRouteScopedPlugin("CsrfProtection") {

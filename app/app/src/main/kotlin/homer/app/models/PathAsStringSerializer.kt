@@ -10,10 +10,9 @@ import java.nio.file.Path
 import kotlin.io.path.Path
 
 /**
- * Serializes [Path] as its string form so `ExecutionInfo.stdOut`/`stdErr` (the
- * only `Path` fields persisted) survive the JSON-column round-trip. `Path` is a
- * runtime handle with no kotlinx serializer of its own; the durable form is the
- * absolute/relative path string exactly as produced at execution time.
+ * Serializes [Path] as its string form so `ExecutionInfo.stdOut`/`stdErr` (the only persisted `Path` fields)
+ * survive the JSON-column round-trip. `Path` has no kotlinx serializer; the durable form is the path string
+ * as produced at execution time.
  */
 internal object PathAsStringSerializer : KSerializer<Path> {
     override val descriptor: SerialDescriptor =

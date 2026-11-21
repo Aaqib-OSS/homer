@@ -3,6 +3,7 @@ package homer.app.infra
 import homer.app.models.SessionSpendConfig
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -223,5 +224,38 @@ class SessionSpendPricingTest {
             SessionSpendOutcome.Failed("requestsPath yielded no number"),
             p.price("""{"requests":[{"started":"${iso(started)}","spend":"lots"}]}""", 1, started, ended),
         )
+    }
+
+    @Test
+    fun `an Error raised by any read propagates out of price instead of degrading to Failed`() {
+        // A backtracking regex filter over a long string overflows the stack inside the JsonPath read.
+        val overflowing = "[?(@.name =~ /(a|b)*/)]"
+        val row = """{"name":"${"ab".repeat(100_000)}","started":1,"spend":1,"cost":1,"calls":1}"""
+        val body = """{"spend":1,"items":[$row],"requests":[$row]}"""
+
+        fun config(
+            costPath: String = "$.spend",
+            callsPath: String? = null,
+            requestsPath: String? = null,
+            startedPath: String = "$.started",
+        ) = SessionSpendConfig(
+            url = "https://spend.example/api/session/{sessionId}",
+            costPath = costPath,
+            callsPath = callsPath,
+            requestsPath = requestsPath,
+            startedPath = startedPath.takeIf { requestsPath != null },
+            requestSpendPath = "$.spend".takeIf { requestsPath != null },
+        )
+        val configs =
+            listOf(
+                config(costPath = "$.items$overflowing.cost"),
+                config(callsPath = "$.items$overflowing.calls"),
+                config(requestsPath = "$.requests$overflowing"),
+                config(requestsPath = "$.requests", startedPath = "$$overflowing.started"),
+            )
+
+        for (c in configs) {
+            assertFailsWith<StackOverflowError> { SessionSpendPricing(c).price(body, 1, 0L, Long.MAX_VALUE) }
+        }
     }
 }

@@ -28,10 +28,8 @@ sealed class RunnerConfig {
     abstract val extraUploads: List<ExtraUploadSpec>
 
     /**
-     * Shape rules for extraUploads (relative remote, reserved paths,
-     * uniqueness, non-HMR_ env). Alias-aware and invoked from AppConfig's
-     * init — still parse-time for any decoded config — so violations name
-     * the runner alias. See ADR-0042.
+     * Shape rules for extraUploads (relative remote, reserved paths, uniqueness, non-HMR_ env). Alias-aware,
+     * invoked from AppConfig's init, so a violation in any decoded config names the runner alias. See ADR-0042.
      */
     internal fun validateExtraUploads(alias: String) = validateExtraUploadSpecs(alias, extraUploads)
 
@@ -45,12 +43,9 @@ sealed class RunnerConfig {
     }
 
     /**
-     * Every shape rule this variant has, naming the runner [alias], in the order the rules fired
-     * before they were reached through this member, so a config with several violations still
-     * reports the same first one. Called from AppConfig's init. Every variant must call
-     * [validateExtraUploads] and [validateEnv] here — no other site invokes them for a variant;
-     * `RunnerConfigBaseMembersTest` enumerates the sealed variants and fails on one whose
-     * `validate` skips either.
+     * Every shape rule of this variant, naming runner [alias], in a fixed order so a config with several
+     * violations reports the same first one. Called from AppConfig's init; every variant must call
+     * [validateExtraUploads] and [validateEnv] here (`RunnerConfigBaseMembersTest` enforces it).
      */
     internal abstract fun validate(alias: String)
 
@@ -71,11 +66,9 @@ sealed class RunnerConfig {
         val workload: KubernetesWorkload = KubernetesWorkload.Pod,
         val maxRunSeconds: Long = DEFAULT_MAX_RUN_SECONDS,
         /**
-         * Opt-in soft deadline: this many seconds before the pod's `maxRunSeconds`
-         * hard deadline, the run's running step is interrupted (SIGINT) so its
-         * `onStop:` steps can save state before the kubelet kills the pod.
-         * Null = no soft deadline, and no extra Kubernetes read.
-         * See ADR-0108.
+         * Opt-in soft deadline: this many seconds before the pod's `maxRunSeconds` hard deadline the running
+         * step is interrupted (SIGINT) so its `onStop:` steps can save state. Null = none, and no extra
+         * Kubernetes read. See ADR-0108.
          */
         val gracefulStopSeconds: Long? = null,
         val jobTtlSecondsAfterFinished: Long? = null,
@@ -175,10 +168,8 @@ sealed class RunnerConfig {
     }
 
     /**
-     * A trust domain for pull-mode runner instances (ADR-0066). Holds the token
-     * instances authenticate with and the limits that bound them; instances
-     * announce their own tags at registration, so this entry has no `tags` or
-     * `concurrency` of its own.
+     * A trust domain for pull-mode runner instances (ADR-0066): the token they authenticate with and the limits
+     * that bound them. Instances announce their own tags at registration, so there is no `tags` or `concurrency`.
      */
     @Serializable
     @SerialName("external")
@@ -193,7 +184,7 @@ sealed class RunnerConfig {
         val maxConcurrencyPerInstance: Int = 16,
         /** Per tar transfer (upload or download), in seconds. */
         val transferTimeoutSec: Long = 300,
-        /** Largest tar an instance may post for one download op. §12 rule 4. */
+        /** Largest tar an instance may post for one download op. ADR-0047 rule 4. */
         val maxTransferBytes: Long = 1L * 1024 * 1024 * 1024,
         /** Per-domain env, same contract as `Ssh.env` / `Kubernetes.env`. */
         override val env: Map<String, String> = emptyMap(),
@@ -249,12 +240,9 @@ sealed class RunnerConfig {
 }
 
 /**
- * A remote path Homer will hand to `rm -rf` must be absolute, normalized (no
- * empty, `.` or `..` segments) and at least [minDepth] segments deep, so a
- * blank, `/` or traversing value can never widen a `cleanAfterFinish` sweep
- * to the host. Checked at config load for `remoteWorkspaceRoot` (depth ≥ 1)
- * and again on the composed project root before the command runs (depth ≥ 2).
- * [security_misconfiguration / CWE-732] — see ADR-0067.
+ * A remote path Homer hands to `rm -rf` must be absolute, normalized (no empty, `.` or `..` segments) and at
+ * least [minDepth] deep, so a blank, `/` or traversing value never widens a `cleanAfterFinish` sweep. Checked at
+ * config load (depth >= 1) and on the composed project root before the command runs (depth >= 2). CWE-732, ADR-0067.
  */
 internal fun assertSafeRemoteRoot(
     owner: String,
@@ -279,10 +267,9 @@ const val DEFAULT_LOCAL_CONCURRENCY = 100
 const val DEFAULT_MAX_RUN_SECONDS = 86_400L
 
 /**
- * Facets of the built-in `local` runner as a claim-queue consumer
- * (`server.localRunner`). Same rules as `tags`/`concurrency` on `ssh` and
- * `kubernetes`. `enabled = false` registers no local runner, so no run executes
- * in the server's own container. See ADR-0066.
+ * Built-in `local` runner as a claim-queue consumer (`server.localRunner`), with the same `tags`/`concurrency`
+ * rules as `ssh` and `kubernetes`. `enabled = false` registers none, so no run executes in the server's own
+ * container. See ADR-0066.
  */
 @Serializable
 data class LocalRunnerConfig(
@@ -339,10 +326,9 @@ internal fun validateExtraUploadSpecs(
 }
 
 /**
- * Shape rules for a runner's per-runner `env` map: keys must be non-blank and
- * must not use the reserved `HMR_` prefix — the same rule `extraUploads.env`
- * enforces on its single name. Alias-aware and invoked from AppConfig's init,
- * so violations name the runner.
+ * Shape rules for a runner's per-runner `env` map: keys must be non-blank and must not use the reserved `HMR_`
+ * prefix, as `extraUploads.env` already enforces on its name. Alias-aware, invoked from AppConfig's init, so a
+ * violation names the runner.
  */
 internal fun validateRunnerEnv(
     alias: String,
@@ -357,9 +343,8 @@ internal fun validateRunnerEnv(
 }
 
 /**
- * One operator-declared host path materialized into every remote workspace on
- * this runner. `remote` is resolved against the remote projectRoot; `env`
- * (optional) is repointed at the remote copy via the createWorkspace()
+ * One operator-declared host path materialized into every remote workspace on this runner. `remote` resolves
+ * against the remote projectRoot; the optional `env` is repointed at the remote copy via the createWorkspace()
  * override channel. See ADR-0042.
  */
 @Serializable
@@ -399,9 +384,8 @@ data class ExtraUploadSpec(
     }
 
     companion object {
-        // workdir/artifacts are synced down; .homer/agent is the uploaded agent
-        // dir; .homer/bin + .homer/mcp.json are the question tooling uploaded
-        // with the workspace; .homer/env holds the ssh and Kubernetes runners' env files.
+        // workdir/artifacts are synced down; .homer/agent, .homer/bin, .homer/mcp.json and .homer/env (the env
+        // files) are uploaded or written by Homer, and an extra landing there would overwrite them.
         private val RESERVED_REMOTE_PATHS =
             listOf("workdir", "artifacts", ".homer/agent", ".homer/bin", ".homer/mcp.json", ".homer/env")
     }

@@ -3,12 +3,9 @@ package homer.runner
 import homer.app.models.RunnerTagValidation
 
 /**
- * The version this runner binary was built from, as the build stamped it into the jar
- * (`homerVersion` Gradle property, else `HOMER_VERSION`, else `dev` — one source, see
- * `homer-runner/build.gradle.kts`). Homer validates the registration's `version` against
- * [RunnerTagValidation.PATTERN] and reports it to operators, so that same shape is the gate
- * here. The value is never read from run-time configuration: every host running the same jar
- * reports the same thing.
+ * The version this runner was built from, as the build stamped it into the jar (see
+ * `homer-runner/build.gradle.kts`) and never from run-time configuration. It must match
+ * [RunnerTagValidation.PATTERN], which Homer checks at registration.
  */
 object RunnerVersion {
     /** What a build without release information reports. */

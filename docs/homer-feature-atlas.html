@@ -2148,7 +2148,7 @@ curl -X DELETE "$HOMER/api/v1/continuations/7"</code></pre>
             (<code>maxGroupSize</code>) and how long settled records are kept
             (<code>settledRetentionSec</code>, 7 days by default).</p>
           <pre><code>server:
-  dispatch: { maxPending: 100, defaultTtlSec: 86400,   # default: none
+  dispatch: { maxPending: 100, defaultTtlSec: 86400,   # default: 604800
               resultTokenTtlSec: 3600, maxJoinSubs: 32,
               maxGroupSize: 8,
               settledRetentionSec: 604800 }</code></pre>
@@ -2669,11 +2669,10 @@ apk add --no-cache tar gzip curl</code></pre>
           workspace callbacks use the per-process token; the <code>/api/v1/runner/*</code> protocol routes use a runner
           domain token (<code>runners.*.token</code>) — a principal class of its own, <code>401</code> everywhere else,
           and every <code>apiAuth</code> credential is <code>401</code> on those routes; every other route is authorized
-          per request. On the run, debug and
+          per request. On the run, debug, agent-file and
           LangGraph-inspect routes an agent you hold no grant on returns the same <code>404</code> as a missing one; the
           <code>cron-run</code> route is admin-only and grants play no part on it — a non-admin gets the same
-          <code>404</code> as a missing agent (ADR-0080); the
-          agent-file routes answer <code>403</code> before any lookup. A process or record you may not see is always
+          <code>404</code> as a missing agent (ADR-0080). A process or record you may not see is always
           <code>404</code>, and so is a missing control/run action on one you can see (kill, retry, resume, answer,
           cancel); a missing action on an agent route (run, debug, files) is a <code>403</code>.</p>
       </div>
@@ -2845,7 +2844,7 @@ apk add --no-cache tar gzip curl</code></pre>
 
       <figure class="diagram">
         <svg viewBox="0 0 1160 560" role="img"
-             aria-label="How a request becomes a permitted action. A bearer token, an HMAC signature or a session cookie each authenticate to a named principal — the token's config key, hmac colon key id, or session colon username. An invalid credential returns 401. The principal is then authorized by a single rule: the admin role, or hasAction of principal, action and agent — Homer never parses request paths. A missing action on an agent route the caller can see — run, debug, files — returns 403, as does an agent-file route without the edit grant, which answers before any lookup; on the run, debug and LangGraph-inspect routes an agent it holds no grant on returns 404, and a process it may not see always does, as does a missing control or run action on a process it can see — kill, retry, resume, answer, cancel — so existence stays hidden — process visibility is the union of admin, the run's owner, and a read grant on its agent. An allowed request starts a run stamped with its owner. Two side notes: the per-process callback token is a separate credential domain that only reaches the callback routes, and nested dispatch hops are re-checked against the root principal's grants or agentGrants.">
+             aria-label="How a request becomes a permitted action. A bearer token, an HMAC signature or a session cookie each authenticate to a named principal — the token's config key, hmac colon key id, or session colon username. An invalid credential returns 401. The principal is then authorized by a single rule: the admin role, or hasAction of principal, action and agent — Homer never parses request paths. A missing action on an agent route the caller can see — run, debug, files — returns 403; on the run, debug, agent-file and LangGraph-inspect routes an agent it holds no grant on returns 404, and a process it may not see always does, as does a missing control or run action on a process it can see — kill, retry, resume, answer, cancel — so existence stays hidden — process visibility is the union of admin, the run's owner, and a read grant on its agent. An allowed request starts a run stamped with its owner. Two side notes: the per-process callback token is a separate credential domain that only reaches the callback routes, and nested dispatch hops are re-checked against the root principal's grants or agentGrants.">
           <defs>
             <marker id="az-arrow" viewBox="0 0 10 10" refX="9" refY="5"
                     markerWidth="6" markerHeight="6" orient="auto-start-reverse">
@@ -2932,9 +2931,9 @@ apk add --no-cache tar gzip curl</code></pre>
         <figcaption>How a request becomes a permitted action. The split that catches people is on the right:
           <strong>403</strong> is for an action you lack on an agent route (run, debug, files) for an agent you can already
           see, <strong>404</strong> is for anything you may not see — a process outside your visibility, or an agent you
-          hold no grant on when you run, debug or inspect it, is deliberately indistinguishable from a missing one, so
+          hold no grant on when you run, debug, inspect it or edit its files, is deliberately indistinguishable from a missing one, so
           nothing leaks by probing names or ids. A control or run action you lack on a run you can see (kill, retry,
-          resume, answer, cancel) is a <strong>404</strong> too. The agent-file routes answer <code>403</code> before any lookup, which leaks nothing either. Note also what carries no authority: an agent definition. A hop from one agent to another is
+          resume, answer, cancel) is a <strong>404</strong> too. Note also what carries no authority: an agent definition. A hop from one agent to another is
           re-checked against operator-controlled grants, which is why <code>edit</code> on an agent cannot be escalated
           into running someone else's.</figcaption>
       </figure>
@@ -2944,7 +2943,7 @@ apk add --no-cache tar gzip curl</code></pre>
         <article class="f">
           <h3>Bearer tokens <span class="where">server config</span></h3>
           <p>Named tokens for CLI, CI and MCP callers. Unknown token → <code>401</code>; valid token missing the action on an
-            agent route → <code>403</code>, or — on the run, debug and LangGraph-inspect routes — <code>404</code> when it
+            agent route → <code>403</code>, or — on the run, debug, agent-file and LangGraph-inspect routes — <code>404</code> when it
             holds no grant on the agent at all. A missing control/run action on a run it can see (kill, retry, resume,
             answer, cancel) is <code>404</code>.</p>
           <pre><code>apiAuth: !&lt;bearer&gt;

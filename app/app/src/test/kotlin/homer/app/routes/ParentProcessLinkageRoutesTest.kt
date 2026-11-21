@@ -1,6 +1,7 @@
 package homer.app.routes
 
 import homer.app.EnvConstants
+import homer.app.HomerHeaders
 import homer.app.apiJson
 import homer.app.fixtures.AgentFixtures
 import homer.app.fixtures.mountApiV1Routes
@@ -123,7 +124,7 @@ class ParentProcessLinkageRoutesTest {
         testApplication {
             mount()
 
-            val response = client.post("/api/v1/agent/echo") { header(EnvConstants.PARENT_PROCESS_HEADER, " 7 ") }
+            val response = client.post("/api/v1/agent/echo") { header(HomerHeaders.PARENT_PROCESS_ID, " 7 ") }
 
             assertEquals(HttpStatusCode.OK, response.status)
             coVerify {
@@ -144,7 +145,7 @@ class ParentProcessLinkageRoutesTest {
         testApplication {
             mount()
 
-            val response = client.post("/api/v1/agent/echo") { header(EnvConstants.PARENT_PROCESS_HEADER, "404") }
+            val response = client.post("/api/v1/agent/echo") { header(HomerHeaders.PARENT_PROCESS_ID, "404") }
 
             assertEquals(HttpStatusCode.UnprocessableEntity, response.status)
             assertEquals(expectedBody("Parent process 404 not found"), response.bodyAsText())
@@ -162,7 +163,7 @@ class ParentProcessLinkageRoutesTest {
                 }
             mount(authorizer)
 
-            val response = client.post("/api/v1/agent/echo") { header(EnvConstants.PARENT_PROCESS_HEADER, "7") }
+            val response = client.post("/api/v1/agent/echo") { header(HomerHeaders.PARENT_PROCESS_ID, "7") }
 
             assertEquals(HttpStatusCode.UnprocessableEntity, response.status)
             assertEquals(expectedBody("Parent process 7 not found"), response.bodyAsText())
@@ -178,7 +179,7 @@ class ParentProcessLinkageRoutesTest {
             // as a positive integer names a parent, so a blank header must not reach the
             // positive-integer check and answer 400.
             for (value in listOf("", "   ")) {
-                val response = client.post("/api/v1/agent/echo") { header(EnvConstants.PARENT_PROCESS_HEADER, value) }
+                val response = client.post("/api/v1/agent/echo") { header(HomerHeaders.PARENT_PROCESS_ID, value) }
 
                 assertEquals(HttpStatusCode.OK, response.status, "value '$value'")
                 coVerify(exactly = 0) { processManager.getProcessInfo(any()) }
@@ -203,10 +204,10 @@ class ParentProcessLinkageRoutesTest {
             mount()
 
             for (value in listOf("abc", "0", "-3", "1.5")) {
-                val response = client.post("/api/v1/agent/echo") { header(EnvConstants.PARENT_PROCESS_HEADER, value) }
+                val response = client.post("/api/v1/agent/echo") { header(HomerHeaders.PARENT_PROCESS_ID, value) }
                 assertEquals(HttpStatusCode.BadRequest, response.status, "value '$value'")
                 assertEquals(
-                    expectedBody("Invalid ${EnvConstants.PARENT_PROCESS_HEADER} header. Must be a positive integer"),
+                    expectedBody("Invalid ${HomerHeaders.PARENT_PROCESS_ID} header. Must be a positive integer"),
                     response.bodyAsText(),
                 )
             }
@@ -268,7 +269,7 @@ class ParentProcessLinkageRoutesTest {
         testApplication {
             mount()
 
-            val response = client.post("/api/v1/agent/echo") { header(EnvConstants.PARENT_PROCESS_HEADER, "9") }
+            val response = client.post("/api/v1/agent/echo") { header(HomerHeaders.PARENT_PROCESS_ID, "9") }
 
             assertEquals(HttpStatusCode.OK, response.status)
             coVerify {
@@ -295,7 +296,7 @@ class ParentProcessLinkageRoutesTest {
                 root.copy(id = 404, parentProcessId = 9, rootProcessId = 7)
             mount()
 
-            assertEquals(HttpStatusCode.OK, client.post("/api/v1/agent/echo") { header(EnvConstants.PARENT_PROCESS_HEADER, "404") }.status)
+            assertEquals(HttpStatusCode.OK, client.post("/api/v1/agent/echo") { header(HomerHeaders.PARENT_PROCESS_ID, "404") }.status)
 
             coVerify { agentRunStarter.start(match { it.rootProcessId == 7 }, any(), any(), any()) }
         }
@@ -305,7 +306,7 @@ class ParentProcessLinkageRoutesTest {
         testApplication {
             mount()
 
-            assertEquals(HttpStatusCode.OK, client.post("/api/v1/agent/echo") { header(EnvConstants.PARENT_PROCESS_HEADER, "7") }.status)
+            assertEquals(HttpStatusCode.OK, client.post("/api/v1/agent/echo") { header(HomerHeaders.PARENT_PROCESS_ID, "7") }.status)
 
             // A parent with no root of its own IS the root, so the child's root is the parent.
             coVerify { agentRunStarter.start(match { it.rootProcessId == 7 }, any(), any(), any()) }
@@ -335,7 +336,7 @@ class ParentProcessLinkageRoutesTest {
                 root.copy(id = 9, agentName = "echo", owner = "carol", parentProcessId = 3, rootProcessId = 7)
             mount(authorizer)
 
-            assertEquals(HttpStatusCode.OK, client.post("/api/v1/agent/echo") { header(EnvConstants.PARENT_PROCESS_HEADER, "9") }.status)
+            assertEquals(HttpStatusCode.OK, client.post("/api/v1/agent/echo") { header(HomerHeaders.PARENT_PROCESS_ID, "9") }.status)
 
             coVerify {
                 agentRunStarter.start(match { it.rootProcessId == null }, any(), any(), any())

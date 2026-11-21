@@ -9,11 +9,7 @@ import io.opentelemetry.sdk.trace.SpanProcessor
 
 /**
  * Copies [LANGFUSE_TRACE_NAME] and [LANGFUSE_TRACE_TAGS] from a span's parent onto the span as it
- * starts, so every observation of a run carries the run's trace name and tags (Langfuse v4 has no
- * separate trace record). Registered **before** the `BatchSpanProcessor` and the only processor
- * needing `onStart`. See ADR-0050. Constraints, each a denial path: exactly those two keys are copied
- * (nothing else rides along); the parent's values win (the child's attributes are never read); a parent
- * carrying neither key passes neither, a non-recording-SDK parent is no parent, and it never throws.
+ * starts, and nothing else; the parent's values win and it never throws. See ADR-0050.
  */
 internal class LangfuseTraceAttributesSpanProcessor : SpanProcessor {
     override fun isStartRequired(): Boolean = true

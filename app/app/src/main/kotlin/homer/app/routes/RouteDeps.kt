@@ -31,13 +31,7 @@ import homer.app.services.ResultTokenService
 import homer.app.services.RunMessagesService
 import java.util.concurrent.atomic.AtomicBoolean
 
-/*
- * One dependency class per route file: what that file's handlers need, and nothing else, built from
- * the wiring root ApiDeps by the `xxxDeps()` builder below it. A handler still reads its fields
- * unqualified through `with(deps) { ... }`, so a route body names only its own file's surface.
- *
- * Field names match ApiDeps, so moving a field between the two is a mechanical change.
- */
+// One dependency class per route file, built from ApiDeps by its `xxxDeps()` builder; field names match ApiDeps.
 
 /** What `CallbackRoutes.kt` needs: the token-scoped services behind the `/api/v1/callback` endpoints. */
 internal data class CallbackDeps(

@@ -44,19 +44,11 @@ class LocalShellExecutor(
             val process = startProcess(command, stdOut, stdErr, env, stdOutFilter)
             val outPump = stdOutFilter?.let { StdoutPump(process.inputStream, stdOut, it) }
 
-            // Feed stdin on a separate job so a child that never drains its stdin
-            // (a full OS pipe buffer, ~64 KiB) cannot block this coroutine's IO
-            // thread forever: the timeout / output-cap monitor below runs
-            // concurrently and, on a trip, kills the process, which breaks the pipe
-            // and unblocks the write. Write failures are swallowed — once we tear
-            // the process down a broken-pipe write is a consequence, not a fault,
-            // and a child that legitimately exits before reading all stdin still
-            // succeeded.
+            // Stdin is fed on its own job so a child that never reads it cannot block the
+            // timeout and cap monitor. See ADR-0041.
             val stdInJob = launchStdinWriter(process, stdIn)
 
-            // Any throw past this point must (a) tear down the native process and
-            // its descendants and (b) propagate to the caller, so a killed command
-            // is never taken for a successful one.
+            // Any throw tears the process tree down and propagates: a killed command never succeeds.
             var stopped = Wait.EXITED
             try {
                 stopped = awaitCompletion(process, stdOut, stdErr, timeout, outPump)
@@ -81,9 +73,7 @@ class LocalShellExecutor(
                 throw e
             }
 
-            // Process finished on its own; let the stdin writer settle (it either
-            // flushed everything or hit EOF when the child exited early) before we
-            // report the result.
+            // The process finished on its own: let the stdin writer settle before reporting.
             stdInJob?.join()
 
             CommandResult(
@@ -94,10 +84,8 @@ class LocalShellExecutor(
         }
 
     /**
-     * [awaitExit], then — once the process exited on its own — the post-exit cap re-check: how
-     * the command stopped. A fast-exiting command can overshoot the cap between the last poll
-     * and exit; the file already holds all output (OS redirect), so the re-check fails it
-     * instead of accepting the oversized artifact as a clean result.
+     * How the command stopped: [awaitExit], then a re-check of the output cap once it exited on its
+     * own, so a command that overshot the cap between polls fails instead of succeeding.
      */
     private suspend fun awaitCompletion(
         process: java.lang.Process,
@@ -108,19 +96,15 @@ class LocalShellExecutor(
     ): Wait {
         val wait = awaitExit(process, stdOut, stdErr, timeout)
         if (wait != Wait.EXITED) return wait
-        // With a pump, wait for it (bounded: a background child that inherited
-        // stdout can hold the pipe open past the main process's exit). Past the
-        // bound the pump closes the file, so the size check below is final.
+        // The pump join is bounded; past it the pump closes the file, so the size check is final. See ADR-0063.
         outPump?.join(pumpJoinMs)
         return if (outputExceedsCap(stdOut, stdErr)) Wait.OUTPUT_CAP else Wait.EXITED
     }
 
     /**
-     * Tears [process] down after a failed or cancelled wait, releases the stdin writer and the
-     * pump, and appends the marker for a [stopped] TTL or output-cap kill to [stdErr]. A command
-     * stopped by its own timeout and configured with an [interruptGrace] is SIGINTed first and
-     * given up to that long to exit; only one still alive after it takes the SIGKILL path. For a
-     * process that already exited the kill is a no-op and only the marker is appended.
+     * Tears [process] down after a failed or cancelled wait, releases the stdin writer and the pump,
+     * and appends the kill marker for [stopped] to [stdErr]. A command stopped by its own timeout
+     * with an [interruptGrace] is SIGINTed first and SIGKILLed only if still alive after it.
      */
     private suspend fun tearDown(
         process: java.lang.Process,
@@ -131,9 +115,8 @@ class LocalShellExecutor(
         stopped: Wait,
         interruptGrace: Duration?,
     ) {
-        // Graceful stop (ADR-0108): only a command stopped by its OWN timeout gets the
-        // grace; an output-cap kill or a caller cancellation keeps today's immediate
-        // SIGKILL. The interrupt is only meaningful while the process is still alive.
+        // Only a command stopped by its own timeout gets the grace; any other stop is an immediate
+        // SIGKILL. See ADR-0108.
         val grace = interruptGrace?.takeIf { stopped == Wait.TIMED_OUT && process.isAlive }
         if (grace != null) {
             ProcessGroupSupport.ownProcessGroupId(process)?.let { ProcessGroupSupport.interruptGroup(it) }
@@ -141,23 +124,12 @@ class LocalShellExecutor(
         }
         if (process.isAlive) {
             val descendants = process.descendants()
-            // Group kill first (reaps detached/reparented children the
-            // descendants snapshot misses), then the direct process and its
-            // known descendants as a belt-and-suspenders fallback. The pgid
-            // MUST be read here, at kill time, not at launch: right after
-            // start() the child may not have run setsid(2) yet (posix_spawn
-            // resumes the parent at the setsid exec, before its main runs),
-            // so a launch-time read races the leader transition and loses
-            // under CPU contention — null pgid, no group kill.
+            // The pgid must be read here, at kill time, never at launch. See ADR-0041.
             ProcessGroupSupport.ownProcessGroupId(process)?.let { ProcessGroupSupport.killGroup(it) }
             process.destroyForcibly()
             descendants.forEach { it.destroyForcibly() }
-            // Wait briefly so process.exitValue() is observable and we
-            // do not leak a zombie back to the caller.
             process.waitFor(KILL_GRACE_SEC, TimeUnit.SECONDS)
         }
-        // The process is now dead, so a still-blocked stdin write has hit
-        // a broken pipe and returned; release its thread before propagating.
         stdInJob?.cancelAndJoin()
         outPump?.join(pumpJoinMs)
         appendKillNotices(
@@ -182,24 +154,16 @@ class LocalShellExecutor(
     ): java.lang.Process {
         val processBuilder =
             ProcessBuilder()
-                // Launch under setsid (when available) so the command leads its own
-                // process group and detached/late-spawned children can be reaped as a
-                // group on kill/timeout. Falls back to the raw argv where setsid is
-                // absent. See ProcessGroupSupport / ADR-0041.
+                // Launched under setsid so the whole group can be reaped on kill. See ADR-0041.
                 .command(ProcessGroupSupport.launchArgv(command))
                 .directory(workDir.toFile())
                 .redirectError(ProcessBuilder.Redirect.to(stdErr.toFile()))
-        // With a filter, stdout stays a pipe and a pump thread writes the kept lines;
-        // without one, the OS redirect below is byte-for-byte today's path. See ADR-0063.
+        // With a filter stdout stays a pipe for a pump thread; otherwise it is an OS redirect. See ADR-0063.
         if (stdOutFilter == null) {
             processBuilder.redirectOutput(ProcessBuilder.Redirect.to(stdOut.toFile()))
         }
 
-        // ProcessBuilder.environment() is pre-populated from System.getenv()
-        // by the JDK; if we just `putAll` we silently inherit every host env
-        // var. Clear it first so the child sees ONLY what
-        // WorkspaceConfigFactory composed (allowlisted host env + globalEnv +
-        // agent.env + queryParams + HMR_*). Audit P0 #2.
+        // environment() starts as the host's env; clear it so the child sees only the composed env (ADR-0065).
         val childEnv = processBuilder.environment()
         childEnv.clear()
         childEnv.putAll(env)
@@ -239,8 +203,6 @@ class LocalShellExecutor(
     ): Wait {
         val start = (System.currentTimeMillis() / 1000).toInt()
         while ((System.currentTimeMillis() / 1000).toInt() - start < timeout.inWholeSeconds) {
-            // Poll sub-second so a burst writer can exceed the output cap by less
-            // before it trips. The timeout is independent (integer-second math).
             val finished = process.waitFor(OUTPUT_CAP_POLL_MS, TimeUnit.MILLISECONDS)
             if (!currentCoroutineContext().isActive) {
                 throw CancellationException("Command cancelled while waiting for completion")
@@ -257,10 +219,8 @@ class LocalShellExecutor(
     ): Boolean = stdOut.toFile().length() > maxOutputBytes || stdErr.toFile().length() > maxOutputBytes
 
     /**
-     * Drains the child's stdout pipe through [filter] into [target] on a daemon thread.
-     * [join] waits at most the given bound; a pump still blocked past it (a background
-     * child holds the pipe open) has its file closed, so nothing written afterwards can
-     * reach the artifact, and its read end closed. See ADR-0063.
+     * Drains the child's stdout pipe through [filter] into [target] on a daemon thread. [join] waits
+     * at most its bound, then closes the file so nothing later reaches the artifact. See ADR-0063.
      */
     private class StdoutPump(
         private val source: InputStream,
@@ -290,8 +250,7 @@ class LocalShellExecutor(
                 } catch (e: Exception) {
                     logger.warn("Failed to pump process stdout to {}", target, e)
                     synchronized(lock) { if (!shed) failed = true }
-                    // Nobody drains the pipe any more: close our end so the child gets
-                    // EPIPE instead of blocking on a full pipe until its timeout.
+                    // Close our end so the child gets EPIPE instead of blocking on a full pipe.
                     runCatching { source.close() }
                 }
             }.apply {
@@ -307,10 +266,7 @@ class LocalShellExecutor(
             // A shed pump is not a failed one: a background child holding the pipe open is not the
             // command's fault, so nothing it writes into the closed file later fails the step.
             synchronized(lock) { shed = true }
-            // On Linux a pipe read blocked in another thread is not woken by close(): the
-            // thread ends only at the child's next write or exit, and a read that fills
-            // its buffer is still handed over. Closing the file first makes that write
-            // fail instead of growing the artifact past the cap check.
+            // Close the file first: a blocked pipe read is not woken by close(). See ADR-0063.
             runCatching { file?.close() }
             runCatching { source.close() }
         }

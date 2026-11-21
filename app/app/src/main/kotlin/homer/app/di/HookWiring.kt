@@ -8,7 +8,7 @@ import org.koin.dsl.module
 
 /**
  * The agent-level status-hook layer (ADR-0107): the durable row queue and the service that fires
- * it. Beside [appModule] in a subject file of its own (root CLAUDE.md §2).
+ * it. Beside [appModule] in a subject file of its own.
  */
 internal val hookModule =
     module {

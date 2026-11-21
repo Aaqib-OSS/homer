@@ -27,12 +27,9 @@ import homer.app.services.RunMessage
 import java.net.URI
 
 /**
- * Converts ProcessInfo to ProcessInfoResponse for JSON serialization. [openQuestions] is
- * the per-process open-question count, read once per request (`/status/all` with its page,
- * `/status/{id}` via `openCountByProcess()`). [agent] is the current agent definition (null
- * if gone since the run); secret input values are redacted per [redactInputParams].
- * [rootVisible] gates [rootProcessId]: dropped unless the caller can see that root (the
- * row's own visibility union), so a foreign flow root is not leaked. See ADR-0058.
+ * Converts ProcessInfo to its response DTO. [agent] is the current definition (null if gone); secret
+ * inputs are redacted per [redactInputParams]. [rootVisible] gates [rootProcessId], so a foreign flow
+ * root is not leaked. See ADR-0058.
  */
 fun ProcessInfo.toResponse(
     openQuestions: Int = 0,
@@ -54,9 +51,7 @@ fun ProcessInfo.toResponse(
         id = this.id,
         status = this.status.name,
         agentName = this.agentName,
-        // Resolved from the current definition, not the stored row: an edit to the
-        // agent's group shows on every run of it, past ones included. Null when the
-        // agent is gone or ungrouped.
+        // From the current definition, so a group edit shows on past runs; null if gone or ungrouped.
         group = agent?.group,
         history =
             this.history.map { (timestamp, status) ->
@@ -79,15 +74,12 @@ fun ProcessInfo.toResponse(
         owner = this.owner,
         langfuseTraceUrl = langfuseTraceUrl(this.traceId, langfuse),
         parentProcessId = this.parentProcessId,
-        // [sensitive_data_exposure / CWE-200] The root id is only emitted when the
-        // caller may open the run it points at; a hidden root reads as "unknown"
-        // (null), the same meaning an evicted row already carries.
+        // CWE-200: emitted only when the caller may open the root; a hidden root reads as null.
         rootProcessId = if (rootVisible) this.rootProcessId else null,
         retainedTruncated = this.retainedTruncated,
         tags = screenTags(this.tags, this.inputParams, agent, this.secretInputKeys),
-        // [sensitive_data_exposure / CWE-200] The id of the run that blocked this one is
-        // appended only when the caller may open that run; without it the reason still names
-        // the cause. The cap is applied to the assembled text, so the field stays bounded.
+        // CWE-200: the blocking run's id is appended only when the caller may open it; the cap
+        // applies to the assembled text.
         failureReason =
             this.failureReason?.let { reason ->
                 val holder = this.failureReasonRunId
@@ -126,11 +118,8 @@ private fun langfuseTraceUrl(
     langfuse: LangfuseConfig,
 ): String? {
     if (traceId.isNullOrBlank() || langfuse.serverUrl.isBlank() || langfuse.projectId.isBlank()) return null
-    // `serverUrl` is operator-supplied and this field is returned to every caller who
-    // can see the process, so it gets the same treatment as the log sink: userinfo,
-    // query and fragment are dropped rather than reflected. The multi-argument URI
-    // constructor also quotes anything illegal in the path it builds. A URL we cannot
-    // parse yields no link at all — better than emitting a guess.
+    // Operator-supplied `serverUrl` reaches every caller who sees the run: userinfo, query and
+    // fragment are dropped, and an unparseable URL yields no link.
     val base = stripUrlSecrets(langfuse.serverUrl.trimEnd('/'))?.let { runCatching { URI(it) }.getOrNull() } ?: return null
     if (base.scheme == null || base.host == null) return null
     return runCatching {

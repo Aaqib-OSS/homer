@@ -15,6 +15,8 @@ import homer.app.models.CronInfo
 import homer.app.models.ErrorResponse
 import homer.app.models.SchemaErrorResponse
 import homer.app.services.AgentFilesService
+import homer.app.services.AgentsService
+import homer.app.services.Authorizer
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
@@ -110,9 +112,7 @@ private fun Route.agentFileReadRoutes(deps: AgentRouteDeps) {
     with(deps) {
         get("/agents/{agentName}/files") {
             val name = call.pathParameter("agentName")
-            if (!authorizer.hasAction(call.principalName(), Action.EDIT, name)) {
-                return@get call.respond(HttpStatusCode.Forbidden, ErrorResponse(msg = "Not permitted to edit '$name'"))
-            }
+            if (!call.mayEditAgentFiles(authorizer, agentsService, name)) return@get
             respondFileOpResult(call, agentFilesService.list(name), schemaInvalidMsg = "Invalid") { r ->
                 call.respond(
                     AgentFileListResponse(
@@ -133,9 +133,7 @@ private fun Route.agentFileReadRoutes(deps: AgentRouteDeps) {
         get("/agents/{agentName}/files/{path...}") {
             val name = call.pathParameter("agentName")
             val path = call.parameters.getAll("path")?.joinToString("/") ?: ""
-            if (!authorizer.hasAction(call.principalName(), Action.EDIT, name)) {
-                return@get call.respond(HttpStatusCode.Forbidden, ErrorResponse(msg = "Not permitted to edit '$name'"))
-            }
+            if (!call.mayEditAgentFiles(authorizer, agentsService, name)) return@get
             respondFileOpResult(call, agentFilesService.read(name, path), schemaInvalidMsg = "Invalid") { r ->
                 call.respond(AgentFileContentResponse(path = path, content = r.value))
             }
@@ -149,15 +147,12 @@ private fun Route.agentFileWriteRoutes(deps: AgentRouteDeps) {
         put("/agents/{agentName}/files/{path...}") {
             val name = call.pathParameter("agentName")
             val path = call.parameters.getAll("path")?.joinToString("/") ?: ""
-            if (!authorizer.hasAction(call.principalName(), Action.EDIT, name)) {
-                return@put call.respond(HttpStatusCode.Forbidden, ErrorResponse(msg = "Not permitted to edit '$name'"))
-            }
+            if (!call.mayEditAgentFiles(authorizer, agentsService, name)) return@put
             val body = call.receiveOr400<AgentFileWriteRequest>("Invalid JSON body: expected { content }")
             respondFileOpResult(
                 call,
-                // A definition write is also an agent create: reload() loads the
-                // declared `name:` as an agent, so it needs the create-agent grant
-                // (EDIT on that name) too — CWE-285, ADR-0068.
+                // A definition write also creates the declared agent on reload(), so it needs EDIT on that name
+                // too (CWE-285, ADR-0068).
                 agentFilesService.write(name, path, body.content) { declared ->
                     authorizer.hasAction(call.principalName(), Action.EDIT, declared)
                 },
@@ -170,9 +165,7 @@ private fun Route.agentFileWriteRoutes(deps: AgentRouteDeps) {
         delete("/agents/{agentName}/files/{path...}") {
             val name = call.pathParameter("agentName")
             val path = call.parameters.getAll("path")?.joinToString("/") ?: ""
-            if (!authorizer.hasAction(call.principalName(), Action.EDIT, name)) {
-                return@delete call.respond(HttpStatusCode.Forbidden, ErrorResponse(msg = "Not permitted to edit '$name'"))
-            }
+            if (!call.mayEditAgentFiles(authorizer, agentsService, name)) return@delete
             respondFileOpResult(call, agentFilesService.delete(name, path), schemaInvalidMsg = "Invalid") {
                 call.respond(HttpStatusCode.NoContent)
             }
@@ -180,7 +173,7 @@ private fun Route.agentFileWriteRoutes(deps: AgentRouteDeps) {
     }
 }
 
-/** `GET /agents/{agentName}/langgraph`, `POST …/debug` and `POST …/cron-run`: topology, debug runs and cron fires. */
+/** `GET /agents/{agentName}/langgraph`, `POST …/debug` and `POST …/cron-run`: topology, debug and cron fires. */
 private fun Route.agentToolingRoutes(deps: AgentRouteDeps) {
     with(deps) {
         get("/agents/{agentName}/langgraph") {
@@ -210,9 +203,8 @@ private fun Route.agentToolingRoutes(deps: AgentRouteDeps) {
             )
         }
 
-        // Admin-only, handler-level gate; a denial is the same 404 as an unknown agent
-        // (ADR-0037, ADR-0047 rule 3). fireAgent swallows a failed fire, so the response
-        // has no body (ADR-0080).
+        // Admin-only; a denial is the same 404 as an unknown agent (ADR-0037, ADR-0047 rule 3).
+        // A failed fire is swallowed, so the response has no body (ADR-0080).
         post("/agents/{agentName}/cron-run") {
             val agentName = call.pathParameter("agentName")
             val agent =
@@ -226,11 +218,29 @@ private fun Route.agentToolingRoutes(deps: AgentRouteDeps) {
 }
 
 /**
- * Maps an [AgentFilesService.FileOpResult] to an HTTP response. The error
- * cases (NotFound/BadRequest/Forbidden/Conflict/SchemaInvalid) are identical
- * across the agent-files endpoints; [onOk] renders the per-endpoint success
- * body, and [schemaInvalidMsg] is the message used for the 422 SchemaInvalid
- * response.
+ * Whether the caller may edit [name]'s files: else the unknown-agent `404` for an unknown agent or one it holds
+ * no grant on (ADR-0047 rule 3), as on `/debug`, or a `403` when it holds another grant but not EDIT.
+ */
+private suspend fun ApplicationCall.mayEditAgentFiles(
+    authorizer: Authorizer,
+    agentsService: AgentsService,
+    name: String,
+): Boolean {
+    val principal = principalName()
+    if (agentsService.agents[name] == null || !authorizer.anyGrant(principal, name)) {
+        respond(HttpStatusCode.NotFound, ErrorResponse(msg = "Agent '$name' not found"))
+        return false
+    }
+    if (!authorizer.hasAction(principal, Action.EDIT, name)) {
+        respond(HttpStatusCode.Forbidden, ErrorResponse(msg = "Not permitted to edit '$name'"))
+        return false
+    }
+    return true
+}
+
+/**
+ * Maps an [AgentFilesService.FileOpResult] to the HTTP response the agent-files endpoints share;
+ * [onOk] renders the success body and [schemaInvalidMsg] is the 422 SchemaInvalid message.
  */
 internal suspend fun <T> respondFileOpResult(
     call: ApplicationCall,

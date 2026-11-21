@@ -359,10 +359,60 @@ could abuse an `endpoint=` or `mode=` ride-along, and both producers pass
 sign-in round trip. Accepting a query would need a second validation shape per
 target; landing on the destination's default view is the accepted cost.
 
+## Amendment (2026-11-21): the API sends no HSTS header
+
+The response-hardening headers (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`,
+`Content-Security-Policy`) are sent on every response; `Strict-Transport-Security` is not. Single-node
+installs are often reached over plain HTTP, and a browser that has seen the header refuses plain HTTP
+for the host for as long as `max-age` runs, so sending it would lock those installs out of their own
+console. Where TLS is used, it terminates at an operator-run reverse proxy (see `DOCKER.md`), which is
+where HSTS belongs; the API sends it only once deployment is HTTPS-only.
+
+The CSP is `default-src 'self'`, as restrictive as it gets, because the API serves no HTML and loads no
+remote subresource; a future HTML surface needs an explicit policy override before it ships.
+
+## Amendment (2026-11-21): why each `PathSafety` check exists
+
+- **`assertContained` needs the lexical and the realpath view to agree.** Rejecting `..` in the
+  string misses a symlink inside the workspace and OS canonicalization differences
+  (case-insensitive filesystems, junctions), which each escape the lexical check alone.
+- **`assertContainedUnder` is the same rule with the real root supplied by the caller.**
+  `assertContained` recomputes the root's realpath on every call, so it follows a root that was
+  swapped for a symlink. `homer-runner` pins a session root's realpath when it creates the root and
+  contains every transfer against that pin, so a run cannot move the root itself. The runner also
+  sets `failOnDanglingLink`: a dangling link has no realpath, and resolving past it would let a
+  transfer land wherever the link points. `assertContained`'s callers resolve past it and check the
+  link with `assertDanglingLinkContained` instead.
+- **`assertDanglingLinkContained` compares destinations by realpath, never normalized,** because
+  the kernel applies `..` after following links.
+- **`deleteContainedRecursively` re-asserts containment and refuses the root itself.** Cleanup
+  reads the directory back from persisted state, so a poisoned stored path could steer a
+  recursive delete at any host directory, and a stored per-run root equal to the workspace root
+  must not become a wipe of it.
+- **`isHardLinked` refuses a file with more than one link:** the same bytes are reachable
+  under a name a walk never sees, so containment cannot be decided (the walk races are AR-04 and AR-05).
+- **`LocalFileOperations.fileSize` and `listRegularFiles` use `NOFOLLOW_LINKS`.** A stat over an
+  agent-writable path must report a link's own size, or it becomes a size and existence oracle
+  for host files a swapped symlink points at; a symlink an agent drops among its artifacts is
+  left out of the listing rather than listed with its target's size and time.
+
+## Amendment (2026-11-21): why `SecretRedactor` screens the way it does
+
+- **Env first, host second.** A workspace key shadows a same-named host variable, and the workspace
+  value is the one the child can echo.
+- **Escaped forms are needles too.** Callers redact JSON-encoded text, where a secret containing
+  `\n`, `"` or `\` appears escaped, so each value is also matched in its kotlinx-escaped form at two
+  levels: attribute encoding, and a JSON document carrying the secret as a string value.
+- **The artifact-stem screen has a length floor** (`ARTIFACT_STEM_MIN_NEEDLE_LENGTH`). A short
+  `@SYSENV`-sourced global (`0`, `prod`) matches as a substring of nearly any stem, including the
+  default `cmd_{{HMR_CMD_INDEX}}` template, and would hard-fail every command; availability is in
+  scope. Telemetry and tail redaction have no floor and screen every non-empty value.
+
 ## Amendment (2026-11-21): reads of a run's own files check the opened descriptor
 
 Every read the 2026-11-20 amendment above lists — `LocalFileOperations.readTextBounded` for a
-LangGraph identity and a continuation's result, `LocalFileOperations.streamFile` for an artifact
+LangGraph identity, a continuation's result and the by-reference result fetch
+(`GET /api/v1/callback/results/{token}`, at the 4 MiB transform cap), `LocalFileOperations.streamFile` for an artifact
 download, `LogTailService.tail` and `LlmEventStreamService.followFile` — no longer checks the path
 and then opens it by name. `DescriptorOpen` opens the file through the Foreign Function & Memory API
 with `O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_NOCTTY | O_CLOEXEC`, runs `fstat` on the returned
