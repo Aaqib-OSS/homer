@@ -13,6 +13,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertEquals
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * [RemoteCommandBuilder]'s POSIX single-quoting is the ssh runner's argv contract (ADR-0032): the
@@ -43,7 +44,8 @@ class RemoteCommandBuilderPropertyTest {
         // The workdir needs quoting too: a space and a single quote are the two the builder escapes.
         val workdir = Files.createDirectories(tmp.resolve("wo rk's dir"))
 
-        runTest {
+        // Each check spawns several processes (sh, the env file's rm); macOS under a full test run needs the room.
+        runTest(timeout = 5.minutes) {
             checkAll(100, envs, argvs) { env, args ->
                 val (argv, expected) = probe(env, args)
                 assertEquals(
@@ -67,7 +69,8 @@ class RemoteCommandBuilderPropertyTest {
         val workdir = Files.createDirectories(tmp.resolve("wo rk's dir"))
         val pgidFile = tmp.resolve("reap/cmd-1.pgid").toString()
 
-        runTest {
+        // Each check spawns several processes (sh, the env file's rm); macOS under a full test run needs the room.
+        runTest(timeout = 5.minutes) {
             checkAll(100, envs, argvs) { env, args ->
                 val (argv, expected) = probe(env, args)
                 assertEquals(
