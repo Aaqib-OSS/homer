@@ -76,9 +76,7 @@ private fun Route.processEventsStreamRoute(
 ) {
     get("/processes") {
         val principal = call.principal<UserIdPrincipal>()?.name
-        // Per-connection memo (processId -> owner, agentName) so repeated events
-        // for the same process don't each re-query ProcessManager.
-        val visibilityMemo = mutableMapOf<Int, Pair<String?, String>>()
+        val visibilityMemo = visibilityMemo()
         call.withSseSlot(sseLimiter) {
             runSseSession(this) {
                 broadcaster
@@ -97,6 +95,18 @@ private fun Route.processEventsStreamRoute(
         }
     }
 }
+
+/** Distinct processes one `/stream/processes` connection remembers the owner and agent of. */
+internal const val MAX_VISIBILITY_MEMO_ENTRIES = 1_024
+
+/**
+ * A connection's process id → (owner, agent name) memo, so repeated events skip the lookup. Past
+ * [MAX_VISIBILITY_MEMO_ENTRIES] the least recently read entry is evicted and looked up again on its next event.
+ */
+internal fun visibilityMemo(): MutableMap<Int, Pair<String?, String>> =
+    object : LinkedHashMap<Int, Pair<String?, String>>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: Map.Entry<Int, Pair<String?, String>>): Boolean = size > MAX_VISIBILITY_MEMO_ENTRIES
+    }
 
 /** `GET /stream/agents`: the `agent.reload` diff, narrowed to the agents the caller holds a grant on. */
 private fun Route.agentEventsStreamRoute(
