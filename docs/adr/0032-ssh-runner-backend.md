@@ -190,10 +190,12 @@ file ([#364](https://github.com/livesport/homer/issues/364)):
   the removal.
 - **Lifecycle and cleanup.** The file is gone before the command starts. Whenever the step is
   refused, times out, is cancelled or exits non-zero, the executor removes it over SFTP under its own
-  bounded deadline. A step whose Homer process dies between the upload and the `rm` leaves the file,
-  at `0600` in the `0700` directory, until the session's workspace removal deletes the whole project
-  root ([ADR-0067](0067-ssh-cleanup-via-rm-rf.md)); a leftover is covered by that sweep, and the
-  runner has no startup sweep that would need an `.homer/env/` name pattern. That residual is `AR-13`
+  bounded deadline, best effort: a lost SFTP session makes that removal fail, and it is only logged.
+  A failed removal, or a Homer process that dies between the upload and the `rm`, leaves the file, at
+  `0600` in the `0700` directory, until the session's workspace removal deletes the project root
+  ([ADR-0067](0067-ssh-cleanup-via-rm-rf.md)). That removal runs only when `cleanAfterFinish` is true,
+  so with `false` the file stays until an operator removes the project root. There is no startup
+  sweep, and none would need an `.homer/env/` name pattern. That residual is `AR-13`
   in [`SECURITY.md`](../../SECURITY.md#accepted-risks). The same-UID swap of the env directory between
   `ensurePrivateDir`'s checks is `AR-14`.
 - **Exposure removed.** The values are on no command line and in no `execve` argv, so `AR-09` (the

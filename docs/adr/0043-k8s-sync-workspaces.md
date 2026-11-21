@@ -182,7 +182,8 @@ The per-exec `env KEY=VAL … argv` delivery above, and the residual audit-log s
   sourcing. The directory is outside `workdir` and `artifacts`, so no download brings it back.
 - **Lifecycle and cleanup.** Whenever the step fails, times out or is cancelled, the executor removes
   the file with one more exec before the session decides whether to keep the pod, so a kept-for-debug
-  pod holds none. A container the kubelet killed (OOM, deadline) cannot run that exec, and a Homer
+  pod normally holds none. The removal is best effort and only logged when it fails (an exec refused
+  or a dead pod). A container the kubelet killed (OOM, deadline) cannot run that exec, and a Homer
   process that dies mid-step cannot either; the file stays in the pod's `emptyDir` until the pod is
   deleted, at once or after `keepPodTtlSeconds` for a kept pod. That is `AR-13` in
   [`SECURITY.md`](../../SECURITY.md#accepted-risks). The startup sweep needs no `.homer/env/` pattern:
@@ -203,9 +204,9 @@ The per-exec `env KEY=VAL … argv` delivery above, and the residual audit-log s
   the exec request URI's length as a bound on it.
 - **Reserved path.** `.homer/env` is reserved from `extraUploads`
   ([ADR-0042](0042-runner-extra-uploads.md)).
-- **`tar` behavior relied on.** GNU tar and BusyBox tar both create with `open(O_CREAT|O_EXCL, mode)`
-  and unlink an existing entry first, so neither writes through a planted symlink; checked here only
-  with macOS bsdtar.
+- **`tar` behavior relied on.** GNU tar and BusyBox tar are expected to create with
+  `open(O_CREAT|O_EXCL, mode)` and unlink an existing entry first, so neither would write through a
+  planted symlink; unverified here, checked only with macOS bsdtar.
 
 ## Relationship to ADR-0003
 
