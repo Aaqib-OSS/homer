@@ -178,7 +178,7 @@ data class QuestionsConfig(
 @Serializable
 data class DispatchConfig(
     val maxPending: Int = 100,
-    val defaultTtlSec: Int? = null,
+    val defaultTtlSec: Int = 604_800,
     val sweepIntervalSec: Int = 60,
     /** How long (seconds, from creation) a settled dispatch or continuation is kept before the sweeps delete it;
      * floored at one hour. */
@@ -195,8 +195,8 @@ data class DispatchConfig(
         require(maxPending > 0) { "server.dispatch.maxPending must be > 0; got $maxPending" }
         require(maxJoinSubs > 0) { "server.dispatch.maxJoinSubs must be > 0; got $maxJoinSubs" }
         require(maxGroupSize > 0) { "server.dispatch.maxGroupSize must be > 0; got $maxGroupSize" }
-        require(defaultTtlSec == null || defaultTtlSec > 0) {
-            "server.dispatch.defaultTtlSec must be > 0 (or null); got $defaultTtlSec"
+        require(defaultTtlSec > 0) {
+            "server.dispatch.defaultTtlSec must be > 0; got $defaultTtlSec"
         }
         require(sweepIntervalSec > 0) { "server.dispatch.sweepIntervalSec must be > 0; got $sweepIntervalSec" }
         require(settledRetentionSec >= 3600) {

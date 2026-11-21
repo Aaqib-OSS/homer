@@ -313,10 +313,10 @@
           "description": "Global cap on the number of simultaneously PENDING dispatches. A new dispatch that would exceed the cap is rejected with 429."
         },
         "defaultTtlSec": {
-          "type": ["integer", "null"],
+          "type": "integer",
           "minimum": 1,
-          "default": null,
-          "description": "Default TTL (seconds) applied to dispatches that do not supply their own ttlSec. null = no default TTL (dispatches stay PENDING until answered or cancelled)."
+          "default": 604800,
+          "description": "Default TTL (seconds) applied to dispatches and continuations that do not supply their own ttlSec. Default 604800 (7 days)."
         },
         "sweepIntervalSec": {
           "type": "integer",

@@ -100,13 +100,13 @@ class QuestionsRoutesTest {
     )
 
     /**
-     * A group of two questions to a dispatch-enabled `handler`. The two clocks are pinned so a
-     * `ttlSec` group can be swept without waiting: the group is created at 1000 and
-     * [DispatchService.sweepExpired] reads [sweepAt].
+     * A group of two questions to a dispatch-enabled `handler`, created at [createdAt] and swept at [sweepAt];
+     * the real clock keeps a default-TTL group unlapsed.
      */
     private fun groupFixture(
         ttlSec: Int? = null,
-        sweepAt: Long = 1_000L,
+        createdAt: Long = System.currentTimeMillis() / 1000,
+        sweepAt: Long = createdAt,
     ): GroupFixture {
         val db = PersistenceTestSupport.tempDatabase()
         val questions = PersistenceTestSupport.questionsService(db = db)
@@ -129,7 +129,7 @@ class QuestionsRoutesTest {
                 questionsService = questions,
                 agentsService = agents,
                 inputResolver = mockk(relaxed = true),
-                nowSec = { 1_000L },
+                nowSec = { createdAt },
             )
         val created =
             runBlocking {
@@ -195,7 +195,7 @@ class QuestionsRoutesTest {
     @Test
     fun `an answer after the group expired is rejected and fires nothing`() =
         testApplication {
-            val f = groupFixture(ttlSec = 30, sweepAt = 1_031L)
+            val f = groupFixture(ttlSec = 30, createdAt = 1_000L, sweepAt = 1_031L)
             mountApiV1Routes {
                 every { questionsService } returns f.questions
                 every { dispatchService } returns f.dispatches

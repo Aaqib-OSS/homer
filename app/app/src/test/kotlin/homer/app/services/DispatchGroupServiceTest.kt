@@ -201,6 +201,9 @@ class DispatchGroupServiceTest {
 
             create(service(), specs(2), ttlSec = 30)
             assertEquals(1030L, dispatchSlot.captured.expiresAt)
+
+            create(service(), specs(2), ttlSec = null)
+            assertEquals(1000L + 604_800, dispatchSlot.captured.expiresAt)
         }
 
     // ── create: the row it builds ─────────────────────────────────────────────────────

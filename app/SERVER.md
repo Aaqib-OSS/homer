@@ -522,7 +522,7 @@ server:
 | `mcp` | `McpServerConfig` | No | `{enabled=false, maxWaitSec=300, maxInlineArtifactBytes=65536}` | Streamable HTTP MCP endpoint at `/mcp` exposing opted-in agents as MCP tools — see [MCP endpoint](#mcp-endpoint). |
 | `questions` | `QuestionsConfig` | No | `{maxWaitSec=86400, maxOpenPerProcess=10, maxTextLength=10000, maxOptions=20, maxConcurrentWaitsPerProcess=32}` | Human-in-the-loop questions asked by running commands — see [Operator questions](#operator-questions). |
 | `messages` | `RunMessagesConfig` | No | `{maxTextLength=10000, maxPerRun=100}` | Per-run inbox limits for operator messages sent to a running run — see [Run messages](#run-messages). |
-| `dispatch` | `DispatchConfig` | No | `{maxPending=100, defaultTtlSec=null, sweepIntervalSec=60, settledRetentionSec=604800, resultTokenTtlSec=3600, maxJoinSubs=32, maxGroupSize=8}` | Ask-and-dispatch bounds and TTLs — see [Ask-and-dispatch](#ask-and-dispatch). |
+| `dispatch` | `DispatchConfig` | No | `{maxPending=100, defaultTtlSec=604800, sweepIntervalSec=60, settledRetentionSec=604800, resultTokenTtlSec=3600, maxJoinSubs=32, maxGroupSize=8}` | Ask-and-dispatch bounds and TTLs — see [Ask-and-dispatch](#ask-and-dispatch). |
 | `hooks` | `HookConfig` | No | `{maxPending=200, maxChainDepth=8, settledRetentionSec=604800}` | Bounds on agent-declared status hooks — see [Status hooks](#status-hooks). |
 | `langGraph` | `LangGraphConfig` | No | `{stateDir=null}` | LangGraph runtime settings (durable checkpoint root) — see [LangGraph](#langgraph). |
 | `agentGrants` | `Map<String, List<Grant>>` | No | `{}` | Per-agent delegation: which target agents an agent's own nested dispatches may reach, keyed by the dispatching agent's name — see [Grants and roles](#grants-and-roles). |
@@ -793,7 +793,7 @@ cancel, TTL and the settled-row prune. See
 server:
   dispatch:
     maxPending: 100           # global cap on PENDING dispatches, and separately on PENDING continuations (default 100)
-    defaultTtlSec: 86400      # default per-dispatch TTL in seconds (default null = no TTL)
+    defaultTtlSec: 86400      # default per-dispatch TTL in seconds (default 604800 = 7 days)
     sweepIntervalSec: 60      # how often the TTL sweep runs, in seconds (default 60)
     settledRetentionSec: 604800  # delete settled dispatches/continuations this long after creation (default 7 days, floor 3600)
     resultTokenTtlSec: 3600   # TTL for read-by-reference result tokens (default 3600, floor 60)
@@ -804,7 +804,7 @@ server:
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `maxPending` | `Int` | No | `100` | Global cap on the number of simultaneously PENDING dispatches and continuations (the pending cap is counted separately for each). A new dispatch or continuation that would exceed its cap is rejected with `429`. |
-| `defaultTtlSec` | `Int?` | No | `null` | Default TTL (seconds) applied to dispatches and continuations (including joins) that do not supply their own `ttlSec`. `null` = no default TTL (they stay PENDING until answered, fired, or cancelled). |
+| `defaultTtlSec` | `Int` | No | `604800` | Default TTL (seconds) applied to dispatches and continuations (including joins) that do not supply their own `ttlSec`; a pending row expires after it. Must be `> 0`; raise it, or pass `ttlSec` per call, for a wait longer than 7 days. |
 | `sweepIntervalSec` | `Int` | No | `60` | How often (seconds) the background sweeps run to cancel PENDING dispatches (and expire PENDING continuations) whose `expires_at` has passed. |
 | `settledRetentionSec` | `Long` | No | `604800` | How long (seconds) a settled dispatch or continuation — any status but `PENDING` and `DISPATCHING` — is kept, measured from its `createdAt`; the dispatch and continuation sweeps then delete it, with its dispatch-bound question or join watch rows. A row that settled late is therefore kept for less than this after settling. Minimum `3600`. |
 | `resultTokenTtlSec` | `Int` | No | `3600` | TTL (seconds) for read-by-reference result tokens minted when a watched sub-process's result exceeds the inline cap. Floored at `60` so a token outlives the resumed parent's first segment. See [ADR-0025](../docs/adr/0025-capability-token-result-read.md). |

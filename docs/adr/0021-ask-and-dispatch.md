@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-15
 deciders: Lukáš Vlk
-amended: 2026-06-24, 2026-09-30, 2026-10-09, 2026-11-20
+amended: 2026-06-24, 2026-09-30, 2026-10-09, 2026-11-20, 2026-11-21
 ---
 # ADR-0021: ask-and-dispatch — deferred dispatch from a question answer
 
@@ -117,7 +117,7 @@ count of PENDING dispatches meets the cap, the creation fails with `429`.
 
 **Config block.** `server.dispatch` (optional; all fields have defaults):
 `authToken` (nullable, `@SYSENV:`-resolvable), `maxPending` (default 100),
-`defaultTtlSec` (nullable), `sweepIntervalSec` (default 60).
+`defaultTtlSec` (nullable; see the 2026-11-21 amendment), `sweepIntervalSec` (default 60).
 
 > **Amendment (2026-10-09) —** `authToken` was removed, see ADR-0030.
 
@@ -244,3 +244,9 @@ whose `expires_at` has passed, whether or not the TTL sweep has moved it yet. Th
 every `sweepIntervalSec`, so a claim on status alone would let an answer fire a dispatch whose TTL
 lapsed since the last tick. The continuations of ADR-0023 share the same claim, so a lapsed
 continuation does not fire when its watched run ends either.
+
+## Amendment (2026-11-21): the default TTL is finite
+
+`server.dispatch.defaultTtlSec` is a non-nullable `Int` defaulting to `604800` (7 days), still `> 0`. A dispatch or
+continuation without its own `ttlSec` now expires after the default instead of staying PENDING forever; an operator
+who needs a longer wait raises the setting or passes `ttlSec`. Every pending row is thus bounded in time (ADR-0047).

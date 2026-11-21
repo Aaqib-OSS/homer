@@ -3857,7 +3857,7 @@ Flags:
 | `--answer-param NAME` | no | `answer` | Query-param name the answer is injected under. Cannot be a reserved env name (`PATH`, `HMR_*`, …) other than the LangGraph control markers — rejected with `400` |
 | `--param key=value` | no | — | Additional query params passed to the agent run (repeatable) |
 | `--option TEXT` | no | — | Predefined answer option rendered as a button (repeatable) |
-| `--ttl SEC` | no | `server.dispatch.defaultTtlSec` (unset = no expiry) | Seconds before the question expires unanswered |
+| `--ttl SEC` | no | `server.dispatch.defaultTtlSec` (unset = 7 days) | Seconds before the question expires unanswered |
 
 The dispatched agent run is independent: like any run it gets its own
 freshly-minted `HMR_CALLBACK_TOKEN` and does not inherit the asking
@@ -3929,7 +3929,7 @@ Flags:
 | `--continue-param key=value` | no | — | Param passed to the continuation run, not the sub (repeatable; requires `--continue-agent`). Use for state the *resumed parent* needs — e.g. the LangGraph interrupt id; `--param` would land on the sub and be lost |
 | `--resume-param NAME` | no | `HMR_LG_RESUME` | Param name the continuation run receives the sub's result payload under (requires `--continue-agent`). With the default `HMR_LG_RESUME` (a LangGraph control marker) the payload lands in the continuation run's env directly; any other name is delivered through the continuation agent's declared input with that `paramName`. Cannot be a reserved env name (`PATH`, `HMR_*`, …) other than the LangGraph control markers — rejected with `400` |
 | `--result-jsonpath PATH` | no | — | JsonPath applied to the sub's stdout; the extracted value becomes the `result` field of the resume payload delivered via `--resume-param`. Without it, `result` is `null` (requires `--continue-agent`) |
-| `--ttl SECONDS` | no | `server.dispatch.defaultTtlSec` (unset = no expiry) | Continuation expiry; if the sub never finishes within this window the continuation is swept (requires `--continue-agent`) |
+| `--ttl SECONDS` | no | `server.dispatch.defaultTtlSec` (unset = 7 days) | Continuation expiry; if the sub never finishes within this window the continuation is swept (requires `--continue-agent`) |
 
 #### Continuing when the sub finishes
 

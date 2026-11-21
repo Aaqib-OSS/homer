@@ -168,14 +168,13 @@ class FiniteLimitsContractTest {
             return name == "concurrency" || name.startsWith("max") || parts.any { it in SEGMENTS }
         }
 
-        /** Today's violations. Key `Owner.property` → why `null` is safe, or the cleanup issue that removes it. */
+        /** Nullable limit-named properties. Key `Owner.property` → why `null` is safe. */
         val EXEMPTIONS =
             mapOf(
                 "Agent.runnerClaimTimeoutSec" to "null inherits the finite server.runnerClaimTimeoutSec",
                 "ClaudeCmdOptions.maxBudgetUsd" to "opt-in spend cap with no bound by default; removed by #347",
                 "ClaudeCmdOptions.maxMcpOutputTokens" to "unset leaves the Claude CLI's own output cap in force; removed by #347",
                 "ClaudeCmdOptions.maxTurnsExitCode" to "an exit code, not a bound: the name matches the pattern by accident",
-                "DispatchConfig.defaultTtlSec" to "null means a dispatch has no expiry of its own; removed by #347",
                 "Param.max" to "opt-in numeric value constraint on a caller's input, not a resource bound",
                 "Param.maxLength" to "opt-in length constraint on a caller's input, not a resource bound",
                 "kubernetes.jobTtlSecondsAfterFinished" to "null falls back to the finite effectiveJobTtlSeconds of 3600",
