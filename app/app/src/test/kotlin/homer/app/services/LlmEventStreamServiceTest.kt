@@ -533,6 +533,32 @@ class LlmEventStreamServiceTest {
     }
 
     @Test
+    fun `a stdout file truncated under the stream ends the stream cleanly after what was read`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val out = tmp.resolve("cmd_0.out")
+        out.writeText(line("""{"type":"thread.started","thread_id":"t1"}"""))
+        val pm = processManagerWithoutJob()
+        val polls = AtomicInteger(0)
+        coEvery { pm.getProcessInfo(1) } returns processInfo(1, tmp, ProcessStatus.WORKING)
+        coEvery { pm.getProcessStatus(1) } answers {
+            when (polls.incrementAndGet()) {
+                1 -> ProcessStatus.WORKING
+                2 -> ProcessStatus.WORKING.also { out.writeText("{") }
+                else -> ProcessStatus.FINISHED
+            }
+        }
+        coEvery { pm.getCommandArtifacts(1, 0) } returns CommandArtifactPaths(out, tmp.resolve("e"), kind = "codex")
+        coEvery { pm.latestCommandArtifacts(1) } returns null
+        val service = LlmEventStreamService(pm, harnesses, TestFixtures.mockLogger(), pollIntervalMs = 10)
+
+        val events = service.streamCommand(1, 0, null).toList()
+
+        assertTrue(polls.get() >= 3, "the stream must have polled past the truncation")
+        assertEquals(listOf("session_start"), events.filterIsInstance<LlmStreamEvent.Event>().map { typeOf(it.event) })
+    }
+
+    @Test
     fun `streamCommand ignores a cursor for another attempt and replays from byte 0`(
         @TempDir tmp: Path,
     ) = runTest {
