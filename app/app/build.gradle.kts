@@ -64,6 +64,8 @@ dependencies {
         implementation(libs.httpclient5)
         implementation(libs.httpcore5)
         implementation(libs.httpcore5H2)
+        // Above the guava client-java's Google auth client resolves (W-024).
+        implementation(libs.guava)
         // Kept at the project's Kotlin version: without it Ktor and Exposed resolve a 2.3.x kotlin-reflect
         // that predates an advisory fix (W-013, W-014).
         implementation(libs.kotlinReflect)
@@ -157,6 +159,7 @@ tasks.test {
             repoRoot.resolve("app/entrypoint.sh"),
             repoRoot.resolve("app/homer-runner.sh"),
             repoRoot.resolve("app/agentdebug.sh"),
+            repoRoot.resolve("app/require-java4shell-fix.sh"),
             repoRoot.resolve("app/settings.gradle.kts"),
             repoRoot.resolve("app/buildSrc/settings.gradle.kts"),
             // DependencyVerificationGateTest reads these (ADR-0115). The keyrings are files, not

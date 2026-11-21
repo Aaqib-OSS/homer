@@ -110,6 +110,15 @@
       "groupName": null,
       "addLabels": ["workaround-pin"],
       "automerge": false
+    },
+    {
+      "description": "The console's node base image, held by a docs/workarounds.md row; CI's setup-node versions stay in their group.",
+      "matchDatasources": ["docker"],
+      "matchFileNames": ["console/Dockerfile"],
+      "matchPackageNames": ["node"],
+      "groupName": null,
+      "addLabels": ["workaround-pin"],
+      "automerge": false
     }
   ]
 }

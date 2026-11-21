@@ -21,6 +21,7 @@ class CliVersionPinTest {
             "CLAUDE_CODE_VERSION" to "@anthropic-ai/claude-code",
             "CODEX_VERSION" to "@openai/codex",
             "OPENCODE_VERSION" to "opencode-ai",
+            "NPM_VERSION" to "npm",
         )
 
     /** An exact release: no `latest`, no `^`/`~`/`*` range, no dist-tag. */

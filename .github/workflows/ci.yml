@@ -225,9 +225,15 @@ jobs:
           path: reports.tgz
           retention-days: 7
 
-  homer-python-tests:
+  # 3.12 is the package floor, 3.14 the images' interpreter (ADR-0114); the 3.14 leg also audits and reports.
+  homer-python-test-legs:
+    name: homer-python-tests (${{ matrix.python }})
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.12', '3.14']
     defaults:
       run:
         working-directory: clients/python
@@ -237,7 +243,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.python }}
       # The image's own install (requirements.lock, ADR-0114) plus requirements-test.lock (pytest, ruff,
       # setuptools); one install, so a pin the two locks disagree on fails it.
       - run: pip install --require-hashes --no-deps -r requirements.lock -r requirements-test.lock
@@ -247,20 +253,32 @@ jobs:
       # Known advisories in requirements.lock, the tree the image ships; the test extra is not
       # audited. pip-audit itself installs from hash-pinned requirements into a venv of its own.
       - name: pip-audit
+        if: matrix.python == '3.14'
         run: |
           python -m venv "$RUNNER_TEMP/pip-audit"
           "$RUNNER_TEMP/pip-audit/bin/pip" install --no-deps --require-hashes -r ../../tools/pip-audit/requirements.txt
           "$RUNNER_TEMP/pip-audit/bin/pip-audit" --strict --progress-spinner off --require-hashes --disable-pip -r requirements.lock
       - name: Pack reports
-        if: always()
+        if: always() && matrix.python == '3.14'
         working-directory: .
         run: tar -czf reports.tgz --ignore-failed-read clients/python/report.xml
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+        if: always() && matrix.python == '3.14'
         with:
           name: reports-homer-python-tests
           path: reports.tgz
           retention-days: 7
+
+  # The main ruleset requires the context homer-python-tests; a matrix job reports one context per leg.
+  homer-python-tests:
+    needs: homer-python-test-legs
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - run: test "$LEGS" = success
+        env:
+          LEGS: ${{ needs.homer-python-test-legs.result }}
 
   # tools/release/notes.sh writes the GitHub release page (release.yml's docs and release-notes
   # jobs), which run on tags only.

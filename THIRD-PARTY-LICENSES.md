@@ -80,9 +80,9 @@ bundled into the shadow JARs and the backend and runner Docker images.
 - **com.google.auto.value:auto-value-annotations** 1.11.0 — https://github.com/google/auto/tree/main/value
 - **com.google.code.findbugs:jsr305** 3.0.2 — http://findbugs.sourceforge.net/
 - **com.google.code.gson:gson** 2.14.0 — https://github.com/google/gson
-- **com.google.errorprone:error_prone_annotations** 2.48.0 — https://errorprone.info/error_prone_annotations
+- **com.google.errorprone:error_prone_annotations** 2.52.0 — https://errorprone.info/error_prone_annotations
 - **com.google.guava:failureaccess** 1.0.3 — https://github.com/google/guava/
-- **com.google.guava:guava** 33.5.0-jre — https://github.com/google/guava
+- **com.google.guava:guava** 33.8.0-jre — https://github.com/google/guava
 - **com.google.guava:listenablefuture** 9999.0-empty-to-avoid-conflict-with-guava — no project URL
 - **com.google.http-client:google-http-client-gson** 2.1.0 — no project URL
 - **com.google.http-client:google-http-client** 2.1.0 — https://www.google.com/
@@ -268,7 +268,7 @@ bundled into the shadow JARs and the backend and runner Docker images.
 - **org.jetbrains.kotlinx:kotlinx-serialization-json-jvm** 1.11.0 — https://github.com/Kotlin/kotlinx.serialization
 - **org.jetbrains.kotlinx:kotlinx-serialization-json** 1.11.0 — https://github.com/Kotlin/kotlinx.serialization
 - **org.jetbrains:annotations** 23.0.0 — https://github.com/JetBrains/java-annotations
-- **org.jspecify:jspecify** 1.0.0 — http://jspecify.org/
+- **org.jspecify:jspecify** 1.0.1 — https://jspecify.dev/
 - **org.snakeyaml:snakeyaml-engine** 3.0.1 — https://bitbucket.org/snakeyaml/snakeyaml-engine
 - **org.xerial:sqlite-jdbc** 3.53.4.0 — https://github.com/xerial/sqlite-jdbc
   - Copyright (c) 2006, David Crawshaw.  All rights reserved.

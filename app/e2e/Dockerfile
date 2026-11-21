@@ -1,6 +1,6 @@
 # Test-runner image for the black-box E2E suite; the build context is the repo root, as for app/Dockerfile.
 # Gradle and the :e2e dependencies warm in a layer before the test sources, so editing a test never re-downloads.
-FROM eclipse-temurin:25-jdk-alpine-3.23@sha256:9c835a4ba215132c44248947376e270323ccca5a770248dd5cdf6c1711ebfa1f
+FROM eclipse-temurin:25-jdk-alpine-3.24@sha256:22edbb1021420ae6e248519d1af07577742314d67d4c60fcbb2e285b7e47fa78
 
 RUN apk add --no-cache bash
 
