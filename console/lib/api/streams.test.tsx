@@ -411,7 +411,7 @@ describe('useAgentReloadStream', () => {
     };
   }
 
-  it('the agent.reload frame invalidates the agents queries, whatever the diff holds', () => {
+  it('the agent.reload frame invalidates the agents and load-errors queries, whatever the diff holds', () => {
     const { emit, keys } = mountWithSpy();
 
     emit('agent.reload', { added: ['a'], updated: [], removed: ['b'] });
@@ -422,7 +422,16 @@ describe('useAgentReloadStream', () => {
     // when JSON.parse throws) and invalidates too — the frame name is the signal.
     emit('agent.reload', '');
 
-    expect(keys()).toEqual([queryKeys.agents(), queryKeys.agents(), queryKeys.agents()]);
+    // Both come from the same scan the frame announces, so each frame
+    // invalidates the pair.
+    expect(keys()).toEqual([
+      queryKeys.agents(),
+      queryKeys.agentLoadErrors(),
+      queryKeys.agents(),
+      queryKeys.agentLoadErrors(),
+      queryKeys.agents(),
+      queryKeys.agentLoadErrors(),
+    ]);
   });
 
   it('a frame that is not a reload invalidates nothing', () => {

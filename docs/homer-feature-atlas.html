@@ -846,7 +846,7 @@ onStop:
           <h3>Live agent reload <span class="where">http</span></h3>
           <p>Rescans the agents directory without a restart and reports what changed. Broken agents are skipped with an
             error rather than taking the server down. Admin only. Queued runs of an updated or removed agent are killed.
-            The errors of the last completed scan — the startup one included — are readable without reloading at
+            The errors of the last published scan — the startup one included — are readable without reloading at
             <code>GET /api/v1/agents/load-errors</code>; anyone but an admin gets the body-less <code>404</code> of a
             path that was never mounted.</p>
           <pre><code>curl -X POST "$HOMER/api/v1/agents/reload"
