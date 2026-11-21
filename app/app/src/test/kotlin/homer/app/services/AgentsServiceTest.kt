@@ -2,7 +2,9 @@ package homer.app.services
 
 import homer.app.fixtures.AgentFixtures
 import homer.app.fixtures.TestFixtures
+import homer.app.loadStartupConfig
 import homer.app.models.AgentReloadResult
+import homer.app.models.AppConfig
 import io.mockk.mockk
 import io.mockk.unmockkAll
 import io.mockk.verify
@@ -1969,7 +1971,7 @@ class AgentsServiceTest {
             """.trimIndent().toByteArray(),
         )
 
-        agentsService = AgentsService(testAgentsPath, logger)
+        agentsService = AgentsService(testAgentsPath, logger, agentSysEnvNames = setOf("PATH"))
 
         val agent = assertNotNull(agentsService.agents["sysenv-agent"])
         // Both the env key and the host variable it referenced: the key covers this
@@ -1983,6 +1985,53 @@ class AgentsServiceTest {
         // The recorded key must resolve against the RESOLVED env, or the redactor
         // would look up a value that is no longer there.
         assertEquals(System.getenv("PATH"), agent.env["REPO_TOKEN"])
+    }
+
+    // ========== @SYSENV allowlist (ADR-0037) ==========
+
+    private fun startupConfig(globalEnv: String): AppConfig {
+        val configFile = Files.createTempFile("sysenv-allowlist", ".json")
+        Files.writeString(
+            configFile,
+            """{"agentsSearchPath": "$testAgentsPath", "workspaceRootPath": "ws", "databasePath": "homer.db",
+               "globalEnv": $globalEnv}""",
+        )
+        return try {
+            assertNotNull(loadStartupConfig(arrayOf(configFile.toString()), hardenJvm = {}))
+        } finally {
+            Files.delete(configFile)
+        }
+    }
+
+    private fun writeHostRefAgent() {
+        val agentDir = Files.createDirectories(testAgentsDir.resolve("host-ref"))
+        Files.writeString(
+            agentDir.resolve("agent.yaml"),
+            "name: host-ref\nenv:\n  TOKEN: \"@SYSENV:PATH\"\ncommands:\n  - !<cmd>\n    cmd: echo hi\n",
+        )
+    }
+
+    @Test
+    fun `a host variable globalEnv references loads in an agent env without being listed`() {
+        writeHostRefAgent()
+        val config = startupConfig("""{"HOST_PATH": "@SYSENV:PATH"}""")
+
+        agentsService = AgentsService(testAgentsPath, logger, agentSysEnvNames = config.agentSysEnvNames)
+
+        assertEquals(System.getenv("PATH"), agentsService.agents["host-ref"]?.env?.get("TOKEN"))
+    }
+
+    @Test
+    fun `a host variable neither listed nor referenced by globalEnv fails the agent's load`() {
+        writeHostRefAgent()
+        val config = startupConfig("""{"PLAIN": "PATH"}""")
+
+        agentsService = AgentsService(testAgentsPath, logger, agentSysEnvNames = config.agentSysEnvNames)
+
+        assertNull(agentsService.agents["host-ref"])
+        val errors = agentsService.reload().errors
+        assertTrue(errors.any { "'PATH'" in it }, errors.toString())
+        assertFalse(errors.any { System.getenv("PATH") in it }, "a refusal never carries the value")
     }
 
     // ========== telemetry.traceTags declaration validation (ADR-0050) ==========

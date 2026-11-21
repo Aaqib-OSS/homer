@@ -63,6 +63,7 @@ class ConfigLoaderTest {
 
         assertEquals("s3cr3t-value", config.globalEnv["TOKEN"])
         assertEquals(setOf("TOKEN", "REPO_TOKEN"), config.sysEnvBackedGlobalEnvNames)
+        assertEquals(setOf("REPO_TOKEN"), config.globalEnvSysEnvNames)
     }
 
     @Test

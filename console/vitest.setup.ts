@@ -11,10 +11,13 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
     disconnect() {}
   };
 }
-Element.prototype.scrollIntoView = Element.prototype.scrollIntoView ?? (() => {});
-Element.prototype.hasPointerCapture = Element.prototype.hasPointerCapture ?? (() => false);
-Element.prototype.setPointerCapture = Element.prototype.setPointerCapture ?? (() => {});
-Element.prototype.releasePointerCapture = Element.prototype.releasePointerCapture ?? (() => {});
+// Absent under `@vitest-environment node`, which the server-render tests use.
+if (typeof Element !== 'undefined') {
+  Element.prototype.scrollIntoView = Element.prototype.scrollIntoView ?? (() => {});
+  Element.prototype.hasPointerCapture = Element.prototype.hasPointerCapture ?? (() => false);
+  Element.prototype.setPointerCapture = Element.prototype.setPointerCapture ?? (() => {});
+  Element.prototype.releasePointerCapture = Element.prototype.releasePointerCapture ?? (() => {});
+}
 
 // Node 22+'s global `localStorage` getter shadows jsdom's Storage and returns undefined; install
 // an in-memory Storage, since the console keeps the bearer token there.

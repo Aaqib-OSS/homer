@@ -51,4 +51,27 @@ class AgentLoadingTest {
 
         assertEquals(setOf("on-local", "on-box"), loaded.keys)
     }
+
+    @Test
+    fun `an agent env names only the host variables the config allows with @SYSENV`(
+        @TempDir tempDir: Path,
+    ) {
+        val agents = tempDir.resolve("agents")
+        for ((name, variable) in listOf("listed" to "PATH", "unlisted" to "HOME")) {
+            agents.resolve(name).createDirectories().resolve("agent.yaml").writeText(
+                "name: $name\nenv:\n  V: \"@SYSENV:$variable\"\ncommands:\n  - !<cmd>\n    cmd: \"echo hi\"\n",
+            )
+        }
+        val appConfig =
+            AppConfig(
+                agentsSearchPath = agents.toString(),
+                workspaceRootPath = tempDir.resolve("workspace").toString(),
+                databasePath = tempDir.resolve("db.sqlite").toString(),
+                agentSysEnvAllowlist = listOf("PATH"),
+            )
+
+        val loaded = appConfig.loadAgents(LoggerFactory.getLogger("test")).agents
+
+        assertEquals(setOf("listed"), loaded.keys)
+    }
 }

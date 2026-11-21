@@ -139,6 +139,9 @@ statuses every 250 ms on a single bearer identity, and the default budgets
 `PATH` — it is not load-bearing for `homer-ask` discovery: the workspace
 env always has a `PATH` (`parentEnvAllowlist` defaults to it) even without
 this entry, so deleting it would not break the questions/dispatch agents.
+`agentSysEnvAllowlist` lists `CONFIG_PATH`, a variable the compose stack sets on
+the backend, so `AgentCatalogTest` can write an agent that references it with
+`@SYSENV:` next to one naming the unlisted `JAVA_OPTS`, which is refused.
 
 `fixtures/agents/` holds one purpose-built agent per behavior under test
 (happy path, failure, locks, inputs, artifacts, questions, runnerCmd, …).

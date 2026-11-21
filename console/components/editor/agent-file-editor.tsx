@@ -5,18 +5,22 @@ import { useEffect, useRef, type RefObject } from 'react';
 import { useAgentSchema } from '@/lib/api/queries';
 import { setupMonaco } from '@/lib/monaco/setup';
 
-// Runs synchronously at module load, before @monaco-editor/react's loader fetches
-// Monaco on first mount; an effect is too late for monaco-yaml to reach that instance.
-setupMonaco();
-
-const MonacoEditor = dynamic(() => import('@monaco-editor/react'), {
-  ssr: false,
-  loading: () => (
-    <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-      Loading editor...
-    </div>
-  ),
-});
+// Configured inside the client-only loader, so Monaco is set up before
+// @monaco-editor/react's first mount and never during a server render.
+const MonacoEditor = dynamic(
+  async () => {
+    await setupMonaco();
+    return import('@monaco-editor/react');
+  },
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+        Loading editor...
+      </div>
+    ),
+  },
+);
 
 interface AgentFileEditorProps {
   path: string;

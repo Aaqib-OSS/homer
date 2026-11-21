@@ -2,14 +2,16 @@ package homer.app.services
 
 import homer.app.fixtures.AgentFixtures
 import homer.app.fixtures.TestFixtures
+import homer.app.infra.AgentSysEnvAllowlist
 import homer.app.services.AgentFilesService.FileOpResult
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class AgentDefinitionWriteGateTest {
-    private val gate = AgentDefinitionWriteGate(TestFixtures.mockLogger())
+    private val gate = AgentDefinitionWriteGate(TestFixtures.mockLogger(), AgentSysEnvAllowlist(setOf("LISTED")))
 
     @Test
     fun `a write landing on a non-definition file passes without a grant check`() {
@@ -95,5 +97,23 @@ class AgentDefinitionWriteGateTest {
             ) { true }
 
         assertNull(denial)
+    }
+
+    @Test
+    fun `a definition whose env names an unlisted host variable is schema-invalid, naming it`() {
+        val content = AgentFixtures.validAgentYaml() + "\n  TOKEN: \"Bearer @SYSENV:UNLISTED\"\n"
+
+        val denial = gate.denial("agent.yaml", "agent.yaml", content) { true }
+
+        val errors = assertIs<FileOpResult.SchemaInvalid>(denial).errors
+        assertEquals(1, errors.size, errors.toString())
+        assertTrue("'UNLISTED'" in errors.single() && "agentSysEnvAllowlist" in errors.single(), errors.toString())
+    }
+
+    @Test
+    fun `a definition whose env names only listed host variables passes`() {
+        val content = AgentFixtures.validAgentYaml() + "\n  TOKEN: \"Bearer @SYSENV:LISTED\"\n"
+
+        assertNull(gate.denial("agent.yaml", "agent.yaml", content) { true })
     }
 }

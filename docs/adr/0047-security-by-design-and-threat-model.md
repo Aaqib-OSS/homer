@@ -404,6 +404,61 @@ remote subresource; a future HTML surface needs an explicit policy override befo
   default `cmd_{{HMR_CMD_INDEX}}` template, and would hard-fail every command; availability is in
   scope. Telemetry and tail redaction have no floor and screen every non-empty value.
 
+## Amendment (2026-11-21): reads of a run's own files check the opened descriptor
+
+Every read the 2026-11-20 amendment above lists — `LocalFileOperations.readTextBounded` for a
+LangGraph identity and a continuation's result, `LocalFileOperations.streamFile` for an artifact
+download, `LogTailService.tail` and `LlmEventStreamService.followFile` — no longer checks the path
+and then opens it by name. `DescriptorOpen` opens the file through the Foreign Function & Memory API
+with `O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_NOCTTY | O_CLOEXEC`, runs `fstat` on the returned
+descriptor, refuses anything but a single-link regular file and reads from that descriptor alone;
+the two streams follow the file through it with `pread` and `fstat`'s `st_size`. The open flags and
+the `struct stat` offsets are defined per OS and architecture (Linux and macOS on x86_64 and
+aarch64), with glibc's `__fxstat` as the entry point where glibc older than 2.33 exports no `fstat`.
+`readTextBounded` and `streamFile` keep the bounded, timed open pool, and a result that arrives
+after its caller gave up is closed.
+
+This closes two of the 2026-11-20 cases for every listed read: a hard link renamed into place
+between the link check and the open is refused at the descriptor, and a FIFO swapped in is refused
+without blocking, so it holds no open-pool thread, no call thread and no SSE slot. A final-component
+symlink is refused by `O_NOFOLLOW` as before. What remains is accepted with the 2026-11-20
+reasoning: a symlink swapped in for the artifacts directory between its check and the open; for the
+two streams, the same swap at any time before the poll that opens the file; and a symlink at the run
+root or a directory above it. Closing these needs an `openat`-style walk from a descriptor held on
+the checked directory, which this change does not add.
+
+Where no descriptor-checked open is defined, or the JVM denies native access, these reads are
+refused and never retried as a blocking by-name open. The server and agentdebug log once at startup
+whether the open works, at ERROR naming the refused reads and the cause. Homer still starts without
+it, unlike the runner's dumpability check (ADR-0078): commands still run and no run's own output is
+lost, but every one of these reads is refused, so artifacts, logs and LLM events cannot be served, a
+LangGraph run reports no thread and cannot be resumed, and a continuation's target run resumes
+without the watched run's result.
+
+Alternatives considered for checking the opened file, and rejected:
+
+- `Files.readAttributes` on the path (`isRegularFile`, `unix:nlink`), the check these reads made
+  before: it describes the name, not the file the open returns, so a swap between the two wins, and
+  `java.nio` has no `O_NONBLOCK`, so the open of a swapped-in FIFO still blocks.
+- Inspecting the descriptor through `/proc/self/fd/N` or `/dev/fd/N`: those are paths, so the kernel
+  resolves them again; `java.nio` hands out no descriptor number without reflection into JDK
+  internals; `/proc` is Linux-only; and the by-name open before it would still block on a FIFO.
+- A JNI library for the same calls: a native artifact to build, ship and load per platform, and a
+  JNI loading surface, for four libc calls the JDK 25 FFM API reaches with nothing to ship. The cost
+  FFM keeps is the explicit per-platform layout, which the descriptor tests check on every platform
+  CI runs.
+
+`SECURITY.md` carries what remains as AR-12.
+
+## Amendment (2026-11-21): an agent definition names only allowed host variables
+
+Rule 2 counts agent-declared env as attacker-controlled, and an `edit` holder is a principal
+distinct from the operator. A definition's `@SYSENV:NAME` therefore reaches only the host variables
+the operator allowed (`agentSysEnvAllowlist` plus those `globalEnv` references), checked where the
+reference is resolved, at load, and again at the agent-file write. The refusal names the variable,
+never its value, and is decided before anything is read, so it does not reveal whether the variable
+exists either. The decision and its residual are in ADR-0037's amendment of the same date.
+
 ## Pros and Cons of the Options
 
 ### Option A — SAST plus review, no written model

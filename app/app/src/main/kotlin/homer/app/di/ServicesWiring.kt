@@ -55,6 +55,7 @@ internal val servicesModule =
                 inputSchemaValidator = get(),
                 inputResolver = get(),
                 runnerAliases = setOf(LocalRunner.ALIAS) + get<AppConfig>().runners.keys,
+                agentSysEnvNames = appConfig.agentSysEnvNames,
                 runnerTagSets = {
                     val cfg = get<AppConfig>()
                     buildList {

@@ -5,8 +5,11 @@
 ### Homer
 
 - **Fixed: an invalid hook target is not echoed in the error** — The agent-load and definition-write error for a malformed `hooks` target no longer repeats the value.
+- **Fixed: `agentdebug run --cmd N` with an out-of-range N** — An index below 0 or at/above the agent's command count now fails before anything runs instead of silently running nothing.
 - **Added: `isErrorExitCode` on `!<claude>` commands** — An `is_error` result returns this exit code instead of failing as malformed, and is not retried.
 - **Added: `GET /api/v1/auth/me` answers a bearer token** — A request carrying a bearer token gets that token's name, role and grants, and the route is mounted whenever a `bearer` or `password` scheme is configured.
+- **BREAKING: an agent's `@SYSENV:` names only allowed host variables** — An agent whose `env` references a host variable that neither the new `agentSysEnvAllowlist` config lists nor `globalEnv` references with `@SYSENV:` fails to load, and an agent-file write of one is refused with `422`. See [ADR-0037](docs/adr/0037-grants-authorization.md).
+- **Security: the server JVM is non-dumpable on Linux** — At startup the backend makes itself non-dumpable, so agent commands and LangGraph inspect running as Homer's user cannot read its environment or ptrace it, and it writes no core dump. See [ADR-0078](docs/adr/0078-runner-jvm-is-non-dumpable.md).
 - **BREAKING: the LangGraph runtime needs Python 3.12** — A runner host that runs `!<langgraph>` commands needs Python 3.12 or newer to install `homer_langgraph`.
 - **BREAKING: the optional Artifactory build path is removed** — Gradle builds and the backend and E2E image builds no longer read `ARTIFACTORY_URL`, `ARTIFACTORY_USER` or `ARTIFACTORY_TOKEN` and resolve from Maven Central and the Gradle Plugin Portal, so an operator whose network reaches dependencies only through Artifactory must provide another route to them.
 - **Fixed: `HOMER_LOG_LEVELS` takes effect** — The per-logger overrides now apply to logback, which the server logs through, instead of having no effect.
@@ -22,6 +25,7 @@
 - **Fixed: a by-reference continuation result is read bounded** — `GET /api/v1/callback/results/{token}` reads at most the 4 MiB transform cap and answers `404`, instead of following a link or reading the file whole, when the result file is swapped or grown after its checks.
 - **Security: the agent file routes hide agents the caller holds no grant on** — `GET`, `PUT` and `DELETE /api/v1/agents/{name}/files` answer the same `404` as for an unknown agent to such a caller, and `403` only when it holds another grant on the agent.
 - **Security: `homer-runner` refuses a transfer through a symlink leaving the session root** — An upload or download whose path a run's symlink leads outside the session root now fails instead of reaching that location.
+- **Security: artifact reads check the opened file, not its path** — Artifact downloads, the log tail, the LLM-event stream, the LangGraph identity read and a continuation's result read refuse a FIFO, link or other non-regular file swapped in at any time without waiting on it, so such files can no longer hang a stream or make every artifact download fail; on platforms other than Linux and macOS on x86_64 or aarch64 these reads are refused.
 - **Fixed: a failed capacity-eviction workspace delete is retried by the purge sweeps** — The directory is no longer left on disk for good; at most 256 deletes wait for a retry.
 - **BREAKING: `maxQueuedRuns` defaults to 10 × `maxParallelRuns`** — Runs waiting for a parallel-run slot or, under `WAIT`, a lock share a cap that is bounded by default; a surplus run fails fast, and `null` (unbounded) is no longer accepted.
 - **BREAKING: runner limits are finite by default** — `concurrency` (default 100 on `server.localRunner`, 10 on `ssh` and `kubernetes`), `kubernetes.maxRunSeconds` (default 86400) and `ssh.sftpTransferTimeoutSeconds` no longer accept `null`. See [ADR-0066](docs/adr/0066-external-pull-runners-and-unified-claim-queue.md).
@@ -35,6 +39,7 @@
 - **Changed: a continuation marks a transformed result too large to deliver** — A resume payload whose result is over the 4 MiB transform cap now carries `resultTooLarge: true`, and `homer_fanout` reports it on stderr. See [ADR-0025](docs/adr/0025-capability-token-result-read.md).
 - **Fixed: a refused ssh exec request is named in the step's error** — A step whose exec request the ssh server refuses (a `ForceCommand`, a restricted shell or a session limit) fails saying the server refused it, instead of only that the channel closed without an exit status.
 - **Fixed: the log streams' `cmd` parameter means the command index everywhere** — `GET /api/v1/stream/processes/{id}/logs` and `/llm-events` serve the step whose command index `cmd` names, on a live run and after a restart, instead of the step at that position in the run's rows — so a run that executes only some of its commands streams each one's own output.
+- **Fixed: a step whose stdout or stderr file cannot be written fails** — The step fails naming the stream instead of reporting the child's exit code when its output fit the pipe buffer.
 
 ### Console
 
@@ -47,6 +52,7 @@
 - **Security: one strict Content-Security-Policy on every route** — The agent file editor route no longer allows inline scripts, `eval` or `blob:` workers; it gets the same nonce policy as every other page.
 - **Security: a bearer token saved before multi-instance support is deleted on load** — The console deletes that old copy on every load instead of keeping it next to the default instance's token, so a token it removes (expired or rejected) is gone from browser storage.
 - **Fixed: runner capacity of an external runner** — The runners page shows `—` instead of "unbounded" when a runner reports no concurrency, since every configured runner has a finite one.
+- **Fixed: the agent editor loads directly** — A reload or a pasted `/agents/<name>/edit` link renders the editor instead of answering `500`, and YAML agent files show schema markers in production builds.
 
 ## [1.43.2] - 2026-11-18
 

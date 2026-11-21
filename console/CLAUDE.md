@@ -10,7 +10,7 @@ User-facing docs:
 - [`README.md`](README.md) — features, pages, local dev
 - [`DEPLOYMENT.md`](DEPLOYMENT.md) — runtime / Docker
 - [`TESTING.md`](TESTING.md) — test layout (Vitest + RTL + jsdom)
-- [`../CHANGELOG.md`](../CHANGELOG.md) — user-visible deltas (single project changelog, `### Console` subsection per release)
+- [`../CHANGELOG.md`](../CHANGELOG.md) — user-visible deltas (`### Console` subsection per release)
 
 ## Stack
 
@@ -68,7 +68,8 @@ lib/
   plugins/{types,loader,gate}.ts, plugins/plugins-context.tsx  # plugin contract, loader, access gate, provider
   hooks/                            # shared React hooks (URL query state, auto-scroll, now, in-app navigation marker, sidebar collapse, process-detail LangGraph view, error-boundary logging)
   langgraph/layout.ts               # dagre layout of a LangGraph topology (ADR-0073)
-  monaco/setup.ts                   # Monaco editor setup
+  monaco/setup.ts                   # client-only Monaco load
+  monaco/{json,yaml,editor}.worker.ts  # worker entries bundled from local paths
   security/csp.ts                   # CSP builder
   utils/{cn,format,validation,agent,curl,download,kv,list,html,process,cost-source,agent-name-matcher}.ts
 types/homer.ts                      # TS mirrors of backend DTOs
@@ -271,8 +272,10 @@ before changing any of this.
 `lib/security/csp.ts`, unit-tested there). The policy is **strict** and the same
 on every route (`script-src 'self' 'nonce-… ' 'strict-dynamic'`, `worker-src 'self'`,
 no `unsafe-eval`/`unsafe-inline` scripts), the Monaco editor included: Monaco is
-bundled (`lib/monaco/setup.ts`), its workers are same-origin chunks, and it needs
-no `eval`. The nonce reaches the inline
+bundled (`lib/monaco/setup.ts`) and imported only in the browser — the editor page
+renders its placeholder on the server — and its workers are same-origin chunks built
+from the local entries in `lib/monaco/`, not from bare package specifiers, which the
+build copies into `static/media` verbatim, so their own imports 404. The nonce reaches the inline
 runtime-config `<script>` via the `x-nonce` request header, read in
 `layout.tsx` with `await headers()`; Next.js reads it from the CSP header to
 nonce its own scripts.

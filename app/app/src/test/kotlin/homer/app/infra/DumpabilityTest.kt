@@ -1,21 +1,13 @@
-package homer.runner
+package homer.app.infra
 
-import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
+/** The real `prctl` call runs in `:homer-runner`'s `RealDumpabilityTest`, which forks a JVM per class. */
 class DumpabilityTest {
-    private fun isLinux() = System.getProperty("os.name").startsWith("Linux")
-
-    @Test
-    fun `on Linux the real call leaves the JVM non-dumpable`() {
-        assumeTrue(isLinux())
-        assertEquals(Dumpability.Result.Hardened, Dumpability.harden())
-        assertEquals(0, Dumpability.dumpableState(), "the JVM must be non-dumpable after hardening")
-    }
-
     @Test
     fun `a failed prctl is reported, not swallowed`() {
         val result = Dumpability.harden(osName = "Linux", setNonDumpable = { -1 }, readDumpable = { 1 })
@@ -72,5 +64,14 @@ class DumpabilityTest {
             )
         assertTrue(result is Dumpability.Result.Skipped, "got: $result")
         assertFalse(called, "prctl must not be called on a non-Linux host")
+    }
+
+    @Test
+    fun `reading the flag leaves the JVM as it was, and needs prctl`() {
+        if (System.getProperty("os.name").startsWith("Linux")) {
+            assertEquals(1, Dumpability.dumpableState(), "this test JVM is never hardened")
+        } else {
+            assertFailsWith<IllegalStateException> { Dumpability.dumpableState() }
+        }
     }
 }

@@ -26,9 +26,15 @@ const fakeMonaco = vi.hoisted(() => ({
 
 // monaco-editor cannot run under jsdom: stand in for the dynamically loaded
 // editor with one that records its props and hands beforeMount a fake Monaco.
+const dynamicLoader = vi.hoisted(() => ({
+  current: null as null | (() => Promise<unknown>),
+}));
+const events = vi.hoisted(() => [] as string[]);
+
 vi.mock('next/dynamic', () => ({
-  default: () =>
-    function FakeMonacoEditor(props: FakeEditorProps) {
+  default: (loader: () => Promise<unknown>) => {
+    dynamicLoader.current = loader;
+    return function FakeMonacoEditor(props: FakeEditorProps) {
       editor.props = props;
       props.beforeMount(fakeMonaco);
       return (
@@ -41,9 +47,18 @@ vi.mock('next/dynamic', () => ({
           {props.value}
         </div>
       );
-    },
+    };
+  },
 }));
-vi.mock('@/lib/monaco/setup', () => ({ setupMonaco: vi.fn() }));
+vi.mock('@/lib/monaco/setup', () => ({
+  setupMonaco: vi.fn(async () => {
+    events.push('setup');
+  }),
+}));
+vi.mock('@monaco-editor/react', () => {
+  events.push('react');
+  return { default: () => null };
+});
 vi.mock('@/lib/api/queries', () => ({ useAgentSchema: useAgentSchemaMock }));
 vi.mock('monaco-yaml', () => ({ configureMonacoYaml }));
 
@@ -59,6 +74,7 @@ function renderEditor(path: string, extra: Partial<{ readOnly: boolean; onChange
 describe('AgentFileEditor', () => {
   beforeEach(() => {
     editor.props = null;
+    events.length = 0;
     useAgentSchemaMock.mockReturnValue({ data: schema });
     setDiagnosticsOptions.mockClear();
     configureMonacoYaml.mockClear();
@@ -66,8 +82,13 @@ describe('AgentFileEditor', () => {
     yamlHandle.dispose.mockClear();
   });
 
-  it('sets Monaco up at module load', () => {
-    expect(setupMonaco).toHaveBeenCalled();
+  it('configures Monaco inside the client-only loader, not at module load', async () => {
+    expect(setupMonaco).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
+
+    await dynamicLoader.current!();
+
+    expect(events).toEqual(['setup', 'react']);
   });
 
   it.each([

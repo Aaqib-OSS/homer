@@ -269,6 +269,7 @@ describe('scored file set', () => {
     expect(isScoredPath('lib/api/client.test.ts')).toBe(false);
     expect(isScoredPath('components/ui/button.tsx')).toBe(false);
     expect(isScoredPath('lib/types.d.ts')).toBe(false);
+    expect(isScoredPath('lib/monaco/yaml.worker.ts')).toBe(false);
     expect(isScoredPath('scripts/crap.mjs')).toBe(false);
     expect(isScoredPath('types/homer.ts')).toBe(false);
     expect(isScoredPath('next.config.js')).toBe(false);

@@ -53,7 +53,8 @@ class RunCommandTest {
         dryRun: Boolean = true,
         keepWorkspace: Boolean = false,
         cmd: String = "echo hi",
-    ) = RunCommand(appConfig(cmd), agentName, envFile, inputFile, dryRun, keepWorkspace, cmdIndex = null)
+        cmdIndex: Int? = null,
+    ) = RunCommand(appConfig(cmd), agentName, envFile, inputFile, dryRun, keepWorkspace, cmdIndex)
 
     @Test
     fun `an unknown agent fails naming the available ones`() {
@@ -86,5 +87,21 @@ class RunCommandTest {
         val failure = assertThrows<ProgramResult> { capture { command("greeter", dryRun = false, cmd = "false").run() } }
 
         assertEquals(1, failure.statusCode)
+    }
+
+    @Test
+    fun `an out-of-range --cmd ends the CLI with status 1 naming the range`() {
+        val buffer = ByteArrayOutputStream()
+        val original = System.out
+        System.setOut(PrintStream(buffer, true))
+        val failure =
+            try {
+                assertThrows<ProgramResult> { command("greeter", cmdIndex = 99).run() }
+            } finally {
+                System.setOut(original)
+            }
+
+        assertEquals(1, failure.statusCode)
+        assertContains(buffer.toString(), "[ERROR] --cmd 99 is out of range: agent 'greeter' has 1 command (0..0)")
     }
 }

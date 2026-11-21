@@ -3630,7 +3630,12 @@ commands:
 Values in the agent `env` map can reference host system environment variables using `@SYSENV:VAR_NAME`.
 Resolution happens at agent load time — missing variables cause the agent to fail loading with a clear error.
 
-**Example:**
+Only the host variables the server config allows may be named: those listed in
+[`agentSysEnvAllowlist`](SERVER.md#agentsysenvallowlist) plus those `globalEnv` already references
+with `@SYSENV:`. An agent naming any other variable fails to load with an error naming the variable,
+never its value, and an agent-file write of such a definition is refused with `422`.
+
+**Example** (the server config must allow `DATABASE_PASSWORD` and `MY_SERVICE_KEY`):
 ```yaml
 env:
   DB_PASSWORD: "@SYSENV:DATABASE_PASSWORD"

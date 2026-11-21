@@ -1,11 +1,11 @@
 package homer.app.infra
 
+import homer.app.models.SYSENV_NAME
+
 /** Resolves `@SYSENV:VAR` placeholders against [env], the host environment by default. */
 class SysEnvResolver(
     private val env: (String) -> String? = System::getenv,
 ) {
-    private val pattern = Regex("@SYSENV:([A-Za-z_][A-Za-z0-9_]*)")
-
     fun resolve(value: String): String =
         pattern.replace(value) { matchResult ->
             val varName = matchResult.groupValues[1]
@@ -27,6 +27,13 @@ class SysEnvResolver(
      * whose value references `@SYSENV:`, plus the referenced host variables, so `Bearer @SYSENV:TOKEN` cannot leak
      * the bare token to telemetry.
      */
-    fun secretNamesFor(map: Map<String, String>): Set<String> =
-        secretEnvKeysFor(map) + map.values.flatMap { value -> pattern.findAll(value).map { it.groupValues[1] } }
+    fun secretNamesFor(map: Map<String, String>): Set<String> = secretEnvKeysFor(map) + referencedNames(map)
+
+    companion object {
+        private val pattern = Regex("@SYSENV:($SYSENV_NAME)")
+
+        /** The host variable names [map]'s values reference: exactly the names [resolve] would read. */
+        fun referencedNames(map: Map<String, String>): Set<String> =
+            map.values.flatMapTo(mutableSetOf()) { value -> pattern.findAll(value).map { it.groupValues[1] } }
+    }
 }

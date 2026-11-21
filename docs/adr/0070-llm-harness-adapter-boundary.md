@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-09-27
 deciders: Lukáš Vlk
-amended: 2026-10-09, 2026-10-31, 2026-11-12, 2026-11-19, 2026-11-20
+amended: 2026-10-09, 2026-10-31, 2026-11-12, 2026-11-19, 2026-11-20, 2026-11-21
 ---
 # ADR-0070: LLM harness adapter boundary and canonical event model
 
@@ -251,6 +251,8 @@ field.
 | Stdout artifact containment at open (CWE-22, CWE-59): a symlink (dangling or not), hard link, FIFO or other non-regular file at the artifact name is never served | resolve: `PathSafety.assertContained` + `assertNoSymlinkComponentsBelow` → `404`; every open: `PathSafety.isLinkedOrSpecial` refuses, then `FileChannel.open` with `NOFOLLOW_LINKS`; a refused file is warned about once and yields nothing. Same guards in `/logs` (`LogTailService`) and `/artifacts` (`ArtifactService.resolveArtifactPath` at resolve, `LocalFileOperations.streamFile` again at open, immediately before `openBounded`). A FIFO swapped in between the check and the open still blocks that one subscriber's open; for a hard link the same race applies at `/artifacts`' open, since `O_NOFOLLOW` does not catch nlink: same-UID residual, ADR-0047. Whole-file reads that only feed this run's own `output.value` span (`LocalFileOperations.readText` in the command executors) keep no link check: the agent already runs as Homer's UID and can copy any file it can read into its own stdout without a link, so the check grants no principal anything, while refusing there would fail the command after it ran; Langfuse viewers already see every run's spans | stream and tail tests: symlink outside the dir, symlink to a sibling artifact, dangling symlink, hard link, FIFO, symlink planted after resolve → nothing served; a regular file still streams |
 | SSE slots per caller | `withSseSlot`, unchanged | existing test extended to the new route |
 | Cost charged exactly once per attempt under cancellation | generic executor, moved verbatim | existing ADR-0061 tests, run against the generic executor |
+
+> **Amendment (2026-11-21) —** The row's opens no longer check the path: `/artifacts` (`LocalFileOperations.streamFile`), `/logs` (`LogTailService`) and `/llm-events` (`LlmEventStreamService`) open the file `O_NOFOLLOW | O_NONBLOCK` and refuse it unless `fstat` on the opened descriptor reports a single-link regular file ([ADR-0047](0047-security-by-design-and-threat-model.md), amendment 2026-11-21); the streams then follow that descriptor alone. The row's hard-link race is closed, and a FIFO swapped in is refused at once instead of blocking the subscriber's open.
 
 `/llm-events` redaction uses the run's in-memory `SecretRedactor` and, after
 a restart, one rebuilt from the process's stored secret-input keys

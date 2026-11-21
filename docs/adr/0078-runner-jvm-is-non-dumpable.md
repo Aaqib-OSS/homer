@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-10-03
 deciders: Lukáš Vlk
+amended: 2026-11-21
 ---
 # ADR-0078: The runner JVM is non-dumpable, and refuses to start when it cannot be
 
@@ -80,6 +81,37 @@ spawned commands untouched (`execve` resets the flag for the child).
   friendly setup instead.
 - Bad: a non-Linux runner keeps the token in a dumpable JVM (accepted risk,
   recorded above).
+
+## Amendment (2026-11-21): the server JVM is non-dumpable too
+
+The server host runs code an `edit` holder wrote, as Homer's own user: commands of an agent routed
+to the `local` runner, and the LangGraph inspect/state interpreter, which imports the agent's graph
+module. That code could read every operator secret from `/proc/<server pid>/environ` or ptrace the
+server, a principal crossing ([ADR-0037](0037-grants-authorization.md), amendment of the same date).
+Decided with the maintainer (#370): the server applies this ADR's mechanism to itself.
+
+- `Dumpability` moved from `:homer-runner` to `:app`, so the server and the runner share one
+  implementation. The real `prctl` test stays in `:homer-runner`, whose test JVM forks per class:
+  a non-dumpable `:app` test JVM would also refuse same-user attach and `/proc` reads to the rest of
+  that suite.
+- The server hardens once its config file parses, before any `@SYSENV:` resolution and before any
+  child process, and logs the outcome: INFO when hardened, WARN on a host without `prctl`, ERROR when
+  the call fails on Linux.
+- **Unlike the runner, a failure does not stop startup.** The runner refuses because its token lets
+  a run make Homer act at once; the server's exposure needs a grant the operator chose to give, and
+  refusing would turn a hardening into an outage on any host whose seccomp profile blocks `prctl`.
+  The ERROR line keeps the failure from being silent.
+- The image entrypoint passes `--enable-native-access=ALL-UNNAMED` for the downcall.
+
+Consequences:
+
+- Good: the environ read and ptrace are denied to both paths above on Linux, which is where the
+  images run.
+- Bad: the server writes no core dump, and same-user `jcmd`, `jstack`, profiler or `gdb` attach may
+  be refused; attach as root or with `CAP_SYS_PTRACE`. A JVM-written heap dump still works.
+- Bad: what this does not reach stays an accepted risk, AR-13 in [`SECURITY.md`](../../SECURITY.md):
+  a host without `prctl` (macOS development), a failed call, files Homer's user can read, and the
+  environment of concurrent runs, which `execve` leaves dumpable.
 
 ## More Information
 

@@ -73,7 +73,7 @@ val serverId = UUID.randomUUID().toString()
 val isDraining: AtomicBoolean = AtomicBoolean(false)
 
 fun main(args: Array<String>) {
-    val resolvedConfig = loadStartupConfig(args) ?: return
+    val resolvedConfig = loadStartupConfig(args, hardenJvm = ::hardenServerJvm) ?: return
 
     logger.info(
         "Starting server on port {} with workspace: {}",
@@ -88,15 +88,17 @@ fun main(args: Array<String>) {
 }
 
 /**
- * Reads, parses and `@SYSENV`-resolves the config file named by `args[0]`. Returns `null`
- * after logging and printing why startup cannot continue.
+ * Reads and parses the config file named by `args[0]`, runs [hardenJvm], then `@SYSENV`-resolves it.
+ * Returns `null` after logging and printing why startup cannot continue.
  */
 internal fun loadStartupConfig(
     args: Array<String>,
     sysEnvResolver: SysEnvResolver = SysEnvResolver(),
+    hardenJvm: () -> Unit,
 ): AppConfig? {
     applyLogLevelOverrides(System.getenv(), LoggerFactory.getILoggerFactory())
     val config = readStartupConfig(args) ?: return null
+    hardenJvm()
     return resolveStartupConfig(config, sysEnvResolver)
 }
 
@@ -168,9 +170,10 @@ private fun resolveStartupConfig(
             )
         config.copy(
             globalEnv = resolvedGlobalEnv,
-            // From the RAW globalEnv (placeholders are gone after resolveMapValues): marks host-sourced values secret
-            // so telemetry masks them. ADR-0047.
+            // Both from the RAW globalEnv (resolveMapValues erases placeholders): host-sourced values are secret
+            // so telemetry masks them (ADR-0047 rule 7), and agents may name them (ADR-0037).
             sysEnvBackedGlobalEnvNames = sysEnvResolver.secretNamesFor(config.globalEnv),
+            globalEnvSysEnvNames = SysEnvResolver.referencedNames(config.globalEnv),
             // Same resolution + secrecy contract as globalEnv, per runner: a
             // runner-env value pulled from the host env is a credential too.
             runners = resolveRunnerEnvs(config.runners, sysEnvResolver),

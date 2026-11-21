@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-11
 deciders: Lukáš Vlk
-amended: 2026-10-09
+amended: 2026-10-09, 2026-11-21
 ---
 # ADR-0037: Grants-based authorization replaces path allowlists
 
@@ -139,6 +139,38 @@ settled with the operator on 2026-08-11:
   kinds gained the same authorization surface in one change.
 
 > **Amendment (2026-10-09) —** Closed by ADR-0039.
+
+## Amendment (2026-11-21): `edit` does not read the server's environment through `@SYSENV:`
+
+An agent definition's `env` may reference a host variable with `@SYSENV:NAME`, resolved against the
+server's environment when the agent loads, and the value then reaches every run of the agent on any
+runner and its LangGraph introspection. The `edit` grant writes definitions through the agent-file
+API, so it carried read access to every server variable, which this ADR never granted it.
+
+Decided with the maintainer (#370): an operator allowlist, not "`edit` is operator-equivalent".
+The top-level config key `agentSysEnvAllowlist` lists the host variable names a definition may
+reference (default empty); the variables `globalEnv` already references with `@SYSENV:` are allowed
+too, because the operator hands them to every agent anyway. The `globalEnv` keys do not count: they
+are not host variable names. A definition naming any other variable fails to load, with an error
+naming the variable and never its value. The check runs before resolution, so the refusal reads
+nothing and is the same whether the variable is set, and the agent-file write applies the same
+check, so such a definition never lands. `@SYSENV:` in the server config is unaffected, since the
+operator owns that file. `agentdebug` loads agents with the same rule.
+
+The allowlist bounds only this declarative route. It does not keep the server's secrets from an
+`edit` holder whose code runs on the server host, as Homer's own user, which happens on two paths:
+
+- an agent routed to the `local` runner: the definition picks its runner, no `runner:` means
+  `local`, and the local runner is enabled by default;
+- the LangGraph inspect/state interpreter, which always runs on the server host, whatever the
+  agent's runner, and imports the agent's graph module with the agent's `python` and `env`.
+
+On Linux the server JVM is non-dumpable ([ADR-0078](0078-runner-jvm-is-non-dumpable.md), amendment
+of the same date), so that code cannot read the server's environment or ptrace it. What it can
+still reach is everything Homer's user can read (the config file, the database, other runs'
+workspaces, credential files the server uses), the environment of concurrent runs, and the server's
+environment on a host without `prctl` or where the call fails. That remainder is accepted as AR-13
+in [`SECURITY.md`](../../SECURITY.md).
 
 ## More Information
 
