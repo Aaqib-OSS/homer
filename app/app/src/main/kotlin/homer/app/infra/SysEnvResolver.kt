@@ -1,5 +1,7 @@
 package homer.app.infra
 
+import homer.app.models.SYSENV_NAME
+
 /** Resolves `@SYSENV:VAR` placeholders against [env], the host environment by default. */
 class SysEnvResolver(
     private val env: (String) -> String? = System::getenv,
@@ -34,7 +36,7 @@ class SysEnvResolver(
     fun secretNamesFor(map: Map<String, String>): Set<String> = secretEnvKeysFor(map) + referencedNames(map)
 
     companion object {
-        private val pattern = Regex("@SYSENV:([A-Za-z_][A-Za-z0-9_]*)")
+        private val pattern = Regex("@SYSENV:($SYSENV_NAME)")
 
         /** The host variable names [map]'s values reference: exactly the names [resolve] would read. */
         fun referencedNames(map: Map<String, String>): Set<String> =

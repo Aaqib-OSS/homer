@@ -1,5 +1,6 @@
 package homer.app.infra
 
+import homer.app.models.AppConfig
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.Codepoint
 import io.kotest.property.arbitrary.choice
@@ -44,6 +45,20 @@ class AgentSysEnvAllowlistPropertyTest {
                 unlisted.forEach { assertTrue("'$it'" in refusal.orEmpty(), "refusal must name '$it': $refusal") }
                 allowed.forEach { assertFalse("'$it'" in refusal.orEmpty(), "refusal names allowed '$it': $refusal") }
                 assertFalse(HOST_VALUE in refusal.orEmpty(), "a refusal never carries a value")
+            }
+        }
+
+    @Test
+    fun `a name the resolver reads is exactly a name agentSysEnvAllowlist accepts`() =
+        runTest {
+            val candidates = Arb.choice(Arb.string(0..8, Codepoint.printableAscii()), Arb.pattern("[A-Za-z_][A-Za-z0-9_]{0,6}"))
+            checkAll(candidates) { name ->
+                val resolverReads = SysEnvResolver.referencedNames(mapOf("V" to "@SYSENV:$name")) == setOf(name)
+                val allowlistAccepts =
+                    runCatching {
+                        AppConfig(agentsSearchPath = "a", workspaceRootPath = "w", databasePath = "d", agentSysEnvAllowlist = listOf(name))
+                    }.isSuccess
+                assertEquals(resolverReads, allowlistAccepts, "name '$name'")
             }
         }
 

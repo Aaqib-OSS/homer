@@ -85,8 +85,11 @@ data class AppConfig(
     }
 }
 
-/** The variable names `@SYSENV:` can reference; an allowlist entry outside it could never match. */
-private val SYSENV_NAME_PATTERN = Regex("[A-Za-z_][A-Za-z0-9_]*")
+/** The grammar of a variable name `@SYSENV:` can reference; `SysEnvResolver` builds its placeholder pattern from it. */
+internal const val SYSENV_NAME = "[A-Za-z_][A-Za-z0-9_]*"
+
+/** An allowlist entry outside [SYSENV_NAME] could never match a reference. */
+private val SYSENV_NAME_PATTERN = Regex(SYSENV_NAME)
 
 /** Bucket for LangGraph state of runs with no owner (unsecured mode, agentdebug). */
 private const val UNOWNED_STATE_SEGMENT = "_unowned"
