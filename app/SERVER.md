@@ -2828,7 +2828,7 @@ Four read-only SSE endpoints under `/api/v1/stream/*` stream realtime updates to
 
 ### GET /api/v1/stream/processes
 
-Emits process lifecycle and question events, filtered to the runs the caller can see (see [Process ownership and visibility](#process-ownership-and-visibility)).
+Emits process lifecycle, question and run-message events, filtered to the runs the caller can see (see [Process ownership and visibility](#process-ownership-and-visibility)).
 
 | Event | Data |
 |-------|------|
