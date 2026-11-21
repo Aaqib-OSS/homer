@@ -142,9 +142,10 @@ lib/api/sse.ts  (invalidates cache)   components read via hooks
 - **Polling is per query, not global** — only a few queries poll, with
   `refetchInterval` hard-coded in `lib/api/queries.ts`: costs and the
   runner / claim-queue snapshots (5 s), questions, the open-question count,
-  continuations and the pending-continuations count (30 s), plus the
+  continuations and the pending-continuations count (30 s), a run's messages
+  (`useRunMessages`, 30 s while the run still accepts them), plus the
   LangGraph status panel while it is open (5 s) and the health query
-  (`useHealth`, 15 s), which the maintenance banner rides — it reads
+  (`useHealth`, 15 s) the maintenance banner rides — it reads
   in-memory backend state, so unlike the others a tick costs no database
   work. The process list and the
   process detail poll every 30 s as a safety net under SSE; both stop once
@@ -152,9 +153,8 @@ lib/api/sse.ts  (invalidates cache)   components read via hooks
   list query once the page holds rows and every one is terminal
   (`FINISHED`/`FAILED`/`KILLED`/`UNKNOWN`); an empty page keeps polling, so
   a run created while SSE was down still reaches the view. Each flow
-  summary (`useFlowSummary`) also polls every 30 s but never stops: a
-  continuation can add a run to a flow whose runs have all finished, and no
-  event the stream matches announces it. Of
+  summary (`useFlowSummary`) also polls every 30 s and, unlike the list's,
+  never stops (see above). Of
   `config/default.json:polling`, only `agentsCacheTime` is read.
 - **Live conversation view reads the canonical `/llm-events` stream** —
   for a `!<claude>`, `!<codex>` or `!<opencode>` step, `ArtifactOutputTabs` (rendered
