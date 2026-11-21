@@ -23,8 +23,8 @@ RUN npm run build
 # workflow's LGPL gate refuses the push if any remain.
 RUN rm -rf .next/standalone/node_modules/@img .next/standalone/node_modules/sharp
 
-# Production stage
-FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS runner
+# The release image's content with the base image's npm, which docker-compose.dev.yml runs.
+FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS dev
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -53,3 +53,9 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 CMD ["node", "server.js"]
+
+# Production stage: nothing in it runs npm or npx, so the release image drops them.
+FROM dev AS runner
+USER root
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+USER nextjs

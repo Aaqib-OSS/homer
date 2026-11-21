@@ -192,7 +192,8 @@ Never expose the debug port off-host: JDWP executes code in the JVM, so a
 non-loopback publish is remote code execution.
 
 **Frontend Hot Reload**:
-- Runs `npm run dev` for Next.js development server
+- Runs `npm run dev` for Next.js development server, in the console image's
+  `dev` stage: the release image has no npm
 - Source code mounted as volume
 - Changes reflect immediately without rebuild
 - Full Next.js development features enabled
