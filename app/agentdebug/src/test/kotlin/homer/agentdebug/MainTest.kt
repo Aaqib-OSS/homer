@@ -92,6 +92,22 @@ class MainTest {
     }
 
     @Test
+    fun `each usage in the help starts a line of its own`() {
+        val cli = agentdebugCli()
+        val lineStarts = usageBlockLines(cli.test("--help").stdout).filter { it.startsWith("agentdebug ") }
+
+        assertEquals(
+            cli
+                .registeredSubcommands()
+                .map {
+                    it.commandName
+                }.sorted(),
+            lineStarts.map(::subcommandOf).sorted(),
+            lineStarts.joinToString("\n"),
+        )
+    }
+
+    @Test
     fun `the help's hash-password usage says it needs no --config`() {
         val usage = usagesOf(agentdebugCli().test("--help").stdout).single { subcommandOf(it) == "hash-password" }
 
@@ -100,16 +116,20 @@ class MainTest {
 
     /** The hand-written usage block's entries, each rejoined across the help formatter's wrapping. */
     private fun usagesOf(help: String): List<String> =
+        usageBlockLines(help)
+            .joinToString(" ")
+            .split(Regex("(?=agentdebug )"))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+
+    /** The hand-written usage block's rendered lines, trimmed. */
+    private fun usageBlockLines(help: String): List<String> =
         help
             .lines()
             .map { it.trim() }
             .dropWhile { it != "Usage:" }
             .drop(1)
             .takeWhile { it.isNotEmpty() }
-            .joinToString(" ")
-            .split(Regex("(?=agentdebug )"))
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
 
     private fun subcommandOf(usage: String): String = usage.split(" ").drop(1).first { it.matches(Regex("[a-z][a-z-]*")) }
 
