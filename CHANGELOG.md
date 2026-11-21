@@ -4,6 +4,7 @@
 
 ### Homer
 
+- **Fixed: `agentdebug run --cmd N` with an out-of-range N** — An index below 0 or at/above the agent's command count now fails before anything runs instead of silently running nothing.
 - **Added: `isErrorExitCode` on `!<claude>` commands** — An `is_error` result returns this exit code instead of failing as malformed, and is not retried.
 - **Added: `GET /api/v1/auth/me` answers a bearer token** — A request carrying a bearer token gets that token's name, role and grants, and the route is mounted whenever a `bearer` or `password` scheme is configured.
 - **BREAKING: the LangGraph runtime needs Python 3.12** — A runner host that runs `!<langgraph>` commands needs Python 3.12 or newer to install `homer_langgraph`.
