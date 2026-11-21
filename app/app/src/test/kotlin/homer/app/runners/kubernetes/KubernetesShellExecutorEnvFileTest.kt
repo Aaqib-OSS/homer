@@ -33,7 +33,7 @@ import kotlin.time.Duration.Companion.seconds
 
 /**
  * The step env reaches the pod as a sourced 0600 file, never in the exec request. "Pod" execs run locally, as in
- * KubernetesWorkspaceSyncTest, except the pod-wide kill, which is answered without running.
+ * KubernetesWorkspaceSyncTest, except the pod-wide kill and the group signal, which are answered without running.
  */
 class KubernetesShellExecutorEnvFileTest {
     @TempDir
@@ -55,7 +55,7 @@ class KubernetesShellExecutorEnvFileTest {
         KubernetesExecClient { _, _, argv, _ ->
             synchronized(started) { started += argv }
             when {
-                argv == KILL_ARGV -> exited(0)
+                argv == KILL_ARGV || isSignalling(argv) -> exited(0)
                 argv.first() == "setsid" && argv.size == 3 -> exited(if (podHasSetsid) 0 else 1)
                 isEnvUpload(argv) || isEnvRemoval(argv) -> runLocally(argv)
                 else -> commandExec(argv)
@@ -263,6 +263,48 @@ class KubernetesShellExecutorEnvFileTest {
         }
 
     @Test
+    fun `a failed env upload fails the step before the command, naming the directory and no value`() =
+        runTest {
+            val elsewhere = Files.createDirectories(tmp.resolve("elsewhere"))
+            Files.createDirectories(envDir.parent)
+            Files.createSymbolicLink(envDir, elsewhere)
+
+            val e =
+                assertThrows<IllegalStateException> {
+                    executor().cmd(listOf("true"), tmp.resolve("out"), tmp.resolve("err"), env = mapOf("A" to SECRET), timeout = 10.seconds)
+                }
+
+            assertContains(e.message.orEmpty(), envDir.toString())
+            assertFalse(e.message.orEmpty().contains(SECRET), "the error quoted the env value")
+            assertTrue(started.none { it == listOf("true") }, "the command ran without its env: $started")
+            assertTrue(started.any(::isEnvRemoval), "a removal is attempted: $started")
+            assertEquals(emptyList(), elsewhere.listDirectoryEntries())
+        }
+
+    @Test
+    fun `a graced timeout under setsid leaves no env file in the kept workspace`() =
+        runTest {
+            podHasSetsid = true
+            command = { neverFinishing() }
+            val workDir = Files.createDirectories(tmp.resolve("ws/workdir"))
+
+            assertThrows<CancellationException> {
+                executor().cmd(
+                    listOf("sleep", "1000"),
+                    tmp.resolve("out"),
+                    tmp.resolve("err"),
+                    env = mapOf("A" to SECRET, "HMR_WORK_DIR" to workDir.toString()),
+                    timeout = 1.seconds,
+                    interruptGrace = 1.seconds,
+                )
+            }
+
+            assertTrue(started.any(::isSignalling), "the group was interrupted first: $started")
+            assertTrue(started.any(::isEnvRemoval), "then the file was removed: $started")
+            assertEquals(emptyList(), envDir.listDirectoryEntries())
+        }
+
+    @Test
     fun `a cancelled step leaves no env file in the kept workspace`() =
         runTest {
             val running = CountDownLatch(1)
@@ -296,6 +338,8 @@ class KubernetesShellExecutorEnvFileTest {
     }
 
     private fun isEnvUpload(argv: List<String>) = argv.getOrNull(3) == KubernetesWorkspaceSync.PRIVATE_EXTRACT_NAME
+
+    private fun isSignalling(argv: List<String>) = argv.getOrNull(3) == "homer-signal"
 
     private fun isEnvRemoval(argv: List<String>) = argv.take(3) == listOf("rm", "-f", "--")
 
