@@ -253,7 +253,7 @@ class OpencodeHarnessTest {
         val events = fixture("step-failed.jsonl")
         assertIs<LlmEvent.TurnEnd>(events.filterIsInstance<LlmEvent.TurnEnd>().single())
         assertIs<TurnStatus.Failed>(events.filterIsInstance<LlmEvent.TurnEnd>().single().status)
-        assertIs<Inspection.Malformed>(harness.inspect(events, emptyList(), command))
+        assertIs<Inspection.Malformed>(harness.inspect(events, emptyList(), command, exitCode = 0))
     }
 
     @Test
@@ -261,13 +261,13 @@ class OpencodeHarnessTest {
         val events =
             fixture("success.jsonl") +
                 listOf(LlmEvent.TransientError("provider hiccup"))
-        assertEquals(Inspection.Success, harness.inspect(events, emptyList(), command))
+        assertEquals(Inspection.Success, harness.inspect(events, emptyList(), command, exitCode = 0))
     }
 
     @Test
     fun `inspect rejects a stream with no successful step finish`() {
-        assertIs<Inspection.Malformed>(harness.inspect(listOf(LlmEvent.SessionStart("s", null)), emptyList(), command))
-        assertIs<Inspection.Malformed>(harness.inspect(emptyList(), emptyList(), command))
+        assertIs<Inspection.Malformed>(harness.inspect(listOf(LlmEvent.SessionStart("s", null)), emptyList(), command, exitCode = 0))
+        assertIs<Inspection.Malformed>(harness.inspect(emptyList(), emptyList(), command, exitCode = 0))
     }
 
     // ========== denial paths ==========

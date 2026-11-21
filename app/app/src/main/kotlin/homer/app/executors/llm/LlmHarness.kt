@@ -57,7 +57,7 @@ interface LlmHarness<C> where C : Command, C : Command.LlmCommand {
         events: List<LlmEvent>,
         raw: List<JsonObject>,
         command: C,
-        exitCode: Int = 0,
+        exitCode: Int,
     ): Inspection
 }
 

@@ -90,19 +90,11 @@ open class FakeHarness(
     ): Inspection {
         inspectCalls += 1
         val end = events.filterIsInstance<LlmEvent.TurnEnd>().firstOrNull() ?: return Inspection.Malformed("no end")
+        val terminal = terminalExit?.let { Inspection.Terminal(it, "claude.max_turns_stop") }
         return when (end.status) {
-            TurnStatus.Success -> {
-                Inspection.Success
-            }
-
-            is TurnStatus.Stopped -> {
-                terminalExit?.let { Inspection.Terminal(it, "claude.max_turns_stop") }
-                    ?: Inspection.Malformed("stopped")
-            }
-
-            is TurnStatus.Failed -> {
-                Inspection.Malformed("failed")
-            }
+            TurnStatus.Success -> Inspection.Success
+            is TurnStatus.Stopped -> terminal ?: Inspection.Malformed("stopped")
+            is TurnStatus.Failed -> Inspection.Malformed("failed")
         }
     }
 }

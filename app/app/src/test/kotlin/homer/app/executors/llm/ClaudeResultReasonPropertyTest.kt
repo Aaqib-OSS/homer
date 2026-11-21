@@ -118,7 +118,7 @@ class ClaudeResultReasonPropertyTest {
                     }
                 val events = (harness.translate(line) as Translation.Events).events
 
-                val terminal = assertIs<Inspection.Terminal>(harness.inspect(events, listOf(line), command))
+                val terminal = assertIs<Inspection.Terminal>(harness.inspect(events, listOf(line), command, exitCode = 0))
 
                 assertEquals(76, terminal.exitCode)
                 assertTrue(!terminal.stopAttribute.contains(secret), "the verdict carried the result text")

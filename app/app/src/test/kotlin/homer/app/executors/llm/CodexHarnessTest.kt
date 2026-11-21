@@ -282,7 +282,7 @@ class CodexHarnessTest {
     fun `turn_failed becomes a Failed turn end and inspect rejects it`() {
         val es = fixture("turn-failed.jsonl")
         assertEquals(TurnStatus.Failed("stream disconnected before completion"), es.filterIsInstance<LlmEvent.TurnEnd>().single().status)
-        assertIs<Inspection.Malformed>(harness.inspect(es, emptyList(), command))
+        assertIs<Inspection.Malformed>(harness.inspect(es, emptyList(), command, exitCode = 0))
     }
 
     @Test
@@ -305,18 +305,18 @@ class CodexHarnessTest {
     fun `transient error events do not fail inspection`() {
         val es = fixture("transient-error.jsonl")
         assertEquals(1, es.count { it is LlmEvent.TransientError })
-        assertEquals(Inspection.Success, harness.inspect(es, emptyList(), command))
+        assertEquals(Inspection.Success, harness.inspect(es, emptyList(), command, exitCode = 0))
     }
 
     @Test
     fun `inspect rejects a stream without turn_completed`() {
-        assertIs<Inspection.Malformed>(harness.inspect(listOf(LlmEvent.SessionStart("s", null)), emptyList(), command))
+        assertIs<Inspection.Malformed>(harness.inspect(listOf(LlmEvent.SessionStart("s", null)), emptyList(), command, exitCode = 0))
     }
 
     @Test
     fun `a duplicated turn_completed still inspects as one success`() {
         val es = fixture("success.jsonl") + fixture("success.jsonl").filterIsInstance<LlmEvent.TurnEnd>()
-        assertEquals(Inspection.Success, harness.inspect(es, emptyList(), command))
+        assertEquals(Inspection.Success, harness.inspect(es, emptyList(), command, exitCode = 0))
     }
 
     @Test
