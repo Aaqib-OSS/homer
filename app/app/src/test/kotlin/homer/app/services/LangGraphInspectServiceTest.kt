@@ -4,6 +4,7 @@ import homer.app.models.Agent
 import homer.app.models.Command
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -143,17 +144,20 @@ class LangGraphInspectServiceTest {
                     every { commands } returns listOf(langGraphCmd)
                     every { env } returns emptyMap()
                 }
+            val holding = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
             val runner =
                 GraphInspectRunner { _, _, _, _ ->
-                    delay(300)
+                    if (holding.complete(Unit)) release.await()
                     GraphInspectResult.Ok(okJson)
                 }
             val service =
                 LangGraphInspectService(runner, maxConcurrentInspects = 1, maxQueueWait = 40.milliseconds)
 
             val occupier = launch(Dispatchers.Default) { service.inspect(agent) }
-            delay(60) // let it take the only permit
+            holding.await()
             val shed = service.inspect(agent)
+            release.complete(Unit)
             occupier.join()
 
             assertEquals(LangGraphInspectService.BUSY_MESSAGE, shed[0].error)

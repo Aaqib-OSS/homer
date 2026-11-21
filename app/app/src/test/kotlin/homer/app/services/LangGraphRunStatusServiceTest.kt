@@ -35,6 +35,7 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -1357,11 +1358,11 @@ class LangGraphRunStatusServiceTest {
     @Test
     fun `a caller that waits out the queue limit is shed, and the refusal is not cached`() =
         runBlocking {
-            val runs = AtomicInteger()
+            val holding = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
             val stateRunner =
                 GraphStateRunner { _, _, threadId, _, _ ->
-                    runs.incrementAndGet()
-                    delay(300)
+                    if (holding.complete(Unit)) release.await()
                     GraphStateResult.Ok("""{"threadId":"$threadId","nodes":{"a":"done"},"errors":{}}""")
                 }
             val service =
@@ -1375,8 +1376,9 @@ class LangGraphRunStatusServiceTest {
                 )
 
             val occupier = launch(Dispatchers.Default) { service.status(processInfo(), agent, includeGraph = true) }
-            delay(60) // let it take the only permit
+            holding.await()
             val shed = service.status(processInfo(), agent, includeGraph = true)
+            release.complete(Unit)
             occupier.join()
 
             assertEquals(LangGraphRunStatusService.BUSY_MESSAGE, shed?.error)
@@ -1391,10 +1393,15 @@ class LangGraphRunStatusServiceTest {
     fun `a shed reading is not cached under its thread, so the next poll of that thread reads the state`() =
         runBlocking {
             val ran = java.util.concurrent.CopyOnWriteArrayList<String>()
+            val holding = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
             val stateRunner =
                 GraphStateRunner { _, _, threadId, _, _ ->
                     ran += threadId
-                    if (threadId == "t1") delay(300)
+                    if (threadId == "t1") {
+                        holding.complete(Unit)
+                        release.await()
+                    }
                     GraphStateResult.Ok("""{"threadId":"$threadId","nodes":{"a":"done"},"errors":{}}""")
                 }
             val service =
@@ -1406,8 +1413,9 @@ class LangGraphRunStatusServiceTest {
                 )
 
             val occupier = launch(Dispatchers.Default) { service.status(processInfo(), agent, includeGraph = true) }
-            delay(60) // let t1 take the only permit
+            holding.await()
             val shed = service.status(processInfo(), agent, includeGraph = true)
+            release.complete(Unit)
             occupier.join()
 
             assertEquals(LangGraphRunStatusService.BUSY_MESSAGE, shed?.error)
