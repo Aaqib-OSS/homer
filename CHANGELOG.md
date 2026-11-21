@@ -4,7 +4,7 @@
 
 ### Homer
 
-- **Fixed: a signal-killed Kubernetes step with a grace reports 128 + n** — The step no longer reports the bare signal number or prints a `setsid:` line on stderr. See [ADR-0108](docs/adr/0108-graceful-stop-of-a-run.md).
+- **Fixed: a Kubernetes step with a grace reports 128 + n when its command dies by a signal** — It no longer reports the bare signal number with a `setsid:` line on stderr. See [ADR-0108](docs/adr/0108-graceful-stop-of-a-run.md).
 - **Fixed: a Kubernetes step with a grace on a BusyBox `setsid` pod waits for its command** — It reports the command's exit code instead of 0 while the command ran on detached. See [ADR-0108](docs/adr/0108-graceful-stop-of-a-run.md).
 - **Fixed: an invalid hook target is not echoed in the error** — The agent-load and definition-write error for a malformed `hooks` target no longer repeats the value.
 - **BREAKING: env names on the ssh and Kubernetes runners must be shell identifiers** — Runner `env` and `extraUploads.env` names must match `^[A-Za-z_][A-Za-z0-9_]*$` at startup, and a run fails before it reaches the host or creates a pod on a `globalEnv`, agent `env` or `onStop:` `resultEnvParam` name that does not.

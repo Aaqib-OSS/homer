@@ -145,11 +145,11 @@ no new decision: `stop` already says *why*, and says it in more detail than a st
 ## Amendment (2026-11-21): the Kubernetes group launch reports 128 + n and never detaches
 
 A Kubernetes exec'd process already leads its own session and group under runc, so the
-`setsid` prefix the launch used when it probed one did not start a group: it forked and reported
-its child's raw wait status. util-linux `setsid -w` gave the bare signal number (9 for SIGKILL)
-plus a `setsid: child N did not exit normally` stderr line. BusyBox `setsid` (no `-w`), called by
-a group leader, forked and exited 0 at once, so the step reported 0 and the command ran on
-detached (verified in a kind cluster).
+`setsid` prefix the launch used when it probed one was redundant: as a group leader it had to
+fork, and then it reported its child's raw wait status (util-linux) or did not wait at all
+(BusyBox). util-linux `setsid -w` gave the bare signal number (9 for SIGKILL) plus a
+`setsid: child N did not exit normally` stderr line. BusyBox `setsid` (no `-w`) exited 0 at once,
+so the step reported 0 and the command ran on detached (verified in a kind cluster).
 
 A launch with a grace now runs
 `[setsid -w] sh -c 'trap : INT TERM HUP; p="$0"; d="${p%/*}"; mkdir -p "$d" 2>/dev/null; rm -f "$p" 2>/dev/null; g=; read -r _ _ _ _ g _ 2>/dev/null < /proc/$$/stat; [ "$g" = "$$" ] && echo $$ > "$p" 2>/dev/null; <launch>; exit $?' <pgidFile> [<envFile>] <argv...>`,
@@ -163,11 +163,13 @@ amendment).
   `/proc/$$/stat` shows it leads its group. Otherwise there is no file, the existing pgid guard
   refuses, and the stop falls back to the pod-wide `kill -KILL -1`. It fails closed, for a
   runtime whose exec process is not a group leader or a pod without `/proc`.
-- A signal death now reports 128 + n, and the wrapper's own shell notice (`Killed`; bash prints a
-  job line naming the pgid file path) replaces the `setsid:` stderr line.
+- A signal death of the command now reports 128 + n, and the wrapper's own shell notice
+  (`Killed`; bash prints a job line naming the pgid file path) replaces the `setsid:` stderr line.
+  When the grace expires on a `setsid -w` pod, Homer's group SIGKILL also kills the wrapper, so
+  the `setsid` parent, outside the group, still prints its line and exits 9, as before; the
+  timeout decides the step's status there.
 - A TERM or HUP sent to the recorded pid alone now reaches the waiting wrapper, not the command;
   Homer's reapers signal the group.
-- The `setsid -w` probe runs at the first launch with a grace, after the step's env file is
-  uploaded (previously before). A launch without a grace is byte-identical and never probes.
+- A launch without a grace is byte-identical and never probes.
 - Trust boundary: none new. The pgid file stays agent-writable and is validated at its point of
   use by the existing guard (ADR-0047 rule 2).
