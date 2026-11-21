@@ -259,8 +259,8 @@ const val DEFAULT_LOCAL_CONCURRENCY = 100
 const val DEFAULT_MAX_RUN_SECONDS = 86_400L
 
 /**
- * Facets of the built-in `local` runner as a claim-queue consumer (`server.localRunner`), with the same rules as
- * `ssh` and `kubernetes`. `enabled = false` registers no local runner, so no run executes in the server's own
+ * Built-in `local` runner as a claim-queue consumer (`server.localRunner`), with the same `tags`/`concurrency`
+ * rules as `ssh` and `kubernetes`. `enabled = false` registers none, so no run executes in the server's own
  * container. See ADR-0066.
  */
 @Serializable

@@ -334,7 +334,8 @@ data class Workspace(
     val purgeRecordAfter: String? = null,
 ) {
     init {
-        // A workspace.path containing '..' could normalize outside, or collapse back onto, the workspace root.
+        // A workspace.path containing '..' could normalize outside, or collapse back onto, the workspace
+        // root (ADR-0053, CWE-22).
         require(!path.contains("..")) {
             "workspace.path must not contain '..': $path"
         }

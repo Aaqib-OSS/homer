@@ -37,8 +37,8 @@ internal val AGENT_NAME_PATTERN = Regex("^[a-zA-Z0-9_-]+$")
 
 /**
  * Reads and writes the one-key `{STATUS: agentName}` wire form of an [AgentHook], the same shape in YAML and
- * JSON. A decode error names only the offending key, never the value: the value is an untrusted agent name and
- * the error reaches the load log and the definition-write response. See ADR-0107.
+ * JSON. Its own decode errors name only the offending key, never the value (CWE-117): the value is an untrusted
+ * agent name and the error reaches the load log and the definition-write response. See ADR-0107.
  */
 object AgentHookSerializer : KSerializer<AgentHook> {
     private val entries = MapSerializer(String.serializer(), String.serializer())

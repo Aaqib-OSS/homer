@@ -76,11 +76,11 @@ data class ProcessInfo(
     // Subject tags (`key:value`) resolved from inputs at start and/or declared via the callback route;
     // empty for the sweep/reconciliation reads that do not surface tags. See ADR-0060.
     val tags: List<String> = emptyList(),
-    // Why the run ended FAILED before any command started (claim timeout, lock skip, parallel-run cap or a
-    // queue bound): a fixed-vocabulary sentence, never a raw exception message. Null otherwise. See ADR-0020.
+    // Why the run ended FAILED before any command started (one of the ADR-0098 causes): a fixed-vocabulary
+    // sentence, never a raw exception message. Null otherwise. See ADR-0098.
     val failureReason: String? = null,
     // The run that blocked this one (the lock holder), emitted only to a caller who may see it. Not a
-    // foreign key: the holder may be evicted first, like every run link. See ADR-0058.
+    // foreign key: the holder may be evicted first, like every run link. See ADR-0058, ADR-0098.
     val failureReasonRunId: Int? = null,
     // Why and where this run was stopped gracefully; null for a run that was not.
     // The run's status stays FAILED — no new ProcessStatus. See ADR-0108.

@@ -2,8 +2,8 @@ package homer.app.models
 
 /**
  * Shape rules for an agent's optional `group` label (one console Agents tab each): any printable text, bounded
- * and free of control characters because it is echoed verbatim onto every process response. Sibling of
- * [RunnerTagValidation].
+ * and free of control characters because it is echoed verbatim onto every process response (CWE-79, CWE-117).
+ * Sibling of [RunnerTagValidation].
  */
 object AgentGroupValidation {
     /** Longest accepted `group`; bounds the label repeated on every process row (ADR-0047 rule 4). */
