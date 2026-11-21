@@ -1,5 +1,6 @@
 package homer.app.runners.ssh
 
+import homer.app.runners.RemoteShell
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.bind
 import io.kotest.property.arbitrary.element
@@ -90,7 +91,7 @@ class RemoteCommandBuilderPropertyTest {
     ): String? {
         if (env.isEmpty()) return null
         val file = Files.createTempFile(tmp, "env-", ".env").toString()
-        Files.writeString(Path.of(file), RemoteCommandBuilder.envFileContent(file, env))
+        Files.writeString(Path.of(file), RemoteShell.envFileContent(file, env))
         return file
     }
 

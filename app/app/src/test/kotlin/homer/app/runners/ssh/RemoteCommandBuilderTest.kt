@@ -1,8 +1,8 @@
 package homer.app.runners.ssh
 
+import homer.app.runners.RemoteShell
 import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
@@ -13,17 +13,6 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class RemoteCommandBuilderTest {
-    @Test
-    fun `single-quotes a plain token`() {
-        assertEquals("'echo'", RemoteCommandBuilder.quote("echo"))
-    }
-
-    @Test
-    fun `escapes embedded single quotes`() {
-        // it's -> 'it'\''s'
-        assertEquals("'it'\\''s'", RemoteCommandBuilder.quote("it's"))
-    }
-
     @Test
     fun `build sources the env file and carries only its path on the command line`() {
         val cmd =
@@ -80,43 +69,12 @@ class RemoteCommandBuilderTest {
     }
 
     @Test
-    fun `envFileContent removes the file first, then exports each value single-quoted`() {
-        val content = RemoteCommandBuilder.envFileContent("/w/.homer/env/a1.env", linkedMapOf("FOO" to "it's", "BAR" to "x"))
-        assertEquals(
-            "rm -f -- '/w/.homer/env/a1.env' || exit 1\nexport FOO='it'\\''s' || exit 1\nexport BAR='x' || exit 1\n",
-            content,
-        )
-    }
-
-    @Test
-    fun `envFileContent refuses a key that is not a shell identifier, naming the key and no value`() {
-        for (key in listOf("A-B", "1A", "A B", "A;touch x", "", "A=B")) {
-            val e =
-                assertThrows<IllegalArgumentException> {
-                    RemoteCommandBuilder.envFileContent("/w/e.env", mapOf("OK" to "v", key to "s3cr3t-Ab9-env-value"))
-                }
-            assertContains(e.message.orEmpty(), "'$key'")
-            assertFalse(e.message.orEmpty().contains("s3cr3t-Ab9-env-value"))
-        }
-    }
-
-    @Test
-    fun `envFileContent refuses a value holding a NUL byte, naming the key and no value`() {
-        val e =
-            assertThrows<IllegalArgumentException> {
-                RemoteCommandBuilder.envFileContent("/w/e.env", mapOf("OK" to "v", "STEP_VALUE" to "s3cr3t-Ab9\u0000-env-value"))
-            }
-        assertContains(e.message.orEmpty(), "'STEP_VALUE'")
-        assertFalse(e.message.orEmpty().contains("s3cr3t-Ab9"))
-    }
-
-    @Test
     fun `an env that resets PATH still removes the env file and runs an absolute command`(
         @TempDir tmp: Path,
     ) {
         assumeFalse(System.getProperty("os.name").lowercase().contains("win"))
         val envFile = tmp.resolve("e.env").toString()
-        Path.of(envFile).writeText(RemoteCommandBuilder.envFileContent(envFile, mapOf("PATH" to "/nonexistent")))
+        Path.of(envFile).writeText(RemoteShell.envFileContent(envFile, mapOf("PATH" to "/nonexistent")))
         val command = RemoteCommandBuilder.build(tmp.toString(), envFile, listOf("/bin/sh", "-c", "printf %s \"\$PATH\""))
         val (exit, out) = run("/bin/sh", command)
         assertEquals(0 to "/nonexistent", exit to out)
@@ -130,7 +88,7 @@ class RemoteCommandBuilderTest {
         assumeFalse(System.getProperty("os.name").lowercase().contains("win"))
         for (shell in listOf("/bin/sh", "/bin/bash").filter { Files.isExecutable(Path.of(it)) }) {
             val envFile = tmp.resolve("e.env").toString()
-            val lines = RemoteCommandBuilder.envFileContent(envFile, linkedMapOf("A" to "1", "B" to "2")).lines()
+            val lines = RemoteShell.envFileContent(envFile, linkedMapOf("A" to "1", "B" to "2")).lines()
             // `B` made readonly before its export line: the export fails in every shell.
             Path.of(envFile).writeText((listOf(lines[0], "readonly B") + lines.drop(1)).joinToString("\n"))
             val (exit, out) = run(shell, ". '$envFile' && echo RAN")

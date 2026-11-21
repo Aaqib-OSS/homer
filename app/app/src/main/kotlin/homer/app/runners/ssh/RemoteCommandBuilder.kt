@@ -1,11 +1,12 @@
 package homer.app.runners.ssh
 
-import homer.app.models.ShellEnvNames
+import homer.app.runners.RemoteShell.quote
+import homer.app.runners.RemoteShell.sourceThenExec
 
 // Every token is POSIX single-quoted for the remote login shell, and `exec` keeps the command's signals and exit code.
 // The env reaches the command only through a sourced file, never the command line (CWE-214, ADR-0032).
 object RemoteCommandBuilder {
-    /** The command line for [argv] in [remoteWorkdir]; a non-null [envFile] is sourced (see [envFileContent]) first. */
+    /** The command line for [argv] in [remoteWorkdir]; a non-null [envFile] is sourced first. */
     fun build(
         remoteWorkdir: String,
         envFile: String?,
@@ -35,31 +36,6 @@ object RemoteCommandBuilder {
         return parts.joinToString(" ")
     }
 
-    /**
-     * The `export` script [build] and [buildReaping] source from [envFile]: its first line removes the file before any
-     * export can change the `PATH` that `rm` resolves on. Fails on a key that is not a POSIX shell identifier and on a
-     * value holding a NUL byte.
-     */
-    fun envFileContent(
-        envFile: String,
-        env: Map<String, String>,
-    ): String {
-        val invalid = ShellEnvNames.firstInvalid(env.keys)
-        require(invalid == null) { "env name '$invalid' is not a POSIX shell identifier, which the ssh runner can export" }
-        val withNul = env.entries.firstOrNull { '\u0000' in it.value }?.key
-        require(withNul == null) { "env value of '$withNul' contains a NUL byte, which no process environment can hold" }
-        return buildString {
-            append("rm -f -- ").append(quote(envFile)).append(" || exit 1\n")
-            env.forEach { (k, v) ->
-                append("export ")
-                    .append(k)
-                    .append('=')
-                    .append(quote(v))
-                    .append(" || exit 1\n")
-            }
-        }
-    }
-
     // Reaps the group recorded in [pgidFile] with SIGKILL; the pgid is validated as a plain integer
     // above 1 first, so a stale, corrupt or forged side-file can never become `kill -KILL -1` or `-0`.
     fun buildReapKill(pgidFile: String): String = readPgidGuard(pgidFile) + PGID_ABOVE_ONE_GUARD + "kill -KILL -\"\$p\" 2>/dev/null"
@@ -81,10 +57,4 @@ object RemoteCommandBuilder {
 
     /** The `> 1` guard shared by both reapers: only a plain integer above 1 may be signalled. */
     private const val PGID_ABOVE_ONE_GUARD = "[ \"\$p\" -gt 1 ] && "
-
-    /** Sources the env file the shell variable [fileRef] names, then replaces the shell with the argv in `$@`. */
-    private fun sourceThenExec(fileRef: String): String = ". \"$fileRef\" && exec \"\$@\""
-
-    /** POSIX single-quote escaping: wrap in '...', and render embedded ' as '\''. */
-    fun quote(token: String): String = "'" + token.replace("'", "'\\''") + "'"
 }

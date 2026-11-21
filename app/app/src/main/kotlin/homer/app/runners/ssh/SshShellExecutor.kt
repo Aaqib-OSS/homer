@@ -9,6 +9,7 @@ import homer.app.infra.OutputLineFilter
 import homer.app.infra.ShellExecutor
 import homer.app.infra.appendKillNotices
 import homer.app.models.CommandResult
+import homer.app.runners.RemoteEnvFile
 import homer.app.runners.exceedsOutputCap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -20,13 +21,11 @@ import org.apache.sshd.client.channel.ChannelExec
 import org.apache.sshd.client.channel.ClientChannelEvent
 import org.apache.sshd.client.session.ClientSession
 import org.apache.sshd.common.channel.exception.SshChannelOpenException
-import org.slf4j.LoggerFactory
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.io.OutputStream
 import java.nio.file.Path
 import java.util.EnumSet
-import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.io.path.outputStream
 import kotlin.time.Duration
@@ -64,8 +63,8 @@ class SshShellExecutor(
             // jscpd:ignore-end
             // Non-null exactly when the command reaps its process group.
             val pgidFile = if (reapProcessGroup && reapDir != null) "$reapDir/cmd-${reapCounter.incrementAndGet()}.pgid" else null
-            val envFile = if (env.isNotEmpty()) renderEnvFile(env) else null
-            removingEnvFileUnlessSucceeded(envFile?.path) {
+            val envFile = if (env.isNotEmpty()) RemoteEnvFile.render(envDir, env) else null
+            RemoteEnvFile.removingUnlessSucceeded(envFile?.path, ::removeEnvFile) {
                 envFile?.let { sync.writePrivateFile(it.path, it.content) }
                 execOnChannel(
                     remoteCommand(command, envFile?.path, pgidFile),
@@ -126,43 +125,9 @@ class SshShellExecutor(
         }
     }
 
-    /**
-     * Runs [block], then removes [envFile] when the step failed or was stopped, since the command may never have
-     * sourced it; the removal is non-cancellable and bounded by [ENV_FILE_REMOVE_TIMEOUT] (ADR-0064).
-     */
-    private suspend fun removingEnvFileUnlessSucceeded(
-        envFile: String?,
-        block: suspend () -> CommandResult,
-    ): CommandResult {
-        var succeeded = false
-        try {
-            return block().also { succeeded = it.exitCode == 0 }
-        } finally {
-            if (!succeeded) withContext(NonCancellable) { removeEnvFile(envFile) }
-        }
+    private suspend fun removeEnvFile(envFile: String) {
+        sync.removeIfExists(envFile, ENV_FILE_REMOVE_TIMEOUT)
     }
-
-    private suspend fun removeEnvFile(envFile: String?) {
-        if (envFile == null) return
-        try {
-            sync.removeIfExists(envFile, ENV_FILE_REMOVE_TIMEOUT)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.warn("Could not remove env file {} ({}); the workspace removal deletes it", envFile, e.javaClass.simpleName)
-        }
-    }
-
-    /** [env] rendered as the file to upload, under a random name in [envDir]; fails on a name the shell cannot export. */
-    private fun renderEnvFile(env: Map<String, String>): RenderedEnvFile {
-        val path = "$envDir/${UUID.randomUUID()}.env"
-        return RenderedEnvFile(path, RemoteCommandBuilder.envFileContent(path, env).toByteArray(Charsets.UTF_8))
-    }
-
-    private class RenderedEnvFile(
-        val path: String,
-        val content: ByteArray,
-    )
 
     /** The remote argv for [command]: the reaping launcher when the command reports its own group. */
     private fun remoteCommand(
@@ -302,7 +267,6 @@ class SshShellExecutor(
     }
 
     companion object {
-        private val logger = LoggerFactory.getLogger(SshShellExecutor::class.java)
         private const val POLL_INTERVAL_MS = 250L
         private const val OPEN_TIMEOUT_MS = 10_000L
         private const val REAP_TIMEOUT_MS = 5_000L
