@@ -249,4 +249,6 @@ continuation does not fire when its watched run ends either.
 
 `server.dispatch.defaultTtlSec` is a non-nullable `Int` defaulting to `604800` (7 days), still `> 0`. A dispatch or
 continuation without its own `ttlSec` now expires after the default instead of staying PENDING forever; an operator
-who needs a longer wait raises the setting or passes `ttlSec`. Every pending row is thus bounded in time (ADR-0047).
+who needs a longer wait raises the setting or passes `ttlSec`. Schema v35 gives a PENDING row created before the
+upgrade with no expiry `created_at + 604800`, so none stays pending forever. Every pending row is thus bounded in
+time (ADR-0047).

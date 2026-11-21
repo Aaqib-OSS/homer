@@ -129,10 +129,10 @@ per-version steps in [`SchemaMigrations.kt`](SchemaMigrations.kt), and stamps
 `PRAGMA user_version`. One row per version — a new migration adds its step
 there and a row here (SQLite rule 1 in
 [`app/CLAUDE.md`](../../../../../../../../CLAUDE.md) § SQLite rules). The table is
-an index, not the reasoning: why a version exists, what it measured and what it
-left alone are in the ADR the row names, and § Schema constraints keeps only the
+an index, not the reasoning: why a version exists, what it measured and left
+alone are in the ADR the row names, and § Schema constraints keeps only the
 constraints that ADR does not state. Five rows name none — v1, v9, v11, v28 and v34 —
-and for those no ADR records the reasoning, so the row's phrase is the whole of it.
+so for those the row's phrase is the whole reasoning.
 `SchemaEquivalenceTest` fails when a database the steps upgraded differs from a fresh one
 (columns, indexes, CHECK constraints; drift not yet fixed is listed there) or when this table's
 rows are not unique, ascending and ending at `SCHEMA_VERSION`. It seeds v1 and v4 only, so a table
@@ -178,6 +178,7 @@ so a fresh database would carry one an upgraded one lacks (`SchemaEquivalenceTes
 | 32 | `dispatches.kind` + `dispatch_group_questions` table (its own version — a database the cooldown release stamped 31 skips every step guarded below 32) | [0109](../../../../../../../../../docs/adr/0109-grouped-ask-and-dispatch.md) |
 | 33 | `result_tokens` rebuilt without the transitional `DEFAULT ''` | [0025](../../../../../../../../../docs/adr/0025-capability-token-result-read.md) |
 | 34 | `result_tokens_expires_at` index (the token TTL sweep) | — |
+| 35 | default `expires_at` for PENDING `dispatches`/`continuations` rows | [0021](../../../../../../../../../docs/adr/0021-ask-and-dispatch.md) |
 
 ### Schema constraints
 
