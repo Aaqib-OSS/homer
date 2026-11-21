@@ -16,7 +16,6 @@ import io.kubernetes.client.openapi.models.CoreV1Event
 import io.kubernetes.client.openapi.models.CoreV1EventList
 import io.kubernetes.client.openapi.models.V1ContainerState
 import io.kubernetes.client.openapi.models.V1ContainerStateTerminated
-import io.kubernetes.client.openapi.models.V1ContainerStateWaiting
 import io.kubernetes.client.openapi.models.V1ContainerStatus
 import io.kubernetes.client.openapi.models.V1Job
 import io.kubernetes.client.openapi.models.V1JobSpec
@@ -1031,17 +1030,5 @@ class KubernetesRunnerTest {
                             ),
                     ),
                 ),
-        )
-
-    @Suppress("unused")
-    private fun waitingPod(): V1Pod =
-        V1Pod().status(
-            V1PodStatus().phase("Pending").containerStatuses(
-                listOf(
-                    V1ContainerStatus()
-                        .name(PodSpecBuilder.MAIN_CONTAINER_NAME)
-                        .state(V1ContainerState().waiting(V1ContainerStateWaiting().reason("ImagePullBackOff"))),
-                ),
-            ),
         )
 }
