@@ -1,5 +1,6 @@
 package homer.app.runners.ssh
 
+import homer.app.runners.RemoteShell
 import org.apache.sshd.client.SshClient
 import org.apache.sshd.client.session.ClientSession
 import org.apache.sshd.server.Environment
@@ -43,6 +44,8 @@ import java.util.concurrent.TimeUnit
  */
 class EmbeddedSshServer(
     private val refuseExec: Boolean = false,
+    /** Runs each command's shell as the leader of its own session, as sshd does; needs `setsid` on the host. */
+    private val shellLeadsSession: Boolean = false,
 ) : AutoCloseable {
     val host = "127.0.0.1"
 
@@ -67,7 +70,7 @@ class EmbeddedSshServer(
                 commandFactory =
                     CommandFactory { channel, command ->
                         execRequests.add(command)
-                        (if (refuseExec) RefusingCommandFactory else ShellCommandFactory).createCommand(channel, command)
+                        (if (refuseExec) RefusingCommandFactory else ShellCommandFactory(shellLeadsSession)).createCommand(channel, command)
                     }
             }
         server.start()
@@ -119,18 +122,22 @@ private object RefusingCommand : Command {
 }
 
 /** See the shell-wrapping rationale in [EmbeddedSshServer]'s class doc. */
-private object ShellCommandFactory : CommandFactory {
+private class ShellCommandFactory(
+    private val shellLeadsSession: Boolean,
+) : CommandFactory {
     override fun createCommand(
         channel: ChannelSession,
         command: String,
     ): Command {
+        // MINA runs its raw command under its own `/bin/sh -c`, so the session-leading shell is nested inside it.
+        val shellCommand = if (shellLeadsSession) "exec setsid /bin/sh -c " + RemoteShell.quote(command) else command
         val shellArgv =
             if (System.getProperty("os.name").lowercase().contains("win")) {
-                listOf("cmd.exe", "/C", command)
+                listOf("cmd.exe", "/C", shellCommand)
             } else {
-                listOf("/bin/sh", "-c", command)
+                listOf("/bin/sh", "-c", shellCommand)
             }
-        return ProcessShellFactory(command, shellArgv).createShell(channel)
+        return ProcessShellFactory(shellCommand, shellArgv).createShell(channel)
     }
 }
 

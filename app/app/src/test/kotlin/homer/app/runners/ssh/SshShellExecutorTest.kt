@@ -3,6 +3,7 @@ package homer.app.runners.ssh
 import homer.app.exceptions.OutputCapExceededException
 import homer.app.exceptions.SshConnectionLostException
 import homer.app.exceptions.SshExecRefusedException
+import homer.app.fixtures.pollUntil
 import homer.app.fixtures.waitUnfinished
 import homer.app.infra.OutputLineFilter
 import homer.app.models.CommandResult
@@ -377,6 +378,40 @@ class SshShellExecutorTest {
                 10.seconds,
             )
         assertEquals(7, bad.exitCode)
+    }
+
+    @Test
+    fun `a reaping command SIGKILLed from outside reports 137`(
+        @TempDir local: Path,
+    ) {
+        assumeTrue(setsidAvailable())
+        // The shell leads its session, as sshd's does, so `setsid -w` forks the wrapper and waits for it.
+        val leading = EmbeddedSshServer(shellLeadsSession = true).also { it.start() }
+        val childPid = workdir.resolve("child.pid")
+        val result =
+            try {
+                leading.newClientSession(client).use { session ->
+                    runBlocking {
+                        val killer =
+                            launch(Dispatchers.IO) {
+                                assertTrue(pollUntil { childPid.exists() && childPid.readText().isNotBlank() }, "the command never started")
+                                ProcessBuilder("kill", "-KILL", childPid.readText().trim()).start().waitFor()
+                            }
+                        executorOn(session, reapProcessGroup = true)
+                            .cmd(
+                                listOf("sh", "-c", "echo \$\$ > child.pid; exec sleep 30"),
+                                local.resolve("o"),
+                                local.resolve("e"),
+                                null,
+                                emptyMap(),
+                                20.seconds,
+                            ).also { killer.join() }
+                    }
+                }
+            } finally {
+                leading.close()
+            }
+        assertEquals(137, result.exitCode)
     }
 
     @Test

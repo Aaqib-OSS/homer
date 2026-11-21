@@ -2,8 +2,9 @@ package homer.app.runners.ssh
 
 import homer.app.runners.RemoteShell.quote
 import homer.app.runners.RemoteShell.sourceThenExec
+import homer.app.runners.RemoteShell.sourceThenRun
 
-// Every token is POSIX single-quoted for the remote login shell, and `exec` keeps the command's signals and exit code.
+// Every token is POSIX single-quoted for the remote login shell; the `exec` in [build] keeps the command's signals and exit code.
 // The env reaches the command only through a sourced file, never the command line (CWE-214, ADR-0032).
 object RemoteCommandBuilder {
     /** The command line for [argv] in [remoteWorkdir]; a non-null [envFile] is sourced first. */
@@ -26,10 +27,11 @@ object RemoteCommandBuilder {
         argv: List<String>,
         pgidFile: String,
     ): String {
-        // $0 is the pgid file; $@ is the real argv, after the env file when there is one. `exec "$@"` keeps the pid/pgid.
-        val launch = if (envFile != null) "f=\$1; shift; " + sourceThenExec("\$f") else "exec \"\$@\""
+        // $0 is the pgid file; $@ the argv, after the env file. A child argv lets `exit $?` report a signal death as 128+n;
+        // `trap :` outlives the group SIGINT, where `trap ''` would make the argv inherit an ignored SIGINT (ADR-0041).
+        val launch = if (envFile != null) "f=\$1; shift; " + sourceThenRun("\$f") else "\"\$@\""
         val parts = mutableListOf("cd", quote(remoteWorkdir), "&&", "exec", "setsid", "-w", "sh", "-c")
-        parts.add(quote("d=\$(dirname \"\$0\"); mkdir -p \"\$d\"; echo \$\$ > \"\$0\"; $launch"))
+        parts.add(quote("trap : INT; d=\$(dirname \"\$0\"); mkdir -p \"\$d\"; echo \$\$ > \"\$0\"; $launch; exit \$?"))
         parts.add(quote(pgidFile))
         envFile?.let { parts.add(quote(it)) }
         argv.forEach { parts.add(quote(it)) }

@@ -11,6 +11,9 @@ object RemoteShell {
     /** Sources the env file the shell variable [fileRef] names, then replaces the shell with the argv in `$@`. */
     fun sourceThenExec(fileRef: String): String = ". \"$fileRef\" && exec \"\$@\""
 
+    /** Sources the env file the shell variable [fileRef] names, then runs the argv in `$@` as a child of the shell. */
+    fun sourceThenRun(fileRef: String): String = ". \"$fileRef\" && \"\$@\""
+
     /**
      * The `export` script a launcher sources from [envFile]: its first line removes the file before any export can
      * change the `PATH` that `rm` resolves on. Fails on a key that is not a POSIX shell identifier and on a value
