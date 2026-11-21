@@ -31,7 +31,7 @@ class AgentSysEnvAllowlistPropertyTest {
     private val envs = Arb.map(Arb.pattern("[A-Z]{1,4}"), values, 0, 4)
 
     @Test
-    fun `the gate refuses exactly when resolving would read an unlisted variable, and names each one`() =
+    fun `the gate refuses exactly when resolving would read an unlisted variable, and names only those`() =
         runTest {
             checkAll(envs, Arb.set(names, 0..4)) { env, allowed ->
                 val reads = mutableSetOf<String>()
@@ -42,6 +42,7 @@ class AgentSysEnvAllowlistPropertyTest {
 
                 assertEquals(unlisted.isEmpty(), refusal == null, "env $env, allowed $allowed: $refusal")
                 unlisted.forEach { assertTrue("'$it'" in refusal.orEmpty(), "refusal must name '$it': $refusal") }
+                allowed.forEach { assertFalse("'$it'" in refusal.orEmpty(), "refusal names allowed '$it': $refusal") }
                 assertFalse(HOST_VALUE in refusal.orEmpty(), "a refusal never carries a value")
             }
         }
