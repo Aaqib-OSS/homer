@@ -26,7 +26,6 @@ import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -247,10 +246,10 @@ class SshRunnerTest {
     }
 
     @Test
-    fun `an env file a step leaves behind is removed with the session workspace`(
+    fun `a refused step leaves no env file behind in a kept workspace`(
         @TempDir serverRoot: Path,
     ) = runTest {
-        // A refused exec request stands in for a step killed after its env file was uploaded but before it was sourced.
+        // The exec is refused after the env file was uploaded, so the command never sources it; no cleanWorkspace runs.
         val refusing = EmbeddedSshServer(refuseExec = true).also { it.start() }
         try {
             val projectRoot = serverRoot.resolve("p1")
@@ -261,7 +260,7 @@ class SshRunnerTest {
                     artifacts = projectRoot.resolve("artifacts").createDirectories(),
                     workdir = projectRoot.resolve("workdir").createDirectories(),
                     env = mapOf("STEP_VALUE" to "s3cr3t-Ab9-env-value"),
-                    clearAfterFinish = true,
+                    clearAfterFinish = false,
                     lockKey = "k",
                     maxOutputBytes = Long.MAX_VALUE,
                 )
@@ -278,12 +277,10 @@ class SshRunnerTest {
                 assertThrows<SshExecRefusedException> {
                     session.shell.cmd(listOf("true"), serverRoot.resolve("o"), serverRoot.resolve("e"), null, ws.env, 30.seconds)
                 }
-                val remoteP1 = refusing.rootDir.resolve("remote/p1")
-                val left = Files.list(remoteP1.resolve(".homer/env")).use { it.toList() }
-                assertEquals(1, left.size, "the interrupted step left its env file: $left")
-
-                session.cleanWorkspace()
-                assertFalse(remoteP1.exists(), "the session workspace, env file included, is removed")
+                val envDir = refusing.rootDir.resolve("remote/p1/.homer/env")
+                assertTrue(envDir.exists(), "the step uploaded its env file")
+                val left = Files.list(envDir).use { it.toList() }
+                assertEquals(emptyList(), left, "the refused step left its env file")
             } finally {
                 session.close()
             }

@@ -211,6 +211,52 @@ class SshShellExecutorTest {
         assertFalse(envDir.exists(), "no env dir without an env")
     }
 
+    /** A mocked exec session that never runs the command, with env files written over the real fixture's SFTP. */
+    private fun neverRunningExecutor(): SshShellExecutor {
+        val (stalled, _) = stalledSession()
+        return SshShellExecutor(
+            session = stalled,
+            remoteWorkdir = workdir.toString(),
+            sync = WorkspaceSync(server.newClientSession(client), 30.seconds),
+            envDir = envDir.toString(),
+        )
+    }
+
+    private fun envFilesLeft(): List<Path> = if (envDir.exists()) Files.list(envDir).use { it.toList() } else emptyList()
+
+    @Test
+    fun `a step that times out before sourcing its env file leaves none behind`(
+        @TempDir local: Path,
+    ) = runTest {
+        assertThrows<CancellationException> {
+            neverRunningExecutor().cmd(listOf("true"), local.resolve("o"), local.resolve("e"), null, SECRET_ENV, 50.milliseconds)
+        }
+        assertTrue(envDir.exists(), "the step uploaded its env file")
+        assertEquals(emptyList(), envFilesLeft())
+    }
+
+    @Test
+    fun `a step cancelled before sourcing its env file leaves none behind`(
+        @TempDir local: Path,
+    ) = runBlocking {
+        val job =
+            launch(Dispatchers.IO) {
+                neverRunningExecutor().cmd(listOf("true"), local.resolve("o"), local.resolve("e"), null, SECRET_ENV, 30.seconds)
+            }
+        withTimeout(10_000) { while (envFilesLeft().isEmpty()) delay(20) }
+        withTimeout(10_000) { job.cancelAndJoin() }
+        assertEquals(emptyList(), envFilesLeft())
+    }
+
+    @Test
+    fun `a step that exits non-zero leaves no env file behind`(
+        @TempDir local: Path,
+    ) = runTest {
+        val result = executor().cmd(listOf("sh", "-c", "exit 7"), local.resolve("o"), local.resolve("e"), null, SECRET_ENV, 10.seconds)
+        assertEquals(7, result.exitCode)
+        assertEquals(emptyList(), envFilesLeft())
+    }
+
     /** Every exec request the fixture saw quotes [SECRET_VALUE] nowhere, and at least one sourced an env file. */
     private fun assertExecRequestsQuoteNoEnvValue() {
         val requests = server.execRequests.toList()

@@ -52,21 +52,32 @@ internal fun SftpClient.ensurePrivateDir(dir: String) {
 
 /**
  * Creates [path] new, never over an existing entry, and makes it owner-only (0600) before writing [content]; a
- * server that leaves the file readable by others fails the write and the file is removed.
+ * server that leaves the file readable by others fails the write. Any failure after the create removes the file.
  */
 internal fun SftpClient.createPrivateFile(
     path: String,
     content: ByteArray,
 ) {
+    // A failed open created nothing, so an entry already at [path] is never removed.
+    val handle = open(path, SftpClient.OpenMode.Write, SftpClient.OpenMode.Create, SftpClient.OpenMode.Exclusive)
     try {
-        open(path, SftpClient.OpenMode.Write, SftpClient.OpenMode.Create, SftpClient.OpenMode.Exclusive).use { handle ->
-            setStat(handle, SftpClient.Attributes().perms(OWNER_ONLY_FILE))
-            if (stat(handle).permissions and GROUP_OTHER_BITS != 0) throw SecurityException("remote file '$path' did not become owner-only")
-            writeAll(handle, content)
+        handle.use {
+            setStat(it, SftpClient.Attributes().perms(OWNER_ONLY_FILE))
+            if (stat(it).permissions and GROUP_OTHER_BITS != 0) throw SecurityException("remote file '$path' did not become owner-only")
+            writeAll(it, content)
         }
-    } catch (e: SecurityException) {
+    } catch (e: Throwable) {
         runCatching { remove(path) }
         throw e
+    }
+}
+
+/** Removes the file at [path]; a missing file is not an error. */
+internal fun SftpClient.removeIfExists(path: String) {
+    try {
+        remove(path)
+    } catch (e: SftpException) {
+        if (!e.isNoSuchFile()) throw e
     }
 }
 
@@ -87,9 +98,12 @@ private fun SftpClient.lstatOrNull(path: String): SftpClient.Attributes? =
     try {
         lstat(path)
     } catch (e: SftpException) {
-        if (e.status != SftpConstants.SSH_FX_NO_SUCH_FILE && e.status != SftpConstants.SSH_FX_NO_SUCH_PATH) throw e
+        if (!e.isNoSuchFile()) throw e
         null
     }
+
+private fun SftpException.isNoSuchFile(): Boolean =
+    status == SftpConstants.SSH_FX_NO_SUCH_FILE || status == SftpConstants.SSH_FX_NO_SUCH_PATH
 
 private val OWNER_ONLY_FILE = TarStreams.posixToMode(PosixFilePermissions.fromString("rw-------"))
 private val OWNER_ONLY_DIR = TarStreams.posixToMode(PosixFilePermissions.fromString("rwx------"))

@@ -13,6 +13,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
@@ -101,6 +102,30 @@ class WorkspaceSyncPrivateFileTest {
             assertThrows<SecurityException> { ignoring.writePrivateFile("/w/.homer/env/a.env", "s3cr3t-Ab9-env-value".toByteArray()) }
             verify(exactly = 0) { sftp.write(any<SftpClient.Handle>(), any<Long>(), any<ByteArray>(), any<Int>(), any<Int>()) }
             verify { sftp.remove("/w/.homer/env/a.env") }
+        }
+
+    @Test
+    fun `a write that fails after the create removes the file`() =
+        runBlocking {
+            val sftp = mockk<SftpClient>(relaxed = true)
+            every { sftp.lstat(any()) } returns SftpClient.Attributes().perms(S_IFDIR or permissions("rwx------"))
+            every { sftp.open(any<String>(), *anyVararg<SftpClient.OpenMode>()) } returns mockk(relaxed = true)
+            every { sftp.stat(any<SftpClient.Handle>()) } returns SftpClient.Attributes().perms(permissions("rw-------"))
+            every { sftp.write(any<SftpClient.Handle>(), any<Long>(), any<ByteArray>(), any<Int>(), any<Int>()) } throws
+                IOException("quota")
+            val failing = WorkspaceSync(mockk<ClientSession>(relaxed = true), 30.seconds, openSftp = { sftp })
+
+            assertThrows<IOException> { failing.writePrivateFile("/w/.homer/env/a.env", "x".toByteArray()) }
+            verify { sftp.remove("/w/.homer/env/a.env") }
+        }
+
+    @Test
+    fun `removeIfExists removes a file and tolerates a missing one`() =
+        runBlocking {
+            val file = server.rootDir.resolve("gone.env").also { it.writeText("x") }
+            sync.removeIfExists(file.toString(), 5.seconds)
+            assertFalse(file.exists())
+            sync.removeIfExists(file.toString(), 5.seconds)
         }
 
     private companion object {
