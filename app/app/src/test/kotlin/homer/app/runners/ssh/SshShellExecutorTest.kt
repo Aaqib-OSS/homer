@@ -3,8 +3,11 @@ package homer.app.runners.ssh
 import homer.app.exceptions.OutputCapExceededException
 import homer.app.exceptions.SshConnectionLostException
 import homer.app.exceptions.SshExecRefusedException
+import homer.app.exceptions.SshUnknownExitSignalException
+import homer.app.fixtures.pollUntil
 import homer.app.fixtures.waitUnfinished
 import homer.app.infra.OutputLineFilter
+import homer.app.models.CommandResult
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.spyk
@@ -378,6 +381,40 @@ class SshShellExecutorTest {
     }
 
     @Test
+    fun `a reaping command SIGKILLed from outside reports 137`(
+        @TempDir local: Path,
+    ) {
+        assumeTrue(setsidCanFormGroup())
+        // The shell leads its session, as sshd's does, so `setsid -w` forks the wrapper and waits for it.
+        val leading = EmbeddedSshServer(shellLeadsSession = true).also { it.start() }
+        val childPid = workdir.resolve("child.pid")
+        val result =
+            try {
+                leading.newClientSession(client).use { session ->
+                    runBlocking {
+                        val killer =
+                            launch(Dispatchers.IO) {
+                                assertTrue(pollUntil { childPid.exists() && childPid.readText().isNotBlank() }, "the command never started")
+                                ProcessBuilder("kill", "-KILL", childPid.readText().trim()).start().waitFor()
+                            }
+                        executorOn(session, reapProcessGroup = true)
+                            .cmd(
+                                listOf("sh", "-c", "echo \$\$ > child.pid; exec sleep 30"),
+                                local.resolve("o"),
+                                local.resolve("e"),
+                                null,
+                                emptyMap(),
+                                20.seconds,
+                            ).also { killer.join() }
+                    }
+                }
+            } finally {
+                leading.close()
+            }
+        assertEquals(137, result.exitCode)
+    }
+
+    @Test
     fun `reaps a backgrounded remote child on timeout`(
         @TempDir local: Path,
     ) {
@@ -615,6 +652,7 @@ class SshShellExecutorTest {
         every { channel.open() } returns openFuture
         every { channel.waitFor(any<Collection<ClientChannelEvent>>(), any<Long>()) } returns setOf(ClientChannelEvent.CLOSED)
         every { channel.exitStatus } returns null
+        every { channel.exitSignal } returns null
         val session = mockk<ClientSession>(relaxed = true)
         every { session.createExecChannel(any()) } returns channel
         every { session.isOpen } returns false
@@ -626,6 +664,100 @@ class SshShellExecutorTest {
                     .cmd(listOf("echo", "hello"), local.resolve("o"), local.resolve("e"), null, emptyMap(), 10.seconds)
             }
         assertContains(exception.message.orEmpty(), "SSH channel closed without an exit status")
+    }
+
+    @Test
+    fun `a command the remote killed with a signal reports 128 plus its number, not a lost connection`(
+        @TempDir local: Path,
+    ) = runTest {
+        assertEquals(137, exitWithSignal("KILL", local).exitCode)
+        assertEquals(143, exitWithSignal("TERM", local).exitCode)
+        assertEquals(130, exitWithSignal("INT", local).exitCode)
+    }
+
+    @Test
+    fun `an unknown exit signal fails the step naming the signal and quoting no command`(
+        @TempDir local: Path,
+    ) = runTest {
+        val exception = assertThrows<SshUnknownExitSignalException> { exitWithSignal("BOGUS", local) }
+        assertContains(exception.message.orEmpty(), "BOGUS")
+        assertFalse(exception.message.orEmpty().contains("echo"), "the step error must quote no command")
+    }
+
+    @Test
+    fun `OpenSSH's catch-all signal name fails the step with that name`(
+        @TempDir local: Path,
+    ) = runTest {
+        val exception = assertThrows<SshUnknownExitSignalException> { exitWithSignal("SIG@openssh.com", local) }
+        assertContains(exception.message.orEmpty(), "SIG@openssh.com")
+    }
+
+    @Test
+    fun `an unknown exit signal on a session that is gone is a lost connection quoting nothing from the server`(
+        @TempDir local: Path,
+    ) = runTest {
+        val exception = assertThrows<SshConnectionLostException> { exitWithSignal("BOGUS", local, sessionLive = false) }
+        assertFalse(exception.message.orEmpty().contains("BOGUS"))
+    }
+
+    @Test
+    fun `an unknown exit signal on a session still open but closing is a lost connection quoting nothing`(
+        @TempDir local: Path,
+    ) = runTest {
+        val exception =
+            assertThrows<SshConnectionLostException> { exitWithSignal("BOGUS", local, sessionLive = true, closing = true) }
+        assertFalse(exception.message.orEmpty().contains("BOGUS"))
+    }
+
+    @Test
+    fun `a channel with neither exit status nor signal on a session still open but closing is a lost connection`(
+        @TempDir local: Path,
+    ) = runTest {
+        assertThrows<SshConnectionLostException> { exitWithSignal(null, local, sessionLive = true, closing = true) }
+    }
+
+    @Test
+    fun `a known exit signal still reports 128 plus its number on a session that is closing`(
+        @TempDir local: Path,
+    ) = runTest {
+        assertEquals(137, exitWithSignal("KILL", local, sessionLive = false).exitCode)
+    }
+
+    @Test
+    fun `an exit signal naming control characters is withheld from the step error`(
+        @TempDir local: Path,
+    ) = runTest {
+        val exception = assertThrows<SshUnknownExitSignalException> { exitWithSignal("X\nINJECTED line", local) }
+        assertFalse(exception.message.orEmpty().contains("INJECTED"))
+    }
+
+    @Test
+    fun `a channel closed with neither exit status nor signal on a live session is still a refusal`(
+        @TempDir local: Path,
+    ) = runTest {
+        assertThrows<SshExecRefusedException> { exitWithSignal(null, local) }
+    }
+
+    /** `cmd` against a mocked live session whose exec channel closes with no exit status and [signal], if any. */
+    private suspend fun exitWithSignal(
+        signal: String?,
+        local: Path,
+        sessionLive: Boolean = true,
+        closing: Boolean = !sessionLive,
+    ): CommandResult {
+        val channel = mockk<ChannelExec>(relaxed = true)
+        val openFuture = mockk<OpenFuture>()
+        every { openFuture.verify(any<Long>()) } returns openFuture
+        every { channel.open() } returns openFuture
+        every { channel.waitFor(any<Collection<ClientChannelEvent>>(), any<Long>()) } returns setOf(ClientChannelEvent.CLOSED)
+        every { channel.exitStatus } returns null
+        every { channel.exitSignal } returns signal
+        val session = mockk<ClientSession>(relaxed = true)
+        every { session.createExecChannel(any()) } returns channel
+        every { session.isOpen } returns sessionLive
+        every { session.isClosing } returns closing
+        return executorOn(session)
+            .cmd(listOf("echo", "hello"), local.resolve("o"), local.resolve("e"), null, emptyMap(), 10.seconds)
     }
 
     @Test

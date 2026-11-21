@@ -1,16 +1,23 @@
 package homer.app.runners.ssh
 
+import homer.app.fixtures.awaitProcessExit
+import homer.app.fixtures.pollUntil
 import homer.app.runners.RemoteShell
 import org.junit.jupiter.api.Assumptions.assumeFalse
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.TimeUnit
+import kotlin.io.path.exists
+import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.test.fail
 
 class RemoteCommandBuilderTest {
     @Test
@@ -51,18 +58,19 @@ class RemoteCommandBuilderTest {
             )
         assertEquals(
             "cd '/w' && exec setsid -w sh -c " +
-                "'d=\$(dirname \"\$0\"); mkdir -p \"\$d\"; echo \$\$ > \"\$0\"; f=\$1; shift; . \"\$f\" && exec \"\$@\"' " +
+                "'trap : INT TERM HUP; d=\$(dirname \"\$0\"); mkdir -p \"\$d\"; echo \$\$ > \"\$0\"; " +
+                "f=\$1; shift; . \"\$f\" && (exec \"\$@\"); exit \$?' " +
                 "'/w/.homer/reap/cmd-1.pgid' '/w/.homer/env/a1.env' 'echo' 'hi'",
             cmd,
         )
     }
 
     @Test
-    fun `buildReaping without an env file execs the argv directly`() {
+    fun `buildReaping without an env file runs the argv as a child of the wrapper`() {
         val cmd = RemoteCommandBuilder.buildReaping("/w", null, listOf("ls"), "/w/.homer/reap/cmd-1.pgid")
         assertEquals(
             "cd '/w' && exec setsid -w sh -c " +
-                "'d=\$(dirname \"\$0\"); mkdir -p \"\$d\"; echo \$\$ > \"\$0\"; exec \"\$@\"' " +
+                "'trap : INT TERM HUP; d=\$(dirname \"\$0\"); mkdir -p \"\$d\"; echo \$\$ > \"\$0\"; (exec \"\$@\"); exit \$?' " +
                 "'/w/.homer/reap/cmd-1.pgid' 'ls'",
             cmd,
         )
@@ -107,6 +115,258 @@ class RemoteCommandBuilderTest {
         val out = p.inputStream.readBytes().decodeToString()
         return p.waitFor() to out
     }
+
+    @Test
+    fun `the reaping wrapper reports 137 under every shell for a command SIGKILLed from outside`(
+        @TempDir tmp: Path,
+    ) {
+        assumeFalse(isWindows())
+        for (shell in wrapperShells()) {
+            val dir = Files.createTempDirectory(tmp, "run")
+            val process = start(wrapperAlone(reaping(dir, listOf("sh", "-c", "echo \$\$ > child.pid; exec sleep 30")), shell), dir)
+            signal("KILL", awaitPid(dir.resolve("child.pid")))
+            assertEquals(137, exitOf(process), "under $shell")
+        }
+    }
+
+    @Test
+    fun `the reaping wrapper reports a real exit 9 under every shell with its stdout and stderr`(
+        @TempDir tmp: Path,
+    ) {
+        assumeFalse(isWindows())
+        for (shell in wrapperShells()) {
+            val dir = Files.createTempDirectory(tmp, "run")
+            val process = start(wrapperAlone(reaping(dir, listOf("sh", "-c", "echo out; echo err >&2; exit 9")), shell), dir)
+            val exit = exitOf(process)
+            assertEquals(Triple(9, "out\n", "err\n"), Triple(exit, dir.resolve("out").readText(), dir.resolve("err").readText()), shell)
+        }
+    }
+
+    @Test
+    fun `the reaping wrapper runs a builtin-named argv from PATH under every shell, so exit is not found`(
+        @TempDir tmp: Path,
+    ) {
+        assumeFalse(isWindows())
+        for (shell in wrapperShells()) {
+            val dir = Files.createTempDirectory(tmp, "run")
+            assertEquals(127, exitOf(start(wrapperAlone(reaping(dir, listOf("exit", "3")), shell), dir)), "under $shell")
+        }
+    }
+
+    @Test
+    fun `the reaping wrapper runs echo from PATH under every shell, so a backslash prints literally`(
+        @TempDir tmp: Path,
+    ) {
+        assumeFalse(isWindows())
+        for (shell in wrapperShells()) {
+            val dir = Files.createTempDirectory(tmp, "run")
+            exitOf(start(wrapperAlone(reaping(dir, listOf("echo", "C:\\new\\table")), shell), dir))
+            assertEquals("C:\\new\\table\n", dir.resolve("out").readText(), "under $shell")
+        }
+    }
+
+    @Test
+    fun `the reaping wrapper records its own pid under every shell`(
+        @TempDir tmp: Path,
+    ) {
+        assumeFalse(isWindows())
+        for (shell in wrapperShells()) {
+            val dir = Files.createTempDirectory(tmp, "run")
+            val process = start(wrapperAlone(reaping(dir, listOf("true")), shell), dir)
+            exitOf(process)
+            assertEquals(process.pid().toString(), dir.resolve(PGID_FILE).readText().trim(), "under $shell")
+        }
+    }
+
+    // Without setsid there is no group to signal; a group SIGINT reaches each member, so this signals both.
+    @Test
+    fun `a command that traps SIGINT reports its own exit through the reaping wrapper under every shell`(
+        @TempDir tmp: Path,
+    ) {
+        assumeFalse(isWindows())
+        for (shell in wrapperShells()) {
+            val dir = Files.createTempDirectory(tmp, "run")
+            val script = "trap 'exit 0' INT; echo \$\$ > child.pid; while :; do sleep 0.1; done"
+            val process = start(wrapperAlone(reaping(dir, listOf("sh", "-c", script)), shell), dir)
+            signal("INT", process.pid(), awaitPid(dir.resolve("child.pid")))
+            assertEquals(0, exitOf(process), "under $shell")
+        }
+    }
+
+    @Test
+    fun `a command that does not trap SIGINT reports 130 through the reaping wrapper under every shell`(
+        @TempDir tmp: Path,
+    ) {
+        assumeFalse(isWindows())
+        for (shell in wrapperShells()) {
+            val dir = Files.createTempDirectory(tmp, "run")
+            val process = start(wrapperAlone(reaping(dir, listOf("sh", "-c", "echo \$\$ > child.pid; exec sleep 30")), shell), dir)
+            signal("INT", process.pid(), awaitPid(dir.resolve("child.pid")))
+            assertEquals(130, exitOf(process), "under $shell")
+        }
+    }
+
+    @Test
+    fun `a command that does not trap SIGTERM reports 143 through the reaping wrapper under every shell`(
+        @TempDir tmp: Path,
+    ) {
+        assumeFalse(isWindows())
+        for (shell in wrapperShells()) {
+            val dir = Files.createTempDirectory(tmp, "run")
+            val process = start(wrapperAlone(reaping(dir, listOf("sh", "-c", "echo \$\$ > child.pid; exec sleep 30")), shell), dir)
+            signal("TERM", process.pid(), awaitPid(dir.resolve("child.pid")))
+            assertEquals(143, exitOf(process), "under $shell")
+        }
+    }
+
+    @Test
+    fun `under setsid -w a command SIGKILLed from outside reports 137`(
+        @TempDir dir: Path,
+    ) {
+        assumeTrue(setsidCanFormGroup(), "util-linux setsid -w is required")
+        val process = start(underLoginSession(reaping(dir, listOf("sh", "-c", "echo \$\$ > child.pid; exec sleep 30"))), dir)
+        signal("KILL", awaitPid(dir.resolve("child.pid")))
+        assertEquals(137, exitOf(process))
+    }
+
+    @Test
+    fun `under setsid -w the graceful reaper lets a command that traps SIGINT report its own exit`(
+        @TempDir dir: Path,
+    ) {
+        assumeTrue(setsidCanFormGroup(), "util-linux setsid -w is required")
+        val script = "trap 'exit 0' INT; echo \$\$ > child.pid; sleep 30"
+        assertEquals(0, exitAfterGracefulReap(dir, script))
+    }
+
+    @Test
+    fun `under setsid -w the graceful reaper makes a command that does not trap SIGINT report 130`(
+        @TempDir dir: Path,
+    ) {
+        assumeTrue(setsidCanFormGroup(), "util-linux setsid -w is required")
+        assertEquals(130, exitAfterGracefulReap(dir, "echo \$\$ > child.pid; sleep 30"))
+    }
+
+    @Test
+    fun `under setsid -w a group SIGTERM reports 143 for a command that does not trap it`(
+        @TempDir dir: Path,
+    ) {
+        assumeTrue(setsidCanFormGroup(), "util-linux setsid -w is required")
+        assertEquals(143, exitAfterGroupSignal(dir, "TERM"))
+    }
+
+    @Test
+    fun `under setsid -w a group SIGHUP reports 129 for a command that does not trap it`(
+        @TempDir dir: Path,
+    ) {
+        assumeTrue(setsidCanFormGroup(), "util-linux setsid -w is required")
+        assertEquals(129, exitAfterGroupSignal(dir, "HUP"))
+    }
+
+    @Test
+    fun `under setsid -w the pgid file holds the wrapper's process group id`(
+        @TempDir dir: Path,
+    ) {
+        assumeTrue(setsidCanFormGroup(), "util-linux setsid -w is required")
+        val process = start(underLoginSession(reaping(dir, listOf("sh", "-c", "echo \$\$ > child.pid; exec sleep 30"))), dir)
+        try {
+            val child = awaitPid(dir.resolve("child.pid"))
+            val pgid = dir.resolve(PGID_FILE).readText().trim()
+            assertEquals(listOf(pgid, pgid), listOf(groupOf(pgid.toLong()), groupOf(child)))
+        } finally {
+            process.descendants().forEach { it.destroyForcibly() }
+            process.destroyForcibly()
+        }
+    }
+
+    @Test
+    fun `under setsid -w buildReapKill SIGKILLs the recorded group, a backgrounded child included`(
+        @TempDir dir: Path,
+    ) {
+        assumeTrue(setsidCanFormGroup(), "util-linux setsid -w is required")
+        val script = "sleep 30 & echo \$! > child.pid; wait"
+        val process = start(underLoginSession(reaping(dir, listOf("sh", "-c", script))), dir)
+        val background = awaitPid(dir.resolve("child.pid"))
+        ProcessBuilder("sh", "-c", RemoteCommandBuilder.buildReapKill(dir.resolve(PGID_FILE).toString())).start().waitFor()
+        exitOf(process)
+        assertTrue(awaitProcessExit(background), "the backgrounded child outlived the group kill")
+    }
+
+    /** Runs a command that traps nothing under `setsid -w`, signals its whole group with [name], and returns its exit. */
+    private fun exitAfterGroupSignal(
+        dir: Path,
+        name: String,
+    ): Int {
+        val process = start(underLoginSession(reaping(dir, listOf("sh", "-c", "echo \$\$ > child.pid; exec sleep 30"))), dir)
+        awaitPid(dir.resolve("child.pid"))
+        // The shell's builtin kill: procps-ng kill misparses a negative pid (ADR-0041).
+        ProcessBuilder("sh", "-c", "kill -$name -\"\$0\"", dir.resolve(PGID_FILE).readText().trim()).start().waitFor()
+        return exitOf(process)
+    }
+
+    /** Runs [script] reaping under `setsid -w`, SIGINTs its group with the real graceful reaper, and returns its exit. */
+    private fun exitAfterGracefulReap(
+        dir: Path,
+        script: String,
+    ): Int {
+        val process = start(underLoginSession(reaping(dir, listOf("sh", "-c", script))), dir)
+        awaitPid(dir.resolve("child.pid"))
+        val reaper = ProcessBuilder("sh", "-c", RemoteCommandBuilder.buildReapInterrupt(dir.resolve(PGID_FILE).toString(), 30)).start()
+        try {
+            return exitOf(process)
+        } finally {
+            reaper.descendants().forEach { it.destroyForcibly() }
+            reaper.destroyForcibly()
+        }
+    }
+
+    /** The reaping command line for [argv] in [dir], recording its pgid to [PGID_FILE] there. */
+    private fun reaping(
+        dir: Path,
+        argv: List<String>,
+    ): String = RemoteCommandBuilder.buildReaping(dir.toString(), null, argv, dir.resolve(PGID_FILE).toString())
+
+    /** Starts [argv] with its stdout and stderr in `out` and `err` under [dir]. */
+    private fun start(
+        argv: List<String>,
+        dir: Path,
+    ): Process =
+        ProcessBuilder(argv)
+            .redirectOutput(dir.resolve("out").toFile())
+            .redirectError(dir.resolve("err").toFile())
+            .start()
+
+    /** [process]'s exit code; fails the test, killing it, when it is still running after a bounded wait. */
+    private fun exitOf(process: Process): Int {
+        if (!process.waitFor(20, TimeUnit.SECONDS)) {
+            process.descendants().forEach { it.destroyForcibly() }
+            process.destroyForcibly()
+            fail("the command did not exit")
+        }
+        return process.exitValue()
+    }
+
+    /** The pid the command wrote to [file], once it has written one. */
+    private fun awaitPid(file: Path): Long {
+        assertTrue(pollUntil { file.exists() && file.readText().trim().isNotEmpty() }, "no pid in $file")
+        return file.readText().trim().toLong()
+    }
+
+    private fun signal(
+        name: String,
+        vararg pids: Long,
+    ) {
+        ProcessBuilder(listOf("kill", "-s", name) + pids.map { it.toString() }).start().waitFor()
+    }
+
+    private fun groupOf(pid: Long): String =
+        ProcessBuilder("ps", "-o", "pgid=", "-p", pid.toString())
+            .start()
+            .inputStream
+            .readBytes()
+            .decodeToString()
+            .trim()
+
+    private fun isWindows() = System.getProperty("os.name").lowercase().contains("win")
 
     @Test
     fun `buildReapKill numerically guards the pgid before kill`() {
@@ -187,5 +447,9 @@ class RemoteCommandBuilderTest {
         assertEquals("", decision("1"))
         assertEquals("", decision("-1"))
         assertEquals("", decision("abc"))
+    }
+
+    private companion object {
+        const val PGID_FILE = ".homer/reap/cmd-1.pgid"
     }
 }

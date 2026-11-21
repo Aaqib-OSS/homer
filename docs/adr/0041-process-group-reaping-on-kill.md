@@ -155,3 +155,46 @@ outcome is the same: a signal death never reads as exit 0.
   amendment on the Kubernetes kills: that binary misparses a negative group id.
 - **Relative `PATH` entries are skipped when locating `setsid`.** They would resolve against
   the writable per-run workdir and let a planted binary stand in for it.
+
+## Amendment (2026-11-21): both ssh forms report a signal death as 128 + n
+
+This supersedes the 2026-11-20 amendment's note that a signal death fails the step with the raw
+signal number, and the sentence in ADR-0032 that the reaping form `exec`s the command with exit
+codes, signals and stdin unchanged. For the SSH runner it also supersedes, for a command killed by
+a signal: the decision driver that reaping must not change the exit code or signal semantics; the
+decision's description of the inner `sh` `exec`ing the real argv in place; the Consequences bullet
+that exit-code, stdin and signal semantics stay identical to before; the Decision's claim that
+`setsid -w` lets exit code and signal propagate unchanged; and the rejection of a `trap`
+wrapper that drops the in-place `exec` and turns a signal death into 128 + n.
+
+The new wrapper differs from the rejected ones: those backgrounded the command, which loses its
+stdin, while this one keeps it in the foreground, so stdin is unchanged. 128 + n is now the goal,
+matching the local runner, not a hazard.
+
+Both forms now report 128 + n, as the local runner does:
+
+- The fallback form reads the exit signal that MINA reports for a command with no exit status. It
+  maps the name to its Linux number, and a name outside the table fails the step.
+- The reaping wrapper runs the command as `(exec "$@")` in a child subshell, under
+  `trap : INT TERM HUP`, and exits with `$?`. `setsid -w` passes that ordinary exit through. The
+  subshell resets the caught traps, so the command still receives the signals, and the `exec`
+  resolves argv[0] through `PATH`, so a builtin-named argument still runs the program.
+- A signal to the whole group other than INT, TERM or HUP, for example QUIT, still kills the
+  wrapper, so `setsid -w` gives its raw wait status: the signal number, plus 128 when a core is
+  dumped (QUIT's default action dumps one, so 131 where cores are enabled). Homer's own reapers send
+  only INT and KILL.
+- The shell's own notice on stderr, such as `Killed`, replaces the `setsid: child N did not exit
+  normally` line.
+- A TERM or HUP sent to the recorded pid alone no longer reaches the command: that pid is now the
+  waiting wrapper, which holds the signal until the command exits. Signal the group
+  (`kill -TERM -<pgid>`), as Homer's reapers do.
+- OpenSSH names every signal outside the 13 RFC 4254 names `SIG@openssh.com`, so such a death, for
+  example SIGXCPU, fails the step with that name instead of reporting 128 + n.
+- That failure is a typed `SshUnknownExitSignalException`, like its siblings, not a bare
+  `IllegalStateException`. The refused-versus-lost session split of `noExitStatus` applies first:
+  on a session that is gone or closing the name is garbled data from a dead connection, so the step
+  fails as `SshConnectionLostException` and the name is not quoted; on a live session it fails with
+  the typed exception, which quotes the name only when it is short and printable (CWE-117). A known
+  name reports 128 + n whatever the session state, since it is a genuine report.
+  Rejected: reporting it as `SshExecRefusedException`. The server did run the command and reported
+  how it ended, so "refused the exec request" would mislead an operator.

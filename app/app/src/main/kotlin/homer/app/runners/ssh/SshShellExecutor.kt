@@ -3,6 +3,7 @@ package homer.app.runners.ssh
 import homer.app.exceptions.OutputCapExceededException
 import homer.app.exceptions.SshConnectionLostException
 import homer.app.exceptions.SshExecRefusedException
+import homer.app.exceptions.SshUnknownExitSignalException
 import homer.app.infra.KillCause
 import homer.app.infra.LineFilteringOutputStream
 import homer.app.infra.OutputLineFilter
@@ -140,7 +141,10 @@ class SshShellExecutor(
             RemoteCommandBuilder.build(remoteWorkdir, envFile, command)
         }
 
-    /** The channel's exit status as the result; a channel closed without one fails the step ([noExitStatus]). */
+    /**
+     * The channel's exit status as the result, else 128 + n for a command the remote killed with signal n, as the
+     * local runner reports it; a channel closed with neither fails the step ([noExitStatus]).
+     */
     private fun commandResult(
         channel: ChannelExec,
         stdOut: Path,
@@ -148,6 +152,7 @@ class SshShellExecutor(
     ): CommandResult {
         val exit =
             channel.exitStatus
+                ?: channel.exitSignal?.let(::signalExitCode)
                 ?: throw noExitStatus()
         return CommandResult(exitCode = exit, stdOut = stdOut, stdErr = stdErr)
     }
@@ -166,6 +171,21 @@ class SshShellExecutor(
             throw SshConnectionLostException("SSH channel open failed")
         }
     }
+
+    private fun signalExitCode(signal: String): Int {
+        val number =
+            SshExitSignals.number(signal)
+                ?: throw unknownSignal(signal)
+        return 128 + number
+    }
+
+    /** A signal name that is not RFC 4254's is untrustworthy on a session that is gone, so it reads as a lost connection. */
+    private fun unknownSignal(signal: String): RuntimeException =
+        if (session.isOpen && !session.isClosing) {
+            SshUnknownExitSignalException(SshExitSignals.quotable(signal))
+        } else {
+            SshConnectionLostException("SSH channel closed with an unreadable exit signal")
+        }
 
     /**
      * A channel that yields no exit status on a session still open was refused by the server — MINA

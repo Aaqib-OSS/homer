@@ -19,6 +19,11 @@ class RemoteShellTest {
     }
 
     @Test
+    fun `sourceThenRun sources the file, then execs the argv in a subshell`() {
+        assertEquals(". \"\$f\" && (exec \"\$@\")", RemoteShell.sourceThenRun("\$f"))
+    }
+
+    @Test
     fun `envFileContent removes the file first, then exports each value single-quoted`() {
         val content = RemoteShell.envFileContent("/w/.homer/env/a1.env", linkedMapOf("FOO" to "it's", "BAR" to "x"))
         assertEquals(

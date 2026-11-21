@@ -3,7 +3,9 @@ package homer.app.runners.ssh
 import homer.app.runners.RemoteShell
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.bind
+import io.kotest.property.arbitrary.choice
 import io.kotest.property.arbitrary.element
+import io.kotest.property.arbitrary.int
 import io.kotest.property.arbitrary.list
 import io.kotest.property.arbitrary.map
 import io.kotest.property.checkAll
@@ -35,6 +37,13 @@ class RemoteCommandBuilderPropertyTest {
 
     private val argvs: Arb<List<String>> = Arb.list(tokens, 1..4)
 
+    /** A command script that exits with a status or dies by a signal, and the code the caller must see: n, or 128 + n. */
+    private val outcomes: Arb<Pair<String, Int>> =
+        Arb.choice(
+            Arb.int(0..255).map { "exit $it" to it },
+            Arb.element(SIGNALS.entries.toList()).map { (name, number) -> "kill -s $name \$\$" to 128 + number },
+        )
+
     @Test
     fun `every generated argument and env value survives build and sh -c`(
         @TempDir tmp: Path,
@@ -49,7 +58,7 @@ class RemoteCommandBuilderPropertyTest {
                 val (argv, expected) = probe(env, args)
                 assertEquals(
                     expected,
-                    fields(RemoteCommandBuilder.build(workdir.toString(), writeEnvFile(tmp, env), argv)),
+                    fields(listOf(SH, "-c", RemoteCommandBuilder.build(workdir.toString(), writeEnvFile(tmp, env), argv))),
                     "build lost an argument or env value for argv $argv",
                 )
                 assertNoEnvFileLeft(tmp)
@@ -62,9 +71,6 @@ class RemoteCommandBuilderPropertyTest {
         @TempDir tmp: Path,
     ) {
         assumeTrue(Files.isExecutable(Path.of(SH)), "$SH is required to run the built command")
-        // buildReaping leads the command with `setsid -w`, gated by SshRunner's capability probe
-        // (ADR-0041); a target whose setsid cannot form a group (busybox) never sees that form.
-        assumeTrue(setsidCanFormGroup(), "$SETSID (util-linux) is required to run the reaping command")
         val workdir = Files.createDirectories(tmp.resolve("wo rk's dir"))
         val pgidFile = tmp.resolve("reap/cmd-1.pgid").toString()
 
@@ -72,13 +78,43 @@ class RemoteCommandBuilderPropertyTest {
         runTest(timeout = 5.minutes) {
             checkAll(100, envs, argvs) { env, args ->
                 val (argv, expected) = probe(env, args)
-                assertEquals(
-                    expected,
-                    fields(RemoteCommandBuilder.buildReaping(workdir.toString(), writeEnvFile(tmp, env), argv, pgidFile)),
-                    "buildReaping lost an argument or env value for argv $argv",
-                )
-                assertNoEnvFileLeft(tmp)
+                for ((name, launch) in reapingLaunchers) {
+                    val command = RemoteCommandBuilder.buildReaping(workdir.toString(), writeEnvFile(tmp, env), argv, pgidFile)
+                    assertEquals(expected, fields(launch(command)), "buildReaping $name lost an argument or env value for argv $argv")
+                    assertNoEnvFileLeft(tmp)
+                }
             }
+        }
+    }
+
+    @Test
+    fun `every exit status and signal death reaches the caller through buildReaping`(
+        @TempDir tmp: Path,
+    ) {
+        assumeTrue(Files.isExecutable(Path.of(SH)), "$SH is required to run the built command")
+        val workdir = Files.createDirectories(tmp.resolve("wo rk's dir"))
+        val pgidFile = tmp.resolve("reap/cmd-1.pgid").toString()
+
+        runTest(timeout = 5.minutes) {
+            checkAll(100, envs, outcomes) { env, (script, expected) ->
+                for ((name, launch) in reapingLaunchers) {
+                    val argv = listOf("sh", "-c", script)
+                    val command = RemoteCommandBuilder.buildReaping(workdir.toString(), writeEnvFile(tmp, env), argv, pgidFile)
+                    assertEquals(expected, exitOf(launch(command)), "buildReaping $name reported the wrong code for `$script`")
+                    assertNoEnvFileLeft(tmp)
+                }
+            }
+        }
+    }
+
+    /**
+     * How the reaping command is run: its wrapper alone on every host, and the whole line under a login shell
+     * that leads its session where util-linux `setsid -w` exists, as SshRunner's probe requires (ADR-0041).
+     */
+    private val reapingLaunchers: Map<String, (String) -> List<String>> by lazy {
+        buildMap {
+            put("wrapper alone") { command -> wrapperAlone(command) }
+            if (setsidCanFormGroup()) put("under setsid -w", ::underLoginSession)
         }
     }
 
@@ -112,9 +148,9 @@ class RemoteCommandBuilderPropertyTest {
         assertEquals(emptyList(), left, "the env file outlived the command")
     }
 
-    /** Runs [command] under a real `sh -c` and splits its stdout on the NUL separators the probe prints. */
-    private fun fields(command: String): List<String> {
-        val process = ProcessBuilder(SH, "-c", command).start()
+    /** Runs [argv] and splits its stdout on the NUL separators the probe prints. */
+    private fun fields(argv: List<String>): List<String> {
+        val process = ProcessBuilder(argv).start()
         val stdout = process.inputStream.readBytes().decodeToString()
         val stderr = process.errorStream.readBytes().decodeToString()
         val exit = process.waitFor()
@@ -122,18 +158,16 @@ class RemoteCommandBuilderPropertyTest {
         return stdout.split('\u0000').dropLast(1)
     }
 
-    /** The same one-shot probe SshRunner gates the reaping form on: `setsid -w` must be util-linux's. */
-    private fun setsidCanFormGroup(): Boolean =
-        runCatching {
-            val process = ProcessBuilder(SETSID, "-w", "true").start()
-            process.inputStream.readBytes()
-            process.errorStream.readBytes()
-            process.waitFor() == 0
-        }.getOrDefault(false)
+    /** Runs [argv] with its output discarded and returns its exit code. */
+    private fun exitOf(argv: List<String>): Int =
+        ProcessBuilder(argv)
+            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+            .redirectError(ProcessBuilder.Redirect.DISCARD)
+            .start()
+            .waitFor()
 
     private companion object {
         const val SH = "/bin/sh"
-        const val SETSID = "setsid"
 
         /** `$0` of the probe `sh -c`; never printed, so only `$@` — the real argv — is read back. */
         const val PROBE = "homer-probe"
@@ -179,5 +213,8 @@ class RemoteCommandBuilderPropertyTest {
             )
 
         val NAME_CHARS = listOf('a', 'Z', '0', '_')
+
+        /** Signals whose numbers Linux and macOS share and whose default action dumps no core. */
+        val SIGNALS = mapOf("HUP" to 1, "INT" to 2, "KILL" to 9, "PIPE" to 13, "ALRM" to 14, "TERM" to 15)
     }
 }
