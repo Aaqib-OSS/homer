@@ -33,7 +33,6 @@ import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.outputStream
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
 
 /**
  * Runs each command in an already-started pod over a new exec channel. A non-empty env goes in a file in [envDir] that
@@ -76,7 +75,7 @@ class KubernetesShellExecutor(
             val envFile = if (env.isNotEmpty()) RemoteEnvFile.render(envDir, env) else null
             // Null without a grace (or where the pod has no `setsid`): the launch is then exactly today's.
             val pgidFile = podControl.pgidFileFor(env, interruptGrace)
-            RemoteEnvFile.removingUnlessSucceeded(envFile?.path, { sync.removeIfExists(it, ENV_FILE_REMOVE_TIMEOUT) }) {
+            RemoteEnvFile.removingUnlessSucceeded(envFile?.path, { sync.removeIfExists(it, RemoteEnvFile.REMOVE_TIMEOUT) }) {
                 envFile?.let { sync.writePrivateFile(it.path, it.content) }
                 execInPod(launch(command, envFile?.path, pgidFile), stdOut, stdErr, stdIn, env, timeout, stdOutFilter, interruptGrace)
             }
@@ -402,9 +401,6 @@ class KubernetesShellExecutor(
         private const val STOP_REASON_POLL_MS = 500L
         private const val STOP_REASON_BUDGET_MS = 5_000L
         private const val SIGNAL_EXEC_SLACK_MS = 5_000L
-
-        /** One small exec; the same bound as the ssh runner's env-file removal. */
-        private val ENV_FILE_REMOVE_TIMEOUT = 30.seconds
         internal const val SIGNAL_REJECTED = 3
 
         /**

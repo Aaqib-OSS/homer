@@ -6,6 +6,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import java.util.UUID
+import kotlin.time.Duration.Companion.seconds
 
 /** A step's env rendered as the file [RemoteShell.envFileContent] describes, at [path] under a random name. */
 class RemoteEnvFile private constructor(
@@ -14,6 +15,9 @@ class RemoteEnvFile private constructor(
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(RemoteEnvFile::class.java)
+
+        /** Bound on one env-file removal, one small round trip; an ssh session stalling it is closed (ADR-0064). */
+        val REMOVE_TIMEOUT = 30.seconds
 
         /** [env] rendered for a file in [dir]; fails on a name the shell cannot export or a value holding a NUL byte. */
         fun render(

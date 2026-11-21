@@ -29,7 +29,6 @@ import java.util.EnumSet
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.io.path.outputStream
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
 
 /**
  * Runs each command in its own SSH exec channel, argv kept by [RemoteCommandBuilder] and env in a file under [envDir]
@@ -126,7 +125,7 @@ class SshShellExecutor(
     }
 
     private suspend fun removeEnvFile(envFile: String) {
-        sync.removeIfExists(envFile, ENV_FILE_REMOVE_TIMEOUT)
+        sync.removeIfExists(envFile, RemoteEnvFile.REMOVE_TIMEOUT)
     }
 
     /** The remote argv for [command]: the reaping launcher when the command reports its own group. */
@@ -270,8 +269,5 @@ class SshShellExecutor(
         private const val POLL_INTERVAL_MS = 250L
         private const val OPEN_TIMEOUT_MS = 10_000L
         private const val REAP_TIMEOUT_MS = 5_000L
-
-        /** A removal is one small SFTP round trip; a peer stalling it longer has its session closed (ADR-0064). */
-        private val ENV_FILE_REMOVE_TIMEOUT = 30.seconds
     }
 }
