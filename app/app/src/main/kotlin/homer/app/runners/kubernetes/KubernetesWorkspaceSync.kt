@@ -58,6 +58,36 @@ class KubernetesWorkspaceSync(
         awaitZeroExit(proc, stderr, "upload to '$destDir'")
     }
 
+    /**
+     * Writes [content] to [path] in the pod as a 0600 file in a 0700 directory, refusing a symlinked directory. `tar`
+     * creates the file under `umask 077`, so it never exists with wider bits; the image needs `sh` and `tar`.
+     */
+    fun writePrivateFile(
+        path: String,
+        content: ByteArray,
+    ) {
+        val dir = path.substringBeforeLast('/')
+        val proc = execClient.start(namespace, podName, listOf("sh", "-c", PRIVATE_EXTRACT, PRIVATE_EXTRACT_NAME, dir), stdin = true)
+        val stderr = drain(proc.errorStream)
+        drain(proc.inputStream)
+        try {
+            TarStreams.packFile(proc.outputStream, path.substringAfterLast('/'), content, MODE_0600)
+        } catch (e: Exception) {
+            proc.destroyForcibly()
+            throw IllegalStateException("private file upload to '$dir' failed while streaming: ${e.javaClass.simpleName}", e)
+        }
+        awaitZeroExit(proc, stderr, "private file upload to '$dir'")
+    }
+
+    /** Removes [path] in the pod if it exists; bounded like every other exec here. */
+    fun removeIfExists(path: String) {
+        val argv = listOf("rm", "-f", "--", path)
+        val proc = execClient.start(namespace, podName, argv, stdin = false)
+        val stderr = drain(proc.errorStream)
+        drain(proc.inputStream)
+        awaitZeroExit(proc, stderr, argv.joinToString(" "))
+    }
+
     fun download(
         remote: String,
         local: Path,
@@ -176,5 +206,14 @@ class KubernetesWorkspaceSync(
     companion object {
         /** Bounded wait for the pod exec channel to report an exit status (websocket can wedge). */
         private const val EXIT_STATUS_TIMEOUT_SECONDS = 60L
+
+        /** `$0` of the private-file upload's shell. */
+        internal const val PRIVATE_EXTRACT_NAME = "homer-env"
+
+        private const val MODE_0600 = 0b110_000_000
+
+        // `$1` is the directory: tightened to 0700 and re-checked as a real directory before `tar` writes into it.
+        private const val PRIVATE_EXTRACT =
+            "mkdir -p \"\$1\" && [ ! -L \"\$1\" ] && [ -d \"\$1\" ] && chmod 700 \"\$1\" && cd \"\$1\" && umask 077 && exec tar -xf -"
     }
 }

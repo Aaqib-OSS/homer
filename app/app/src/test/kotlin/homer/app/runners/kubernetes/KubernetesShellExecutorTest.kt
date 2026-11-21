@@ -45,14 +45,14 @@ private const val RUN_LIMIT_SECONDS = 86_400L
 
 class KubernetesShellExecutorTest {
     @Test
-    fun `cmd prepends env prefix and returns exit code`(
+    fun `cmd launches the command through the sourced env file and returns exit code`(
         @TempDir tmp: Path,
     ) = runTest {
         val api = mockk<CoreV1Api>(relaxed = true)
         var capturedArgv: List<String> = emptyList()
         val proc = fakeProcess(stdout = "hello\n", stderr = "", exit = 0)
         val client =
-            KubernetesExecClient { _, _, argv, _ ->
+            envFileExecsAnswered { _, _, argv, _ ->
                 capturedArgv = argv
                 proc
             }
@@ -68,7 +68,9 @@ class KubernetesShellExecutorTest {
             )
 
         assertEquals(0, result.exitCode)
-        assertEquals(listOf("env", "FOO=bar", "echo", "hello"), capturedArgv)
+        assertEquals(listOf("sh", "-c", ". \"\$0\" && exec \"\$@\""), capturedArgv.take(3))
+        assertTrue(capturedArgv[3].matches(ENV_FILE), "the launcher's \$0 is the env file: $capturedArgv")
+        assertEquals(listOf("echo", "hello"), capturedArgv.drop(4))
     }
 
     @Test
@@ -796,7 +798,7 @@ class KubernetesShellExecutorTest {
         val seen = mutableListOf<PodTermination>()
         val executor =
             KubernetesShellExecutor(
-                KubernetesExecClient { _, _, _, _ -> closed },
+                envFileExecsAnswered { _, _, _, _ -> closed },
                 runningPodApi(),
                 "homer",
                 "pod-1",
@@ -840,7 +842,7 @@ class KubernetesShellExecutorTest {
         val seen = mutableListOf<PodTermination>()
         val executor =
             KubernetesShellExecutor(
-                KubernetesExecClient { _, _, _, _ -> closed },
+                envFileExecsAnswered { _, _, _, _ -> closed },
                 runningPodApi(),
                 "homer",
                 "pod-1",
@@ -882,7 +884,7 @@ class KubernetesShellExecutorTest {
         val seen = mutableListOf<PodTermination>()
         val executor =
             KubernetesShellExecutor(
-                KubernetesExecClient { _, _, _, _ -> closed },
+                envFileExecsAnswered { _, _, _, _ -> closed },
                 runningPodApi(),
                 "homer",
                 "pod-1",
@@ -923,7 +925,7 @@ class KubernetesShellExecutorTest {
             }
         val executor =
             KubernetesShellExecutor(
-                KubernetesExecClient { _, _, _, _ -> closed },
+                envFileExecsAnswered { _, _, _, _ -> closed },
                 runningPodApi(),
                 "homer",
                 "pod-1",
@@ -965,7 +967,7 @@ class KubernetesShellExecutorTest {
         val seen = mutableListOf<PodTermination>()
         val executor =
             KubernetesShellExecutor(
-                KubernetesExecClient { _, _, _, _ -> closed },
+                envFileExecsAnswered { _, _, _, _ -> closed },
                 runningPodApi(),
                 "homer",
                 "pod-1",
@@ -1422,10 +1424,11 @@ class KubernetesShellExecutorTest {
         assertEquals(0, result.exitCode)
         assertEquals(listOf("setsid", "-w", "true"), started.first()) // the one-shot capability probe
         val argv = started.single { "echo" in it }
-        assertEquals(listOf("env", "HMR_WORK_DIR=/homer/workspace/workdir"), argv.take(2))
-        assertEquals(listOf("setsid", "-w", "sh", "-c"), argv.drop(2).take(4))
-        assertEquals(listOf("echo", "hi"), argv.takeLast(2))
-        assertTrue("/homer/workspace/workdir/homer-exec-1.pgid" in argv, "the pgid file must sit in the workspace dir: $argv")
+        assertEquals(listOf("setsid", "-w", "sh", "-c"), argv.take(4))
+        assertTrue(argv[4].endsWith("f=\$1; shift; . \"\$f\" && exec \"\$@\""), "the group leader sources the env file: $argv")
+        assertEquals("/homer/workspace/workdir/homer-exec-1.pgid", argv[5], "the pgid file must sit in the workspace dir")
+        assertTrue(argv[6].matches(ENV_FILE), "the env file follows the pgid file: $argv")
+        assertEquals(listOf("echo", "hi"), argv.drop(7))
     }
 
     @Test
@@ -1452,7 +1455,7 @@ class KubernetesShellExecutorTest {
     }
 
     @Test
-    fun `without a grace the exec argv and the call count are unchanged`(
+    fun `without a grace the command runs through the env launcher, not setsid`(
         @TempDir tmp: Path,
     ) = runTest {
         val started = mutableListOf<List<String>>()
@@ -1471,7 +1474,11 @@ class KubernetesShellExecutorTest {
             timeout = 10.seconds,
         )
 
-        assertEquals(listOf(listOf("env", "HMR_WORK_DIR=/homer/workspace/workdir", "FOO=bar", "echo", "hi")), started)
+        val (upload, command) = started
+        assertTrue(isEnvUpload(upload), "the env file is uploaded first: $started")
+        assertEquals(listOf("sh", "-c", ". \"\$0\" && exec \"\$@\""), command.take(3))
+        assertEquals(listOf("echo", "hi"), command.drop(4))
+        assertEquals(2, started.size, "no probe and no removal: $started")
     }
 
     @Test
@@ -1480,7 +1487,7 @@ class KubernetesShellExecutorTest {
     ) = runTest {
         val started = mutableListOf<List<String>>()
         val client =
-            KubernetesExecClient { _, _, argv, _ ->
+            envFileExecsAnswered { _, _, argv, _ ->
                 started += argv
                 if (isSignalling(argv) || argv.last() == "true") fakeProcess("", "", 0) else neverFinishing()
             }
@@ -1541,7 +1548,7 @@ class KubernetesShellExecutorTest {
     ) = runTest {
         val started = mutableListOf<List<String>>()
         val client =
-            KubernetesExecClient { _, _, argv, _ ->
+            envFileExecsAnswered { _, _, argv, _ ->
                 started += argv
                 // The signalling exec rejected the pgid: no valid group was interrupted.
                 when {
@@ -1572,7 +1579,7 @@ class KubernetesShellExecutorTest {
     ) = runTest {
         val started = mutableListOf<List<String>>()
         val client =
-            KubernetesExecClient { _, _, argv, _ ->
+            envFileExecsAnswered { _, _, argv, _ ->
                 started += argv
                 when {
                     argv.last() == "true" -> fakeProcess("", "", 0)
@@ -1612,7 +1619,7 @@ class KubernetesShellExecutorTest {
                 }
             }
         val client =
-            KubernetesExecClient { _, _, argv, _ ->
+            envFileExecsAnswered { _, _, argv, _ ->
                 started += argv
                 when {
                     argv.last() == "true" -> fakeProcess("", "", 0)
@@ -1654,7 +1661,7 @@ class KubernetesShellExecutorTest {
     ) = runTest {
         val started = mutableListOf<List<String>>()
         val client =
-            KubernetesExecClient { _, _, argv, _ ->
+            envFileExecsAnswered { _, _, argv, _ ->
                 started += argv
                 // No setsid: both probe forms fail, so the command runs exactly as it does today.
                 if (argv.last() == "true") throw IllegalStateException("setsid: not found") else neverFinishing()
@@ -1673,12 +1680,26 @@ class KubernetesShellExecutorTest {
         }
 
         assertEquals(listOf(listOf("setsid", "-w", "true"), listOf("setsid", "true")), started.take(2))
-        assertEquals(listOf("env", "HMR_WORK_DIR=/homer/workspace/workdir", "sleep", "1000"), started[2])
+        assertEquals(listOf("sh", "-c", ". \"\$0\" && exec \"\$@\""), started[2].take(3))
+        assertEquals(listOf("sleep", "1000"), started[2].drop(4))
         assertTrue(KILL_ARGV in started, "without setsid the kill stays pod-wide: $started")
     }
 
     /** True when [argv] is the executor's own signalling exec, not the command's. */
     private fun isSignalling(argv: List<String>) = argv.getOrNull(3) == "homer-signal"
+
+    /** True when [argv] is the env file's upload, not the command's exec. */
+    private fun isEnvUpload(argv: List<String>) = argv.getOrNull(3) == KubernetesWorkspaceSync.PRIVATE_EXTRACT_NAME
+
+    /** [inner] for every exec but the env file's upload and removal, which succeed at once. */
+    private fun envFileExecsAnswered(inner: KubernetesExecClient) =
+        KubernetesExecClient { namespace, pod, argv, stdin ->
+            if (isEnvUpload(argv) || argv.take(3) == listOf("rm", "-f", "--")) {
+                fakeProcess("", "", 0)
+            } else {
+                inner.start(namespace, pod, argv, stdin)
+            }
+        }
 
     private fun neverFinishing(): Process =
         mockk(relaxed = true) {
@@ -1709,5 +1730,8 @@ class KubernetesShellExecutorTest {
     private companion object {
         /** The pod-wide kill the channel-loss path runs, as the executor's killInsidePod starts it. */
         val KILL_ARGV = listOf("sh", "-c", "kill -KILL -1")
+
+        /** A per-step env file under the session's env dir. */
+        val ENV_FILE = Regex("/homer/workspace/\\.homer/env/[0-9a-f-]{36}\\.env")
     }
 }

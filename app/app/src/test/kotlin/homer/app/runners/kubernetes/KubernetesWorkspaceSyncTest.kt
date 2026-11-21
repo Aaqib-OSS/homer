@@ -17,6 +17,7 @@ import java.io.ByteArrayOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermission
+import java.nio.file.attribute.PosixFilePermissions
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.createDirectories
 import kotlin.io.path.getPosixFilePermissions
@@ -655,6 +656,60 @@ class KubernetesWorkspaceSyncTest {
             )
         }
         assertFalse(Files.exists(outside.resolve("pwn.txt")))
+    }
+
+    @Test
+    fun `writePrivateFile creates a 0600 file in a new 0700 directory`(
+        @TempDir remote: Path,
+    ) {
+        val dir = remote.resolve(".homer/env")
+        val content = "export A='x'\n".repeat(5_000).toByteArray()
+
+        sync().writePrivateFile("$dir/a1.env", content)
+
+        assertEquals(content.toList(), Files.readAllBytes(dir.resolve("a1.env")).toList())
+        assertEquals("rw-------", PosixFilePermissions.toString(dir.resolve("a1.env").getPosixFilePermissions()))
+        assertEquals("rwx------", PosixFilePermissions.toString(dir.getPosixFilePermissions()))
+    }
+
+    @Test
+    fun `writePrivateFile tightens an existing directory to 0700 before writing`(
+        @TempDir remote: Path,
+    ) {
+        val dir = remote.resolve("env").createDirectories()
+        Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("rwxr-xr-x"))
+
+        sync().writePrivateFile("$dir/a1.env", "x".toByteArray())
+
+        assertEquals("rwx------", PosixFilePermissions.toString(dir.getPosixFilePermissions()))
+        assertEquals("rw-------", PosixFilePermissions.toString(dir.resolve("a1.env").getPosixFilePermissions()))
+    }
+
+    @Test
+    fun `writePrivateFile refuses a symlinked directory and writes nothing through it`(
+        @TempDir remote: Path,
+    ) {
+        val elsewhere = remote.resolve("elsewhere").createDirectories()
+        Files.setPosixFilePermissions(elsewhere, PosixFilePermissions.fromString("rwxr-xr-x"))
+        val link = Files.createSymbolicLink(remote.resolve("env"), elsewhere)
+
+        assertFailsWith<IllegalStateException> { sync().writePrivateFile("$link/a1.env", "s3cr3t-Ab9".toByteArray()) }
+
+        assertEquals(emptyList(), Files.list(elsewhere).use { it.toList() })
+        assertEquals("rwxr-xr-x", PosixFilePermissions.toString(elsewhere.getPosixFilePermissions()))
+    }
+
+    @Test
+    fun `removeIfExists removes a file and accepts a missing one`(
+        @TempDir remote: Path,
+    ) {
+        val file = remote.resolve("a1.env")
+        file.writeText("x")
+
+        sync().removeIfExists(file.toString())
+        sync().removeIfExists(file.toString())
+
+        assertFalse(Files.exists(file))
     }
 
     @Test

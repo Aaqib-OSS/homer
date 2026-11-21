@@ -8,6 +8,8 @@ import homer.app.infra.OutputLineFilter
 import homer.app.infra.ShellExecutor
 import homer.app.models.CommandResult
 import homer.app.models.PodTermination
+import homer.app.runners.RemoteEnvFile
+import homer.app.runners.RemoteShell
 import homer.app.runners.exceedsOutputCap
 import io.kubernetes.client.openapi.apis.CoreV1Api
 import kotlinx.coroutines.CancellationException
@@ -16,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -31,9 +34,9 @@ import kotlin.io.path.outputStream
 import kotlin.time.Duration
 
 /**
- * Runs each command in an already-started pod over a new exec channel: a Cmd runs unshelled as `env KEY=VAL ... argv`,
- * and only a Script's argv asks for a shell. With an `interruptGrace` the command is wrapped in `setsid`, so its process
- * group can be interrupted before the kill (ADR-0108).
+ * Runs each command in an already-started pod over a new exec channel. A non-empty env goes in a file in [envDir] that
+ * an `sh` launcher sources before it `exec`s the argv; without one a Cmd runs unshelled. With an `interruptGrace` the
+ * command is wrapped in `setsid`, so its process group can be interrupted before the kill (ADR-0108).
  */
 class KubernetesShellExecutor(
     private val execClient: KubernetesExecClient,
@@ -48,12 +51,13 @@ class KubernetesShellExecutor(
     /** Slack added to the grace for the signalling exec's own bound. */
     signalExecSlackMs: Long = SIGNAL_EXEC_SLACK_MS,
     private val onTermination: suspend (PodTermination) -> Unit = {},
+    private val envDir: String = KubernetesRunnerSession.REMOTE_ENV_DIR,
 ) : ShellExecutor {
     private val podControl = PodProcessControl(execClient, namespace, podName, signalExecSlackMs)
+    private val sync = KubernetesWorkspaceSync(execClient, namespace, podName)
 
     // ShellExecutor.cmd's override signature (fixed by the interface) and IO hop, as in SshShellExecutor.
     // jscpd:ignore-start
-    @Suppress("SuspendFunSwallowedCancellation") // aborts under NonCancellable and rethrows
     override suspend fun cmd(
         command: List<String>,
         stdOut: Path,
@@ -68,7 +72,40 @@ class KubernetesShellExecutor(
             // jscpd:ignore-end
             // Null without a grace (or where the pod has no `setsid`): the launch is then exactly today's.
             val pgidFile = podControl.pgidFileFor(env, interruptGrace)
-            val argv = envPrefix(env) + (pgidFile?.let { podControl.setsidLaunch(it, command) } ?: command)
+            val envFile = if (env.isNotEmpty()) RemoteEnvFile.render(envDir, env) else null
+            RemoteEnvFile.removingUnlessSucceeded(envFile?.path, { sync.removeIfExists(it) }) {
+                envFile?.let { sync.writePrivateFile(it.path, it.content) }
+                val argv = launchArgv(command, envFile?.path, pgidFile)
+                execInPod(argv, stdOut, stdErr, stdIn, env, timeout, stdOutFilter, interruptGrace, pgidFile)
+            }
+        }
+
+    /** The exec argv for [command]: under `setsid` with a [pgidFile], else via the env launcher for an [envFile]. */
+    private fun launchArgv(
+        command: List<String>,
+        envFile: String?,
+        pgidFile: String?,
+    ): List<String> =
+        when {
+            pgidFile != null -> podControl.setsidLaunch(pgidFile, envFile, command)
+            envFile != null -> listOf("sh", "-c", RemoteShell.sourceThenExec("\$0"), envFile) + command
+            else -> command
+        }
+
+    /** Runs [argv] on a new exec channel under the timeout, cancellation and output-cap contract. */
+    @Suppress("SuspendFunSwallowedCancellation") // aborts under NonCancellable and rethrows
+    private suspend fun execInPod(
+        argv: List<String>,
+        stdOut: Path,
+        stdErr: Path,
+        stdIn: String?,
+        env: Map<String, String>,
+        timeout: Duration,
+        stdOutFilter: OutputLineFilter?,
+        interruptGrace: Duration?,
+        pgidFile: String?,
+    ): CommandResult =
+        coroutineScope {
             val remote = execClient.start(namespace, podName, argv, stdin = stdIn != null)
 
             val outPump = OutputPump(remote.inputStream, stdOut, stdOutFilter)
@@ -230,7 +267,7 @@ class KubernetesShellExecutor(
         killLeftoverAfterLostChannel(remote)
         val msg = channelLostMessage(exit.exceptionOrNull(), env, snap)
         onTermination(PodTermination(EXEC_CHANNEL_LOST, msg))
-        // No cause: it quotes the exec URL with the env unmasked; msg keeps its class and masked text.
+        // No cause: it quotes the exec URL and its argv; msg keeps its class and masked text.
         throw PodFailedDuringExecutionException(EXEC_CHANNEL_LOST, msg, snap.events, null, channelLost = true)
     }
 
@@ -280,17 +317,6 @@ class KubernetesShellExecutor(
         }
         return t
     }
-
-    // The env rides the exec request URI, which API-server audit logs record (AR-10, ADR-0043).
-    private fun envPrefix(env: Map<String, String>): List<String> =
-        if (env.isEmpty()) {
-            emptyList()
-        } else {
-            buildList {
-                add("env")
-                env.forEach { (k, v) -> add("$k=$v") }
-            }
-        }
 
     /**
      * Copies one exec stream into [target] on a daemon thread. Past [join]'s bound its file and source are closed and an
