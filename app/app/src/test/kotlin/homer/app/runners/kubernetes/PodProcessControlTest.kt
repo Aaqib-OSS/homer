@@ -22,7 +22,7 @@ import kotlin.time.Duration.Companion.seconds
 
 class PodProcessControlTest {
     @Test
-    fun `with setsid -w the wrapper runs under it and sources the env file named after the pgid file`() {
+    fun `with setsid -w the wrapper runs under it and sources the env file passed after the pgid file`() {
         val argv = podControl(hasSetsidWait = true).groupLaunch(PGID, ENV, listOf("echo", "hi"))
 
         assertEquals(listOf("setsid", "-w", "sh", "-c", "$TRAP$RECORD$SOURCE_THEN_RUN; exit \$?", PGID, ENV, "echo", "hi"), argv)
@@ -186,35 +186,53 @@ class PodProcessControlTest {
     }
 
     @Test
-    fun `under setsid -w a stale pgid file is replaced by the wrapper's own pid`(
+    fun `under setsid -w as a pod exec runs it a SIGKILLed command reports 137 with no setsid line`(
+        @TempDir dir: Path,
+    ) {
+        assumeTrue(setsidCanFormGroup(), "util-linux setsid -w is required")
+        val process = start(asPodExec(underSetsidWait(dir, listOf("sh", "-c", "echo \$\$ > child.pid; exec sleep 30"))), dir)
+        signal("KILL", awaitPid(dir.resolve("child.pid")))
+        val exit = exitOf(process)
+        assertEquals(137 to false, exit to dir.resolve("err").readText().contains("setsid:"), dir.resolve("err").readText())
+    }
+
+    @Test
+    fun `under setsid -w as a pod exec runs it a stale pgid file is replaced by the wrapper's own group id`(
         @TempDir dir: Path,
     ) {
         assumeTrue(setsidCanFormGroup(), "util-linux setsid -w is required")
         val stale = seedStalePgid(dir)
-        val process = start(podControl(hasSetsidWait = true).groupLaunch(pgidFile(dir), null, listOf("true")), dir)
-        exitOf(process)
-        assertEquals(process.pid().toString(), stale.readText().trim())
-    }
-
-    @Test
-    fun `under setsid -w the pgid file holds the wrapper's process group id`(
-        @TempDir dir: Path,
-    ) {
-        assumeTrue(setsidCanFormGroup(), "util-linux setsid -w is required")
-        val argv =
-            podControl(
-                hasSetsidWait = true,
-            ).groupLaunch(pgidFile(dir), null, listOf("sh", "-c", "echo \$\$ > child.pid; exec sleep 30"))
-        val process = start(argv, dir)
+        val process = start(asPodExec(underSetsidWait(dir, listOf("sh", "-c", "echo \$\$ > child.pid; exec sleep 30"))), dir)
         try {
             val child = awaitPid(dir.resolve("child.pid"))
-            val pgid = Path.of(pgidFile(dir)).readText().trim()
-            assertEquals(listOf(pgid, pgid), listOf(groupOf(pgid.toLong()), groupOf(child)))
+            assertEquals(groupOf(child), stale.readText().trim())
         } finally {
             process.descendants().forEach { it.destroyForcibly() }
             process.destroyForcibly()
         }
     }
+
+    @Test
+    fun `under setsid -w as a pod exec runs it the pgid file holds the forked wrapper's process group id`(
+        @TempDir dir: Path,
+    ) {
+        assumeTrue(setsidCanFormGroup(), "util-linux setsid -w is required")
+        val process = start(asPodExec(underSetsidWait(dir, listOf("sh", "-c", "echo \$\$ > child.pid; exec sleep 30"))), dir)
+        try {
+            val child = awaitPid(dir.resolve("child.pid"))
+            val pgid = Path.of(pgidFile(dir)).readText().trim()
+            assertEquals(listOf(pgid, pgid, true), listOf(groupOf(pgid.toLong()), groupOf(child), pgid != process.pid().toString()))
+        } finally {
+            process.descendants().forEach { it.destroyForcibly() }
+            process.destroyForcibly()
+        }
+    }
+
+    /** The launch for [argv] in [dir] on a pod that has `setsid -w`. */
+    private fun underSetsidWait(
+        dir: Path,
+        argv: List<String>,
+    ): List<String> = podControl(hasSetsidWait = true).groupLaunch(pgidFile(dir), null, argv)
 
     /** The launch without `setsid` for [argv] in [dir], its wrapper run by [shell] as the started process itself. */
     private fun alone(

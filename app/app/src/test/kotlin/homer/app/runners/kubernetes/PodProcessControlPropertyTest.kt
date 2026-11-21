@@ -39,19 +39,26 @@ class PodProcessControlPropertyTest {
 
         runTest(timeout = 5.minutes) {
             checkAll(100, outcomes, Arb.boolean()) { (script, expected), withEnvFile ->
-                for ((name, control) in controls) {
-                    val argv = control.groupLaunch(pgidFile, envFile(tmp, withEnvFile), listOf("sh", "-c", script))
+                for ((name, launch) in launchers) {
+                    val argv = launch(pgidFile, envFile(tmp, withEnvFile), listOf("sh", "-c", script))
                     assertEquals(expected, exitOf(argv), "the launch $name reported the wrong code for `$script`")
                 }
             }
         }
     }
 
-    /** The pod without `setsid -w` on every host, and with it where util-linux `setsid -w` exists here. */
-    private val controls: Map<String, PodProcessControl> by lazy {
+    /**
+     * The launch on a pod without `setsid -w`, its wrapper started directly, on every host; and where util-linux
+     * `setsid -w` exists here, the launch with it, run as a pod exec runs it, so `setsid -w` forks and waits.
+     */
+    private val launchers: Map<String, (String, String?, List<String>) -> List<String>> by lazy {
         buildMap {
-            put("without setsid", podControl(hasSetsidWait = false))
-            if (setsidCanFormGroup()) put("under setsid -w", podControl(hasSetsidWait = true))
+            val without = podControl(hasSetsidWait = false)
+            put("without setsid") { pgidFile, envFile, argv -> without.groupLaunch(pgidFile, envFile, argv) }
+            if (setsidCanFormGroup()) {
+                val withSetsid = podControl(hasSetsidWait = true)
+                put("under setsid -w") { pgidFile, envFile, argv -> asPodExec(withSetsid.groupLaunch(pgidFile, envFile, argv)) }
+            }
         }
     }
 

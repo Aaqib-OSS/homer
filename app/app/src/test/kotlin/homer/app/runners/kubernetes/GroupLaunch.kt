@@ -32,3 +32,9 @@ internal fun underShell(
 internal fun podShells(): List<List<String>> =
     wrapperShells().map { listOf(it) } +
         listOf("/bin/busybox", "/usr/bin/busybox").filter { Files.isExecutable(Path.of(it)) }.take(1).map { listOf(it, "ash") }
+
+/**
+ * A built launch run as a pod exec runs it: the process started leads its own session and group, so a `setsid -w`
+ * prefix forks the wrapper and waits for it. Needs util-linux `setsid` (`setsidCanFormGroup`).
+ */
+internal fun asPodExec(argv: List<String>): List<String> = listOf("setsid", "/bin/sh", "-c", "exec \"\$@\"", "sh") + argv
