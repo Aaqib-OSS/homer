@@ -114,7 +114,7 @@ fun Application.configureCors(allowedOrigins: List<String>) {
         allowHeader(CSRF_HEADER)
         // Same reason: a cross-origin caller linking its run to a parent (ADR-0058)
         // sends this non-safelisted header and must pass preflight.
-        allowHeader(EnvConstants.PARENT_PROCESS_HEADER)
+        allowHeader(HomerHeaders.PARENT_PROCESS_ID)
 
         // Custom response headers are hidden from cross-origin JS unless listed
         // in Access-Control-Expose-Headers. The console reads both off the

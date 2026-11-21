@@ -1,6 +1,7 @@
 package homer.app.routes
 
 import homer.app.EnvConstants
+import homer.app.HomerHeaders
 import homer.app.exceptions.QueryParamValidationException
 import homer.app.exceptions.QuestionNotFoundException
 import homer.app.exceptions.RunNotAcceptingMessagesException
@@ -347,15 +348,15 @@ private fun Route.callbackWhoamiRoutes(deps: CallbackDeps) {
     with(deps) {
         route("/api/v1/callback/whoami") {
             handle {
-                val token = call.request.headers[EnvConstants.CALLBACK_TOKEN_HEADER]?.takeIf { it.isNotBlank() } ?: call.bearerToken()
+                val token = call.request.headers[HomerHeaders.CALLBACK_TOKEN]?.takeIf { it.isNotBlank() } ?: call.bearerToken()
                 val processId = token?.takeIf { it.isNotEmpty() }?.let { questionsService.resolveToken(it) }
                 val registration = processId?.let { questionsService.registrationFor(it) }
                 if (processId == null || registration == null || registration.closed) {
                     call.respond(HttpStatusCode.Unauthorized, ErrorResponse(msg = "Invalid callback token"))
                     return@handle
                 }
-                call.response.header(EnvConstants.AGENT_HEADER, registration.agentName)
-                call.response.header(EnvConstants.PROCESS_ID_HEADER, processId.toString())
+                call.response.header(HomerHeaders.AGENT, registration.agentName)
+                call.response.header(HomerHeaders.PROCESS_ID, processId.toString())
                 call.respond(WhoamiResponse(processId = processId, agent = registration.agentName))
             }
         }

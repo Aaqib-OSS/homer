@@ -1,6 +1,7 @@
 package homer.app.routes
 
 import homer.app.EnvConstants
+import homer.app.HomerHeaders
 import homer.app.SpanAttributes
 import homer.app.exceptions.QueryParamValidationException
 import homer.app.executors.ProcessExecutor
@@ -98,13 +99,13 @@ internal suspend fun resolveParentProcessHeader(
     authorizer: Authorizer,
 ): ProcessInfo? {
     val raw =
-        call.request.headers[EnvConstants.PARENT_PROCESS_HEADER]
+        call.request.headers[HomerHeaders.PARENT_PROCESS_ID]
             ?.trim()
             ?.takeIf { it.isNotEmpty() } ?: return null
     val parentId =
         raw.toIntOrNull()?.takeIf { it > 0 }
             ?: throw QueryParamValidationException(
-                "Invalid ${EnvConstants.PARENT_PROCESS_HEADER} header. Must be a positive integer",
+                "Invalid ${HomerHeaders.PARENT_PROCESS_ID} header. Must be a positive integer",
                 HttpStatusCode.BadRequest,
             )
     val parent = processManager.getProcessInfo(parentId)
