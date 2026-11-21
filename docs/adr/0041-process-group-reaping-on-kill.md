@@ -150,5 +150,8 @@ outcome is the same: a signal death never reads as exit 0.
   timeout and output-cap monitor. The monitor kills the process, which breaks the pipe and
   ends the write. Write failures are ignored: after a teardown a broken pipe is a consequence,
   and a child that exits before reading all its stdin still succeeded.
+- **The local group kill and interrupt run through `sh -c`.** `ProcessGroupSupport.signalGroup`
+  uses the shell's builtin `kill`, never the procps-ng binary, for the reason of the 2026-11-20
+  amendment on the Kubernetes kills: that binary misparses a negative group id.
 - **Relative `PATH` entries are skipped when locating `setsid`.** They would resolve against
   the writable per-run workdir and let a planted binary stand in for it.

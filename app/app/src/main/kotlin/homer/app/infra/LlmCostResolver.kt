@@ -28,9 +28,9 @@ import java.net.SocketTimeoutException
 import java.nio.channels.UnresolvedAddressException
 
 /**
- * Prices one Claude attempt from the session-spend endpoint, degrading any failure to the CLI
- * figure with a reason; requests are bounded by [SessionSpendConfig.timeoutMs] and [MAX_BODY_BYTES].
- * Polls on [DEFAULT_POLL_OFFSETS_MS] when `callsPath` is set (ADR-0061, ADR-0070).
+ * Prices one Claude attempt from the session-spend endpoint, degrading any failure to the CLI figure
+ * with a reason; requests are bounded by [SessionSpendConfig.timeoutMs] and [MAX_BODY_BYTES]. Polls on
+ * [DEFAULT_POLL_OFFSETS_MS] with `callsPath` or the request window (ADR-0061, ADR-0070).
  */
 class LlmCostResolver(
     private val config: SessionSpendConfig?,

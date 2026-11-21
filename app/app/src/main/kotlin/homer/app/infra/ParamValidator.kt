@@ -16,8 +16,8 @@ sealed interface ParamValidation {
 }
 
 /**
- * Owns all input-param value semantics: the typed types (string / integer / number / boolean with
- * the constraint fields on [Param]) and the STRING / NUMBER / ANY types. See ADR-0031.
+ * Owns all input-param value semantics: the `STR` / `INT` / `NUM` / `BOOL` types with the constraint
+ * fields on [Param], and the STRING / NUMBER / ANY types. See ADR-0031.
  */
 class ParamValidator {
     fun validate(

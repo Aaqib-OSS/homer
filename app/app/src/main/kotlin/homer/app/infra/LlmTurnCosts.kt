@@ -18,9 +18,9 @@ internal object LlmTurnCosts {
     ): List<Double?> = onSuccessfulTurnEnds(turnEnds, turnCosts(turnEnds, resolvedCostUsd))
 
     /**
-     * Each turn end's share of the attempt's cost, in stream order: its increment of the
-     * cumulative cost, scaled to [resolvedCostUsd]; with no readable increments the last turn end
-     * carries the whole cost. A negative reported cost counts as none. See ADR-0074.
+     * Each turn end's share of the cost: its increment of the cumulative cost, scaled to [resolvedCostUsd];
+     * unreadable or zero-total increments give the last the whole cost and the earlier ones `0.0`.
+     * A negative reported cost counts as none. See ADR-0074.
      */
     private fun turnCosts(
         turnEnds: List<LlmEvent.TurnEnd>,

@@ -103,6 +103,7 @@ internal object PathSafety {
 
     // True when [path] has more than one link, so containment cannot be decided. See AR-12.
     fun isHardLinked(path: Path): Boolean {
+        // `as? Number`: some views report nlink as a Long, which `as? Int` would read as unlinked.
         val nlink =
             runCatching {
                 Files.readAttributes(path, "unix:nlink", LinkOption.NOFOLLOW_LINKS)["nlink"] as? Number

@@ -40,7 +40,8 @@ object ProcessGroupSupport {
         return pid.takeIf { pgid == it }
     }
 
-    // SIGKILL to the whole group through the `sh` builtin `kill`. See ADR-0041. [pgid] is a Long, so it cannot inject.
+    // Must run the `sh` builtin `kill`: procps-ng `kill` misparses a negative target. See ADR-0041.
+    // [pgid] is a Long, so it cannot inject.
     fun killGroup(pgid: Long) {
         signalGroup("KILL", pgid)
     }

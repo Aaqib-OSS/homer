@@ -84,7 +84,7 @@ class BoundedLines(
 
 /**
  * What the lenient parse recovered: the parsed events, plus how many lines it skipped, which
- * surfaces on `telemetry.llm.malformed_events`. See ADR-0063.
+ * surfaces on `telemetry.llm.malformed_events`.
  */
 data class LenientParse(
     val events: List<JsonObject>,
@@ -98,7 +98,7 @@ data class LenientParse(
 
 /**
  * Lenient sibling of [parseNdjson]: blank, unparseable and non-object lines are skipped and
- * counted in [LenientParse.skippedLines] (ADR-0063). [maxEvents] bounds the list (CWE-400) and
+ * counted in [LenientParse.skippedLines]. [maxEvents] bounds the list (CWE-400) and
  * sets [LenientParse.truncated].
  */
 fun parseNdjsonLenient(
