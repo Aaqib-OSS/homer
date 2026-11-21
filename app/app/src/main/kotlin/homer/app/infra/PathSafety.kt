@@ -6,9 +6,7 @@ import java.nio.file.Path
 import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.deleteRecursively
 
-// Containment check that string-level `..` rejection misses: symlinks inside the workspace and OS
-// canonicalization differences (case-insensitive FS, junctions) both escape. A candidate is
-// contained only when BOTH the lexical-normalized and the realpath-canonical view agree; else SecurityException.
+// Contained only when both the lexical and the realpath view agree, else SecurityException. See ADR-0047.
 internal object PathSafety {
     fun assertContained(
         root: Path,
@@ -42,9 +40,7 @@ internal object PathSafety {
         return if (candidateExists) realCandidate else lexicalCandidate
     }
 
-    // Recursively deletes [dir] only after re-asserting containment under [root]: cleanup paths read
-    // the directory back from persisted state, so a poisoned stored path could steer deleteRecursively
-    // at an arbitrary host directory. Throws SecurityException, deleting nothing.
+    // Deletes [dir] only after re-asserting containment under [root]: stored paths are untrusted. See ADR-0047.
     @OptIn(ExperimentalPathApi::class)
     fun deleteContainedRecursively(
         root: Path,
@@ -60,11 +56,7 @@ internal object PathSafety {
         dir.deleteRecursively()
     }
 
-    // Rejects a symlink at any component strictly below [root]: an earlier same-UID run can plant one
-    // at a predictable future per-run path, so two string-distinct paths would resolve to one directory.
-    // lstat-based; call AFTER assertContained, which follows links. Throws SecurityException.
-    // Residual: a link planted after this check but before the directory is materialized is a same-UID
-    // race, not a trust boundary (ADR-0047).
+    // Rejects a symlink at any component below [root]; call after assertContained. See ADR-0053, ADR-0047.
     fun assertNoSymlinkComponentsBelow(
         root: Path,
         candidate: Path,
@@ -84,9 +76,8 @@ internal object PathSafety {
         }
     }
 
-    // A write that follows a dangling symlink creates the link's destination, which assertContained
-    // cannot see. Follows the chain hop by hop, requiring every destination to resolve inside [root].
-    // Destinations are compared by realpath only, never normalized: the kernel applies `..` after following links.
+    // Requires every hop of a dangling symlink chain to resolve inside [root], by realpath, never
+    // normalized. See ADR-0047.
     fun assertDanglingLinkContained(
         root: Path,
         candidate: Path,
@@ -103,19 +94,15 @@ internal object PathSafety {
         }
     }
 
-    // True when [path] exists but is not a single-name regular file — a symlink, FIFO, device,
-    // directory or hard link; a read serving a run's own file must refuse it.
+    // True when [path] exists but is not a single-name regular file; a read of a run's file refuses it. See AR-12.
     fun isLinkedOrSpecial(path: Path): Boolean {
         if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) return false
         if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) return true
         return isHardLinked(path)
     }
 
-    // True when [path] itself has more than one link: the same bytes are reachable under a name a
-    // walk never sees, so containment cannot be decided.
+    // True when [path] has more than one link, so containment cannot be decided. See AR-12.
     fun isHardLinked(path: Path): Boolean {
-        // Some attribute views report nlink as Long, not Int; a bare `as? Int` would silently drop
-        // those and read as unlinked.
         val nlink =
             runCatching {
                 Files.readAttributes(path, "unix:nlink", LinkOption.NOFOLLOW_LINKS)["nlink"] as? Number

@@ -6,9 +6,8 @@ import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.readText
 
-// Best-effort POSIX process-group reaping. `ProcessHandle.descendants()` misses a child spawned in
-// the snapshot→kill window and any double-fork/setsid-detached child, so the command is launched
-// under `setsid` and the negative pgid reaped. Degrades to descendants() where setsid is absent. See ADR-0041.
+// POSIX process-group reaping: the command runs under `setsid` and the group is killed; where
+// `setsid` is absent only `descendants()` is reaped. See ADR-0041.
 object ProcessGroupSupport {
     private const val KILL_GROUP_WAIT_SEC = 2L
 
@@ -18,9 +17,8 @@ object ProcessGroupSupport {
     /** Prepends `setsid` so [command] leads a new process group, when available. */
     fun launchArgv(command: List<String>): List<String> = setsidPath?.let { listOf(it) + command } ?: command
 
-    // The pgid to reap for [process], or null when a group kill is not safe. Returns a pgid ONLY when
-    // the process leads its own group (pgid == pid), so a group kill can never target the JVM's own
-    // group. Read at KILL time, not at launch: the child is a leader only after setsid(2) has run.
+    // The pgid to reap for [process], only when it leads its own group (pgid == pid), else null.
+    // Read at kill time, never at launch. See ADR-0041.
     fun ownProcessGroupId(process: java.lang.Process): Long? = if (setsidPath == null) null else groupLeaderPgid(process, ::readPgid)
 
     // [process]'s pid when [pgidOf] reports it as its own group's leader and the pid still names
@@ -42,8 +40,7 @@ object ProcessGroupSupport {
         return pid.takeIf { pgid == it }
     }
 
-    // SIGKILL to the whole group, best-effort. Must go through the `sh` builtin `kill`: the standalone
-    // binaries misparse the negative target. [pgid] is a Long, so the interpolation cannot inject.
+    // SIGKILL to the whole group through the `sh` builtin `kill`. See ADR-0041. [pgid] is a Long, so it cannot inject.
     fun killGroup(pgid: Long) {
         signalGroup("KILL", pgid)
     }

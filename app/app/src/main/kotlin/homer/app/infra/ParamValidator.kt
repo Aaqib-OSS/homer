@@ -16,10 +16,8 @@ sealed interface ParamValidation {
 }
 
 /**
- * Owns all input-param value semantics: the typed generation (string / integer /
- * number / boolean plus the declarative constraint fields on [Param]) and the
- * legacy generation (STRING / NUMBER / ANY heuristics, frozen until removal).
- * See ADR-0031.
+ * Owns all input-param value semantics: the typed types (string / integer / number / boolean with
+ * the constraint fields on [Param]) and the STRING / NUMBER / ANY types. See ADR-0031.
  */
 class ParamValidator {
     fun validate(
@@ -146,7 +144,7 @@ class ParamValidator {
         return errors
     }
 
-    /** The constraint fields [param]'s (non-legacy) type does not accept, as one error; `null` = none. */
+    /** The constraint fields [param]'s type does not accept, as one error; `null` = none. */
     private fun typeConstraintError(
         param: Param,
         prefix: String,

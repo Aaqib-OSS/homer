@@ -28,12 +28,9 @@ import java.net.SocketTimeoutException
 import java.nio.channels.UnresolvedAddressException
 
 /**
- * Prices one Claude attempt: the session-spend endpoint first, the CLI figure second, every
- * failure of the first degrading to the second with a reason (cost is metadata, the run must
- * complete); each request is bounded by [SessionSpendConfig.timeoutMs] and [MAX_BODY_BYTES].
- * With [SessionSpendConfig.callsPath] the lookup polls on [DEFAULT_POLL_OFFSETS_MS] until the
- * attempt's calls are ingested; with `expectedCalls = null` a figure is accepted once two
- * readings agree (ADR-0070). With the request-window keys it sums the attempt's own window rows (ADR-0061).
+ * Prices one Claude attempt from the session-spend endpoint, degrading any failure to the CLI
+ * figure with a reason; requests are bounded by [SessionSpendConfig.timeoutMs] and [MAX_BODY_BYTES].
+ * Polls on [DEFAULT_POLL_OFFSETS_MS] when `callsPath` is set (ADR-0061, ADR-0070).
  */
 class LlmCostResolver(
     private val config: SessionSpendConfig?,
@@ -48,9 +45,7 @@ class LlmCostResolver(
         config?.let { cfg ->
             HttpClient(engine) {
                 expectSuccess = false
-                // A 3xx would otherwise be followed automatically, issuing a further GET
-                // to a response-supplied URL carrying cfg.headers (credentials). Treat any
-                // redirect as a failure of this rung instead — it degrades via isSuccess().
+                // A followed redirect would send the spend-API credential to its target. See ADR-0061.
                 followRedirects = false
                 install(HttpTimeout) {
                     requestTimeoutMillis = cfg.timeoutMs
@@ -72,9 +67,8 @@ class LlmCostResolver(
         val responsePricing = pricing ?: return ResolvedCost(cliCostUsd, CostSource.CLI)
         val http = client ?: return ResolvedCost(cliCostUsd, CostSource.CLI)
         if (sessionId == null) return fallback(cliCostUsd, "no session id in output")
-        // The id is read from a file the agent's process wrote — attacker-controlled (§12
-        // rule 2). Charset gate first, then URL-encode, so it can only ever address one
-        // path segment of the configured endpoint.
+        // The id comes from a file the agent wrote: gate its charset before it reaches the URL.
+        // See ADR-0061, ADR-0047 rule 2.
         if (!SESSION_ID_PATTERN.matches(sessionId)) return fallback(cliCostUsd, "invalid session id")
         val url = responsePricing.config.url.replace(SessionSpendConfig.SESSION_ID_PLACEHOLDER, sessionId.encodeURLPathPart())
 
@@ -90,16 +84,14 @@ class LlmCostResolver(
         expectedCalls: Int?,
         attemptOnce: suspend () -> SessionSpendOutcome,
     ): ResolvedCost {
-        // Without a completeness signal (callsPath, or a requests window whose row count
-        // stands in for one) there is nothing to poll for: one attempt, no waiting — exactly
-        // the pre-callsPath contract.
+        // Without a completeness signal there is nothing to poll for: one attempt, no waiting.
+        // See ADR-0061.
         val offsets = pollSchedule()
         var partial: SessionSpendOutcome.Partial? = null
         var previous: SessionSpendOutcome.Partial? = null
         var lastFailure: String? = null
         for ((index, offset) in offsets.withIndex()) {
-            // A plain delay: a caller cancellation while waiting must propagate, never be
-            // priced as a session figure.
+            // A plain delay: cancellation while waiting propagates, never priced. See ADR-0061.
             if (index > 0) delay(offset - offsets[index - 1])
             when (val outcome = attemptOnce()) {
                 is SessionSpendOutcome.Complete -> {
@@ -112,9 +104,7 @@ class LlmCostResolver(
                         return ResolvedCost(outcome.cost, CostSource.SESSION)
                     }
                     previous = outcome
-                    // Keep the best reading, not the latest: a later response may have
-                    // ingested fewer calls (a different replica, a rolled-back row), and
-                    // charging that would under-count what we already know was spent.
+                    // The best reading, not the latest: a later one may report fewer calls. See ADR-0061.
                     if (outcome.betterThan(partial)) partial = outcome
                     logRepoll(outcome, expectedCalls)
                 }
@@ -148,8 +138,7 @@ class LlmCostResolver(
         partial: SessionSpendOutcome.Partial?,
         lastFailure: String?,
     ): ResolvedCost {
-        // The schedule ran out. A partial figure still beats the CLI's rate-card guess —
-        // charge it, marked, so the under-count is visible rather than silent.
+        // A partial figure is charged, marked incomplete, in preference to the CLI's. See ADR-0061.
         val best = partial ?: return fallback(cliCostUsd, lastFailure ?: "lookup failed")
         return chargeIncomplete(best, expectedCalls)
     }
@@ -178,21 +167,13 @@ class LlmCostResolver(
         endedAtMs: Long?,
     ): SessionSpendOutcome {
         val cfg = pricing.config
-        // execute's block can't use a non-local return (it isn't inlined), so an early
-        // exit inside it is signalled via this var and picked up once execute has
-        // returned — by which point the response has already been released either way.
+        // `execute`'s block is not inlined, so its early exits are signalled through this variable.
         var httpFailureReason: String? = null
         val rawBody: String? =
             try {
-                // HttpTimeout cancels the *call* job, not necessarily whatever the response
-                // body is suspended on — with a real socket that surfaces as a socket
-                // timeout, but MockEngine (and conceivably other engines) have no socket to
-                // time out, so a stalled read could hang forever. withTimeout makes the
-                // bound engine-independent: it cancels this coroutine directly.
+                // The timeout bound must not depend on the engine's own timeout plugin. See ADR-0061.
                 withTimeout(cfg.timeoutMs) {
-                    // prepareGet + execute (rather than a plain get()) guarantees the
-                    // response is released on every exit from the block below — early
-                    // return, exception, or normal completion — not just the happy path.
+                    // prepareGet + execute releases the response on every exit from the block.
                     http
                         .prepareGet(url) {
                             cfg.headers.forEach { (k, v) -> header(k, v) }
@@ -223,12 +204,7 @@ class LlmCostResolver(
      */
     private suspend fun failureFor(e: Exception): SessionSpendOutcome.Failed =
         when (e) {
-            // Usually our own withTimeout above firing. But if a caller wraps resolve()
-            // in a shorter withTimeout of its own, its TimeoutCancellationException can
-            // reach here first (we're suspended inside our inner withTimeout when the
-            // outer one fires) — that must propagate, not get priced as "timeout".
-            // After our own timeout fires the enclosing coroutine is still active;
-            // after an outer one it is not.
+            // Our own timeout leaves the coroutine active; a caller's does not and propagates. See ADR-0061.
             is TimeoutCancellationException -> {
                 if (!currentCoroutineContext().isActive) throw e
                 SessionSpendOutcome.Failed("timeout")
@@ -242,11 +218,7 @@ class LlmCostResolver(
                 SessionSpendOutcome.Failed("connection failed")
             }
 
-            // HttpTimeout can also cancel the request job with a bare
-            // CancellationException (not TimeoutCancellationException, so not caught
-            // above) instead of converting it to HttpRequestTimeoutException. Our own
-            // timeout leaves the caller's coroutine context active; genuine caller
-            // cancellation does not — only the latter must propagate.
+            // HttpTimeout may cancel with a bare CancellationException: only a caller's propagates.
             is CancellationException -> {
                 if (currentCoroutineContext().isActive) SessionSpendOutcome.Failed("timeout") else throw e
             }

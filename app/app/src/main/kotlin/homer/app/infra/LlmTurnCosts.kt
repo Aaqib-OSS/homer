@@ -19,10 +19,8 @@ internal object LlmTurnCosts {
 
     /**
      * Each turn end's share of the attempt's cost, in stream order: its increment of the
-     * cumulative cost, scaled to [resolvedCostUsd] when there is one. When the increments cannot
-     * be read or their total is zero, the last turn end carries the whole cost and the earlier
-     * ones an explicit zero.
-     * A negative reported cost counts as none. See ADR-0074.
+     * cumulative cost, scaled to [resolvedCostUsd]; with no readable increments the last turn end
+     * carries the whole cost. A negative reported cost counts as none. See ADR-0074.
      */
     private fun turnCosts(
         turnEnds: List<LlmEvent.TurnEnd>,
@@ -46,10 +44,9 @@ internal object LlmTurnCosts {
     }
 
     /**
-     * Moves the share of a turn end that emits no priced generation — a failed or stopped one —
-     * onto the next successful turn end, or the last one before it, so the generations still sum
-     * to the attempt's charge (CWE-840). With no successful turn end,
-     * the last turn end carries the whole charge. See ADR-0074.
+     * Moves a failed or stopped turn end's share onto the next successful one (else the last
+     * before it) so the generations sum to the charge (CWE-840); with no success the last turn
+     * end carries it all. See ADR-0074.
      */
     private fun onSuccessfulTurnEnds(
         turnEnds: List<LlmEvent.TurnEnd>,
@@ -80,7 +77,7 @@ internal object LlmTurnCosts {
         return carried
     }
 
-    /** Puts the [carried] trailing share on the last successful turn end, or everything on the last one when none succeeded. */
+    /** Puts the [carried] trailing share on the last successful turn end, else all of it on the last one. */
     private fun placeTrailingCarry(
         turnEnds: List<LlmEvent.TurnEnd>,
         shares: List<Double?>,

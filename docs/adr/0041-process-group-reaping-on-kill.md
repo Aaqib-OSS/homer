@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-08-13
-amended: 2026-11-20
+amended: 2026-11-20, 2026-11-21
 deciders: Lukáš Vlk
 ---
 # ADR-0041: Reap orphaned processes via the process group
@@ -138,3 +138,17 @@ on the stop, and the exit status is never read. A command that a signal from els
 example the remote host's OOM killer, fails the step with exit code 9. The local runner reports
 the same death as 137 (128 + 9), so the two runners report different codes for it. The step's
 outcome is the same: a signal death never reads as exit 0.
+
+## Amendment (2026-11-21): what the local executor's launch and teardown depend on
+
+- **The pgid is read at kill time, never at launch.** Right after `start()` the child may not
+  have run `setsid(2)` yet (`posix_spawn` resumes the parent at the `setsid` exec, before its
+  main runs), so a launch-time read races the leader transition and, under CPU contention,
+  finds no group to kill.
+- **Stdin is fed on its own job.** A child that never reads its stdin fills the OS pipe buffer
+  (about 64 KiB); a write on the executor's own thread would then block it, and with it the
+  timeout and output-cap monitor. The monitor kills the process, which breaks the pipe and
+  ends the write. Write failures are ignored: after a teardown a broken pipe is a consequence,
+  and a child that exits before reading all its stdin still succeeded.
+- **Relative `PATH` entries are skipped when locating `setsid`.** They would resolve against
+  the writable per-run workdir and let a planted binary stand in for it.

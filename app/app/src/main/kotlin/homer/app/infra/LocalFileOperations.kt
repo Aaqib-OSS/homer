@@ -41,9 +41,7 @@ class LocalFileOperations internal constructor(
     private val logger = LoggerFactory.getLogger(LocalFileOperations::class.java)
 
     override fun fileSize(path: Path): Long =
-        // NOFOLLOW: a stat over an agent-writable path must report the link's own
-        // size, never the target's — else it is a size/existence oracle for host
-        // files a swapped symlink points at. Security follow-up; root §12.
+        // NOFOLLOW: report a link's own size, never its target's. See ADR-0047.
         Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS).size()
 
     override fun readText(path: Path): String = path.readText()
@@ -110,11 +108,7 @@ class LocalFileOperations internal constructor(
         limit: Int,
     ): List<Path> =
         Files.walk(dir).use { stream ->
-            // NOFOLLOW_LINKS: a symlink is not a regular file, so a symlink an agent
-            // drops in its artifacts dir is excluded rather than listed with its
-            // target's size/mtime. Files.walk already does not descend dir symlinks.
-            // limit short-circuits the lazy walk so an oversized tree is never
-            // fully materialized in memory (see ArtifactService's cap).
+            // NOFOLLOW_LINKS excludes an agent-planted symlink; limit stops the lazy walk early. See ADR-0047.
             stream
                 .filter { it.isRegularFile(LinkOption.NOFOLLOW_LINKS) }
                 .limit(limit.toLong())
@@ -129,12 +123,9 @@ class LocalFileOperations internal constructor(
             .epochSecond
 
     /**
-     * Opens [path] for reading: re-assert a regular file (NOFOLLOW) before the open, then run the
-     * blocking `open(2)` on a **bounded** daemon pool capped at [openTimeoutMs] per open. The [open]
-     * lambda opens with `LinkOption.NOFOLLOW_LINKS`, so the symlink check is atomic with the open; the
-     * pre-check and pool also catch a same-UID swap to a FIFO/device, which `O_NOFOLLOW` misses. A
-     * blocked open cannot exhaust threads: the pool ([MAX_OPEN_THREADS], synchronous handoff) bounds
-     * leaked threads, and once saturated further opens fail fast ([RejectedExecutionException] → IOException).
+     * Opens [path] for reading: refuses a non-regular file, then runs the blocking [open] on the bounded
+     * pool, at most [openTimeoutMs] per open ([MAX_OPEN_THREADS] threads; a saturated pool fails fast).
+     * [open] must pass `LinkOption.NOFOLLOW_LINKS`. See ADR-0047, AR-12.
      */
     private fun <T : AutoCloseable> openBounded(
         path: Path,
@@ -176,11 +167,7 @@ class LocalFileOperations internal constructor(
         const val OPEN_TIMEOUT_MS = 10_000L
         private const val MAX_OPEN_THREADS = 8
 
-        // Bounded: a SynchronousQueue with max MAX_OPEN_THREADS means a submit is
-        // accepted only if a thread is immediately free or one can still be spawned
-        // under the cap, else it is rejected. Idle threads are reaped after 30s, so
-        // normal load holds none; only opens blocked on a FIFO retain a slot, and
-        // they can never exceed the cap.
+        // A SynchronousQueue under the thread cap rejects a submit when no thread is free. See ADR-0047.
         private val OPEN_EXECUTOR: ExecutorService =
             ThreadPoolExecutor(
                 0,

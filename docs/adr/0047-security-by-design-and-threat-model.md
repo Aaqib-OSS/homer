@@ -371,6 +371,24 @@ for the host for as long as `max-age` runs, so sending it would lock those insta
 console. Where TLS is used, it terminates at an operator-run reverse proxy (see `DOCKER.md`), which is
 where HSTS belongs; the API sends it only once deployment is HTTPS-only.
 
+## Amendment (2026-11-21): why each `PathSafety` check exists
+
+- **`assertContained` needs the lexical and the realpath view to agree.** Rejecting `..` in the
+  string misses a symlink inside the workspace and OS canonicalization differences
+  (case-insensitive filesystems, junctions), which each escape the lexical check alone.
+- **`assertDanglingLinkContained` compares destinations by realpath, never normalized,** because
+  the kernel applies `..` after following links.
+- **`deleteContainedRecursively` re-asserts containment and refuses the root itself.** Cleanup
+  reads the directory back from persisted state, so a poisoned stored path could steer a
+  recursive delete at any host directory, and a stored per-run root equal to the workspace root
+  must not become a wipe of it.
+- **`isHardLinked` refuses a file with more than one link:** the same bytes are reachable
+  under a name a walk never sees, so containment cannot be decided (the race is AR-12).
+- **`LocalFileOperations.fileSize` and `listRegularFiles` use `NOFOLLOW_LINKS`.** A stat over an
+  agent-writable path must report a link's own size, or it becomes a size and existence oracle
+  for host files a swapped symlink points at; a symlink an agent drops among its artifacts is
+  left out of the listing rather than listed with its target's size and time.
+
 ## Pros and Cons of the Options
 
 ### Option A — SAST plus review, no written model
