@@ -68,16 +68,15 @@ class CooldownKeyRendererTest {
 
         assertEquals("reviewer", e.agentName)
         assertTrue(e.message!!.contains("{{MR}}"), e.message!!)
-        // §12 rule 7: the refusal carries the placeholder name, never an env value — and the
-        // template is never handed on as a literal every subject would then share.
+        // ADR-0047 rule 7: the refusal carries the placeholder name, never an env value, and the
+        // template is never handed on as a literal.
         assertTrue(!e.message!!.contains("s3cr3t-value"), e.message!!)
     }
 
     @Test
     fun `a placeholder naming a replayed stored-secret input is refused`() {
-        // Retry, resume and the dispatch/continuation fires replay stored inputs: what was
-        // secret for the source run stays secret for the replay, so the key must not render
-        // from it — the value would land in the plain-text `cooldown_key` column and its index.
+        // A replay keeps the source run's secrecy, so the key must not render from the input: the
+        // value would land in the plain-text `cooldown_key` column (ADR-0106).
         val e =
             assertFailsWith<CooldownKeyInvalidException> {
                 agent("mr-{{MR}}").renderCooldownKey(mapOf("MR" to "s3cr3t-value"), extraSecretInputKeys = setOf("MR"))

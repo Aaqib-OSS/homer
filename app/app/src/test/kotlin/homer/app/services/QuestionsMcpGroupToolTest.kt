@@ -136,9 +136,8 @@ class QuestionsMcpGroupToolTest {
             assertTrue(firstText(result).contains("8"))
         }
 
-    // An unknown (or unauthorized) target reaches the agent as a tool error, exactly as the
-    // single-question tool reports it: `runTool` turns the service's exception into an isError
-    // result rather than failing the MCP call.
+    // An unknown or unauthorized target is a tool error, as in the single-question tool: `runTool`
+    // turns the exception into an isError result rather than failing the MCP call.
     @Test
     fun `ask_and_dispatch_group reports an unknown agent as a tool error`() =
         runTest {
@@ -162,9 +161,8 @@ class QuestionsMcpGroupToolTest {
             assertEquals(listOf("questions", "agent"), tool.tool.inputSchema.required)
         }
 
-    // The parser's malformed-input semantics, pinned so a change to them is a decision: a
-    // non-numeric `ttlSec` reads as "no TTL", a non-object `params` is ignored, and a
-    // non-primitive param value is dropped.
+    // Pinned so a change is a decision: a non-numeric `ttlSec` reads as "no TTL", a non-object `params`
+    // is ignored, and a non-primitive param value is dropped.
     @Test
     fun `the argument parser's malformed ttlSec and params shapes take their fallback semantics`() {
         assertEquals(null, buildJsonObject { put("ttlSec", "abc") }.ttlSecArg())

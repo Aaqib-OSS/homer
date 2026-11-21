@@ -556,14 +556,9 @@ class CronSchedulerServiceTest {
     // --- start / tick alignment ---
 
     /**
-     * Starts a scheduler on [TestScope.backgroundScope] whose clock is the test
-     * scheduler's virtual time offset by [base], and returns the list it appends
-     * every fired tick instant to. A non-zero [tickWorkMs] makes the stubbed run
-     * start consume that much simulated time, i.e. a slow `tick()`.
-     *
-     * [now] optionally wraps that clock — it receives the default virtual-time
-     * clock and returns the function the service reads time through — so a test
-     * can observe reads without restating the fixture.
+     * Starts a scheduler on [TestScope.backgroundScope] with virtual time offset by [base]; returns every
+     * fired tick instant. A non-zero [tickWorkMs] makes a run start consume simulated time (a slow `tick()`);
+     * [now] wraps the default clock so a test can observe reads.
      */
     private fun TestScope.startAlignedScheduler(
         base: ZonedDateTime,

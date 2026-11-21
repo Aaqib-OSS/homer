@@ -294,7 +294,7 @@ class ProcessManagerTest {
             assertEquals(ProcessStatus.FAILED, processManager.getProcessStatus(id2))
         }
 
-    // ========== Compare-And-Set Status Tests (audit #9) ==========
+    // ========== Compare-And-Set Status Tests ==========
 
     @Test
     fun `compareAndSetStatus should update when current status is in expected set`() =
@@ -316,8 +316,7 @@ class ProcessManagerTest {
     @Test
     fun `compareAndSetStatus should refuse to overwrite KILLED with FINISHED`() =
         runTest {
-            // Simulates the audit #9 race: DefaultLockManager set KILLED while ProcessExecutor
-            // is about to write FINISHED. The terminal KILLED status must win.
+            // DefaultLockManager set KILLED while ProcessExecutor is about to write FINISHED: KILLED must win.
             val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
             processManager.setProcessStatus(id, ProcessStatus.WORKING)
             processManager.setProcessStatus(id, ProcessStatus.KILLED)

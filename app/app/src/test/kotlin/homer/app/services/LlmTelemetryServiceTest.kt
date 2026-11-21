@@ -43,9 +43,8 @@ import kotlin.test.assertFalse
 /**
  * Characterization tests for LlmTelemetryService.
  *
- * These tests exercise span emission from canonical [LlmEvent]s directly — no harness
- * dialect, no NDJSON parsing. Adapter-level concerns (session id gating, thinking/redacted
- * blocks, schema-drift leniency) live in the harness's own tests (e.g. `ClaudeHarnessTest`).
+ * These tests exercise span emission from canonical [LlmEvent]s directly, with no harness dialect or
+ * NDJSON parsing; adapter-level concerns live in the harness's own tests (e.g. `ClaudeHarnessTest`).
  */
 class LlmTelemetryServiceTest {
     private lateinit var mockTracer: Tracer
@@ -404,9 +403,8 @@ class LlmTelemetryServiceTest {
     @Test
     fun `malformedPreview lines are redacted before being logged`() =
         runBlocking {
-            // [improper_input_validation / CWE-20] malformedPreview is agent-controlled
-            // stdout (§12); the denial path this pins is deleting the redactor.redact(it)
-            // call at the WARN call site, which would leak the raw secret into app.log.
+            // CWE-20: malformedPreview is agent-controlled stdout (ADR-0047 rule 2); deleting the
+            // redactor.redact(it) at the WARN call site would leak the raw secret into app.log.
             val redactor = SecretRedactor.from(mapOf("TOKEN" to "s3cr3t"), setOf("TOKEN"))
             // A filler event so the stream is not "empty" (events + raw both empty is the
             // distinct "skip telemetry entirely" guard, not what this test is about).
@@ -541,10 +539,8 @@ class LlmTelemetryServiceTest {
     @Test
     fun `only the first SessionStart carrying a model sets parent span metadata`() =
         runBlocking {
-            // Real Claude streams emit a model-less system/hook_* SessionStart before init,
-            // and another model-less one off the result line. Neither may set metadata or
-            // log, and neither may block the init line's SessionStart from doing so once it
-            // arrives; once it has, a later model-less (or modelled) one changes nothing.
+            // Real streams emit model-less SessionStarts before init and off the result line: they must not
+            // set metadata, log, or block the init one; once it sets it, later ones change nothing.
             val resultSpan = relaxedSpan()
             wireNamedSpan({ it == "Result" }, resultSpan)
 

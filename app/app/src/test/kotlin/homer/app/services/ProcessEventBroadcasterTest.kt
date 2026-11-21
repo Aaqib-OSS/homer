@@ -72,9 +72,8 @@ class ProcessEventBroadcasterTest {
             broadcaster.emit(ProcessEvent.StatusChanged(0, ProcessStatus.WORKING, "agent-a"))
             advanceUntilIdle()
 
-            // Burst far more than the buffer can hold while the subscriber is parked:
-            // tryEmit never yields to the collector, so these accumulate and DROP_OLDEST
-            // evicts the middle of the sequence.
+            // A burst past the buffer while the subscriber is parked: tryEmit never yields, so
+            // DROP_OLDEST evicts the middle of the sequence.
             repeat(20) { i ->
                 broadcaster.emit(
                     ProcessEvent.StatusChanged(i + 1, ProcessStatus.WORKING, "agent-a"),

@@ -161,9 +161,8 @@ class DispatchServiceTest {
             }
         }
 
-    // ADR-0019: create enforces the question contract `ask` enforces, through
-    // QuestionsService.validateQuestionInput — without that call a dispatch registers a
-    // question the ask path would have refused.
+    // ADR-0019: create enforces the `ask` question contract via `validateQuestionInput`, so a dispatch
+    // never registers a question the ask path would refuse.
     @Test
     fun `create refuses question input the questions service rejects and registers nothing`() =
         runTest {
@@ -235,9 +234,8 @@ class DispatchServiceTest {
             assertEquals(1000L + 604_800, stored.captured.expiresAt)
         }
 
-    // ADR-0052: the target's `secret: true` names are snapshotted when the row is registered,
-    // because the definition may be edited before the fire — without the snapshot a stored
-    // value whose flag was flipped becomes a cleartext trace tag or an unredacted API field.
+    // ADR-0052: the target's `secret: true` names are snapshotted at registration, since the definition
+    // may be edited before the fire; a flipped flag must not expose a stored value.
     @Test
     fun `create snapshots the target's secret input names at registration`() =
         runTest {
@@ -455,10 +453,8 @@ class DispatchServiceTest {
     @Test
     fun `fire fails the dispatch naming the param when the target rejects an inherited value`() =
         runTest {
-            // A real resolver, so the merged map really goes through ParamValidator at fire
-            // time: the origin run accepted `TICKET_ID` as ANY, the target now declares it
-            // integer. The operator's answer is lost — the dispatch settles FAILED, naming
-            // the param and never the value. ADR-0101.
+            // Real resolver: the origin accepted `TICKET_ID` as ANY, the target now declares an integer.
+            // The dispatch settles FAILED naming the param, never the value. ADR-0101.
             val strict =
                 Agent(
                     name = "h",
@@ -515,12 +511,8 @@ class DispatchServiceTest {
     @Test
     fun `fire validates an inherited stored value without running its transformer a second time`() =
         runTest {
-            // The origin run stored SUMMARY already post-transformer — its JsonPath
-            // transformer extracted `$.summary` when it resolved its inputs. Running the
-            // transformer over the extracted string again would reject the value and fail
-            // every dispatch that inherits it. Real resolver, mirroring the continuation
-            // fire's case, so dropping the fire's skipTransformFor argument fails here.
-            // ADR-0101.
+            // The origin stored SUMMARY post-transformer; transforming it again would reject it. Real
+            // resolver, so dropping the fire's skipTransformFor argument fails here. ADR-0101.
             val graph =
                 Agent(
                     name = "h",
@@ -580,11 +572,8 @@ class DispatchServiceTest {
     @Test
     fun `fire transforms the dispatch's own param of an inherited name as caller-supplied input`() =
         runTest {
-            // The inherited names whose value survives the merge exclude the dispatch's own
-            // params: an own param named like an inherited one wins, and its raw JSON is
-            // transformed as caller-supplied input — never passed through as a stored,
-            // already-transformed value. Real resolver, so the transformer really runs.
-            // ADR-0101.
+            // An own param named like an inherited one wins and is transformed as caller-supplied input,
+            // never passed through as a stored value. Real resolver, so the transformer runs. ADR-0101.
             val graph =
                 Agent(
                     name = "h",
@@ -808,9 +797,8 @@ class DispatchServiceTest {
                 Dispatch(5, "q1", DispatchStatus.PENDING, "h", "reply", mapOf("p1" to "v1"), 7, "asker", null, 1)
             coEvery { repo.claim(5) } returns true
             coEvery { runStarter.start(any(), any(), any(), any()) } returns 99
-            // The asking run is itself a segment of the flow rooted at 3 — the fired run
-            // joins that flow rather than rooting a new one at the asker. The gate reads
-            // the root row to check the owner's visibility, so it must resolve too.
+            // The asker is a segment of the flow rooted at 3: the fired run joins that flow. The gate
+            // reads the root row to check the owner's visibility, so it must resolve too.
             coEvery { processManager.getProcessInfo(3) } returns
                 ProcessInfo(id = 3, status = ProcessStatus.WORKING, agentName = "asker")
             coEvery { processManager.getProcessInfo(7) } returns
@@ -830,10 +818,8 @@ class DispatchServiceTest {
     @Test
     fun `fire drops the derived root when the fired run's owner cannot see the root row`() =
         runTest {
-            // [information_disclosure / CWE-200] The fired run is attributed to the
-            // dispatch's owner, so a flow root that owner cannot see must not reach the
-            // new row, its HMR_ROOT_PROCESS_ID env or its span. The run is stored
-            // rootless instead of mis-rooted.
+            // CWE-200: a flow root the dispatch's owner cannot see must not reach the new row, its
+            // HMR_ROOT_PROCESS_ID env or its span; the run is stored rootless.
             val agent = mockk<Agent>(relaxed = true)
             every { agent.dispatch } returns AgentDispatchConfig(enabled = true)
             every { agents.agents } returns mapOf("h" to agent)
@@ -1124,11 +1110,8 @@ class DispatchServiceTest {
     @Test
     fun `fire releases a drain-refused dispatch for the next boot's re-fire, not FAILED`() =
         runTest {
-            // Answering a still-PENDING question whose asking run has already ended reaches
-            // the fire path during the drain, and the gate refuses the start. Settling FAILED
-            // would consume the operator's answer for a run that never started, so the row
-            // goes back to PENDING and the next boot's `refirePendingAnswered` fires it.
-            // See ADR-0102.
+            // The drain gate refuses the start: FAILED would consume the answer for a run that never
+            // started, so the row goes back to PENDING for `refirePendingAnswered`. ADR-0102.
             val agent = mockk<Agent>(relaxed = true)
             every { agent.dispatch } returns AgentDispatchConfig(enabled = true)
             every { agents.agents } returns mapOf("h" to agent)
@@ -1500,10 +1483,8 @@ class DispatchServiceTest {
     @Test
     fun `fire passes the registration-time secret snapshot to agentRunStarter`() =
         runTest {
-            // The target's `secret` flags can change between registration and fire. The
-            // snapshot taken at registration is what the fired run must honour — without
-            // it, an input flipped to `secret: false` and added to traceTags would export
-            // the stored value as a cleartext Langfuse tag. See ADR-0052.
+            // The registration-time snapshot wins over a `secret` flag flipped since: otherwise a
+            // traceTags input would export the stored value as a cleartext Langfuse tag. ADR-0052.
             val agent = mockk<Agent>(relaxed = true)
             every { agent.dispatch } returns AgentDispatchConfig(enabled = true)
             every { agents.agents } returns mapOf("h" to agent)
@@ -1633,9 +1614,8 @@ class DispatchServiceTest {
             coVerify(exactly = 0) { runStarter.start(any(), any(), any(), any()) }
         }
 
-    // An aggregate that can never be delivered settles the group FAILED rather than leaving it
-    // PENDING on answers no start could carry. The throw must not escape `fire`: it also runs on
-    // the boot path, where it would abort startup reconciliation.
+    // An undeliverable aggregate settles the group FAILED. The throw must not escape `fire`: it also
+    // runs on the boot path, where it would abort startup reconciliation.
     @Test
     fun `fire settles a group FAILED when the aggregated answers are over the payload bound`() =
         runTest {
