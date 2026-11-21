@@ -376,6 +376,13 @@ remote subresource; a future HTML surface needs an explicit policy override befo
 - **`assertContained` needs the lexical and the realpath view to agree.** Rejecting `..` in the
   string misses a symlink inside the workspace and OS canonicalization differences
   (case-insensitive filesystems, junctions), which each escape the lexical check alone.
+- **`assertContainedUnder` is the same rule with the real root supplied by the caller.**
+  `assertContained` recomputes the root's realpath on every call, so it follows a root that was
+  swapped for a symlink. `homer-runner` pins a session root's realpath when it creates the root and
+  contains every transfer against that pin, so a run cannot move the root itself. The runner also
+  sets `failOnDanglingLink`: a dangling link has no realpath, and resolving past it would let a
+  transfer land wherever the link points. `assertContained`'s callers resolve past it and check the
+  link with `assertDanglingLinkContained` instead.
 - **`assertDanglingLinkContained` compares destinations by realpath, never normalized,** because
   the kernel applies `..` after following links.
 - **`deleteContainedRecursively` re-asserts containment and refuses the root itself.** Cleanup

@@ -7,36 +7,38 @@ import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.deleteRecursively
 
 // Contained only when both the lexical and the realpath view agree, else SecurityException. See ADR-0047.
-internal object PathSafety {
+object PathSafety {
     fun assertContained(
         root: Path,
         candidate: Path,
     ): Path {
-        val rootExists = Files.exists(root)
-        val candidateExists = Files.exists(candidate)
-
-        val lexicalRoot = root.toAbsolutePath().normalize()
-        val lexicalCandidate = candidate.toAbsolutePath().normalize()
-
         // Not-yet-existing paths fall back to canonicalizing the longest existing ancestor, so both
         // sides stay consistent (e.g. /tmp -> /private/tmp on macOS) and prefix symlink-escapes are still caught.
-        val realRoot = if (rootExists) root.toRealPath() else resolveLongestExistingPrefix(lexicalRoot)
+        val realRoot = if (Files.exists(root)) root.toRealPath() else resolveLongestExistingPrefix(root.toAbsolutePath().normalize())
+        return assertContainedUnder(root, realRoot, candidate)
+    }
+
+    // Contained under [lexicalRoot] lexically and under the caller's [realRoot] by realpath, else SecurityException;
+    // returns the realpath, or the lexical path while missing. [failOnDanglingLink] refuses a dangling link on the way.
+    fun assertContainedUnder(
+        lexicalRoot: Path,
+        realRoot: Path,
+        candidate: Path,
+        failOnDanglingLink: Boolean = false,
+    ): Path {
+        val candidateExists = Files.exists(candidate)
+        val lexicalCandidate = candidate.toAbsolutePath().normalize()
         val realCandidate =
             if (candidateExists) {
                 candidate.toRealPath()
             } else {
-                resolveLongestExistingPrefix(lexicalCandidate)
+                resolveLongestExistingPrefix(lexicalCandidate, failOnDanglingLink)
             }
-
-        val lexicalContained = lexicalCandidate.startsWith(lexicalRoot)
-        val realContained = realCandidate.startsWith(realRoot)
-
-        if (!lexicalContained || !realContained) {
+        if (!lexicalCandidate.startsWith(lexicalRoot.toAbsolutePath().normalize()) || !realCandidate.startsWith(realRoot)) {
             throw SecurityException(
-                "Path '$candidate' resolves outside root '$root' (resolved to '$realCandidate')",
+                "Path '$candidate' resolves outside root '$lexicalRoot' (resolved to '$realCandidate')",
             )
         }
-        // Existing candidate returns its realpath; a missing one the lexical absolute path.
         return if (candidateExists) realCandidate else lexicalCandidate
     }
 
@@ -126,14 +128,31 @@ internal object PathSafety {
         return resolveLongestExistingPrefix(current.toAbsolutePath().normalize())
     }
 
-    private fun resolveLongestExistingPrefix(path: Path): Path {
-        var existing: Path? = path
-        while (existing != null && !Files.exists(existing)) {
-            existing = existing.parent
+    private fun resolveLongestExistingPrefix(
+        path: Path,
+        failOnDanglingLink: Boolean = false,
+    ): Path {
+        val existing = longestExistingAncestor(path, if (failOnDanglingLink) NO_FOLLOW else FOLLOW) ?: return path
+        // An unfollowed walk stops at a dangling link, which has no realpath to contain.
+        if (failOnDanglingLink && !Files.exists(existing)) {
+            throw SecurityException("Path '$path' passes through the dangling symlink '$existing'")
         }
-        if (existing == null) return path
         val real = existing.toRealPath()
         val remainder = existing.relativize(path)
         return if (remainder.toString().isEmpty()) real else real.resolve(remainder).normalize()
     }
+
+    private fun longestExistingAncestor(
+        path: Path,
+        options: Array<LinkOption>,
+    ): Path? {
+        var existing: Path? = path
+        while (existing != null && !Files.exists(existing, *options)) {
+            existing = existing.parent
+        }
+        return existing
+    }
+
+    private val FOLLOW = emptyArray<LinkOption>()
+    private val NO_FOLLOW = arrayOf(LinkOption.NOFOLLOW_LINKS)
 }

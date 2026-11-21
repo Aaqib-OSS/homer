@@ -1,5 +1,6 @@
 package homer.runner
 
+import homer.app.infra.PathSafety
 import homer.app.infra.coRunCatching
 import homer.app.runners.DownloadMode
 import homer.app.runners.TarStreams
@@ -9,7 +10,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
-import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
 import kotlin.io.path.createDirectories
@@ -112,22 +112,17 @@ internal class SessionWorkspace(
 
     /**
      * [remoteRelative] under [sessionRoot] lexically and under the root's realpath as created, so a symlink a run
-     * planted, the root itself included, cannot steer a transfer outside it (CWE-59); a later swap is AR-04/AR-05.
+     * planted, the root itself included, cannot steer a transfer outside it (CWE-59); a dangling link on the path is
+     * refused. A later swap is AR-04/AR-05.
      */
     private fun contained(remoteRelative: String): Path {
         val candidate = sessionRoot.resolve(remoteRelative).normalize()
         val root = realRoot
-        require(root != null && candidate.startsWith(sessionRoot) && realPath(candidate).startsWith(root)) {
-            "path '$remoteRelative' escapes the session root"
-        }
+        val inside =
+            root != null &&
+                coRunCatching { PathSafety.assertContainedUnder(sessionRoot, root, candidate, failOnDanglingLink = true) }.isSuccess
+        require(inside) { "path '$remoteRelative' escapes the session root" }
         return candidate
-    }
-
-    /** [path]'s realpath, taken at its longest existing ancestor for a part that does not exist yet. */
-    private fun realPath(path: Path): Path {
-        var existing = path
-        while (!Files.exists(existing, LinkOption.NOFOLLOW_LINKS)) existing = existing.parent ?: return path
-        return existing.toRealPath().resolve(existing.relativize(path))
     }
 
     fun deleteTree(path: Path) {

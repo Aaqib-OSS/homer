@@ -568,6 +568,26 @@ class SessionWorkerTest {
         }
 
     @Test
+    fun `a transfer through a dangling symlink fails closed instead of resolving past it`() =
+        live {
+            val outside = tmp.resolve("outside").createDirectories()
+            val w = worker()
+            val run = async { w.run() }
+            api.ops.send(RunnerOp.CreateWorkspace("cw"))
+            api.result()
+            Files.createSymbolicLink(w.sessionRoot.resolve("workdir/dangling"), outside.resolve("absent"))
+
+            api.ops.send(RunnerOp.Download("d1", "workdir/dangling", DownloadMode.OVERLAY))
+            assertFalse(api.result().ok, "a download through a dangling link is refused, not reported missing")
+
+            api.ops.send(RunnerOp.Download("d2", "workdir/dangling/child.txt", DownloadMode.OVERLAY))
+            assertFalse(api.result().ok, "a path below a dangling link is refused")
+
+            api.ops.send(RunnerOp.Close("cl", "done"))
+            run.await()
+        }
+
+    @Test
     fun `losing Homer for the heartbeat timeout kills the running command and ends the worker`() =
         live {
             val w = worker(heartbeat = 500.milliseconds)
