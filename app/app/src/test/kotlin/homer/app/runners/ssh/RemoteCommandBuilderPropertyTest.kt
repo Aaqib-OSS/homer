@@ -19,11 +19,9 @@ import kotlin.test.assertEquals
 import kotlin.time.Duration.Companion.minutes
 
 /**
- * [RemoteCommandBuilder]'s POSIX single-quoting is the ssh runner's argv contract (ADR-0032): the
- * built string is executed by the remote login shell, so a token the shell would otherwise
- * re-interpret — a quote, `$`, a backtick, a newline, a glob, a leading `-` — must still reach the
- * command as one argument, byte for byte. The example tests pin the built string; these run the
- * built string under a real `sh -c` and read the argv back out of it (root CLAUDE.md §6).
+ * [RemoteCommandBuilder]'s POSIX single-quoting is the ssh runner's argv contract (ADR-0032): a token the remote shell
+ * would re-interpret (quote, `$`, backtick, newline, glob, leading `-`) must reach the command as one argument, byte
+ * for byte. These run the built string under a real `sh -c` and read the argv back; the example tests pin the string.
  */
 class RemoteCommandBuilderPropertyTest {
     /** Tokens carry no NUL (the one byte argv cannot hold) and every shell metacharacter that matters. */

@@ -39,10 +39,9 @@ object TestFixtures {
     }
 
     /**
-     * The current epoch second, read just after a wall-clock second boundary, so a caller has almost a
-     * full second before `Instant.now().epochSecond` advances. A session `exp` boundary test needs that
-     * margin: production compares `exp` against `Instant.now()` with no clock seam, so a tick between
-     * seeding the session and the request would move the comparison off the boundary the test pins.
+     * The current epoch second, read just after a second boundary so a caller has almost a full second before it
+     * advances: production compares `exp` with `Instant.now()` and has no clock seam, so a tick would move a
+     * boundary test.
      */
     fun atFreshSecond(): Long {
         Thread.sleep(1_000L - Instant.now().nano / 1_000_000L)
@@ -61,10 +60,8 @@ object TestFixtures {
     fun mockLogger(): Logger = mockk(relaxed = true)
 
     /**
-     * Creates a relaxed mock `HookService` whose recording records no hooks. `recording()` hands
-     * back a `HookRecording`, whose hook lookup is a lambda *property*: invoking the lambda a
-     * relaxed mock returns yields a bare `Object`, not a list, so a test that drives a status
-     * write through a mocked hook layer must stub this one method.
+     * A relaxed mock `HookService` whose recording records no hooks. `recording()`'s hook lookup is a lambda property,
+     * which a relaxed mock answers with a bare `Object`, so a test driving a status write must stub it.
      */
     internal fun mockHookService(): HookService =
         mockk(relaxed = true) {
@@ -211,12 +208,12 @@ object TestFixtures {
             try {
                 Files.setPosixFilePermissions(tmp, PosixFilePermissions.fromString("rwxr-xr-x"))
             } catch (_: Exception) {
-                // best effort
+                // a failed cleanup does not fail the test
             }
             try {
                 Files.deleteIfExists(tmp)
             } catch (_: Exception) {
-                // best effort
+                // a failed cleanup does not fail the test
             }
         }
     }

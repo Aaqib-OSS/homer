@@ -21,13 +21,8 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
- * First boot against a fresh database with a kubernetes runner configured.
- *
- * The runner registry reads `server_meta` (the durable per-instance id,
- * ADR-0033) whenever a kubernetes runner is configured, and the `runnerTags`
- * servability check in `AgentsService` resolves that registry during the
- * directory scan. If `migrate()` has not run yet, the read fails with
- * "no such table: server_meta" and the agent is skipped. See ADR-0020.
+ * First boot on a fresh database with a kubernetes runner: `migrate()` must run before the runner registry reads
+ * `server_meta` during the `AgentsService` directory scan, or the agent is skipped. See ADR-0020.
  */
 @ExtendWith(ResetDrainingExtension::class)
 class ServerMetaFirstBootTest {
@@ -76,12 +71,8 @@ class ServerMetaFirstBootTest {
     }
 
     /**
-     * The migration call sits before every other injection and fails fast: a
-     * database that cannot be opened aborts boot instead of starting with
-     * unreadable durable state. A directory path is not a SQLite database, so
-     * opening it fails. The assertion names the concrete driver failure, not
-     * `Throwable`, so a wiring or validation break elsewhere in boot cannot
-     * satisfy it — only the migration-failure path itself. See ADR-0020.
+     * A failed first-boot migration aborts boot instead of starting empty (ADR-0020). A directory is not a SQLite
+     * database; the assertion names the driver failure so no other boot break can satisfy it.
      */
     @Test
     fun `a failed first-boot migration aborts boot instead of starting empty`() {
@@ -105,11 +96,8 @@ class ServerMetaFirstBootTest {
     }
 
     /**
-     * A pinned kubeconfig keeps the test hermetic. The no-kubeconfig fallback
-     * (`Config.defaultClient()`) is not inert: on a host that looks like a pod
-     * — a serviceaccount ca.crt under `/var/run/secrets/...` — it takes the
-     * cluster branch and throws on the absent `KUBERNETES_SERVICE_*` env vars.
-     * Construction still never talks to a cluster, so no server is needed here.
+     * A pinned kubeconfig keeps the test hermetic: the `Config.defaultClient()` fallback throws on the absent
+     * `KUBERNETES_SERVICE_*` env vars on a host that looks like a pod. Construction never talks to a cluster.
      */
     private fun writeKubeconfig(): File =
         File(workspaceDir, "kubeconfig.yaml").apply {

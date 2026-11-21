@@ -46,12 +46,9 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Runner-protocol requests with a valid domain token, and `POST /api/v1/auth/login`,
- * leave the unauthenticated global bucket (ADR-0014 amendment 2026-09-30).
- *
- * Every test asserts the denial path (§12 rule 8): a missing or invalid domain token
- * still rides the drained global bucket and gets `429`, a valid-token flood still
- * hits its own domain's bucket, and login is still bounded by the `login` bucket.
+ * Runner-protocol requests with a valid domain token, and `POST /api/v1/auth/login`, leave the unauthenticated global
+ * bucket (ADR-0014 amendment 2026-09-30). Every test asserts the denial path (ADR-0047 rule 8): a missing or invalid
+ * token still rides the drained global bucket, a token flood hits its own domain's bucket, and login keeps its own.
  */
 @ExtendWith(ResetDrainingExtension::class)
 class GlobalRateLimitRunnerLoginExemptionTest {

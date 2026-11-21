@@ -205,9 +205,8 @@ class DatabaseMigrationTest {
         listOf(
             // ProcessRepository.isArtifactsDirShared
             "SELECT id FROM processes WHERE artifacts_dir = '/w/1' AND id <> 1 LIMIT 1" to "processes_artifacts_dir",
-            // ProcessRepository.isWorkspaceSharedWithActiveRun: same
-            // artifacts_dir equality, narrowed to live rows so a terminal sibling cannot
-            // block cleanup. Still planned on the artifacts_dir index.
+            // ProcessRepository.isWorkspaceSharedWithActiveRun: the artifacts_dir equality narrowed to live rows so a
+            // terminal sibling cannot block cleanup. Still planned on the artifacts_dir index.
             "SELECT id FROM processes WHERE artifacts_dir = '/w/1' AND id <> 1 AND status IN ('CREATED', 'WORKING') LIMIT 1" to
                 "processes_artifacts_dir",
             // ProcessRepository.getWorkspacePurgeableProcesses
@@ -315,11 +314,9 @@ class DatabaseMigrationTest {
         )
 
     /**
-     * The two `cooldown.key`-scoped lookups, each with the index that must serve it. Both run
-     * inside `obtainProcessId`'s write transaction, so a scan of `processes` there would hold the
-     * write lock for the whole table. The failure lookup sorts by `ended_at` and so needs the
-     * three-column index; the started lookup's `ORDER BY id` is served by the two-column index's
-     * own rowid order.
+     * The two `cooldown.key`-scoped lookups, each with the index that must serve it. Both run in
+     * `obtainProcessId`'s write transaction, so a scan of `processes` would hold the write lock. The failure lookup
+     * sorts by `ended_at` and needs the three-column index; the started lookup rides the two-column one's rowid order.
      */
     private val v31LookupShapes =
         listOf(
@@ -382,9 +379,8 @@ class DatabaseMigrationTest {
             DriverManager.getConnection("jdbc:sqlite:$freshPath").use { c ->
                 c.createStatement().use { indexDefinitions(it, v31Indexes.values.flatten()) }
             }
-        // Simulate a v30 DB: the processes row before the key column, with one run already
-        // ended. Built by hand rather than by dropping the column from a fresh table: SQLite
-        // refuses to drop a column a CHECK constraint names.
+        // Simulate a v30 DB: the processes row before the key column, built by hand because SQLite refuses to drop
+        // a column a CHECK constraint names.
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
                 st.execute(
@@ -411,9 +407,8 @@ class DatabaseMigrationTest {
                 assertTrue("cooldown_key" in columnNames(st, "processes"))
                 for ((table, names) in v31Indexes) assertTrue(indexNames(st, table).containsAll(names), "$table: ${indexNames(st, table)}")
                 assertEquals(listOf("FINISHED"), processStatuses(st))
-                // No backfill: a run from before v31 was counted per agent, so it cannot be
-                // attributed to a subject. NULL reads as "belongs to no keyed subject", and a
-                // keyed lookup skips it; a keyless one still counts it.
+                // No backfill: a pre-v31 run was counted per agent, so it cannot be attributed to a subject.
+                // NULL belongs to no keyed subject: a keyed lookup skips it, a keyless one still counts it.
                 assertEquals(listOf(null), cooldownKeys(st))
                 // Re-running the step on an already-upgraded file is a no-op, not a duplicate-column failure.
                 st.execute("PRAGMA user_version = 30")
@@ -524,9 +519,8 @@ class DatabaseMigrationTest {
         svc.close()
     }
 
-    // ProcessRepository.costByTag's candidate query (index-driven form adopted when
-    // ORDER BY id DESC was added for truncation reporting) — mirrors the tag-filter shape
-    // above, not a per-row correlated probe of processes.
+    // ProcessRepository.costByTag's candidate query in its index-driven form (ORDER BY id DESC for truncation
+    // reporting); mirrors the tag-filter shape above, not a per-row correlated probe of processes.
     private fun costByTagCandidateSql(
         prefix: String,
         exclusiveUpperBound: String,
@@ -551,9 +545,8 @@ class DatabaseMigrationTest {
         svc.migrate()
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                // 150k processes. Production-shaped tagging: the queried key (ticket_id) on only a
-                // fifth of runs, plus two noise keys (env, team) on every run — so the range scan is
-                // actually selective against the whole process_tags table, not most of it.
+                // 150k processes, production-shaped: the queried key (ticket_id) on a fifth of runs plus two noise keys
+                // (env, team) on every run, so the range scan is selective against the whole process_tags table.
                 st.execute(
                     "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 150000) " +
                         "INSERT INTO processes (status, agent_name, history, executions, cost_usd) " +
@@ -581,10 +574,9 @@ class DatabaseMigrationTest {
         svc.close()
     }
 
-    // ProcessRepository.tagsForTx (single run) and tagsByProcessTx (one chunk of the
-    // batched page read) both sort explicitly so tag order is a guarantee, not an accident of
-    // scan order. Both must stay served by the process_tags primary key with no sort step.
-    private val aif85TagOrderShapes =
+    // ProcessRepository.tagsForTx and tagsByProcessTx sort explicitly so tag order is a guarantee; both must
+    // stay served by the process_tags primary key with no sort step.
+    private val tagOrderShapes =
         listOf(
             // ProcessRepository.tagsForTx / getTags
             "SELECT tag FROM process_tags WHERE process_id = 12345 ORDER BY tag",
@@ -592,8 +584,8 @@ class DatabaseMigrationTest {
             "SELECT process_id, tag FROM process_tags WHERE process_id IN (12345, 12346, 12347) ORDER BY process_id, tag",
         )
 
-    private fun assertAif85TagOrderPlans(st: java.sql.Statement) {
-        for (sql in aif85TagOrderShapes) {
+    private fun assertTagOrderPlans(st: java.sql.Statement) {
+        for (sql in tagOrderShapes) {
             val p = plan(st, sql)
             assertTrue(p.any { it.startsWith("SEARCH process_tags") && "INDEX" in it }, "'$sql' not index-driven: $p")
             assertTrue(p.none { it.startsWith("USE TEMP B-TREE") }, "'$sql' sorts in a temp b-tree: $p")
@@ -615,12 +607,12 @@ class DatabaseMigrationTest {
                         "INSERT INTO process_tags (process_id, tag) " +
                         "SELECT i, 'k' || (i % 7) || ':v' || j FROM n, (SELECT 0 AS j UNION SELECT 1 UNION SELECT 2)",
                 )
-                assertAif85TagOrderPlans(st)
+                assertTagOrderPlans(st)
             }
         }
         svc.optimize()
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
-            c.createStatement().use { st -> assertAif85TagOrderPlans(st) }
+            c.createStatement().use { st -> assertTagOrderPlans(st) }
         }
         svc.close()
     }
@@ -879,10 +871,8 @@ class DatabaseMigrationTest {
         svc.close()
     }
 
-    // watchesByContinuationTx's batched read stays on continuation_watches_continuation_id
-    // (since schema v5; v26 first pinned a plan on it) with no sort: its entries for one
-    // continuation_id are stored in rowid order.
-    // Plans the statement it actually sends for a page of three JOIN continuations.
+    // watchesByContinuationTx's batched read stays on continuation_watches_continuation_id with no sort: its entries
+    // for one continuation_id are stored in rowid order. Plans a page of three JOIN continuations as sent.
     private suspend fun assertContinuationWatchesBatchPlan(
         svc: DatabaseService,
         st: java.sql.Statement,
@@ -939,10 +929,9 @@ class DatabaseMigrationTest {
     }
 
     /**
-     * The index a member statement must be served by: the question_id index when its WHERE
-     * constrains the member question (a member→group lookup), the (dispatch_id, position)
-     * primary key when it constrains the dispatch (one group's ordered members). Read off the
-     * WHERE clause, not the whole statement: a join's ON clause names the other column too.
+     * The index a member statement must be served by: the question_id index when its WHERE constrains the member
+     * question, the (dispatch_id, position) primary key when it constrains the dispatch. Read off the WHERE clause,
+     * not the whole statement: a join's ON clause names the other column too.
      */
     private fun memberIndexFor(sql: String): String =
         if ("dispatch_group_questions.dispatch_id" in sql.substringAfter(" WHERE ")) {
@@ -952,14 +941,9 @@ class DatabaseMigrationTest {
         }
 
     /**
-     * dispatch_group_questions (schema v31) carries the two shapes every answer and the group's
-     * fire gate send. A member question id resolves to its group on
-     * `dispatch_group_questions_question_id` — [DispatchRepository.findByQuestionId]'s join and
-     * [DispatchRepository.findByQuestionIds]' batched member read — and one dispatch's ordered
-     * members are read on the (dispatch_id, position) primary key, which is also the order, so no
-     * sort step: the all-answered read behind the fire gate ([DispatchRepository.groupMembers])
-     * and the boot re-fire ([DispatchRepository.listPendingAnswered]). Plans the statements the
-     * repository actually sends. See ADR-0109.
+     * dispatch_group_questions (ADR-0109): a member question id resolves to its group on the question_id index,
+     * and one dispatch's ordered members are read on the (dispatch_id, position) primary key with no sort step.
+     * Plans the statements [DispatchRepository] sends.
      */
     private suspend fun assertDispatchGroupMemberPlans(
         svc: DatabaseService,
@@ -1180,9 +1164,8 @@ class DatabaseMigrationTest {
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
                 val rows = "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 150000) "
-                // Production-shaped: a third of the continuations belong to no LangGraph thread,
-                // the rest spread over 5000 threads of about 20 continuations each, owned by a
-                // handful of principals, with some unowned.
+                // Production-shaped: a third of the continuations belong to no LangGraph thread, the rest spread
+                // over 5000 threads of about 20 each, owned by a handful of principals, some unowned.
                 st.execute(
                     rows +
                         "INSERT INTO continuations (watched_process_id, status, agent_name, resume_param, params, " +
@@ -1276,10 +1259,8 @@ class DatabaseMigrationTest {
         val fresh = DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c -> c.createStatement().use { indexDefinitions(it, names) } }
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
-                // The index alone: SchemaUtils.create only indexes a table it creates, so on a
-                // database whose member table already exists the v32 step's raw DDL is the only
-                // thing that can bring the index back — which is what makes this a check on the
-                // migration's own SQL against the Tables.kt declaration.
+                // The index alone: SchemaUtils.create only indexes a table it creates, so for an existing member
+                // table only the v32 step's raw DDL can bring it back; this checks that SQL against Tables.kt.
                 st.execute("DROP INDEX dispatch_group_questions_question_id")
                 st.execute("PRAGMA user_version = 30")
             }
@@ -1360,13 +1341,8 @@ class DatabaseMigrationTest {
             DriverManager.getConnection("jdbc:sqlite:$freshPath").use { c ->
                 c.createStatement().use { indexDefinitions(it, names) }
             }
-        // Simulate a database the cooldown release stamped: v31 with the cooldown key column
-        // and its two indexes, but no pending_hooks — that release folded both features into
-        // one v31 step, so its migrate() skipped everything at user_version = 31 and only
-        // `SchemaUtils.create` above can add the missing table. Regression coverage for the
-        // fold: the hook queue and its three indexes must arrive from the schema bootstrap
-        // alone, or a production database upgraded through the cooldown release never gets
-        // them and every hook query fails.
+        // A cooldown-release v31 database lacks pending_hooks, and migrate() skips everything at user_version 31:
+        // the hook queue and its three indexes must arrive from the SchemaUtils.create bootstrap alone.
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
                 st.execute(
@@ -1431,11 +1407,8 @@ class DatabaseMigrationTest {
         @TempDir dir: Path,
     ) = runTest {
         val dbPath = dir.resolve("v31-dispatches.db").toString()
-        // A database the cooldown release stamped: v31, with a real dispatches table in its
-        // pre-v32 shape (no kind column). SchemaUtils.create never ALTERs an existing table,
-        // so the v32 step's ALTER is the only thing that can add the column — folding grouped
-        // dispatch into that release's v31 would leave such a database without it for good,
-        // and every dispatch query would fail with "no such column".
+        // A cooldown-release v31 database has a dispatches table without the kind column; SchemaUtils.create never
+        // ALTERs it, so only the v32 step's ALTER can add the column.
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
                 st.execute(oldShapeDdl(Dispatches, setOf("kind")))
@@ -1642,9 +1615,8 @@ class DatabaseMigrationTest {
         @TempDir dir: Path,
     ) = runTest {
         val dbPath = dir.resolve("v28.db").toString()
-        // Simulate a v28 DB: the processes row as it was before the two columns. Built by hand
-        // rather than by dropping them from a fresh table: Exposed emits a CHECK constraint per
-        // signed-int column, and SQLite refuses to drop a column one names.
+        // Simulate a v28 DB: the processes row before the two columns, built by hand because Exposed emits a CHECK
+        // per signed-int column and SQLite refuses to drop a column one names.
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
                 st.execute(
@@ -1693,12 +1665,8 @@ class DatabaseMigrationTest {
         @TempDir dir: Path,
     ) = runTest {
         val dbPath = dir.resolve("v29.db").toString()
-        // A database the run_messages release (schema v29) already stamped: it has the
-        // run_messages table and its index, but NOT the two failure-reason columns — the
-        // release folded both features into v29, so its migrate() skipped everything at
-        // user_version = 29 and SchemaUtils.create never ALTERed the existing processes
-        // table. Regression coverage for the split: the columns must arrive on their own
-        // version, or such a database never gets them and every process query fails.
+        // A run_messages-release v29 database lacks the two failure-reason columns: migrate() skips everything at
+        // user_version 29 and SchemaUtils.create never ALTERs processes, so they must arrive on their own version.
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
                 st.execute(
@@ -1862,12 +1830,8 @@ class DatabaseMigrationTest {
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
                 assertEquals(35, userVersion(st))
-                // End-to-end chain assertion, not just this hop's column. `SchemaUtils.create`
-                // never ALTERs an existing table, so every column below reached this v1
-                // `processes` table through a migration block. Comparing against the model's
-                // own column list is what makes a wrong guard fail here: a block written as
-                // `current in 12 until 13` instead of `1 until 13` still passes its own
-                // v12 test, and only this one notices that v1 never got the column.
+                // End-to-end chain: SchemaUtils.create never ALTERs an existing table, so every column reached this v1
+                // table via a migration block. A wrong guard (`12 until 13` for `1 until 13`) fails only here.
                 val expected = Processes.columns.map { it.name }.toSet()
                 val actual = columnNames(st, "processes").toSet()
                 assertEquals(
@@ -1891,9 +1855,8 @@ class DatabaseMigrationTest {
         @TempDir dir: Path,
     ) = runTest {
         val dbPath = dir.resolve("v1.db").toString()
-        // Simulate a v1 DB: questions table without dispatch_bound, processes table without
-        // owner (processes has existed since v1 — regression coverage for the guard's lower
-        // bound, which must include v1/v2, not just v3+ like the sibling blocks), user_version=1.
+        // Simulate a v1 DB (user_version=1): questions without dispatch_bound, processes without owner; the guard's
+        // lower bound must include v1/v2, not just v3+ like the sibling blocks.
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
                 st.execute(
@@ -1934,12 +1897,8 @@ class DatabaseMigrationTest {
                 assertTrue("continuations" in tables)
                 assertTrue("continuation_watches" in tables)
                 assertTrue("result_tokens" in tables)
-                // End-to-end chain assertion, not just this hop's column. `SchemaUtils.create`
-                // never ALTERs an existing table, so every column below reached this v1
-                // `processes` table through a migration block. Comparing against the model's
-                // own column list is what makes a wrong guard fail here: a block written as
-                // `current in 12 until 13` instead of `1 until 13` still passes its own
-                // v12 test, and only this one notices that v1 never got the column.
+                // End-to-end chain: SchemaUtils.create never ALTERs an existing table, so every column reached this v1
+                // table via a migration block. A wrong guard (`12 until 13` for `1 until 13`) fails only here.
                 val expected = Processes.columns.map { it.name }.toSet()
                 val actual = columnNames(st, "processes").toSet()
                 assertEquals(
@@ -2581,10 +2540,8 @@ class DatabaseMigrationTest {
                         Triple(it.getInt(1), it.getString(2), it.getString(3))
                     }
                 assertEquals(1, surviving)
-                // NULL: a row registered before the column falls back to the envName-only
-                // check redactStoredParams already had — the residual this migration accepts
-                // for rows it cannot retroactively snapshot. The pre-existing envName snapshot
-                // survives the migration untouched.
+                // NULL: a row registered before the column falls back to the envName-only check redactStoredParams had;
+                // the pre-existing envName snapshot survives untouched.
                 assertEquals(null, paramNames)
                 assertEquals("[\"AUTH_TOKEN\"]", envNames)
             }
@@ -2634,9 +2591,8 @@ class DatabaseMigrationTest {
                             Triple(it.getInt(1), it.getString(2), it.getString(3))
                         }
                 assertEquals(1, surviving)
-                // NULL: retain_artifacts IS NULL keeps doubling as "nothing retained, already
-                // swept" and workspace_purged_at as "retained row swept" — a migrated row must
-                // read as neither, its pre-upgrade behaviour, not a fabricated default.
+                // NULL: retain_artifacts IS NULL means "nothing retained, already swept" and workspace_purged_at
+                // "retained row swept"; a migrated row must read as neither, not as a fabricated default.
                 assertEquals(null, retainArtifacts)
                 assertEquals(null, workspacePurgedAt)
             }
@@ -2708,9 +2664,8 @@ class DatabaseMigrationTest {
         @TempDir dir: Path,
     ) = runTest {
         val dbPath = dir.resolve("v21.db").toString()
-        // Simulate a v21 DB: processes present without root_process_id (ADR-0058). Row 1 is
-        // a root (no parent), row 2 is a child of row 1 — so a backfill would have had
-        // something to resolve for row 2, and the test pins that it deliberately did not.
+        // Simulate a v21 DB (ADR-0058): processes without root_process_id; row 2 is a child of root row 1, so a
+        // backfill would have had something to resolve for it, and the test pins that it did not.
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
                 st.execute(
@@ -2749,9 +2704,8 @@ class DatabaseMigrationTest {
                         it.getInt(1) to it.getString(2)
                     }
                 assertEquals(2, surviving)
-                // Left NULL rather than backfilled: a pre-v22 parent row with no root of its
-                // own is indistinguishable from a root, and an evicted/purged parent could not
-                // be resolved at all — so NULL reads as "flow root unknown", which is the truth.
+                // Left NULL, not backfilled (ADR-0058): a pre-v22 parent with no root of its own looks like a root,
+                // and an evicted parent cannot be resolved, so NULL reads as "flow root unknown".
                 assertEquals(null, maxRoot)
             }
         }
@@ -2969,13 +2923,9 @@ class DatabaseMigrationTest {
     }
 
     /**
-     * One version guard of `SchemaMigrations` and the step it runs: `current in [lower] until [until]`.
-     * [added] are the columns the step adds — the old shape of its table is the model's own column
-     * list minus them — and [fragment] is a piece of the step's SQL that no other step issues.
-     * [oldDdl] overrides that old shape where the model's columns cannot express it (the v25 move).
-     * [siblings] are the other legs of a multi-table block, seeded in their own pre-step shape and
-     * asserted like [fragment]: `SchemaUtils.create` builds a table the seed omits complete, so a leg
-     * left unseeded never runs and a dropped loop entry fails no test.
+     * One version guard of `SchemaMigrations`: `current in [lower] until [until]`. [added] are the columns the step
+     * adds, [fragment] a piece of its SQL no other step issues, [oldDdl] the old shape where the model cannot say it,
+     * [siblings] the other legs of a multi-table block, seeded pre-step (an unseeded leg never runs).
      */
     private class MigrationStep(
         val name: String,
@@ -3182,10 +3132,8 @@ class DatabaseMigrationTest {
             ")"
 
     /**
-     * A database stamped [current] whose [step]'s table is seeded in [ddl] — the shape that version
-     * had — and whose sibling legs' tables are seeded in [siblingDdl], migrated through the real
-     * entry point with the writer handle's raw SQL recorded. One file per case: an upgrade is
-     * one-way, so the cases cannot share a database.
+     * A database stamped [current] whose [step]'s table is seeded in [ddl] and whose sibling legs are seeded in
+     * [siblingDdl], migrated through the real entry point with the writer's raw SQL recorded. One file per case.
      */
     private fun migrateSeeded(
         dir: Path,
@@ -3211,12 +3159,9 @@ class DatabaseMigrationTest {
     }
 
     /**
-     * Every guard is a range check on `PRAGMA user_version`, so it can be wrong at either end: the
-     * step must run at the guard's own lower bound and at the last version it still covers, exactly
-     * once, and must not run at its upper bound — the version whose databases already have its
-     * effect. Asserted on the SQL the writer connection runs, because a repeated `ALTER` and a
-     * skipped one both leave a fresh database looking the same. A multi-table block is asserted leg
-     * by leg, each leg's table seeded in its own old shape.
+     * Every guard is a range check on `PRAGMA user_version`, so it can be wrong at either end: the step must run at the
+     * guard's lower bound and its last covered version, exactly once, and not at its upper bound. Asserted on the
+     * recorded SQL, because a repeated `ALTER` and a skipped one leave a fresh database alike; legs one by one.
      */
     @Test
     fun `every version guard runs its step once inside its span and not at its upper bound`(
@@ -3251,11 +3196,9 @@ class DatabaseMigrationTest {
     }
 
     /**
-     * A database that already carries the columns a backfilling step adds — what a file upgraded by
-     * a newer release and then opened under an older stamp looks like — but whose `user_version`
-     * still names a version below those steps. The guard is on the version, the backfill on
-     * `addColumnIfMissing`'s answer: a step that runs here rewrites committed data the upgrade
-     * deliberately left alone, so both must stay put.
+     * A database that already carries the columns a backfilling step adds, but whose `user_version` is below those
+     * steps (a newer release's file opened under an older stamp). Neither the guard nor `addColumnIfMissing` may let
+     * a backfill rewrite the committed data.
      */
     @Test
     fun `a database that already has the column re-runs no backfill`(
@@ -3285,9 +3228,8 @@ class DatabaseMigrationTest {
                         Triple(it.getInt(1), it.getString(2), it.getString(3))
                     }
                 assertEquals(1, surviving)
-                // v13 and v14 are still in range for this stamp, but the columns were already
-                // there, so neither backfill may run: the history holds a start (100) and a
-                // terminal time (200) a re-run would write over the NULLs left here.
+                // v13 and v14 are in range for this stamp but the columns exist, so neither backfill may run: a re-run
+                // would write the history's start (100) and terminal time (200) over the NULLs left here.
                 assertEquals(null, createdAt)
                 assertEquals(null, endedAt)
             }

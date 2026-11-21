@@ -68,9 +68,8 @@ class ResponseMappingTest {
 
     @Test
     fun `toResponse strips credentials from the trace URL it returns`() {
-        // The field goes to every caller who can see the process, and on to the browser
-        // as an external link. An operator credential in serverUrl must not ride along
-        // — the same policy the log sink already applied.
+        // The field reaches every caller who can see the process and the browser as a link; an operator
+        // credential in serverUrl must not ride along, as the log sink already guarantees.
         val response =
             processWithTrace("0af7651916cd43dd8448eb211c80319c").toResponse(
                 agent = null,

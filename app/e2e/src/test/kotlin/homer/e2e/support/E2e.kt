@@ -11,15 +11,15 @@ import io.ktor.util.appendIfNameAbsent
 import kotlinx.serialization.json.Json
 
 /**
- * Shared configuration for the black-box suite: base URL and token come from
- * the environment (set by docker-compose.e2e.yml or a local shell), and two
- * lazily-built clients — one sending the operator bearer token by default,
- * one sending no credentials. Clients live for the whole JVM; the test JVM
- * exit closes them.
+ * Shared configuration for the black-box suite: base URL and token come from the environment, and two lazy
+ * clients, one with the operator bearer token and one without credentials. Both live for the whole JVM.
  */
 object E2e {
     val baseUrl: String = System.getenv("E2E_BASE_URL").orEmpty().trimEnd('/')
     val token: String = System.getenv("E2E_TOKEN").orEmpty()
+
+    /** Set by the E2E runner image: there a missing [baseUrl] fails the suite instead of skipping it. */
+    val required: Boolean = System.getenv("E2E_REQUIRED").orEmpty().toBoolean()
 
     val json =
         Json {

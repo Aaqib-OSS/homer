@@ -163,9 +163,8 @@ class RunRoutesTest : ApiRouteTestBase() {
     @Test
     fun `POST retry answers 503 while the drain is running`() =
         testApplication {
-            // Retry takes the gate in `respondStartedUnderRootSpan`, not in `AgentRunStarter`,
-            // so the drain refusal needs its own HTTP proof on this call site — the README row
-            // promises the 503. See ADR-0102.
+            // Retry takes the gate in `respondStartedUnderRootSpan`, not in `AgentRunStarter`, so the drain refusal
+            // needs its own HTTP proof here: the README row promises the 503 (ADR-0102).
             val finished =
                 ProcessInfo(id = 42, status = ProcessStatus.FINISHED, agentName = "deploy", inputParams = emptyMap())
             val executor = mockk<ProcessExecutor>(relaxed = true)

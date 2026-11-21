@@ -9,17 +9,9 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * Nested-dispatch authority (ADR-0039): a `RunAgent` hop `A -> B` is
- * authorized iff the root principal holds `run` on B, re-resolved live, OR
- * `server.agentGrants[A]` delegates B. `nested-token` (fixtures/config/
- * config.json) holds `run`+`read` on `parent` and `orphan-parent` only —
- * neither grants it `echo` directly, so both fixtures' hops depend entirely
- * on `server.agentGrants`, which delegates only `parent -> echo`.
- *
- * The `/api/v1/callback/runs`/`/joins` unauthorized-hop -> `404` path is
- * already covered by Task 5's integration tests
- * (`CallbackRoutesTest`); wiring a callback token through this black-box
- * suite is out of scope here.
+ * Nested-dispatch authority (ADR-0039): a `RunAgent` hop `A -> B` needs `run` on B or an `agentGrants[A]` entry.
+ * `nested-token` holds no `echo` grant, so both fixtures' hops depend on `agentGrants` (`parent -> echo` only).
+ * The callback routes' unauthorized-hop `404` is `CallbackRoutesTest`'s.
  */
 class NestedAuthorityTest : E2eTestBase() {
     private val nestedAuth = "Bearer nested-token"

@@ -158,10 +158,8 @@ class ProcessGraphInspectRunnerTest {
             )
             val before = inspectTempFiles()
             val pidFile = tempDir.resolve("grandchild.pid")
-            // The middle shell backgrounds a grandchild that starts flooding after a
-            // short delay, then exits so the grandchild reparents away from the direct
-            // process (escaping descendants()); the outer script stays alive so only the
-            // group kill can reach the reparented writer.
+            // The grandchild reparents away from the direct process (escaping descendants()); the outer
+            // script stays alive, so only the group kill can reach the reparented writer.
             val python =
                 executable(
                     "sh -c 'sh -c \"sleep 1; yes grandchild-flood\" & echo \$! > \"$pidFile\"' ; sleep 60",
@@ -186,12 +184,8 @@ class ProcessGraphInspectRunnerTest {
                 "process-group reaping requires setsid (absent on this host)",
             )
             val pidFile = tempDir.resolve("late-grandchild.pid")
-            // The leader backgrounds a grandchild that ignores SIGPIPE and floods after a
-            // delay, then exits 0 itself (a real `homer_langgraph` leader lives at least
-            // its interpreter startup, so the pgid is readable while it is alive). Once
-            // the leader is gone its /proc entry — the only source of the pgid — is gone
-            // too; only a pgid captured while it was alive can reap the reparented writer,
-            // which would otherwise spin on the closed pipe forever.
+            // The leader exits 0 once its SIGPIPE-ignoring grandchild floods; its /proc entry, the only
+            // pgid source, goes with it, so only a pgid captured while alive can reap the writer.
             val python =
                 executable(
                     "sh -c 'trap \"\" PIPE; sleep 2; while :; do echo late-grandchild-flood; done' & " +
@@ -216,10 +210,8 @@ class ProcessGraphInspectRunnerTest {
             )
             mockkObject(ProcessGroupSupport)
             try {
-                // Keep the pgid capture in its retry loop (every read comes back null
-                // until this stub gives up) so the cancellation below lands mid-capture
-                // deterministically; later reads call the real thing, so the reap can
-                // still group-kill.
+                // Null reads keep the pgid capture retrying so the cancellation lands mid-capture;
+                // later reads call the real thing, so the reap can still group-kill.
                 var reads = 0
                 every { ProcessGroupSupport.ownProcessGroupId(any()) } answers {
                     // Far more nulls than the capture ever attempts (20 x 10 ms).
@@ -357,11 +349,9 @@ class ProcessGraphInspectRunnerTest {
         }
 
     /**
-     * Asserts [stream] was closed by the time the outcome is decided: reading it
-     * throws `IOException("Stream closed")` — a merely drained pipe would return
-     * -1 (EOF) instead, and an open one would block. On OpenJDK the process
-     * reaper may have closed the stream first, so this proves the caller-closes
-     * contract is honoured, not which close won. CWE-772.
+     * Asserts [stream] was closed: reading throws `IOException("Stream closed")`, where a drained
+     * pipe returns -1 and an open one blocks. The JDK reaper may have closed it first, so this
+     * proves the caller-closes contract, not which close won. CWE-772.
      */
     private fun assertStreamClosed(stream: InputStream) {
         val thrown = assertFailsWith<IOException> { stream.read() }
@@ -369,12 +359,8 @@ class ProcessGraphInspectRunnerTest {
     }
 
     /**
-     * Asserts [process]'s stdin write end was explicitly closed by the runner.
-     * Tracked on the wrapper the `startProcess` seam handed back, so this fails
-     * when the close in `runBoundedGraphSubprocess` is reverted; a post-exit
-     * write to the pipe cannot discriminate — the dead child's read end is gone
-     * and the JDK's reaper closes the write end, so the write throws either way.
-     * The write below only confirms the close reached the real pipe.
+     * Asserts the runner explicitly closed [process]'s stdin on the `startProcess` seam's wrapper, so
+     * reverting the close in `runBoundedGraphSubprocess` fails; a post-exit write throws either way.
      * CWE-772.
      */
     private fun assertStdinClosed(process: CloseTrackingProcess) {
@@ -390,7 +376,7 @@ class ProcessGraphInspectRunnerTest {
         return script
     }
 
-    /** Names of the legacy temp files the runner used to leave in `java.io.tmpdir`. */
+    /** Names of the `homer-lg-inspect*` files in `java.io.tmpdir`. */
     private fun inspectTempFiles(): Set<String> =
         Files.list(Path.of(System.getProperty("java.io.tmpdir"))).use { stream ->
             stream
@@ -402,12 +388,9 @@ class ProcessGraphInspectRunnerTest {
 }
 
 /**
- * A `java.lang.Process` that reports whether the child's stdin write end was
- * closed **on the wrapper** — i.e. by `runBoundedGraphSubprocess` itself, which
- * owns (and closes) the streams of whatever the `startProcess` seam hands back.
- * The JDK's process-completion handler closes the *real* process's streams, so
- * it can never trip [stdinClosed]: this is what makes the stdin half of the
- * stream-closing (CWE-772) tests discriminating. Everything else delegates.
+ * A `java.lang.Process` that reports whether stdin was closed **on the wrapper**, i.e. by
+ * `runBoundedGraphSubprocess` itself. The JDK's completion handler closes only the real process's
+ * streams, so it never trips [stdinClosed] (CWE-772). Everything else delegates.
  */
 private class CloseTrackingProcess(
     real: java.lang.Process,

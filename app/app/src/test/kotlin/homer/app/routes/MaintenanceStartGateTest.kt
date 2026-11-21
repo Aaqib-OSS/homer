@@ -44,14 +44,9 @@ import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 
 /**
- * The maintenance gate on the three start paths that build their process directly instead of going
- * through `AgentRunStarter`: `POST /processes/{id}/retry`, `POST /processes/{id}/resume` and
- * `POST /agents/{agentName}/debug`. Every start path has to queue while the mode is on (ADR-0092,
- * root §12 rules 4–5), so each of the three takes the gate itself.
- *
- * The gate is the **real** service with the wait at its allowed minimum: a start arriving while the
- * mode is on parks in its queue, is shed when the wait runs out, and creates no run — which is the
- * whole point of the window. Once the mode goes off the same request starts a run.
+ * The maintenance gate on the start paths that build their process directly, not via `AgentRunStarter`: retry,
+ * resume and debug each take the gate themselves (ADR-0092, ADR-0047 rules 4-5). The gate is the real service
+ * at the minimum wait: a start while the mode is on is shed and creates no run; once off, it starts one.
  */
 class MaintenanceStartGateTest {
     private val debugBody = """{"commandIndex":0,"env":{},"queryParams":{},"headers":{}}"""
@@ -300,7 +295,7 @@ class MaintenanceStartGateTest {
                 assertEquals(
                     absent.bodyAsText(),
                     denied.bodyAsText(),
-                    "a hidden parent must be indistinguishable from an absent one (§12 rule 3)",
+                    "a hidden parent must be indistinguishable from an absent one (ADR-0047 rule 3)",
                 )
                 // The refusal lands before the gate and before any liveness read: naming a
                 // parent is not a way to probe a row the caller cannot see.

@@ -28,10 +28,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Black-box coverage of the admin maintenance mode against the production server: the toggle
- * round-trip, a denial indistinguishable from not-found, the flag on `/api/v1/health`, and a
- * start that arrives during the window, waits out `queueWaitSec` and answers `503` without ever
- * creating a run. See ADR-0092.
+ * Admin maintenance mode (ADR-0092): the toggle round-trip, a not-found-shaped denial, the `/api/v1/health` flag,
+ * and a start during the window that waits out `queueWaitSec` and answers `503` without creating a run.
  */
 class MaintenanceTest : E2eTestBase() {
     private suspend fun setMode(enabled: Boolean): HttpResponse =
@@ -128,9 +126,7 @@ class MaintenanceTest : E2eTestBase() {
     @Test
     fun `a run that starts another run finishes through the window instead of parking`() =
         runBlocking {
-            // `maintenance-parent` sleeps, then hops to `echo`. The window is turned on while it
-            // is still WORKING, so the hop is a start of already-admitted work: it must not park,
-            // the parent must reach FINISHED, and nothing may be left in the queue. See ADR-0092.
+            // The window opens while the parent is WORKING: its hop is admitted work and must not park (ADR-0092).
             val parentId = HomerApi.startRun("maintenance-parent")
             Awaits.awaitStatus(parentId, setOf("WORKING"))
 

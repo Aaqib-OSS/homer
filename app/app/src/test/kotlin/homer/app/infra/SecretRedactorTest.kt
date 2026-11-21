@@ -55,10 +55,8 @@ class SecretRedactorTest {
 
     @Test
     fun `masks the bare host credential inside a composite env value`() {
-        // The gap this closes: `HEADER: "Bearer @SYSENV:REPO_TOKEN"` resolves to
-        // `Bearer <token>`, so only that whole string was a needle. Output holding
-        // just the token — a script that stripped the prefix, a tool echoing the
-        // credential alone — matched nothing and reached telemetry in the clear.
+        // `Bearer @SYSENV:REPO_TOKEN` resolves to `Bearer <token>`; output holding just the token must be
+        // masked too, not only the whole composite string.
         val token = "tok-ABCDEF123456"
         val r =
             SecretRedactor.from(
@@ -74,9 +72,8 @@ class SecretRedactorTest {
 
     @Test
     fun `minNeedleLength excludes short needles from the value screen`() {
-        // ArtifactNameResolver's use case: a short @SYSENV-sourced global ("0", "1",
-        // "prod") must not become a needle, or it would match as a substring of nearly
-        // any rendered stem and hard-fail every command.
+        // A short @SYSENV-sourced global ("0", "prod") must not become a needle, or it would match inside nearly
+        // any rendered stem and hard-fail every command (ArtifactNameResolver's use).
         val r =
             SecretRedactor.from(
                 env = mapOf("SHORT" to "0", "LONG" to "s3cr3t-value-long-enough"),

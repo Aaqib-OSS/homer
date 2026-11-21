@@ -106,9 +106,8 @@ class HookServiceTest {
     @Test
     fun `a transition that shed rows over the pending cap logs one line per shed entry`() =
         runTest {
-            // The drop is the only outcome with no row to look at: without this line an operator
-            // sees a hook that never fired and no reason for it. The cap is named, so the fix is
-            // the config key rather than a code hunt. See ADR-0107.
+            // A shed hook leaves no row, so the log line is the only reason an operator sees; it names
+            // the cap's config key. ADR-0107.
             val logger = TestFixtures.mockLogger()
 
             serviceOver(logger, config = HookConfig(maxPending = 200))
@@ -156,9 +155,8 @@ class HookServiceTest {
     @Test
     fun `a cancelling fire propagates out of onRowsRecorded and leaves the rows behind it`() =
         runTest {
-            // fireSafely contains every failure but a cancellation: a shutdown in flight must
-            // not be swallowed into a log line, and the row stays PENDING for the boot replay.
-            // ADR-0023, ADR-0107.
+            // A cancellation is a shutdown in flight: it must not become a log line, and the row stays
+            // PENDING for the boot replay. ADR-0023, ADR-0107.
             every { agents.agents } returns emptyMap()
             coEvery { repo.claim(5) } throws CancellationException("shutting down")
 
@@ -172,8 +170,7 @@ class HookServiceTest {
     @Test
     fun `a fire that throws never reaches the status write and leaves the other rows to fire`() =
         runTest {
-            // The row writes around a fire (the claim CAS, a settle) can throw; the transition
-            // this runs after has already committed, so nothing may reach it — and the rows
+            // The transition already committed, so a throwing row write must not reach it, and the rows
             // behind the failing one must still be attempted. ADR-0023.
             every { agents.agents } returns emptyMap()
             coEvery { repo.get(any()) } answers { hook(firstArg()) }

@@ -51,10 +51,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Retry builds its own root span outside AgentRunStarter, so it has to stamp
- * the Langfuse trace name and the `traceTag` subject tags itself — otherwise a
- * retried run is invisible to the tag/name filters normal runs support.
- * Resume and debug share the same literal pattern in RunHandlers.kt.
+ * Retry builds its own root span outside AgentRunStarter, so it stamps the Langfuse trace name and `traceTag`
+ * subject tags itself, else a retried run is invisible to the tag/name filters. Resume and debug share the
+ * pattern in RunHandlers.kt.
  */
 class RetryTraceAttributesTest {
     @Test
@@ -115,11 +114,8 @@ class RetryTraceAttributesTest {
     @Test
     fun `retry of a muted agent produces no exported span`() =
         testApplication {
-            // The bypass this file documents cuts both ways: because retry builds its own
-            // root span, `telemetry.export = OFF` used to apply to normal runs only, and a
-            // retry of a muted agent still exported a full trace. Now it goes through the
-            // same startAgentRootSpan helper, so the real tracer is never asked for a span
-            // and the mock below stays untouched.
+            // Retry builds its own root span, so `telemetry.export = OFF` must apply to it too: it goes through
+            // startAgentRootSpan, the real tracer is never asked for a span and the mock below stays untouched.
             val agent =
                 AgentFixtures
                     .simpleAgent(name = "triage-decision")
@@ -171,11 +167,8 @@ class RetryTraceAttributesTest {
     @Test
     fun `retry does not tag a value that was secret for the source run`() =
         testApplication {
-            // Drift: MR_IID was `secret: true` when process 42 ran, has since been flipped
-            // to `secret: false` and added to traceTags. Agent load only checks the CURRENT
-            // flags, so nothing upstream stops it — the stored historical value would be
-            // exported to Langfuse as a cleartext tag. The source run's snapshot is what
-            // says otherwise. See ADR-0052.
+            // Drift: MR_IID was `secret: true` when process 42 ran and is now `secret: false` and in traceTags; agent
+            // load checks only current flags, so the source run's snapshot must keep it out of Langfuse (ADR-0052).
             val agent =
                 AgentFixtures
                     .simpleAgent(name = "triage-decision")
@@ -387,9 +380,8 @@ class RetryTraceAttributesTest {
     @Test
     fun `retry keeps the source run's root on the new row and on its root span`() =
         testApplication {
-            // A replay stays in the flow the source run belonged to (ADR-0058): the new row
-            // carries the source's root, not the source's own id — otherwise every retry
-            // would start a new flow and the flow view would fragment on each replay.
+            // A replay stays in the source run's flow (ADR-0058): the new row carries the source's root, not its id,
+            // else every retry would start a new flow.
             val agent = AgentFixtures.simpleAgent(name = "triage-decision")
             val sourceProcess =
                 ProcessInfo(
@@ -506,11 +498,8 @@ class RetryTraceAttributesTest {
     @Test
     fun `retry of a run whose flow root the caller cannot see is stamped rootless`() =
         testApplication {
-            // [information_disclosure / CWE-200] canRetry admits a caller who merely
-            // holds RUN on the source run's agent — the flow root above it may belong
-            // to somebody else. Stamping the source's root would publish that foreign
-            // id through the new row, its HMR_ROOT_PROCESS_ID env and its span, the
-            // disclosure the status responses already deny.
+            // CWE-200: canRetry admits a caller holding only RUN on the source's agent, whose flow root may belong to
+            // somebody else; stamping it would publish that id through the new row, its env and its span.
             val agent = AgentFixtures.simpleAgent(name = "triage-decision")
             val sourceProcess =
                 ProcessInfo(
@@ -921,9 +910,8 @@ class RetryTraceAttributesTest {
     @Test
     fun `a command step started inside the retried run inherits the name and tags`() =
         testApplication {
-            // The acceptance criterion the mock-based call-order tests cannot reach: a span
-            // started inside `execute` picks both attributes up at its own start, which is what
-            // puts a command step or an LLM generation inside a Langfuse v4 name/tags filter.
+            // A span started inside `execute` picks both attributes up at its start, which the mock-based call-order
+            // tests cannot reach and which puts a step or LLM generation inside a Langfuse v4 name/tags filter.
             val exporter = CollectingExporter()
             val telemetry = realTelemetry(exporter)
             val sourceProcess =
@@ -968,9 +956,8 @@ class RetryTraceAttributesTest {
     @Test
     fun `a value secret for the source run stays off the tags of the retried run and its spans`() =
         testApplication {
-            // Drift: MR_IID was secret when process 42 ran and has since been flipped to
-            // `secret: false` and added to tags.fromInputs. The union with the source run's
-            // snapshot has to hold on every span the replay exports, not only on the root.
+            // Drift: MR_IID was secret when process 42 ran and is now `secret: false` in tags.fromInputs; the union
+            // with the source snapshot must hold on every exported span, not only the root.
             val exporter = CollectingExporter()
             val telemetry = realTelemetry(exporter)
             val sourceProcess =

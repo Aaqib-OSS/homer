@@ -59,10 +59,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /**
- * Pins the exact wire form of every 400 a route answers through StatusPages:
- * status, `Content-Type` and the byte-exact pretty-printed `ErrorResponse` body
- * (or no body at all on the SSE stream endpoints). The `/status/all` query
- * parameters are pinned in [StatusAllValidationTest].
+ * Pins the exact wire form of every 400 a route answers through StatusPages: status, `Content-Type` and the
+ * byte-exact `ErrorResponse` body (none on the SSE stream endpoints). `/status/all` is in [StatusAllValidationTest].
  */
 class BadRequestResponsesTest {
     private suspend fun assertBadRequest(

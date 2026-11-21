@@ -1222,9 +1222,8 @@ class AgentsServiceTest {
 
     @Test
     fun `two directories declaring the same agent name both fail to load`() {
-        // Unordered directory iteration means last-writer-wins is nondeterministic;
-        // a writable dir could shadow a trusted agent. A name collision must be a
-        // loud, order-independent load error — neither wins.
+        // Unordered directory iteration makes last-writer-wins nondeterministic and a writable dir could shadow a
+        // trusted agent: a name collision must be a loud, order-independent load error, neither wins.
         listOf("dir-alpha", "dir-beta").forEach { d ->
             val agentDir = testAgentsDir.resolve(d)
             Files.createDirectories(agentDir)
@@ -1249,8 +1248,6 @@ class AgentsServiceTest {
             logger.error(match<String> { it.contains("shared_name") && it.contains("multiple directories") })
         }
     }
-
-    // ========== Reserved envName Validation Tests (audit P1 #20) ==========
 
     @Test
     fun `agent input targeting HMR_ prefix envName fails to load`() {
@@ -1789,8 +1786,6 @@ class AgentsServiceTest {
         return AgentsService(testAgentsPath, logger)
     }
 
-    // ========== Config-File Size Cap Tests (audit P1 #14) ==========
-
     @Test
     fun `agent definition file over maxConfigFileBytes is rejected with error and not loaded`() {
         cleanTestDir()
@@ -1974,13 +1969,11 @@ class AgentsServiceTest {
         agentsService = AgentsService(testAgentsPath, logger, agentSysEnvNames = setOf("PATH"))
 
         val agent = assertNotNull(agentsService.agents["sysenv-agent"])
-        // Both the env key and the host variable it referenced: the key covers this
-        // whole-value case, and `PATH` is what covers a composite like
-        // `"Bearer @SYSENV:PATH"`, where the resolved value is not the bare secret.
+        // Both the env key and the host variable it referenced: the key covers this whole-value case, and `PATH`
+        // covers a composite like `"Bearer @SYSENV:PATH"`, whose resolved value is not the bare secret.
         assertEquals(setOf("REPO_TOKEN", "PATH"), agent.sysEnvBackedEnvNames)
-        // The keys half keeps only the env keys — the referenced host variable is
-        // redaction-only, and the cooldown.key load check must not refuse a placeholder
-        // that shares its name with a non-host value.
+        // The keys half keeps only env keys: the referenced host variable is redaction-only, and the cooldown.key load
+        // check must not refuse a placeholder sharing its name with a non-host value.
         assertEquals(setOf("REPO_TOKEN"), agent.sysEnvBackedEnvKeys)
         // The recorded key must resolve against the RESOLVED env, or the redactor
         // would look up a value that is no longer there.
@@ -2046,7 +2039,7 @@ class AgentsServiceTest {
     }
 
     @Test
-    @Suppress("DEPRECATION") // asserts the legacy traceTags alias itself
+    @Suppress("DEPRECATION") // asserts the `traceTags` alias itself
     fun `traceTags naming a declared input loads`() {
         writeTelemetryAgent(
             "tt-ok",
@@ -2359,11 +2352,8 @@ class AgentsServiceTest {
             """,
         )
 
-        // The provider is resolved lazily, so it can throw at any scan, not just
-        // construction — and reload() is the path the console's reload mutation and
-        // AgentFilesService drive. A regression that makes reload() treat a provider
-        // throw as fatal for the diff would drop the agent here while construction
-        // still succeeded.
+        // The provider is resolved lazily and can throw at any scan; reload() (console reload, AgentFilesService) must
+        // not treat that as fatal for the diff, which would drop the agent here though construction succeeded.
         agentsService = AgentsService(testAgentsPath, logger, runnerTagSets = { error("boom") })
         assertNotNull(agentsService.agents["late-boom"])
         val result = agentsService.reload()

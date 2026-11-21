@@ -114,8 +114,7 @@ class RunnerCmdSshIntegrationTest {
     fun `heartbeats keep a silent command alive despite a lowered idle timeout`(
         @TempDir serverRoot: Path,
     ) = runBlocking {
-        // Idle timeout lowered far below the silent span; without the disabled
-        // default / heartbeat vouching this configuration kills the session.
+        // Idle timeout far below the silent span: without the disabled default / heartbeat vouching, the session dies.
         // Own client, timing applied before start() — the order buildSshRunner uses.
         val timedClient =
             SshClient.setUpDefaultClient().also {
@@ -148,8 +147,7 @@ class RunnerCmdSshIntegrationTest {
     fun `duration ZERO disables the idle timeout for a live silent session`(
         @TempDir serverRoot: Path,
     ) = runBlocking {
-        // Default config (both fields null): directly verifies that MINA treats
-        // Duration.ZERO as "disabled", not as a kill-everything 0-second timeout.
+        // Default config (both null): verifies MINA treats Duration.ZERO as "disabled", not a 0-second kill timeout.
         // Own client, timing applied before start() — the order buildSshRunner uses.
         val silentClient =
             SshClient.setUpDefaultClient().also {

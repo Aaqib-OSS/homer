@@ -309,9 +309,8 @@ class RunnerClaimQueueTest {
             // second TTL for the consumer to finish opening the session.
             advanceTimeBy(30_000)
             runCurrent()
-            // The session lands in the very instant that second TTL expires: the timeout resumes
-            // the run before it can read the value, so nobody else owns the session and the run
-            // that gave up must close it instead of leaving it open on a runner it walked away from.
+            // The session lands as the second TTL expires: the timeout resumes the run first, so nobody owns the
+            // session and the run that gave up must close it.
             launch {
                 delay(30_000)
                 taken.complete(session)
@@ -749,9 +748,8 @@ class RunnerClaimQueueTest {
             first.await()
             assertEquals(0, queue.waiterCount(), "the waiter whose deadline passed must not stay parked")
 
-            // A later request must still reach a consumer: a waiter nobody awaits would be handed
-            // this request by dispatch() and never release the reservation, so the run would fail
-            // at its claim TTL instead of being served.
+            // A later request must still reach a consumer: a waiter nobody awaits would be handed it by dispatch() and
+            // never release the reservation.
             val second = async { queue.awaitClaim(params(2), gpuFilter(), 300.seconds) }
             runCurrent()
             val taken = withTimeoutOrNull(1.seconds) { queue.take(y) }
@@ -1203,10 +1201,8 @@ class RunnerClaimQueueTest {
         runTest {
             val memory = memory().also { it.record(1, "gpu", "dom:secret-name") }
             val queue = affinityQueue(memory)
-            // The preferred instance is registered and matching but never claims; the second
-            // matching consumer is FREE — it passed the run over on purpose, so the old
-            // "every matching runner was at its concurrency limit" contradicted the alias
-            // rendering showing it at 0/1.
+            // The preferred instance never claims; the second matching consumer is FREE (it passed the run over),
+            // so the reason must not say every matching runner was at its concurrency limit (it renders 0/1).
             queue.registerConsumer(
                 Consumer("dom", tags = setOf("gpu"), affinityInstance = "dom:secret-name", concurrency = 1, inUse = 1),
             )

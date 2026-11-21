@@ -328,10 +328,8 @@ class AppConfigSerializerTest {
 
     @Test
     fun `AuthConfig Bearer rejects a token key with the reserved system prefix`() {
-        // The key becomes the principal name verbatim; "system:" is reserved for
-        // internal synthetic owners (e.g. "system:cron"). A bearer token named
-        // "system:cron" would collide with the cron owner and gain owner-based
-        // visibility/control over all cron runs. See ADR-0016.
+        // The key becomes the principal name verbatim; a token named "system:cron" would collide with the
+        // synthetic cron owner and gain control over cron runs (ADR-0038).
         assertFailsWith<IllegalArgumentException> {
             AuthConfig.Bearer(tokens = mapOf("system:cron" to TokenConfig(token = "t")))
         }
@@ -439,9 +437,8 @@ class AppConfigSerializerTest {
 
     @Test
     fun `AppConfig defaults the parent env allowlist to PATH, HOME, LANG and TZ`() {
-        // The allowlist decides which host variables reach the built-in local
-        // runner's child processes; an empty default would drop PATH and break
-        // every agent. See ADR-0065.
+        // The allowlist picks the host variables the local runner's children get; an empty default would
+        // drop PATH and break every agent (ADR-0065).
         val cfg =
             AppConfig(
                 agentsSearchPath = "/agents",
@@ -509,9 +506,8 @@ class AppConfigSerializerTest {
     @Test
     fun `resolveLangGraphStateDir hashes the characters just outside the allowed classes`() {
         val config = appConfig(databasePath = "/var/lib/homer/homer.db", stateDir = "/srv/checkpoints")
-        // 'A' sits one above 'a'..'z', '`' one below; ':' one above '0'..'9' and '/'
-        // one below; a leading '_' or '.' would spell the reserved or a traversal
-        // segment. None of them may reach the filesystem verbatim.
+        // 'A', '`', ':' and '/' sit one off the allowed ranges; a leading '_' or '.' spells the reserved or a
+        // traversal segment. None may reach the filesystem verbatim.
         for (owner in listOf("A", "`", "aA", "a`", ":", "/", "a:", "a/", "a{", "a b", "_a", ".a")) {
             val segment = config.resolveLangGraphStateDir(owner).removePrefix("/srv/checkpoints/")
             assertTrue(segment.startsWith("_h-"), "owner '$owner' must be hashed: $segment")

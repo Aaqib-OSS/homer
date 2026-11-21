@@ -17,10 +17,9 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * [PathSafety]'s containment gate over generated escape-heavy paths (ADR-0047, CWE-22/59): every
- * call either refuses the candidate or answers with a path under the root — never one outside it.
- * The example cases live in `PathSafetyTest`; these cover the segment combinations an editor would
- * not think of, including the planted live and dangling links out of the root (root CLAUDE.md §6).
+ * [PathSafety]'s containment gate over generated escape-heavy paths (ADR-0047, CWE-22/59): every call refuses
+ * the candidate or answers with a path under the root. The example cases live in `PathSafetyTest`; these add
+ * segment combinations and planted live and dangling links out of the root.
  */
 class PathSafetyPropertyTest {
     @TempDir

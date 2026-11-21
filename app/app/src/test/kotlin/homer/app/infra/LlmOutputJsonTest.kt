@@ -60,9 +60,7 @@ class LlmOutputJsonTest {
 
     @Test
     fun `throws on a valid JSON line that is not an object`() {
-        // Each event is a JSON object; valid-but-non-object lines (a bare array — e.g.
-        // legacy JSON-array stdout on one line — a number, or a string) are rejected so a
-        // malformed stream fails the post-mortem read.
+        // Valid-but-non-object lines (a bare array, a number, a string) fail the post-mortem read.
         assertThrows<MalformedLlmOutputException> {
             parseNdjson("""["not","an","object"]""")
         }
@@ -104,9 +102,8 @@ class LlmOutputJsonTest {
 
     @Test
     fun `lenient parse cap stops on events kept and counts every unusable line`() {
-        // The cap counts EVENTS KEPT, so a garbage flood trips it too — and every kind of
-        // unusable line (unparseable, or a lenient JSON primitive an object is required)
-        // is counted as skipped, never silently dropped.
+        // The cap counts EVENTS KEPT, so a garbage flood trips it; every unusable line (unparseable, or a
+        // lenient JSON primitive where an object is required) counts as skipped.
         val ndjson =
             """
             {"type":"system","subtype":"init"}

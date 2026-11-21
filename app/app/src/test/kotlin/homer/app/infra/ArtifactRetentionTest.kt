@@ -11,10 +11,9 @@ import kotlin.test.assertTrue
 
 class ArtifactRetentionTest {
     /**
-     * Builds `root/proj/{workdir/scratch.txt, .homer/bin/homer-ask,
-     * artifacts/{decision.json (10B), summary.md (10B), cmd_0.out (1KB),
-     * sub/report.md (10B)}}` — the shape a finished run's workspace has
-     * before the retention sweep runs.
+     * Builds `root/proj/{workdir/scratch.txt, .homer/bin/homer-ask, artifacts/{decision.json, summary.md, cmd_0.out,
+     * sub/report.md}}`, the shape a finished run's workspace has before the retention sweep (sizes: 10B, 10B, 1KB,
+     * 10B).
      */
     private class Layout(
         val projectRoot: Path,
@@ -240,10 +239,8 @@ class ArtifactRetentionTest {
         @TempDir root: Path,
     ) {
         val layout = buildLayout(root)
-        // Path.equals is structural — "proj/./artifacts" and "proj/artifacts" point
-        // at the same directory but are not equal(). The sibling-delete pass must
-        // still recognize this as artifactsDir (by file name), not as a sibling to
-        // stream-delete along with workdir/.homer.
+        // `Path.equals` is structural, so "proj/./artifacts" differs from "proj/artifacts": the sibling-delete pass
+        // must still recognize it as artifactsDir by file name, not stream-delete it as a sibling.
         val artifactsDirWithRedundantSegment = layout.projectRoot.resolve("./artifacts")
 
         val result =

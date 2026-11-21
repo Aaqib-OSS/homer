@@ -9,16 +9,9 @@ import java.sql.SQLException
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * A [Connection] whose `commit()` delegates to the real connection — the write
- * lands — and then throws `SQLITE_BUSY`, exactly as recent sqlite-jdbc
- * releases can from the re-`BEGIN IMMEDIATE` they issue inside `commit()`
- * once another
- * connection has taken the write lock in that window.
- *
- * Exposed treats a commit-phase `SQLException` as a failed attempt, so this is
- * what drives the replay the ticket is about: with the default `maxAttempts`
- * the whole `query { }` block runs again; with the writer handle's
- * single-attempt config it runs once and the failure propagates.
+ * A [Connection] whose `commit()` lands the write and then throws `SQLITE_BUSY`, as sqlite-jdbc's
+ * re-`BEGIN IMMEDIATE` inside `commit()` can (ADR-0020). Exposed replays the `query { }` block under the
+ * default `maxAttempts`; the single-attempt writer handle runs it once and the failure propagates.
  */
 internal class PostCommitFailureConnection(
     private val real: Connection,

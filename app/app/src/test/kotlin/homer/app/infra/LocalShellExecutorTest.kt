@@ -201,11 +201,8 @@ class LocalShellExecutorTest {
     @org.junit.jupiter.api.Timeout(20)
     fun `large stdin to a non-reading process times out instead of blocking forever`() =
         runBlocking {
-            // The child never reads stdin, so a stdin larger than the OS pipe buffer
-            // (~64 KiB) would block a synchronous write forever and the timeout monitor
-            // would never start. With the write on its own job the TTL kill still fires,
-            // breaks the pipe, and cmd() throws instead of hanging. @Timeout fails the
-            // test (rather than stalling CI) if the concurrent-write fix regresses.
+            // A stdin beyond the OS pipe buffer must not block the write before the timeout monitor starts: the TTL
+            // kill breaks the pipe and cmd() throws. @Timeout fails the test instead of stalling CI.
             val big = "x".repeat(1_000_000)
             var thrown: Throwable? = null
             try {
@@ -267,9 +264,7 @@ class LocalShellExecutorTest {
     @Test
     fun `cmd should handle timeout for long-running command`() =
         runTest {
-            // This test verifies that the executor handles long-running commands
-            // The LocalShellExecutor throws CancellationException on timeout but may also
-            // return a result if the process was killed successfully
+            // A timed-out command either throws CancellationException or returns a result once killed.
             var exceptionThrown = false
             var result: CommandResult? = null
 
@@ -298,8 +293,7 @@ class LocalShellExecutorTest {
     @Test
     fun `cmd preserves exit code and output when launched under a process group`() =
         runTest {
-            // Backward-compat: whether or not setsid wraps the launch, exec-replacement
-            // keeps the command's own exit code and stdout intact.
+            // Whether or not setsid wraps the launch, exec-replacement keeps the exit code and stdout intact.
             val result =
                 shellExecutor.cmd(
                     command = listOf("sh", "-c", "printf hi; exit 7"),
@@ -322,10 +316,8 @@ class LocalShellExecutorTest {
                 "process-group reaping requires setsid (absent on this host)",
             )
             val pidFile = tempDir.resolve("grandchild.pid")
-            // The inner shell backgrounds a grandchild then exits, so the grandchild
-            // reparents away from our direct process (escaping descendants()) but stays
-            // in the same process group. The outer shell stays alive past the timeout so
-            // the kill path runs; only a group kill can reap the reparented grandchild.
+            // The grandchild reparents out of descendants() but stays in the process group; the outer shell
+            // outlives the timeout, so only a group kill can reap it.
             val script = "sh -c 'sleep 30 & echo \$! > \"$pidFile\"' ; sleep 30"
             var threw = false
             try {
@@ -379,9 +371,8 @@ class LocalShellExecutorTest {
                 "process-group interrupt requires setsid (absent on this host)",
             )
             val marker = tempDir.resolve("graceful-exit")
-            // The command traps SIGINT, records that the trap ran, then exits on its
-            // own. With the grace the executor SIGINTs the group and the command gets
-            // to exit, so the marker survives; an immediate SIGKILL would run no trap.
+            // The SIGINT trap records and exits, so the marker survives only if the group gets SIGINT first;
+            // an immediate SIGKILL runs no trap.
             val script = "trap 'echo trapped > $marker; exit 0' INT; sleep 30"
             var thrown: Throwable? = null
             try {
@@ -415,9 +406,7 @@ class LocalShellExecutorTest {
             )
             val pidFile = tempDir.resolve("stubborn.pid")
             val grace = 2.seconds
-            // The command ignores SIGINT and loops forever, so the grace expires and
-            // the SIGKILL path must run: the wall clock covers the grace, and the
-            // process is gone afterwards.
+            // SIGINT is ignored, so the grace expires and SIGKILL must run: the wall clock covers the grace.
             val script = "echo \$\$ > '$pidFile'; trap '' INT; while :; do sleep 1; done"
             val started = System.currentTimeMillis()
             var thrown: Throwable? = null
@@ -448,9 +437,7 @@ class LocalShellExecutorTest {
     fun `timeout without an interrupt grace SIGKILLs a SIGINT-trapping command immediately`() =
         runBlocking {
             val marker = tempDir.resolve("graceful-exit")
-            // The same trap as the grace test, but no grace: the command must die by
-            // SIGKILL before its trap can run, and the TTL marker must stay exactly
-            // today's text.
+            // Same trap as the grace test but no grace: SIGKILL precedes the trap, and the TTL marker is unchanged.
             val script = "trap 'echo trapped > $marker; exit 0' INT; sleep 30"
             var thrown: Throwable? = null
             try {
@@ -499,10 +486,8 @@ class LocalShellExecutorTest {
     @Test
     fun `cmd should throw CancellationException on timeout instead of returning a result (audit #8)`() =
         runBlocking {
-            // Without an external cancel, LocalShellExecutor used to swallow the timeout
-            // CancellationException and return a CommandResult, so the agent's
-            // CmdExecutor would happily proceed to the next command after a TTL kill.
-            // The audit requires cancellation to propagate so the caller can fail fast.
+            // A timeout kill must propagate cancellation rather than return a CommandResult, so the caller
+            // fails fast instead of running the next command.
             var thrown: Throwable? = null
             var result: CommandResult? = null
             try {
@@ -695,7 +680,7 @@ class LocalShellExecutorTest {
         }
 
     @Test
-    fun `cmd should throw OutputCapExceededException when stdout exceeds maxOutputBytes (audit P1 #17)`(
+    fun `cmd should throw OutputCapExceededException when stdout exceeds maxOutputBytes`(
         @TempDir tmp: Path,
     ) = runTest {
         val workDir = tmp
@@ -740,10 +725,8 @@ class LocalShellExecutorTest {
 
         val executor = LocalShellExecutor(workDir, maxOutputBytes = cap)
 
-        // Write 4 KiB then exit immediately — no sleep. The process is already
-        // finished by the first poll, so the mid-run cap check is skipped; only the
-        // post-completion check can catch the overshoot. Without it the oversized
-        // file would be accepted as a clean exit-0 result.
+        // The process finishes before the first poll, so only the post-completion cap check can catch the
+        // overshoot; otherwise the oversized file would pass as a clean exit-0 result.
         val script = "head -c ${cap * 4} /dev/zero | tr '\\0' 'A'"
 
         assertFailsWith<OutputCapExceededException> {
@@ -765,7 +748,7 @@ class LocalShellExecutorTest {
     }
 
     @Test
-    fun `cmd should throw OutputCapExceededException when stderr exceeds maxOutputBytes (audit P1 #17)`(
+    fun `cmd should throw OutputCapExceededException when stderr exceeds maxOutputBytes`(
         @TempDir tmp: Path,
     ) = runTest {
         val workDir = tmp
@@ -903,10 +886,8 @@ class LocalShellExecutorTest {
     ) = runTest {
         val executor = LocalShellExecutor(tmp, pumpJoinMs = 200)
         val out = tmp.resolve("cmd_0.out")
-        // bash exits at once; the subshell inherits the stdout pipe and writes after
-        // the pump has been shed. 20 KB in one go: a read that fills the pump's whole
-        // 8 KiB buffer is handed over before the closed-pipe check, so closing only
-        // the pipe would still let one chunk through.
+        // The subshell writes after the pump is shed; 20 KB fills the pump's whole 8 KiB buffer, which is handed
+        // over before the closed-pipe check, so closing only the pipe would let one chunk through.
         val result =
             executor.cmd(
                 command = listOf("bash", "-c", "(sleep 1; head -c 20000 /dev/zero | tr '\\0' x; echo) & echo hi"),

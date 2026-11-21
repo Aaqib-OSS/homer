@@ -65,7 +65,7 @@ class ArtifactNameResolverTest {
         assertEquals(artifactsDir.resolve("release-build.out"), r.stdOut(0))
     }
 
-    // ========== Denial paths (root CLAUDE.md §12: fail closed, message omits the stem) ==========
+    // ========== Denial paths (fail closed, message omits the stem) ==========
 
     @Test
     fun `env value containing a slash is rejected`(
@@ -97,9 +97,8 @@ class ArtifactNameResolverTest {
     fun `unresolved template reference is rejected (fails via charset)`(
         @TempDir artifactsDir: Path,
     ) {
-        // No MISSING key in env: DefaultTextCompiler leaves "{{MISSING}}" as a literal
-        // (braces are outside the safe charset), so this fails closed at validation
-        // rather than silently producing a file named "{{MISSING}}.out".
+        // No MISSING key in env: DefaultTextCompiler leaves "{{MISSING}}" literal (braces are outside the safe
+        // charset), so it fails closed rather than producing a file named "{{MISSING}}.out".
         val r = resolver("{{MISSING}}", artifactsDir)
         assertThrows<CommandExecutionException> { r.stdOut(0) }
     }
@@ -147,10 +146,8 @@ class ArtifactNameResolverTest {
     fun `template referencing a secret-classified env name fails closed`(
         @TempDir artifactsDir: Path,
     ) {
-        // TOKEN is excluded from the render map because it is secret-classified, so
-        // "{{TOKEN}}" is left as a literal by the compiler (missing key) and then
-        // rejected by the charset check — never reaching the child process's stdout
-        // filename, and the exception message must not carry the secret value.
+        // TOKEN is secret-classified and excluded from the render map, so "{{TOKEN}}" stays literal and the charset
+        // check rejects it; the exception message must not carry the secret value.
         val r =
             resolver(
                 "{{TOKEN}}",
@@ -169,9 +166,8 @@ class ArtifactNameResolverTest {
     fun `rendered stem embedding a derived secret value fails closed`(
         @TempDir artifactsDir: Path,
     ) {
-        // STEM_VAR is not itself secret-classified, but a resultEnvParam capture copied
-        // a secret's value into it — the run's SecretRedactor still recognizes the value
-        // and the stem must be rejected even though it passes the charset check.
+        // STEM_VAR is not secret-classified, but a resultEnvParam capture copied a secret into it: the run's
+        // SecretRedactor must still reject a stem that passes the charset check.
         val redactor = SecretRedactor.from(mapOf("REAL_SECRET" to "s3cr3t-value"), setOf("REAL_SECRET"))
         val r =
             resolver(

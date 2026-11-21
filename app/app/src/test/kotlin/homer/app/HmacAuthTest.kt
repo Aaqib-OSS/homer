@@ -36,11 +36,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Integration tests for HMAC and Combined authentication.
- *
- * Installs the production auth plugins and providers from AuthWiring.kt
- * (without requiring a full AgentsService stack on disk) so the real provider
- * plumbing is exercised end-to-end through the Ktor pipeline.
+ * Integration tests for HMAC and Combined authentication: installs the production auth plugins and providers from
+ * AuthWiring.kt (without a full AgentsService stack on disk) so the real provider plumbing runs through the Ktor
+ * pipeline.
  */
 class HmacAuthTest {
     private fun hexSha256(
@@ -55,13 +53,9 @@ class HmacAuthTest {
     }
 
     /**
-     * Stand up the production auth plugins in `configureAuth`'s order —
-     * DoubleReceive, [hmacBodyCapturePlugin], then Authentication with
-     * [buildBearerProvider] / [buildHmacProvider] over an [HmacVerifier] built
-     * as production builds it — plus a minimal set of protected routes used by
-     * the assertions below. [onHmacBodyCaptured] is test-only instrumentation:
-     * called with the size of every body the capture plugin stored for the
-     * HMAC provider.
+     * Stands up the production auth plugins in `configureAuth`'s order (DoubleReceive, [hmacBodyCapturePlugin], then
+     * Authentication with [buildBearerProvider] / [buildHmacProvider] over a production-built [HmacVerifier]) plus
+     * protected routes; [onHmacBodyCaptured] is test-only, called with the size of every body the capture stored.
      */
     private fun Application.installAuthApp(
         schemes: List<AuthConfig>,
@@ -123,9 +117,8 @@ class HmacAuthTest {
                     call.respond(HttpStatusCode.OK, body)
                 }
             }
-            // Mounted OUTSIDE authenticate(...), same as the real runner-protocol routes
-            // (ADR-0066): no domain-token check needed for this test, only that
-            // HmacBodyCapture never buffers this path's body.
+            // Mounted outside authenticate(...) like the real runner-protocol routes (ADR-0066): HmacBodyCapture
+            // must never buffer this path's body.
             post("/api/v1/runner/sessions/x/ops/y/tar") {
                 call.receive<ByteArray>()
                 call.respond(HttpStatusCode.OK)
@@ -191,11 +184,9 @@ class HmacAuthTest {
         }
 
     @Test
-    fun `hmac mode authenticates on a path outside key (deprecated) endpoints scope`() =
+    fun `hmac mode authenticates on any path despite a removed endpoints field`() =
         testApplication {
-            // A valid signature now authenticates regardless of the key's endpoints
-            // field — that field is deprecated and unenforced here; authorization
-            // by grants moves to the route (ADR-0037).
+            // `endpoints` is removed (startup rejects it, ADR-0037); the provider ignores it.
             val secret = "shh"
             val body = "{}"
             val sig = hexSha256(secret, body)
@@ -300,13 +291,8 @@ class HmacAuthTest {
     @Test
     fun `over-cap body is rejected with 413 before the HMAC capture reads it`() =
         testApplication {
-            // Audit H1: HmacBodyCapture reads the ENTIRE body application-scoped
-            // (onCall), before any routing-scoped plugin attaches. RequestBodyLimit
-            // must therefore be application-level — same placement as
-            // configureServer — or signed-webhook bodies are still read unbounded.
-            // The status alone can't prove that (a routing-scoped limit also 413s,
-            // just after the unbounded read), so the capture is instrumented and
-            // must have read nothing.
+            // HmacBodyCapture reads the whole body application-scoped before routing plugins attach, so the limit
+            // must be application-level; a routing-scoped one also 413s, hence the capture must have read nothing.
             val secret = "shh"
             val bigBody = """{"event":"${"x".repeat(2048)}"}"""
             val sig = hexSha256(secret, bigBody)
@@ -342,11 +328,8 @@ class HmacAuthTest {
     @Test
     fun `HmacBodyCapture skips runner-protocol paths but still captures HMAC-protected routes`() =
         testApplication {
-            // §12 rule 4: runner-protocol routes are mounted outside authenticate(...) and
-            // can never be satisfied by an HMAC provider, so a body captured there is pure
-            // waste — and with the lifted per-route body limit (maxTransferBytes, up to
-            // 1 GiB) it would be an unauthenticated heap allocation. HmacBodyCapture must
-            // skip these paths entirely, while still capturing everywhere else.
+            // Runner-protocol routes sit outside authenticate(...), so a body captured there is an unauthenticated
+            // allocation up to the lifted body limit (ADR-0047 rule 4): capture must skip them and run elsewhere.
             val secret = "shh"
             val capturedSizes = mutableListOf<Int>()
             application {

@@ -11,11 +11,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /**
- * In-memory command-artifact-path tracking: [ProcessManager] tracks the
- * actual per-command stdout/stderr paths a running executor wrote to, so
- * [LogTailService] can follow a per-attempt `artifactNameTemplate` instead of assuming
- * today's `cmd_N.out`/`cmd_N.err` naming. Deliberately not part of the serializable
- * `ExecutionInfo`/`ProcessInfo` API — see `ProcessManager.commandArtifacts`.
+ * In-memory command-artifact-path tracking: [ProcessManager] tracks the per-command stdout/stderr paths
+ * an executor wrote to, so [LogTailService] can follow a per-attempt `artifactNameTemplate`. Not part of
+ * the serializable `ExecutionInfo`/`ProcessInfo` API; see `ProcessManager.commandArtifacts`.
  */
 class ProcessManagerCommandArtifactsTest {
     @Test
@@ -171,10 +169,8 @@ class ProcessManagerCommandArtifactsTest {
     @Test
     fun `capacity eviction clears tracked command artifacts for the evicted process`() =
         runTest {
-            // Capacity eviction (ProcessRepository.obtainProcessId) deletes the victim
-            // row directly, bypassing removeProcess — it must clear commandArtifacts
-            // itself, or an evicted process's tracked paths leak for the server's
-            // remaining uptime. Mirrors ProcessManagerTest's eviction test pattern.
+            // Capacity eviction deletes the victim row directly, bypassing removeProcess, so it must
+            // clear commandArtifacts itself or the evicted process's paths leak until shutdown.
             val pm = PersistenceTestSupport.processManager(maxProcesses = 2)
             val id0 = pm.obtainProcessId(NewRunRecord("agent-a"))
             pm.obtainProcessId(NewRunRecord("agent-a"))

@@ -29,18 +29,9 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 
 /**
- * In-process SSH+SFTP server for runner tests. Accepts user/password test/test,
- * runs commands via a real OS shell, serves SFTP rooted at a temp dir.
- *
- * No SCP support: `sshd-scp` is not on the classpath (only sshd-core + sshd-sftp
- * per Task 1) and SFTP is all WorkspaceSync needs.
- *
- * `commandFactory` is a small shell-wrapping [CommandFactory] rather than the
- * stock `ProcessShellCommandFactory`: that default splits the raw exec string
- * on whitespace (quote-stripped) and runs it as a bare argv, whereas real
- * `sshd` always hands the whole string to the login shell (`sh -c command`).
- * Runner code (`RemoteCommandBuilder`) relies on that real-world shell
- * semantics (`cd ... && exec sh -c '. "$0" && exec "$@"' file argv`), so the fixture must match it.
+ * In-process SSH+SFTP server for runner tests (user/password test/test); SFTP is rooted at a temp dir, no SCP.
+ * `commandFactory` hands the whole exec string to a real `sh -c` like sshd, which `RemoteCommandBuilder` relies on;
+ * the stock `ProcessShellCommandFactory` splits it on whitespace into a bare argv.
  */
 class EmbeddedSshServer(
     private val refuseExec: Boolean = false,
@@ -142,21 +133,15 @@ private class ShellCommandFactory(
 }
 
 /**
- * SFTP accessor serving a stalling peer for the transfer-deadline tests
- * (CWE-400): every `stall*` file exists and its reads block forever after the
- * first chunk — the client keeps answering keepalives the whole time, which is
- * exactly the peer shape MINA's keepalive bound cannot catch. A real
- * filesystem cannot produce a read that never completes, so the accessor
- * intercepts the open call instead of relying on file contents.
+ * SFTP accessor serving a stalling peer for the transfer-deadline tests (CWE-400): every `stall*` file's reads block
+ * forever after the first chunk while the client keeps answering keepalives, a shape MINA's keepalive bound can't
+ * catch. A real filesystem cannot produce a read that never completes, so the open call is intercepted.
  */
 private object StallingSftpAccessor : SftpFileSystemAccessor by SftpFileSystemAccessor.DEFAULT {
     /**
-     * Serves one full chunk, then blocks forever on the next transfer — a
-     * short first read would be taken as EOF by the client (it sizes reads
-     * from the stat-reported length), which is not the stall shape under
-     * test. The block polls [closed] so the deadline firing on the client
-     * (session close tears the subsystem down) releases this thread instead
-     * of leaking it.
+     * Serves one full chunk, then blocks forever on the next transfer: a short first read would be taken as EOF
+     * (the client sizes reads from the stat length). The block polls [closed] so the client's deadline
+     * (session close) releases this thread instead of leaking it.
      */
     private class BlockingByteChannel : SeekableByteChannel {
         @Volatile
@@ -182,8 +167,7 @@ private object StallingSftpAccessor : SftpFileSystemAccessor by SftpFileSystemAc
         }
 
         override fun write(source: ByteBuffer): Int {
-            // Block on the first write already: a small payload is a single
-            // write call, and (unlike reads) the client infers nothing from
+            // Block on the first write: a small payload is a single write call, and the client infers nothing from
             // write acks, so there is no chunk to serve for free.
             blockUntilClosed()
             throw java.nio.channels.ClosedChannelException()

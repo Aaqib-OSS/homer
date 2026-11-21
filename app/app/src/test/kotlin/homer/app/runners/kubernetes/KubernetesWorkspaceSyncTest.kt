@@ -31,10 +31,8 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 class KubernetesWorkspaceSyncTest {
-    // "Remote" execs run locally: the pod's filesystem is the local one.
-    // COPYFILE_DISABLE avoids macOS bsdtar emitting AppleDouble "._name" entries
-    // for files carrying xattrs (e.g. com.apple.provenance) — a local test-host
-    // artifact absent on the Linux pods this runs against in production.
+    // "Remote" execs run locally. COPYFILE_DISABLE stops macOS bsdtar emitting AppleDouble entries for xattr files
+    // (a test-host artifact absent on the Linux pods).
     private val localExec =
         KubernetesExecClient { _, _, argv, _ ->
             ProcessBuilder(argv).apply { environment()["COPYFILE_DISABLE"] = "1" }.start()
@@ -113,10 +111,8 @@ class KubernetesWorkspaceSyncTest {
         local.resolve("repo/workdir").createDirectories()
         local.resolve("repo/workdir/inner.txt").writeText("repo-workdir-file")
 
-        // Real tar extraction (to prove contents still arrive) tee'd to a captured raw
-        // stream (to inspect which directory entries the producer actually wrote — an
-        // extracted tree alone can't tell "no dir entry" apart from "dir entry present",
-        // since tar auto-creates missing parents for a file entry either way).
+        // Real tar extraction tee'd to a captured raw stream: an extracted tree can't tell "no dir entry" from
+        // "dir entry present", since tar auto-creates missing parents.
         val capturedTar = remote.resolve("captured.tar.gz")
         val client =
             KubernetesExecClient { _, _, argv, _ ->
@@ -162,9 +158,8 @@ class KubernetesWorkspaceSyncTest {
 
         sync().upload(local, "$remote/ws", excludes = listOf("/workdir"), omitDirEntries = setOf("workdir"))
 
-        // the exclude check runs (and returns) before the omit branch: if the omit branch
-        // ran first, workdir's contents would still upload despite the exclude, and this
-        // directory would exist locally (tar auto-creates parents for file entries).
+        // The exclude check returns before the omit branch; were it after, workdir contents would upload and
+        // this directory would exist (tar auto-creates parents).
         assertFalse(Files.exists(remote.resolve("ws/workdir")))
     }
 
@@ -426,10 +421,8 @@ class KubernetesWorkspaceSyncTest {
         remote.resolve("workdir").createDirectories()
         val localWorkdir = local.resolve("workdir").createDirectories()
         localWorkdir.resolve("extra.txt").writeText("stale-extra")
-        // A complete tar (one small entry fully extracted, one large entry that
-        // won't be) truncated well before the end, simulating a channel that dies
-        // mid-transfer (network blip, killed pod): the incomplete gzip/tar data
-        // makes decompression itself throw once it runs out of bytes.
+        // A complete tar truncated mid-entry simulates a channel dying mid-transfer (network blip, killed pod):
+        // the incomplete gzip/tar data makes decompression throw.
         val fullBytes =
             ByteArrayOutputStream()
                 .also { buf ->
@@ -482,9 +475,8 @@ class KubernetesWorkspaceSyncTest {
         remote.resolve("workdir").createDirectories()
         val localWorkdir = local.resolve("workdir").createDirectories()
         localWorkdir.resolve("elsewhere.txt").writeText("stale-elsewhere")
-        // A tar stream carrying "sub/file.txt" with no preceding "sub/" directory
-        // entry — a legitimate shape some tar producers emit, and (per ADR-0055's
-        // trust boundary) one an attacker-replaced pod tar binary could also craft.
+        // A tar stream with "sub/file.txt" and no preceding "sub/" entry: some producers emit it, and per ADR-0055's
+        // trust boundary an attacker-replaced pod tar binary could craft it.
         val tarBytes =
             ByteArrayOutputStream()
                 .also { buf ->
@@ -532,9 +524,8 @@ class KubernetesWorkspaceSyncTest {
         remote.resolve("workdir").createDirectories()
         val localWorkdir = local.resolve("workdir").createDirectories()
         localWorkdir.resolve("elsewhere.txt").writeText("stale-elsewhere")
-        // A tar stream carrying only "sub/inner/" — no preceding "sub/" directory
-        // entry — the symmetric dir-entry-less shape for the directory branch of
-        // extractEntry (the sibling of the file-entry case above).
+        // A tar stream with only "sub/inner/" and no "sub/" entry: the directory-branch twin of the file-entry case
+        // above.
         val tarBytes =
             ByteArrayOutputStream()
                 .also { buf ->

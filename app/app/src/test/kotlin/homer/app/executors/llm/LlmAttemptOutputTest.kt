@@ -77,8 +77,7 @@ class LlmAttemptOutputTest {
     }
 
     // ========== non-zero exit ==========
-    // The CLI can end a turn-cap stop on a non-zero exit code, so a harness with a terminal stop
-    // configured is read on that path too; everything else keeps the exit's own failure.
+    // A turn-cap stop can end on a non-zero exit, so a harness with a terminal stop is read on that path too.
 
     @Test
     fun `a non-zero exit whose result is error_max_turns is the capped stop of exit 0`(
@@ -215,7 +214,7 @@ class LlmAttemptOutputTest {
     fun `a non-zero exit whose stream holds no cap result stays the failure its exit code is`(
         @TempDir dir: Path,
     ) {
-        // Denial path (§12 rule 8): only a terminal verdict is taken from the stream; an empty,
+        // Denial path (ADR-0047 rule 8): only a terminal verdict is taken from the stream; an empty,
         // unparseable, result-less, successful, failed or is_error stream leaves the exit alone.
         val streams =
             listOf(
@@ -247,9 +246,8 @@ class LlmAttemptOutputTest {
     fun `an unreadable stdout on the opted-in non-zero path stays the failure its exit code is`(
         @TempDir dir: Path,
     ) {
-        // Denial path (§12 rule 8): stdout that cannot be opened at all — deleted, or replaced
-        // with a directory — must not throw out of the failed attempt: the outcome is the exit's
-        // own failure, and no stream is carried (the telemetry hand-off does its own read).
+        // Denial path (ADR-0047 rule 8): unopenable stdout (deleted, or a directory) must not throw out of the failed
+        // attempt; the outcome is the exit's own failure and no stream is carried.
         val unreadable =
             listOf(
                 dir.resolve("missing") to "a deleted stdout file",

@@ -26,10 +26,9 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * [TarExtraction.extractEntry]'s containment gate over generated tar entries (ADR-0047/0054,
- * CWE-22/59): the remote tar is attacker-controlled, so no entry — file, directory or link — may
- * land outside the destination, whatever its name. The example cases live in `TarExtractionTest`;
- * these drive the escape shapes its author did not list (root CLAUDE.md §6).
+ * [TarExtraction.extractEntry]'s containment gate over generated tar entries (ADR-0047/0054, CWE-22/59): the remote
+ * tar is attacker-controlled, so no entry (file, directory or link) may land outside the destination. Example cases
+ * live in `TarExtractionTest`; these drive the escape shapes its author did not list.
  */
 class TarExtractionPropertyTest {
     @TempDir

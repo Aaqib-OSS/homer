@@ -8,16 +8,9 @@ import java.sql.Statement
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
- * Records the raw SQL every statement of the writer handle's connections runs, for
- * `DatabaseService`'s `wrapWriterConnection` seam.
- *
- * [SchemaMigrations] runs its DDL through `DatabaseService.rawStatement` — a raw
- * `java.sql.Statement` taken off the connection — so the Exposed-level
- * `homer.app.fixtures.SqlStatementRecorder` never sees it. This is what lets a migration
- * test assert which steps ran, and how many times, instead of only their end state.
- *
- * One instance per test: the recorded list is per-instance, so a parallel PIT run cannot mix
- * two tests' statements.
+ * Records the raw SQL of every statement on the writer handle's connections (`wrapWriterConnection` seam),
+ * which `SqlStatementRecorder` misses because [SchemaMigrations] runs its DDL through `rawStatement`.
+ * One instance per test, so parallel runs cannot mix statements.
  */
 internal class RecordingWriterConnection {
     /** Every raw statement's SQL, in execution order. */

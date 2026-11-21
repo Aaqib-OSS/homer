@@ -159,9 +159,8 @@ class RunHandlersTest : ApiRouteTestBase() {
                 }
             }
 
-            // The HTTP route no longer trusts any inbound chain header (RunAgent
-            // dispatch is in-process; see ADR-0030). An external caller fabricating a
-            // five-entry chain is ignored: the run starts at chain = [ext_agent].
+            // The route trusts no inbound chain header (RunAgent dispatch is in-process, ADR-0030): a fabricated
+            // five-entry chain is ignored and the run starts at chain = [ext_agent].
             val response =
                 client.post("/api/v1/agent/ext_agent") {
                     header("X-Homer-Invocation-Chain", "a,b,c,d,e")

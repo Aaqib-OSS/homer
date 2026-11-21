@@ -22,11 +22,9 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 
 /**
- * The DTOs console/types/homer.ts mirrors, for the `dto-contract` check (ADR-0082). Only the roots are
- * listed; every class reachable from one is exported too. Every `@Serializable` type a route responds
- * with must be a root here or listed in [routeBodiesNotMirrored] — `DtoContractRootsTest` fails on one
- * that is neither — and a class the console mirrors must be reachable from a root, or
- * tools/quality/dto-contract.mjs reports a TS type with no exported counterpart.
+ * The DTOs console/types/homer.ts mirrors, for the `dto-contract` check (ADR-0082): the roots, with every class
+ * reachable from one exported too. A route body type must be a root or in [routeBodiesNotMirrored]
+ * (`DtoContractRootsTest`), and a mirrored class must be reachable from a root.
  */
 internal object DtoContract {
     /** Bodies the backend sends: the console's `homerApi` responses and every SSE frame payload. */

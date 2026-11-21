@@ -178,7 +178,7 @@ class HookFireServiceTest {
             fires.fire(hook(owner = null))
 
             // A root the owner may not see is no root at all: the fire passes null, never the
-            // foreign id. §12 rule 3, ADR-0058.
+            // foreign id. ADR-0047 rule 3, ADR-0058.
             coVerify {
                 runStarter.start(match { it.rootProcessId == null }, any(), any(), any())
             }
@@ -188,7 +188,7 @@ class HookFireServiceTest {
     fun `an owner without the grant on the target is refused and never started`() =
         runTest {
             // Fail closed: the row settles, and nothing about the target reaches the caller.
-            // §12 rule 3, ADR-0039.
+            // ADR-0047 rule 3, ADR-0039.
             every { agents.agents } returns mapOf("notifier" to target)
             coEvery { repo.claim(any()) } returns true
             every { authorizer.canDispatchHop("alice", "declarer", "notifier") } returns false
@@ -242,9 +242,8 @@ class HookFireServiceTest {
     @Test
     fun `a triggering run that is its own flow root passes its own id as the root`() =
         runTest {
-            // The root comes from the row already read: a run with no root of its own IS the
-            // flow root, so its id — the owner's own run — is the child's root, unguarded by
-            // the visibility check the derived-root case runs. ADR-0058.
+            // A run with no root of its own IS the flow root, so its own id is the child's root,
+            // with no visibility check (the derived-root case runs one). ADR-0058.
             startSucceeds(run(rootProcessId = null))
 
             fires.fire(hook())
@@ -257,10 +256,8 @@ class HookFireServiceTest {
     @Test
     fun `a run that is no longer readable is dropped instead of fired`() =
         runTest {
-            // The row is durable and can outlive the run it was recorded from (eviction, record
-            // purge). The stored HMR_HOOK_DEPTH is what carries the chain bound across a
-            // restart, so a fire that cannot read it fails closed instead of restarting the
-            // chain at depth 1. §12, ADR-0107.
+            // The stored HMR_HOOK_DEPTH carries the chain bound across a restart, so an unreadable run
+            // fails closed instead of restarting the chain at depth 1. ADR-0107.
             startSucceeds(run = null)
 
             fires.fire(hook())
@@ -291,9 +288,8 @@ class HookFireServiceTest {
     @Test
     fun `a cancelling row lookup propagates instead of settling the hook`() =
         runTest {
-            // A cancellation is a shutdown in flight, not this hook's failure: settling it
-            // FAILED would record a delivery the boot replay never replays. The rethrow is what
-            // ADR-0102's drain rule relies on.
+            // A cancellation is a shutdown in flight: settling FAILED would record a delivery the boot
+            // replay never replays. The rethrow is what ADR-0102's drain rule relies on.
             every { agents.agents } returns mapOf("notifier" to target)
             coEvery { repo.claim(any()) } returns true
             coEvery { processManager.getProcessInfo(42) } throws CancellationException("shutting down")
@@ -363,9 +359,8 @@ class HookFireServiceTest {
     @Test
     fun `no input value of the triggering run is ever copied into the hook params`() =
         runTest {
-            // The stored inputs are the run's own, secrets included; the hook carries only the
-            // server-minted HMR_HOOK_* metadata, so a target that echoes its env cannot leak
-            // them. §12 rule 7.
+            // ADR-0047 rule 7: stored inputs include secrets; only server-minted HMR_HOOK_* metadata
+            // is passed on.
             val resolve =
                 startSucceeds(
                     run(
@@ -484,7 +479,7 @@ class HookFireServiceTest {
     @Test
     fun `hookTagsParam drops control characters and tags left empty by it`() {
         // A tag is subject metadata an agent can influence; a newline in it must not reach the
-        // target's env as a second line. §12 rule 2.
+        // target's env as a second line. ADR-0047 rule 2.
         assertEquals("env:prod", hookTagsParam(listOf("env\n:prod", "\u0007", "\u0000")))
     }
 
@@ -517,8 +512,7 @@ class HookFireServiceTest {
     @Test
     fun `hookTagsParam keeps every value it emits under the cap with no tag cut in half`() =
         runTest {
-            // Tags are subject metadata an agent can influence, so the examples cannot stand
-            // alone: the cap and the no-cut rule hold for any list. §6, §12 rule 4.
+            // Tags are agent-influenced: the cap and the no-cut rule must hold for any list (ADR-0047 rule 4).
             checkAll(Arb.list(Arb.list(Arb.element(TAG_CHARS), 0..12), 0..8)) { rawTags ->
                 val tags = rawTags.map { it.joinToString("") }
                 val cleaned = tags.map { it.filterNot { ch -> ch.isISOControl() } }.filter { it.isNotEmpty() }

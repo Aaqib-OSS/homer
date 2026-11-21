@@ -38,7 +38,7 @@ class TagRoutedSessionTest {
     }
 
     // The wrapper must not become a data class: its generated toString would print the runner env,
-    // and a runner env value can be a credential (root CLAUDE.md §12 rule 7).
+    // and a runner env value can be a credential (ADR-0047 rule 7).
     @Test
     fun `the delivered session's toString carries no runner env value`() {
         val delivered = session().deliveredFor(RunnerFilter.Tags(setOf("linux")), mapOf("TOKEN" to "s3cr3t"))

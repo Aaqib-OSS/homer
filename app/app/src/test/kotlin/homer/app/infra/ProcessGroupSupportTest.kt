@@ -27,9 +27,8 @@ class ProcessGroupSupportTest {
 
     @Test
     fun `ownProcessGroupId returns null for a directly spawned process`() {
-        // A process started without setsid shares the JVM's process group and is not
-        // its own group leader, so a group kill must never target it. This holds on
-        // both hosts with setsid (pgid != pid) and without (setsidPath == null).
+        // A process started without setsid shares the JVM's group and does not lead one, so a group kill must
+        // never target it; this holds with setsid on the host (pgid != pid) and without (setsidPath == null).
         val process = ProcessBuilder("sleep", "5").start()
         try {
             assertNull(ProcessGroupSupport.ownProcessGroupId(process))
@@ -40,10 +39,8 @@ class ProcessGroupSupportTest {
 
     @Test
     fun `ownProcessGroupId returns null for an exited process`() {
-        // Once the child has exited (and the JVM reaped it), its pid must never
-        // yield a group id: the /proc entry is gone, or — if the pid were
-        // recycled — the ProcessHandle identity check (pid + start time)
-        // rejects the stranger. Guards the group kill against PID reuse.
+        // After exit the pid must yield no group id: the /proc entry is gone, or a recycled pid fails the
+        // ProcessHandle identity check (pid + start time). Guards the group kill against PID reuse.
         val process = ProcessBuilder("true").start()
         process.waitFor()
         assertNull(ProcessGroupSupport.ownProcessGroupId(process))
@@ -112,12 +109,8 @@ class ProcessGroupSupportTest {
 
     @Test
     fun `interruptGroup is never reached with the JVM's own group or a pgid of one or less`() {
-        // The guard that keeps interruptGroup off the JVM's own group and off a
-        // pgid <= 1 (`kill -INT -1`/`-0` would signal every process the user owns)
-        // is ownProcessGroupId: it returns a pgid ONLY when the child leads its own
-        // group (pgid == pid), and a JVM child is never pid 1. A process sharing the
-        // JVM's group therefore yields null, so `?.let { interruptGroup(it) }` sends
-        // no SIGINT at the JVM itself.
+        // Keeps `kill -INT -1`/`-0` (every process the user owns) unreachable: ownProcessGroupId returns a pgid
+        // only when the child leads its own group, so a process sharing the JVM's group yields null.
         val process = ProcessBuilder("sleep", "5").start()
         try {
             assertNull(ProcessGroupSupport.ownProcessGroupId(process))

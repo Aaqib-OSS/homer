@@ -15,11 +15,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * The `HMR_STOP_*` environment of a graceful stop's steps (ADR-0108).
- *
- * Every value here is attacker-influenced — the label is author- and template-written, the
- * session id is parsed out of a CLI's own stdout — so the tests that matter are the ones that
- * assert what a crafted value does *not* become (root §12 rule 8).
+ * The `HMR_STOP_*` environment of a graceful stop's steps (ADR-0108). Every value is attacker-influenced (a
+ * template-written label, a session id parsed from a CLI's stdout), so the tests assert what a crafted value
+ * does not become (ADR-0047 rule 8).
  */
 class StopContextTest {
     /** The one session-id shape a stop step may ever see. */

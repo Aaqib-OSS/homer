@@ -27,16 +27,9 @@ import org.slf4j.Logger
 import java.nio.file.Files
 
 /**
- * Shared helpers for tests that need a real SQLite-backed persistence layer.
- * Each [tempDatabase] call creates an isolated on-disk database (deleted on JVM
- * exit) so durability round-trips exercise the same engine production uses. A
- * temp file — not `:memory:` — because Exposed opens a connection per
- * transaction and a plain in-memory URL gives each connection its own empty db.
- *
- * The default dispatcher is [Dispatchers.Unconfined] so DB calls run inline on
- * the caller's thread: this keeps `runTest` virtual-time and `yield()`-ordering
- * tests deterministic (no real thread hop). Concurrency tests that need genuine
- * parallel writers pass [Dispatchers.IO] explicitly.
+ * Helpers for tests that need a real SQLite-backed persistence layer: each [tempDatabase] is an isolated on-disk
+ * database (a temp file, as `:memory:` gives each Exposed connection its own empty db). The default dispatcher is
+ * [Dispatchers.Unconfined] so `runTest` stays deterministic; pass [Dispatchers.IO] for parallel writers.
  */
 object PersistenceTestSupport {
     fun tempDatabasePath(): String =
@@ -78,10 +71,8 @@ object PersistenceTestSupport {
     ): QuestionsService = QuestionsService(QuestionsRepository(db), logger, broadcaster, config)
 
     /**
-     * A [DispatchService] sharing [db] with [questionsService] so the question +
-     * dispatch rows persist in the same database. [agentsService], [runStarter]
-     * and [inputResolver] are caller-supplied mocks (the run start is the heavy
-     * dependency a route test stubs out).
+     * A [DispatchService] sharing [db] with [questionsService]; [agentsService], [runStarter] and [inputResolver] are
+     * caller-supplied mocks (the run start is the heavy dependency a route test stubs out).
      */
     internal fun dispatchService(
         db: DatabaseService,
@@ -155,11 +146,8 @@ object PersistenceTestSupport {
         )
 
     /**
-     * A [ContinuationService] sharing [db] with [questionsService]. Like
-     * [dispatchService], the heavy run-start collaborators are caller-supplied
-     * mocks; [processManager] backs the already-terminal race re-check, and
-     * [dispatchService] the sub the `startWithContinuation`/`startJoin` paths
-     * start (a relaxed mock for the tests that never reach them).
+     * A [ContinuationService] sharing [db] with [questionsService]; run-start collaborators are caller-supplied mocks.
+     * [processManager] backs the already-terminal race re-check, [dispatchService] the sub the start paths start.
      */
     internal fun continuationService(
         db: DatabaseService,

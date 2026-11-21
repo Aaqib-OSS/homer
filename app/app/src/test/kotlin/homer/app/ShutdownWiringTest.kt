@@ -26,18 +26,9 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 
 /**
- * The shutdown drain's wiring (`subscribeShutdownDrain`): `ApplicationStopping` must stop the
- * background services, drain the in-flight jobs and close the database last, so dropping any of
- * those calls fails a test instead of leaving pods, parked requests or a truncated WAL behind
- * (ADR-0020, ADR-0066, ADR-0092).
- *
- * The services are constructed through Koin during the boot, so their constructors are
- * intercepted and the drain's calls verified on the constructed instances. Drain timing itself
- * lives in `ShutdownDrainTest` — these cases pin the wiring, not the window.
- *
- * The unmocked maintenance case is kept deliberately: it runs the drain against real services
- * with no constructor interception, so it still fails if a mock leak or a stubbed `stop()` ever
- * masks the comprehensive case's verifications.
+ * The shutdown drain's wiring (`subscribeShutdownDrain`): `ApplicationStopping` must stop the background services,
+ * drain the in-flight jobs and close the database last (ADR-0020, ADR-0066, ADR-0092). Drain timing lives in
+ * `ShutdownDrainTest`; the unmocked maintenance case stays so a mock leak cannot mask the other verifications.
  */
 @ExtendWith(ResetDrainingExtension::class)
 class ShutdownWiringTest {
@@ -68,10 +59,9 @@ class ShutdownWiringTest {
         )
 
     /**
-     * Intercepts the constructors of every service the drain stops. MockK only records calls on a
-     * constructor mock that already exists when the object is built, so each one is touched here
-     * before the boot; `callOriginal()` keeps the real method, which the drain's timing needs —
-     * a stubbed `stop()` would leave the loop it cancels running and burn the drain window.
+     * Intercepts the constructors of every service the drain stops. MockK records calls only on a constructor mock
+     * that exists when the object is built, so each is touched before boot; `callOriginal()` keeps `stop()` real,
+     * as a stubbed one would leave its loop running and burn the drain window.
      */
     private fun interceptServiceConstructors() {
         mockkConstructor(RunnerRegistry::class)

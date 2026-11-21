@@ -18,7 +18,7 @@ import kotlin.test.assertTrue
 /**
  * The property behind the paging helper: whatever a caller puts in `limit` / `offset`, the page it
  * gets back is inside the bound, and anything outside it is refused — the bound is local and
- * explicit, never bypassed by an input shape the example tests did not think of (§12 rule 4).
+ * explicit, never bypassed by an input shape the example tests did not think of (ADR-0047 rule 4).
  */
 class PageParamsPropertyTest {
     private val listError: (String, String) -> Throwable = { field, message -> ValidationException(message, field) }

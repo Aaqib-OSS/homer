@@ -31,16 +31,9 @@ import java.nio.file.Path
 import kotlin.test.assertEquals
 
 /**
- * The graph the boot installs, checked as one graph.
- *
- * The boot's module list is declared once, in `di/BootModules.kt` — `installKoin` loads it and this
- * test verifies it — so a module added to the boot cannot escape the pin. Nothing outside a real
- * server boot builds the modules, so a binding that moves into the wrong subject module — or is
- * lost between two of them — would otherwise surface only as a startup crash in production.
- * `verify()` reflects on every definition's constructor and fails on a parameter type no definition
- * provides, and [EXPECTED_TYPES] catches what reflection cannot: it is pinned per module, so a
- * definition dropped whole, registered twice, or moved between two subject modules fails, and a
- * module added to [bootModules] without its own list here fails on the count.
+ * The graph the boot installs, checked as one graph: `verify()` fails on a constructor parameter no definition
+ * provides, and [EXPECTED_TYPES] pins each module of [bootModules] (declared once in `di/BootModules.kt`)
+ * so a definition dropped, registered twice or moved between modules fails.
  */
 class KoinGraphTest {
     @OptIn(KoinInternalApi::class, KoinExperimentalAPI::class)
@@ -64,14 +57,9 @@ class KoinGraphTest {
 
     private companion object {
         /**
-         * Types a definition's constructor names that no definition in the graph provides, and that
-         * `verify()` therefore cannot see resolved. Every entry is a claim that the type cannot come
-         * from the graph — not a way to silence a missing binding — and each is one of:
-         *
-         * - `AppConfig`, which `installKoin` registers itself, beside the modules;
-         * - a value a definition builds inline (a config section, a lambda, a `Path`);
-         * - a port whose concrete service is passed through an explicit `get<ConcreteService>()`,
-         *   so the port's own name appears in no definition's index.
+         * Types a constructor names that no definition provides, so `verify()` cannot see them resolved. Each entry
+         * claims the type cannot come from the graph: `AppConfig`, a value built inline, or a port whose concrete
+         * service is passed through `get<ConcreteService>()`; never a way to silence a missing binding.
          */
         val EXTRA_TYPES =
             listOf(
@@ -87,9 +75,8 @@ class KoinGraphTest {
                 SessionSpendConfig::class,
                 CostRecorder::class,
                 LlmStepTelemetry::class,
-                // Ports implemented by a service registered under its own type: `ProcessManager`
-                // for the run, question, message and step records; `RunnerRegistry` for the
-                // configured runners and the runner lookup; `AgentSubRunStarter` for the sub-run hop.
+                // Ports implemented by a service registered under its own type: `ProcessManager` (run, question,
+                // message and step records), `RunnerRegistry` (runners, runner lookup), `AgentSubRunStarter`.
                 ActiveRunIds::class,
                 ConfiguredRunners::class,
                 ProcessRecordReads::class,
@@ -105,10 +92,8 @@ class KoinGraphTest {
             )
 
         /**
-         * Every definition of each boot module, by primary type: one list per module of
-         * [bootModules], in the same order, one line per `single`/`factory` the module must hold.
-         * Adding a binding means adding it to its module's list — the test fails otherwise, which
-         * is the point: a dropped, duplicated or wrong-module definition is otherwise silent.
+         * Every definition of each boot module by primary type, one list per module of [bootModules] in order.
+         * Adding a binding means adding it here; a dropped, duplicated or wrong-module definition fails.
          */
         val EXPECTED_TYPES =
             listOf(

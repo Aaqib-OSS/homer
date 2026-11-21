@@ -229,9 +229,8 @@ class TarStreamsTest {
 
     @Test
     fun `a gzip bomb is refused at the decompressed bound and writes no more than it`() {
-        // ~2 MiB of zeros compress to a couple of KiB: the compressed-body bound the
-        // transport enforces would wave this through, so the bound has to sit on the
-        // decompressed side.
+        // ~2 MiB of zeros compress to a couple of KiB: the transport's compressed-body bound would wave this
+        // through, so the bound has to sit on the decompressed side.
         val src = tmp.resolve("bomb").createDirectories()
         src.resolve("blob").writeText("0".repeat(2 * 1024 * 1024))
         val bytes = packed(src)
@@ -405,9 +404,8 @@ class TarStreamsTest {
 
     @Test
     fun `an ancestor directory symlinked out of the upload root is skipped with a warning (CWE-59, CWE-367)`() {
-        // Covers the walk's static check only, not the accepted swap landing between
-        // addDirContents' containment check and addFile's open — see addFile's KDoc
-        // and ADR-0047's 2026-09-23 amendment.
+        // Covers only the walk's static check, not the accepted swap between addDirContents' containment check
+        // and addFile's open (see addFile's KDoc and ADR-0047's 2026-09-23 amendment).
         val outside = tmp.resolve("outside-anc").createDirectories().also { it.resolve("secret.txt").writeText("SECRET") }
         val src = tmp.resolve("src-anc").createDirectories()
         // A link named as the walk's ancestor: every entry below it resolves outside.
@@ -425,9 +423,8 @@ class TarStreamsTest {
 
     @Test
     fun `a real ancestor directory's contents are packed (the residual's pre-swap baseline)`() {
-        // The accepted residual assumes a real ancestor whose contents ARE packed
-        // after the containment check — pin that baseline so a regression in the
-        // directory branch shows up as a failure here (ADR-0047).
+        // The accepted residual assumes a real ancestor whose contents ARE packed after the containment check; pin
+        // that baseline so a regression in the directory branch fails here (ADR-0047).
         val src = tmp.resolve("src-real").createDirectories()
         src
             .resolve("anc")
@@ -667,9 +664,8 @@ class TarStreamsTest {
 
     @Test
     fun `the directory branch still writes through a contained symlink at a destination path`() {
-        // The k8s sync-down (ADR-0055) extracts into a live workspace where contained
-        // links are normal; assertContained is what blocks escapes there, so a dangling
-        // one (its target arrives later in the same tar) must not fail the whole sync.
+        // A live workspace holds contained links; assertContained blocks escapes, so a dangling in-tar link
+        // (its target arrives later in the tar) must not fail the sync.
         val src = tmp.resolve("src").createDirectories()
         src.resolve("a.txt").writeText("remote")
         val dst = tmp.resolve("dst").createDirectories()
@@ -962,10 +958,8 @@ class TarStreamsTest {
         dst.resolve("bin").createDirectories()
         dst.resolve("pkg").createDirectories()
         Files.createSymbolicLink(dst.resolve("bin/tool"), Path.of("../pkg/tool"))
-        // Make the landing delete fail while the link delete (a different parent) succeeds:
-        // once the (already-failing) chmod is reached, stripping the destination's parent of
-        // its write permission denies unlinking pkg/tool, so the denial must say content
-        // survived rather than blame the target.
+        // Make the landing delete fail while the link delete (another parent) succeeds: once the failing chmod
+        // is reached, stripping the parent's write bit denies unlinking pkg/tool, so the denial says content survived.
         val real = Files.getFileAttributeView(dst.resolve("bin/tool"), PosixFileAttributeView::class.java)
         val chmodAndLock =
             object : PosixFileAttributeView by real {

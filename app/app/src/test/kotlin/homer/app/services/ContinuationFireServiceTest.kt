@@ -194,9 +194,8 @@ class ContinuationFireServiceTest {
 
             fires.fire(pending(), ProcessStatus.FINISHED)
 
-            // The bypass is decided on the origin's own row, never on the watched process the
-            // continuation stores: the fire carries the origin id (7) as its parent, with the
-            // server-derived flag set, so an origin that is no longer `WORKING` parks as before.
+            // The bypass is decided on the origin's own row, not the watched process: the fire carries the origin id
+            // (7) as parent with the server-derived flag, so an origin no longer `WORKING` parks as before.
             coVerify {
                 runStarter.start(
                     match {
@@ -264,9 +263,8 @@ class ContinuationFireServiceTest {
     @Test
     fun `a fire the drain refused is released for a retry, not settled failed`() =
         runTest {
-            // The origin run ended and its resume is the only thing the target will ever see:
-            // the next boot's sweep must fire it, so the row goes back to PENDING with the
-            // attempt counted rather than to FAILED. See ADR-0023, ADR-0102.
+            // The origin ended and its resume is all the target will see: the next boot's sweep must fire it, so the
+            // row goes back to PENDING with the attempt counted, not FAILED. See ADR-0023, ADR-0102.
             every { agents.agents } returns mapOf("h" to agent)
             coEvery { repo.claim(5) } returns true
             coEvery { runStarter.start(any(), any(), any(), any()) } throws
@@ -341,9 +339,8 @@ class ContinuationFireServiceTest {
             resolvedParams(inheritingAgent())
             coEvery { processManager.getProcessInfo(7) } returns originInfo()
 
-            // The union is what the fired run must honour: the continuation's own
-            // registration snapshot and the origin run's, either alone would drop the
-            // other half's masking. ADR-0052, ADR-0101.
+            // The fired run must honour the union of the continuation's registration snapshot and the origin's: either
+            // alone drops the other half's masking. ADR-0052, ADR-0101.
             fires.fire(
                 pending().copy(originAgentName = "h", secretInputKeys = setOf("OWN_SECRET")),
                 ProcessStatus.FINISHED,
@@ -392,10 +389,8 @@ class ContinuationFireServiceTest {
     @Test
     fun `an inherited stored value is validated without running its transformer a second time`() =
         runTest {
-            // The origin run stored SUMMARY already post-transformer — its JsonPath
-            // transformer extracted `$.summary` when it resolved its inputs. Running the
-            // transformer over the extracted string again would reject the param and fail
-            // every fire that inherits it. ADR-0101.
+            // The origin stored SUMMARY post-transformer (JsonPath already extracted `$.summary`); transforming again
+            // would reject the param and fail every fire that inherits it. ADR-0101.
             val graph =
                 Agent(
                     name = "h",
@@ -435,11 +430,8 @@ class ContinuationFireServiceTest {
     @Test
     fun `the continuation's own param of an inherited name is transformed as caller-supplied input`() =
         runTest {
-            // The inherited names whose value survives the merge exclude the continuation's
-            // own params: an own param named like an inherited one wins, and its raw JSON
-            // is transformed as caller-supplied input — never passed through as a stored,
-            // already-transformed value. Real resolver, so the transformer really runs.
-            // ADR-0101.
+            // An own param named like an inherited one wins, and its raw JSON is transformed as caller input, never
+            // passed through as a stored, already-transformed value. Real resolver, so the transformer runs. ADR-0101.
             val graph =
                 Agent(
                     name = "h",

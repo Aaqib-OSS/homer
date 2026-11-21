@@ -14,20 +14,17 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 /**
- * Pins [resolveAuth]'s coverage of every secret-bearing field on every
- * [AuthConfig] variant. The original cookie-auth landing resolved
- * `sessionSecret` but forgot `users[*].passwordHash`, which meant operators
- * using `passwordHash: "@SYSENV:..."` would have bcrypt verify against the
- * literal placeholder string and get an opaque "Invalid credentials" 401.
+ * Pins [resolveAuth]'s coverage of every secret-bearing field on every [AuthConfig] variant, e.g.
+ * `users[*].passwordHash` given as `@SYSENV:...`, which would otherwise reach bcrypt as the literal placeholder and
+ * give an opaque 401.
  */
 class ResolveAuthTest {
     private val resolver = SysEnvResolver()
 
     @Test
     fun `Password resolves users passwordHash, sessionSecret, and sessionSecretPrevious`() {
-        // Pick env vars guaranteed to be set in any JVM process. Their exact
-        // values aren't checked — only that resolution actually happened
-        // (i.e. the string no longer starts with the `@SYSENV:` prefix).
+        // Env vars guaranteed set in any JVM process: their values aren't checked, only that resolution happened
+        // (the string no longer starts with the `@SYSENV:` prefix).
         val varName = "PATH"
         val expected = System.getenv(varName) ?: error("$varName must be set for this test")
 
@@ -65,9 +62,8 @@ class ResolveAuthTest {
 
     @Test
     fun `Bearer rejects a SYSENV token that resolves to blank`() {
-        // TokenConfig validates in init, and resolveAuth rebuilds via copy(),
-        // so an env var holding an empty secret must fail startup, not
-        // silently configure a token that matches `Authorization: Bearer `.
+        // TokenConfig validates in init and resolveAuth rebuilds via copy(), so an env var holding an empty secret
+        // must fail startup rather than configure a token matching `Authorization: Bearer `.
         val blankResolver = mockk<SysEnvResolver>()
         every { blankResolver.resolve(any()) } returns ""
         assertFailsWith<IllegalArgumentException> {
@@ -102,9 +98,8 @@ class ResolveAuthTest {
 
     @Test
     fun `Hmac rejects a SYSENV secret that resolves to blank`() {
-        // Same guarantee as the bearer case above: an env var holding an
-        // empty secret must fail startup, not configure a public HMAC key
-        // any client can sign with.
+        // Same guarantee as the bearer case: an env var holding an empty secret must fail startup, not configure
+        // a public HMAC key any client can sign with.
         val blankResolver = mockk<SysEnvResolver>()
         every { blankResolver.resolve(any()) } returns ""
         assertFailsWith<IllegalArgumentException> {

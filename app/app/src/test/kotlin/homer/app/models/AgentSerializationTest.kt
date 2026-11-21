@@ -18,7 +18,7 @@ class AgentSerializationTest {
     private val yaml = Yaml.default
 
     @Test
-    @Suppress("DEPRECATION") // asserts the legacy alias itself
+    @Suppress("DEPRECATION") // asserts the `queryParams` alias itself
     fun `legacy queryParams YAML deserializes and effectiveInputs equals queryParams`() {
         val src =
             """
@@ -67,7 +67,7 @@ class AgentSerializationTest {
     }
 
     @Test
-    @Suppress("DEPRECATION") // asserts the legacy alias stays unset
+    @Suppress("DEPRECATION") // asserts the `queryParams` alias stays unset
     fun `canonical inputs YAML deserializes`() {
         val src =
             """

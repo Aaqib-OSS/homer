@@ -40,12 +40,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Integration tests for the agent-files routes. These mount the *real*
- * [apiV1Routes] handler over a real [AgentFilesService] backed by a temp
- * directory, so production routing and the [respondFileOpResult] mapping are
- * what's under test — a regression in either is actually caught. The separate
- * `respondFileOpResult …` cases below probe the helper's mapping in isolation
- * and are complementary, not redundant.
+ * Mounts the real [apiV1Routes] over a real [AgentFilesService] on a temp directory, so a regression in routing
+ * or the [respondFileOpResult] mapping is caught; the `respondFileOpResult` cases probe the mapping in isolation.
  */
 class AgentFilesRoutesTest {
     private lateinit var root: Path
@@ -162,7 +158,7 @@ class AgentFilesRoutesTest {
     /**
      * ADR-0004: a write racing a permission change is 403 through the real route
      * and [respondFileOpResult] mapping, not an unhandled 500, and the body never
-     * carries the filesystem path (§12 rule 7).
+     * carries the filesystem path.
      */
     @Test
     fun `PUT to a target made read-only returns 403 without leaking the path (ADR-0004)`() {

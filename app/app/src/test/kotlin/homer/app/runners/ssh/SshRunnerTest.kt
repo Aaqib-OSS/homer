@@ -170,10 +170,8 @@ class SshRunnerTest {
     fun `remote command env carries runner and agent values but no backend-host allowlist keys`(
         @TempDir serverRoot: Path,
     ) = runTest {
-        // Env composition happens before the session (WorkspaceConfigFactory with
-        // includeParentEnv=false for a remote runner); this asserts what the ssh
-        // runner actually delivers: the sourced env file carries runner/agent-supplied
-        // values, and no allowlisted host key unless someone set it explicitly.
+        // Env composition happens before the session (includeParentEnv=false for a remote runner); this asserts what
+        // the runner delivers: runner/agent values in the sourced env file, and no allowlisted host key unless set.
         val projectRoot = serverRoot.resolve("p1")
         projectRoot.resolve("workdir").createDirectories()
         projectRoot.resolve("artifacts").createDirectories()
@@ -229,10 +227,8 @@ class SshRunnerTest {
                 timeout = kotlin.time.Duration.parse("30s"),
                 stdOutFilter = null,
             )
-            // The test host's own env does not supply the remote values either: the
-            // remote login shell resolves HOME/PATH itself, so assert only on what
-            // Homer sent — the runner/agent values — and that the composed env Homer
-            // holds carries no allowlisted host key.
+            // Assert only on what Homer sent: the remote login shell resolves HOME/PATH itself, and the composed env
+            // carries no allowlisted host key.
             val out = stdOut.readText()
             assertTrue(out.contains("RUNNER=from-runner"), "out=$out")
             assertTrue(out.contains("AGENT=from-agent"), "out=$out")
@@ -364,9 +360,8 @@ class SshRunnerTest {
     fun `createWorkspace failure surfaces the SftpException`(
         @TempDir serverRoot: Path,
     ) = runTest {
-        // Force mkdirs to fail: make the first path segment of remoteWorkspaceRoot
-        // already exist as a plain file, so WorkspaceSync's mkdirsIdempotent hits
-        // an SftpException it can't treat as "already a dir".
+        // Force mkdirs to fail: the first segment of remoteWorkspaceRoot exists as a plain file, so mkdirsIdempotent
+        // hits an SftpException it can't treat as "already a dir".
         val blocker = server.rootDir.resolve("blocked")
         Files.createFile(blocker)
 

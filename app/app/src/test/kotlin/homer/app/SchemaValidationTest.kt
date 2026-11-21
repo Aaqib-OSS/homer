@@ -63,9 +63,8 @@ class SchemaValidationTest {
 
     @Test
     fun `homer-config schema rejects an unsafe remoteWorkspaceRoot`() {
-        // Pins the `pattern` that mirrors RunnerConfig.assertSafeRemoteRoot (ADR-0067):
-        // the example fixtures are all valid, so without this the line could vanish
-        // unnoticed. Built from a valid fixture so the only violation is the root.
+        // Pins the `pattern` mirroring RunnerConfig.assertSafeRemoteRoot (ADR-0067); the example fixtures are all
+        // valid, so only this test notices the line vanishing. The only violation here is the root.
         val schema = loadSchema("homer-config.schema.json")
         val fixture = File(repoRoot, "example/config/config-custom.json").readText()
         val base = Json.parseToJsonElement(fixture).jsonObject
@@ -168,10 +167,8 @@ class SchemaValidationTest {
 
     @Test
     fun `no example agent opts into dangerouslySkipPermissions`() {
-        // Acceptance criterion (GH-7): a bundled example must not skip Claude's
-        // permission gate without a comment saying why. JSON has no comments at
-        // all, so no example sets the flag; an example that legitimately needs it
-        // relaxes this case to "YAML with an adjacent justification".
+        // JSON cannot justify skipping Claude's permission gate, so no bundled example sets the flag;
+        // a YAML example would need an adjacent comment saying why.
         val agentsDir = File(repoRoot, "example/agents")
         val offenders =
             agentsDir
@@ -199,7 +196,7 @@ class SchemaValidationTest {
     @Test
     fun `homer-agent schema validates all example agents (JSON and YAML)`() {
         // Use the shared production validator so local-debug (agentdebug validate)
-        // and this backstop check the exact same schema + code path (audit P2 #28).
+        // and this backstop check the exact same schema + code path.
         val validator = AgentSchemaValidator()
         val agentsDir = File(repoRoot, "example/agents")
         val fixtures =
