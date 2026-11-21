@@ -22,11 +22,9 @@ import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
-import java.nio.channels.FileChannel
+import java.nio.channels.SeekableByteChannel
 import java.nio.file.Files
-import java.nio.file.LinkOption
 import java.nio.file.Path
-import java.nio.file.StandardOpenOption
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -334,10 +332,10 @@ class LogTailServiceTest {
             )
 
         val opens = AtomicInteger(0)
-        val channels = mutableListOf<FileChannel>()
-        val factory: (Path) -> FileChannel = { p ->
+        val channels = mutableListOf<SeekableByteChannel>()
+        val factory: (Path) -> SeekableByteChannel = { p ->
             opens.incrementAndGet()
-            openNoFollow(p).also { channels.add(it) }
+            DescriptorOpen.openRegularChannel(p).also { channels.add(it) }
         }
 
         val service =
@@ -364,9 +362,9 @@ class LogTailServiceTest {
         path.writeText("data")
         coEvery { processManager.getProcessStatus(1) } returns ProcessStatus.WORKING
 
-        val channels = mutableListOf<FileChannel>()
-        val factory: (Path) -> FileChannel = { p ->
-            openNoFollow(p).also { channels.add(it) }
+        val channels = mutableListOf<SeekableByteChannel>()
+        val factory: (Path) -> SeekableByteChannel = { p ->
+            DescriptorOpen.openRegularChannel(p).also { channels.add(it) }
         }
 
         val service =
@@ -381,6 +379,29 @@ class LogTailServiceTest {
 
         assertEquals(1, channels.size)
         assertTrue(!channels.single().isOpen, "cached channel must be closed on flow cancellation")
+    }
+
+    @Test
+    fun `tail through the descriptor channel survives the file being truncated under it`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val processManager = processManagerWithoutJob()
+        val path = tmp.resolve("cmd_0.out")
+        path.writeText("hello world")
+        val polls = AtomicInteger(0)
+        coEvery { processManager.getProcessStatus(1) } answers {
+            when (polls.incrementAndGet()) {
+                1 -> ProcessStatus.WORKING
+                2 -> ProcessStatus.WORKING.also { path.writeText("hi") }
+                else -> ProcessStatus.FINISHED
+            }
+        }
+        val service = LogTailService(processManager, TestFixtures.mockLogger(), pollIntervalMs = 1L)
+
+        val events = service.tail(1, path, resumeFromOffset = 0L).toList()
+
+        assertEquals(listOf("hello world"), events.filterIsInstance<LogTailService.LogEvent.Chunk>().map { it.content })
+        assertEquals(LogTailService.LogEvent.End, events.last())
     }
 
     @Test
@@ -707,8 +728,6 @@ class LogTailServiceTest {
         assertEquals(content, chunks.joinToString("") { it.content })
         assertEquals(Files.size(path), chunks.last().offset)
     }
-
-    private fun openNoFollow(p: Path): FileChannel = FileChannel.open(p, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)
 
     private fun processInfo(
         id: Int,

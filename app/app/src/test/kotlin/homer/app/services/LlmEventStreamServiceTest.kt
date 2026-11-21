@@ -36,11 +36,9 @@ import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
-import java.nio.channels.FileChannel
+import java.nio.channels.SeekableByteChannel
 import java.nio.file.Files
-import java.nio.file.LinkOption
 import java.nio.file.Path
-import java.nio.file.StandardOpenOption
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -519,10 +517,10 @@ class LlmEventStreamServiceTest {
         coEvery { pm.getProcessStatus(1) } returns ProcessStatus.WORKING
         coEvery { pm.getCommandArtifacts(1, 0) } returns CommandArtifactPaths(out, tmp.resolve("e"), kind = "codex")
         coEvery { pm.latestCommandArtifacts(1) } returns null
-        val channels = mutableListOf<FileChannel>()
+        val channels = mutableListOf<SeekableByteChannel>()
         val service =
             LlmEventStreamService(pm, harnesses, TestFixtures.mockLogger(), pollIntervalMs = 10) { path ->
-                FileChannel.open(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS).also { channels += it }
+                DescriptorOpen.openRegularChannel(path).also { channels += it }
             }
         val received = mutableListOf<LlmStreamEvent>()
         val job = launch { service.streamCommand(1, 0, null).collect { received += it } }

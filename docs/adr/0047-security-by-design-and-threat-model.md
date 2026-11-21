@@ -315,7 +315,9 @@ is closed. Where no such open is defined (an OS or architecture other than Linux
 or aarch64) or the JVM denies native access, the read is refused, never retried as a blocking
 by-name open. The server and agentdebug log once at startup whether the open works, at ERROR naming
 the refused reads and the cause. Homer still starts without it, unlike the runner's dumpability
-check (ADR-0078): runs need none of these reads, and each read fails closed on its own.
+check (ADR-0078): commands still run and no run's own output is lost, but every one of these reads
+is refused, so artifacts, logs and LLM events cannot be served, a LangGraph run reports no thread
+and cannot be resumed, and a continuation's target run resumes without the watched run's result.
 
 `ContinuationFireService.extractResult` reads a watched run's stdout into a continuation's resume
 payload the same way. It refuses a symlinked artifacts directory and a recorded stdout path that is
