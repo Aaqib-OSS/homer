@@ -239,8 +239,9 @@ internal class NativeDescriptors(
 
         override fun close() {
             if (closed.compareAndSet(false, true)) {
-                closeCall.invokeWithArguments(fd)
+                // Arena first: a racing read then fails on the closed buffer instead of reading a reused fd number.
                 arena.close()
+                closeCall.invokeWithArguments(fd)
             }
         }
     }
