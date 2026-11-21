@@ -5,7 +5,9 @@
 ### Homer
 
 - **BREAKING: env names on the ssh and Kubernetes runners must be shell identifiers** — Runner `env` keys and `extraUploads.env` names on these runners must match `^[A-Za-z_][A-Za-z0-9_]*$` at startup, and an ssh or Kubernetes run fails before it touches the remote host or creates a pod on a `globalEnv`, agent `env`, input or `onStop:` `resultEnvParam` name that does not; rename such keys (for example `FOO-BAR` to `FOO_BAR`).
-- **Security: the ssh and Kubernetes runners keep the step env off the command line and exec URI** — Each step's env reaches its command through a 0600 file the command's shell sources and removes, so remote process tables, `execve` audit records and Kubernetes audit logs no longer hold it; `.homer/env` is now a reserved `extraUploads` path on every remote runner and external domain, and the Kubernetes image needs `sh`.
+- **Security: the step env no longer travels on the ssh command line or the Kubernetes exec URI** — Each step's env no longer appears in remote process tables, `execve` audit records or Kubernetes audit logs.
+- **BREAKING: the Kubernetes runner's image needs `sh`** — A step with an env now runs under `sh`, so an image without it fails every such step; add `sh` to the image.
+- **Changed: `.homer/env` is a reserved `extraUploads` path** — A runner or external-domain `extraUploads` entry targeting it, or `.homer`, is rejected at startup.
 - **Added: `isErrorExitCode` on `!<claude>` commands** — An `is_error` result returns this exit code instead of failing as malformed, and is not retried.
 - **Added: `GET /api/v1/auth/me` answers a bearer token** — A request carrying a bearer token gets that token's name, role and grants, and the route is mounted whenever a `bearer` or `password` scheme is configured.
 - **BREAKING: the LangGraph runtime needs Python 3.12** — A runner host that runs `!<langgraph>` commands needs Python 3.12 or newer to install `homer_langgraph`.
