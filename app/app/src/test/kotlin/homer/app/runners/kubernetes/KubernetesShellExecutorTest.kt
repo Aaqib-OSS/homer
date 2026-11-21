@@ -1445,7 +1445,7 @@ class KubernetesShellExecutorTest {
     }
 
     @Test
-    fun `a grace launches the command under setsid and records its pgid in the workspace dir`(
+    fun `a grace launches the command under setsid -w and records its pgid in the workspace dir`(
         @TempDir tmp: Path,
     ) = runTest {
         val started = mutableListOf<List<String>>()
@@ -1467,10 +1467,10 @@ class KubernetesShellExecutorTest {
             )
 
         assertEquals(0, result.exitCode)
-        assertEquals(listOf("setsid", "-w", "true"), started.first()) // the one-shot capability probe
+        assertEquals(listOf("setsid", "-w", "true"), started.first(), "the probe precedes the env file upload: $started")
         val argv = started.single { "echo" in it }
         assertEquals(listOf("setsid", "-w", "sh", "-c"), argv.take(4))
-        assertTrue(argv[4].endsWith("f=\$1; shift; . \"\$f\" && exec \"\$@\""), "the group leader sources the env file: $argv")
+        assertTrue(argv[4].endsWith("f=\$1; shift; . \"\$f\" && (exec \"\$@\"); exit \$?"), "the wrapper sources the env file: $argv")
         assertEquals("/homer/workspace/workdir/homer-exec-1.pgid", argv[5], "the pgid file must sit in the workspace dir")
         assertTrue(argv[6].matches(ENV_FILE), "the env file follows the pgid file: $argv")
         assertEquals(listOf("echo", "hi"), argv.drop(7))
@@ -1701,33 +1701,32 @@ class KubernetesShellExecutorTest {
     }
 
     @Test
-    fun `a pod without setsid is launched unchanged and killed pod-wide`(
+    fun `a pod without setsid -w runs the group wrapper with no prefix`(
         @TempDir tmp: Path,
     ) = runTest {
         val started = mutableListOf<List<String>>()
         val client =
             envFileExecsAnswered { _, _, argv, _ ->
                 started += argv
-                // No setsid: both probe forms fail, so the command runs exactly as it does today.
-                if (argv.last() == "true") throw IllegalStateException("setsid: not found") else neverFinishing()
+                if (argv.last() == "true") throw IllegalStateException("setsid: not found") else fakeProcess("", "", 0)
             }
         val executor = KubernetesShellExecutor(client, mockk(relaxed = true), "homer", "pod-1", maxRunSeconds = RUN_LIMIT_SECONDS)
 
-        assertFailsWith<kotlinx.coroutines.CancellationException> {
-            executor.cmd(
-                command = listOf("sleep", "1000"),
-                stdOut = tmp.resolve("out"),
-                stdErr = tmp.resolve("err"),
-                env = mapOf("HMR_WORK_DIR" to "/homer/workspace/workdir"),
-                timeout = 1.seconds,
-                interruptGrace = 1.seconds,
-            )
-        }
+        executor.cmd(
+            command = listOf("sleep", "1"),
+            stdOut = tmp.resolve("out"),
+            stdErr = tmp.resolve("err"),
+            env = mapOf("HMR_WORK_DIR" to "/homer/workspace/workdir"),
+            timeout = 10.seconds,
+            interruptGrace = 1.seconds,
+        )
 
-        assertEquals(listOf(listOf("setsid", "-w", "true"), listOf("setsid", "true")), started.take(2))
-        assertEquals(listOf("sh", "-c", ". \"\$0\" && exec \"\$@\""), started[2].take(3))
-        assertEquals(listOf("sleep", "1000"), started[2].drop(4))
-        assertTrue(KILL_ARGV in started, "without setsid the kill stays pod-wide: $started")
+        val argv = started.single { "sleep" in it }
+        assertEquals(
+            listOf("sh", "-c", "/homer/workspace/workdir/homer-exec-1.pgid", "sleep", "1"),
+            argv.take(2) + argv[3] + argv.drop(5),
+            "the wrapper, its pgid file and the argv, with no setsid: $argv",
+        )
     }
 
     /** True when [argv] is the executor's own signalling exec, not the command's. */

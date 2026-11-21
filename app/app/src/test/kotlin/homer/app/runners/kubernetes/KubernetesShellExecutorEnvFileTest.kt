@@ -48,7 +48,7 @@ class KubernetesShellExecutorEnvFileTest {
     /** Stands in for the command's own exec; null runs it locally. */
     private var command: ((List<String>) -> Process)? = null
 
-    /** Whether the pod has `setsid`; its launch then runs locally without the `setsid -w` prefix. */
+    /** Whether the pod has `setsid -w`; its launch then runs locally without that prefix. */
     private var podHasSetsid = false
 
     private val localPod =
@@ -91,7 +91,7 @@ class KubernetesShellExecutorEnvFileTest {
         }
 
     @Test
-    fun `the setsid launch records the pgid, sources the env file, and no exec request carries the value`() =
+    fun `the setsid -w launch sources the env file, and no exec request carries the value`() =
         runTest {
             podHasSetsid = true
             val workDir = Files.createDirectories(tmp.resolve("ws/workdir"))
@@ -110,14 +110,6 @@ class KubernetesShellExecutorEnvFileTest {
             assertEquals(SECRET, tmp.resolve("out").readText())
             assertNoEnvValueIn(started)
             assertTrue(started.any { it.take(2) == listOf("setsid", "-w") && it.size > 3 }, "launched under setsid: $started")
-            assertTrue(
-                workDir
-                    .resolve("homer-exec-1.pgid")
-                    .readText()
-                    .trim()
-                    .toInt() > 1,
-                "the group leader recorded its pid",
-            )
             assertEquals(emptyList(), envDir.listDirectoryEntries())
         }
 

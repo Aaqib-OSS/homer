@@ -15,6 +15,20 @@ object RemoteShell {
     fun sourceThenRun(fileRef: String): String = ". \"$fileRef\" && (exec \"\$@\")"
 
     /**
+     * The ssh and Kubernetes reaping wrapper's `sh -c` script, run as `sh -c <it> <pgidFile> [envFile] <argv>`: [record]
+     * first (it must end with `; `), then the argv in a child (after sourcing `$1` when [sourcesEnvFile]), so a signal
+     * death exits 128 + n (ADR-0041).
+     */
+    fun reapingWrapper(
+        record: String,
+        sourcesEnvFile: Boolean,
+    ): String {
+        val launch = if (sourcesEnvFile) "f=\$1; shift; " + sourceThenRun("\$f") else "(exec \"\$@\")"
+        // `trap :`, never `trap ''`, keeps the wrapper waiting through a group signal without the argv inheriting an ignore.
+        return "trap : INT TERM HUP; $record$launch; exit \$?"
+    }
+
+    /**
      * The `export` script a launcher sources from [envFile]: its first line removes the file before any export can
      * change the `PATH` that `rm` resolves on. Fails on a key that is not a POSIX shell identifier and on a value
      * holding a NUL byte.

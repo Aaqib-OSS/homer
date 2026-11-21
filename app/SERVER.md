@@ -3319,7 +3319,7 @@ commands expect:
   cp` already imposes, so it holds in effectively every build image.
 - `Cmd` — the binary named by `cmd[0]` must be on `PATH` or given by
   absolute path (`sh` is assumed present: it sources each command's env
-  file before it `exec`s the argv).
+  file before it runs the argv).
 - `Script` — the configured `shell` must exist at its path.
 - `Claude` — the `claude` CLI must be installed; Homer compiles the
   prompt host-side and pipes it via stdin.
@@ -3396,7 +3396,8 @@ through a file: before each command with an env, Homer writes
 tar-over-exec channel (the bytes travel on stdin, over TLS, like the
 command's stdio), as mode `0600` in a `0700` directory, and the
 command's `sh` sources it and removes it as its first line before it
-`exec`s the argv. The exec request URI carries only the file's path,
+runs the argv (with an interrupt grace, in a waiting child, so a signal
+death reports 128 + n). The exec request URI carries only the file's path,
 never a value, so nothing is written into a stored Kubernetes object
 and a cluster auditing `pods/exec` records no env. `kubectl get pod -o
 yaml` in the runner's namespace no longer discloses agent secrets, and

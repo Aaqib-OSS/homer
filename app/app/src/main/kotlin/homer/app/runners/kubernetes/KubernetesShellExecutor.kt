@@ -37,7 +37,7 @@ import kotlin.time.Duration
 /**
  * Runs each command in an already-started pod over a new exec channel. A non-empty env goes in a file in [envDir] that
  * an `sh` launcher sources before it `exec`s the argv; without one a Cmd runs unshelled. With an `interruptGrace` the
- * command is wrapped in `setsid`, so its process group can be interrupted before the kill (ADR-0108).
+ * command runs in its own process group, so that group can be interrupted before the kill (ADR-0108).
  */
 class KubernetesShellExecutor(
     private val execClient: KubernetesExecClient,
@@ -71,9 +71,9 @@ class KubernetesShellExecutor(
     ): CommandResult =
         withContext(Dispatchers.IO) {
             // jscpd:ignore-end
-            // Rendered before the `setsid` probe, so a name or value the file refuses fails before any exec.
+            // Rendered before the `setsid -w` probe, so a name or value the file refuses fails before any exec.
             val envFile = if (env.isNotEmpty()) RemoteEnvFile.render(envDir, env) else null
-            // Null without a grace (or where the pod has no `setsid`): the launch is then exactly today's.
+            // Null without a grace: the launch is then exactly today's. With one, the probe runs here, before the upload.
             val pgidFile = podControl.pgidFileFor(env, interruptGrace)
             RemoteEnvFile.removingUnlessSucceeded(envFile?.path, { sync.removeIfExists(it, RemoteEnvFile.REMOVE_TIMEOUT) }) {
                 envFile?.let { sync.writePrivateFile(it.path, it.content) }
@@ -81,7 +81,7 @@ class KubernetesShellExecutor(
             }
         }
 
-    /** The exec for [command]: under `setsid` with a [pgidFile], else via the env launcher for an [envFile]. */
+    /** The exec for [command]: in its own process group with a [pgidFile], else via the env launcher for an [envFile]. */
     private fun launch(
         command: List<String>,
         envFile: String?,
@@ -89,7 +89,7 @@ class KubernetesShellExecutor(
     ): Launch {
         val argv =
             when {
-                pgidFile != null -> podControl.setsidLaunch(pgidFile, envFile, command)
+                pgidFile != null -> podControl.groupLaunch(pgidFile, envFile, command)
                 envFile != null -> listOf("sh", "-c", RemoteShell.sourceThenExec("\$0"), envFile) + command
                 else -> command
             }

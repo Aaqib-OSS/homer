@@ -24,6 +24,19 @@ class RemoteShellTest {
     }
 
     @Test
+    fun `reapingWrapper runs the record, then the argv in a child, and exits with its status`() {
+        assertEquals("trap : INT TERM HUP; R; (exec \"\$@\"); exit \$?", RemoteShell.reapingWrapper("R; ", sourcesEnvFile = false))
+    }
+
+    @Test
+    fun `reapingWrapper with an env file shifts it off the argv and sources it before the child runs`() {
+        assertEquals(
+            "trap : INT TERM HUP; R; f=\$1; shift; . \"\$f\" && (exec \"\$@\"); exit \$?",
+            RemoteShell.reapingWrapper("R; ", sourcesEnvFile = true),
+        )
+    }
+
+    @Test
     fun `envFileContent removes the file first, then exports each value single-quoted`() {
         val content = RemoteShell.envFileContent("/w/.homer/env/a1.env", linkedMapOf("FOO" to "it's", "BAR" to "x"))
         assertEquals(
