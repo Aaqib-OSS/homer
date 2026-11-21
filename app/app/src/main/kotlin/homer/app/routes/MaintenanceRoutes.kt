@@ -11,7 +11,7 @@ import io.ktor.server.routing.post
 /**
  * `GET`/`POST /api/v1/maintenance`: the maintenance-mode toggle and its state. `GET` admits an admin or a
  * `read` grant on `*` (ADR-0111); `POST` is admin-only. The gate runs before the body is parsed, and a denial
- * is a `404`, never a `403` (ADR-0037, ADR-0047 rule 3, ADR-0092).
+ * is the same body-less `404` an unmounted path answers, never a `403` (ADR-0037, ADR-0047 rule 3, ADR-0092).
  */
 internal fun Route.maintenanceRoutes(deps: MaintenanceDeps) {
     with(deps) {

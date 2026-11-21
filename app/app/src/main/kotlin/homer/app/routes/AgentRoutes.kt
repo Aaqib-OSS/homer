@@ -173,7 +173,7 @@ private fun Route.agentFileWriteRoutes(deps: AgentRouteDeps) {
     }
 }
 
-/** `GET /agents/{agentName}/langgraph`, `POST …/debug` and `POST …/cron-run`: topology, debug runs and cron fires. */
+/** `GET /agents/{agentName}/langgraph`, `POST …/debug` and `POST …/cron-run`: topology, debug and cron fires. */
 private fun Route.agentToolingRoutes(deps: AgentRouteDeps) {
     with(deps) {
         get("/agents/{agentName}/langgraph") {

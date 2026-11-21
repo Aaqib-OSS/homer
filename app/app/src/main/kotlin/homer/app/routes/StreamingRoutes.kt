@@ -123,8 +123,8 @@ private fun Route.agentEventsStreamRoute(
                     .filter { it is ProcessEvent.AgentsReloaded }
                     .collect { event ->
                         val reloaded = event as ProcessEvent.AgentsReloaded
-                        // Mirror GET /api/v1/agents: only names the principal holds a grant on. The frame is always sent, even empty:
-                        // it signals "reload completed", and suppressing filtered-empty frames would reveal a hidden agent changed.
+                        // Mirror GET /api/v1/agents: only granted names. The frame is always sent, even empty: it
+                        // signals "reload completed", and dropping empty frames would reveal a hidden change.
                         val added = reloaded.added.filter { authorizer.anyGrant(principal, it) }
                         val updated = reloaded.updated.filter { authorizer.anyGrant(principal, it) }
                         val removed = reloaded.removed.filter { authorizer.anyGrant(principal, it) }

@@ -19,7 +19,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 
-/** Run starts (`/agent/{agentName}`, `/processes/{id}/retry`, `/processes/{id}/resume`) and `GET /processes/{id}/langgraph`. */
+/** Run starts (`/agent/{agentName}`, `/processes/{id}/retry`, `/processes/{id}/resume`) and `GET …/langgraph`. */
 internal fun Route.runRoutes(deps: RunRouteDeps) {
     runStartRoutes(deps)
     processLangGraphRoutes(deps)
@@ -57,7 +57,7 @@ private fun Route.runStartRoutes(deps: RunRouteDeps) {
     }
 }
 
-/** `GET /processes/{id}/langgraph` and `POST /processes/{id}/resume`: a run's LangGraph state and resuming its thread. */
+/** `GET /processes/{id}/langgraph` and `POST /processes/{id}/resume`: a run's LangGraph state and its resume. */
 private fun Route.processLangGraphRoutes(deps: RunRouteDeps) {
     with(deps) {
         get("/processes/{id}/langgraph") {

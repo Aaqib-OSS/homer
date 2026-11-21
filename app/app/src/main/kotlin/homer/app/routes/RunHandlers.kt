@@ -236,8 +236,8 @@ internal suspend fun handleRetry(
         // only when they can (CWE-200, ADR-0058).
         val retryRootProcessId =
             processManager.visibleRootProcessId(call.principalName(), authorizer, sourceProcess.rootProcessId)
-        // Union, not the current definition alone: an input flipped to `secret: false` since would be tagged in the clear.
-        // Stamped before `execute` so the run's own spans inherit it (ADR-0052).
+        // Union, not the current definition: an input flipped to `secret: false` since would be tagged
+        // in the clear. Stamped before `execute` so the run's own spans inherit it (ADR-0052).
         span.stampLangfuseTrace(agent, listOf("retry") + langfuseTraceTags(agent, retryParams, retrySecretEnvNames))
         // A replay renders the cooldown key from the source run's subject and stored-secret snapshot, so a key
         // naming a then-secret input is refused before any row exists (ADR-0106).
@@ -371,7 +371,7 @@ private fun startedRunAttributes(
 /**
  * Starts a run under a fresh root span [spanName] and answers its process id. [start] stamps the Langfuse trace and
  * returns the process id with the span's remaining attributes; a failure marks the span ERROR and propagates.
- * Applies the tracing gate and [maintenanceGate]'s parking itself, as [AgentRunStarter.start] does (ADR-0050, ADR-0092).
+ * Applies the tracing gate and [maintenanceGate]'s parking, as [AgentRunStarter.start] does (ADR-0050, ADR-0092).
  */
 @Suppress("SuspendFunSwallowedCancellation") // records the span error and rethrows
 private suspend fun respondStartedUnderRootSpan(

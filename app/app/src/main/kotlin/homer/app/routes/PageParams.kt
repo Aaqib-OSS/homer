@@ -5,7 +5,7 @@ import io.ktor.server.application.ApplicationCall
 /** Page size a list endpoint returns when the caller names no `limit`. */
 internal const val DEFAULT_PAGE_LIMIT = 100
 
-/** Largest page size a caller may ask for — the page-size bound of every list endpoint (§12 rule 4). */
+/** Largest page size a caller may ask for — the page-size bound of every list endpoint (ADR-0047 rule 4). */
 internal const val MAX_PAGE_LIMIT = 1000
 
 /**

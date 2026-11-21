@@ -50,8 +50,8 @@ private fun Route.processListRoute(deps: ProcessRouteDeps) {
                     screenTags = { info ->
                         screenTags(info.tags, info.inputParams, agentsService.agents[info.agentName], info.secretInputKeys)
                     },
-                    // A ?rootProcessId= filter is honoured only when that root is visible to the caller, else the page is empty;
-                    // a row's rootProcessId is null unless the caller can see the root row (CWE-200, ADR-0058).
+                    // A ?rootProcessId= filter is honoured only when that root is visible to the caller, else the page
+                    // is empty; a row's rootProcessId is null unless the caller sees the root (CWE-200, ADR-0058).
                     canSeeRoot = { owner, agentName -> authorizer.canSee(principal, owner, agentName) },
                 )
             // Alias is admin-only (CWE-200, fail closed). Same admin gate as the
@@ -124,7 +124,7 @@ private fun Route.processStatusRoute(deps: ProcessRouteDeps) {
 
 /**
  * Whether [principal] may open the run that [processInfo]'s failure reason names as its blocker (a lock holder),
- * so its id may be appended; a missing or invisible holder withholds the id (CWE-200, ADR-0058).
+ * so its id may be appended; a missing or invisible holder withholds the id (CWE-200, ADR-0098).
  */
 private suspend fun ProcessRouteDeps.holderRunVisible(
     processInfo: ProcessInfo,
@@ -395,7 +395,7 @@ private fun parseRootsParam(call: ApplicationCall): Boolean {
 }
 
 /**
- * Repeated `?tag=` params AND together and are de-duplicated (ADR-0058); their count is capped here, in the
+ * Repeated `?tag=` params AND together and are de-duplicated (ADR-0060); their count is capped here, in the
  * handler, so a caller cannot force an arbitrarily wide query (ADR-0047 rule 4).
  */
 private fun parseTagFilters(call: ApplicationCall): List<String> {

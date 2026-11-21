@@ -144,8 +144,8 @@ private suspend fun handleSsePost(
                 // text/event-stream before its first send.
                 call.respondBytesWriter {
                     while (true) {
-                        // select, not withTimeoutOrNull(receiveCatching): a timeout cancelling a plain receive can drop an
-                        // element already taken off the channel, losing the final JSON-RPC response.
+                        // select, not withTimeoutOrNull(receiveCatching): a timeout cancelling a plain receive can
+                        // drop an element already taken off the channel, losing the final JSON-RPC response.
                         val received =
                             select<ChannelResult<ServerSentEvent>?> {
                                 events.onReceiveCatching { it }

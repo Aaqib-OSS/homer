@@ -124,7 +124,7 @@ private fun Route.meRoute(
     }
 }
 
-/** The `/me` answer for [credential]: `401` with no body, as every secured route refuses it, unless it is a token of [scheme]. */
+/** The `/me` answer for [credential]: `401` with no body, as every secured route does, unless a token of [scheme]. */
 private suspend fun ApplicationCall.respondBearerMe(
     authorizer: Authorizer,
     scheme: AuthConfig.Bearer,
@@ -139,7 +139,7 @@ private suspend fun ApplicationCall.respondBearerMe(
     respond(MeResponse(username = principal, role = if (held.admin) "admin" else null, grants = held.grants))
 }
 
-/** The `/me` answer for the session cookie: its user's role and grants, or `401` when it is absent, expired or revoked. */
+/** The `/me` answer for the session cookie: its user's role and grants, or `401` when absent, expired or revoked. */
 private suspend fun ApplicationCall.respondSessionMe(passwordScheme: AuthConfig.Password) {
     val session = sessions.get<HomerSession>()
     if (session == null ||

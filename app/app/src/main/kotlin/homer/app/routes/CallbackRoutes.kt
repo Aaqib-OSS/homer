@@ -112,7 +112,7 @@ private fun Route.callbackQuestionRoutes(deps: CallbackDeps) {
 private fun Route.callbackTagRoutes(deps: CallbackDeps) {
     with(deps) {
         route("/api/v1/callback/tags") {
-            // The run is identified by the callback token alone; a process id in the body is ignored (ADR-0019).
+            // The run is identified by the callback token alone; a body process id is ignored (ADR-0019, ADR-0060).
             // 409 for a terminal/closed run; 400 for an undeclared key, a malformed value or the per-run ceiling.
             post {
                 val processId = call.resolveCallbackProcess(questionsService) ?: return@post
@@ -295,8 +295,8 @@ private fun Route.callbackResultRoutes(deps: CallbackDeps) {
 /** `POST /api/v1/callback/messages/take`: a run taking the operator messages queued for it. */
 private fun Route.callbackMessageRoutes(deps: CallbackDeps) {
     with(deps) {
-        // Takes only the token's own run's QUEUED messages (a child run has its own token), marking them DELIVERED.
-        // `?hook=` answers as hook JSON, or 204 when empty. Never long-polls, so hooks stay fast (ADR-0097).
+        // Takes only the token's own run's QUEUED messages (a child run has its own token) (ADR-0097), marking them
+        // DELIVERED. `?hook=` answers as hook JSON, or 204 when empty. Never long-polls, so hooks stay fast.
         post("/api/v1/callback/messages/take") {
             val processId = call.resolveCallbackProcess(questionsService) ?: return@post
             val hook =
@@ -340,7 +340,7 @@ private fun Route.callbackWhoamiRoutes(deps: CallbackDeps) {
     }
 }
 
-/** Refuses with a `400` a runtime tag [value] carrying any secret of the run's [registration]; logs the key, never the value. */
+/** Refuses with a `400` a runtime tag [value] carrying a secret of [registration]'s run; logs only the key. */
 private fun refuseSecretTagValue(
     registration: QuestionsService.Registration,
     processId: Int,
