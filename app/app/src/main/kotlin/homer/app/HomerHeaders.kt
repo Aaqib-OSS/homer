@@ -1,11 +1,8 @@
 package homer.app
 
 /**
- * HTTP header names of the Homer API, modelled on [EnvConstants]: one kernel object every layer may
- * import, so a name cannot be mistyped at a call site and silently break a client contract.
- *
- * The strings are a published surface — a renamed header stops reaching existing clients and egress
- * proxies, so every value here is pinned by a test.
+ * HTTP header names of the Homer API, modelled on [EnvConstants]. A published surface: a rename
+ * breaks existing clients and egress proxies, so every value is pinned by a test.
  */
 object HomerHeaders {
     /** Response header of `GET /api/v1/artifacts`: the run's current status name. */

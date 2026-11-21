@@ -3,11 +3,8 @@ package homer.app.exceptions
 import kotlinx.coroutines.CancellationException
 
 /**
- * Raised by `ShellExecutor` implementations when a command's stdout or stderr file exceeds
- * the configured cap (`server.maxOutputBytes`). Extends `CancellationException` so the existing
- * cancel/timeout propagation paths in callers (`CmdExecutor`/`ScriptExecutor`/`LlmHarnessExecutor`
- * → `AgentExecutor`) unwind the same way as a TTL kill. `AgentExecutor` distinguishes this case
- * by type to set `ExecutionInfo.outputTruncated = true`.
+ * A command's stdout or stderr exceeded `server.maxOutputBytes`. A `CancellationException`, so it unwinds
+ * like a TTL kill; `AgentExecutor` tells it apart by type to set `ExecutionInfo.outputTruncated`.
  */
 class OutputCapExceededException(
     message: String,

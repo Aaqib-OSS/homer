@@ -1,12 +1,9 @@
 package homer.app
 
 /**
- * Span attribute keys and span event names Homer writes on its own spans, modelled on [EnvConstants]:
- * one kernel object every layer may import, so a key cannot be mistyped at a call site and silently
- * stop matching a trace query. The values are the exported surface: plain `const val` strings, each
- * pinned by a test — a rename breaks an existing trace query. A key written at more than one call site
- * is named here; one written once stays a literal. The Langfuse exporter's own vocabulary (`langfuse.*`,
- * `llm.*`, `usage_details.*`) is that protocol's, not Homer's, and stays with the emitter.
+ * Span attribute keys and event names Homer writes on its own spans; each value is pinned by a test, as a
+ * rename breaks existing trace queries. A key used at one call site stays a literal; the Langfuse
+ * exporter's `langfuse.*`, `llm.*` and `usage_details.*` vocabulary stays with the emitter.
  */
 object SpanAttributes {
     /** Status of the run, as its `ProcessStatus` name; written by `ProcessExecutor` and `Process`. */

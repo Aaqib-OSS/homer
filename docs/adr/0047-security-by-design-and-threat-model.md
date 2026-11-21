@@ -371,6 +371,9 @@ for the host for as long as `max-age` runs, so sending it would lock those insta
 console. Where TLS is used, it terminates at an operator-run reverse proxy (see `DOCKER.md`), which is
 where HSTS belongs; the API sends it only once deployment is HTTPS-only.
 
+The CSP is `default-src 'self'`, as restrictive as it gets, because the API serves no HTML and loads no
+remote subresource; a future HTML surface needs an explicit policy override before it ships.
+
 ## Amendment (2026-11-21): why each `PathSafety` check exists
 
 - **`assertContained` needs the lexical and the realpath view to agree.** Rejecting `..` in the

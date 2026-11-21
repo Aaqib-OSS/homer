@@ -108,42 +108,30 @@ fun Application.configureCors(allowedOrigins: List<String>) {
         allowHeader(HttpHeaders.Authorization)
         allowHeader(HttpHeaders.ContentType)
         allowHeader(HttpHeaders.Accept)
-        // Cookie-auth clients send this on every request; it is non-safelisted,
-        // so a cross-origin console preflight must see it in Allow-Headers or the
-        // browser blocks the real request. See ADR-0016.
+        // Non-safelisted: a cross-origin console preflight must see it in Allow-Headers. See ADR-0016.
         allowHeader(CSRF_HEADER)
-        // Same reason: a cross-origin caller linking its run to a parent (ADR-0058)
-        // sends this non-safelisted header and must pass preflight.
+        // Non-safelisted too: a cross-origin caller linking its run to a parent must pass preflight (ADR-0058).
         allowHeader(HomerHeaders.PARENT_PROCESS_ID)
 
-        // Custom response headers are hidden from cross-origin JS unless listed
-        // in Access-Control-Expose-Headers. The console reads both off the
-        // artifact endpoint; without this it sees `null` and treats every
-        // finished artifact as still streaming (stuck Live badge).
+        // Cross-origin JS reads these only if exposed; without them the console treats every
+        // finished artifact as still streaming.
         exposeHeader(HomerHeaders.FILE_COMPLETE)
         exposeHeader(HomerHeaders.PROCESS_STATUS)
 
-        // Credentialed CORS only with pinned origins: anyHost() + credentials
-        // would reflect any Origin and let any site read the API with the
-        // victim's cookie. Empty origins keep anyHost() without credentials
-        // (bearer mode is unaffected). See ADR-0016.
+        // Credentials only with pinned origins: anyHost() plus credentials reflects any Origin.
+        // See ADR-0016.
         allowCredentials = allowedOrigins.isNotEmpty()
     }
 }
 
 /**
- * Response-hardening headers on every Ktor response: `X-Frame-Options: DENY` (no framing), `X-Content-Type-Options:
- * nosniff` (no MIME-confusion script execution), `Referrer-Policy: same-origin` (internal URLs do not leak
- * cross-origin), `Content-Security-Policy: default-src 'self'`. The CSP can stay maximally restrictive because the
- * API serves no HTML and loads no remote subresource — a future HTML surface needs an explicit policy override
- * before it ships. No HSTS header: it would lock out plain-HTTP single-node installs. See ADR-0047.
+ * Response-hardening headers on every Ktor response: no framing, no MIME sniffing, same-origin referrers
+ * and a `default-src 'self'` CSP. No HSTS header, which would lock out plain-HTTP installs. See ADR-0047.
  */
 val SecurityHeaders =
     createApplicationPlugin("SecurityHeaders") {
         onCall { call ->
-            // CORS (installed first) completes preflight OPTIONS responses before this
-            // runs; appending to an already-committed response throws in the Netty
-            // engine and logs every preflight as a spurious ERROR.
+            // CORS completes preflight OPTIONS first; appending to a committed response throws in Netty.
             if (call.response.isCommitted) return@onCall
             with(call.response.headers) {
                 append("X-Frame-Options", "DENY")
@@ -169,10 +157,8 @@ internal fun isNoisyAccessPath(path: String): Boolean =
         path == "/api/v1/livez" ||
         (path.startsWith("/api/v1/runner/") && (path.endsWith("/claim") || path.endsWith("/next") || path.endsWith("/output")))
 
-// The result-read capability token (ADR-0025) travels in the URL path; logging it
-// verbatim to api.log/app.log would let a co-located process harvest a live token
-// and read another run's result. Mask the token segment wherever a request path is
-// logged. (Other callback tokens ride the Authorization header, which is not logged.)
+// The result-read token (ADR-0025) rides the URL path: mask it wherever a path is logged, so a
+// co-located process cannot harvest a live token from the logs.
 private val RESULT_TOKEN_IN_PATH = Regex("(/api/v1/callback/results/)[^/?]+")
 
 internal fun redactAccessLogPath(path: String): String = RESULT_TOKEN_IN_PATH.replace(path) { "${it.groupValues[1]}***" }
@@ -193,10 +179,8 @@ fun Application.configureCallLogging() {
 }
 
 /**
- * Wire-format Json for the REST API: used by the routing-scoped
- * ContentNegotiation install and by StatusPages, which must serialize
- * explicitly — it responds on the application-level call where the
- * routing-scoped ContentNegotiation does not apply.
+ * Wire-format Json for the REST API, used by ContentNegotiation and by StatusPages, which serializes
+ * explicitly because the routing-scoped ContentNegotiation does not apply to it.
  */
 internal val apiJson =
     Json {
@@ -210,9 +194,7 @@ fun Application.configureStatusPages() {
         exception<HomerException> { call, e ->
             val status = homerExceptionStatus(e)
             if (e is BodylessBadRequestException) return@exception call.respond(status)
-            // 5xx messages can carry internal paths / command strings / config detail.
-            // Log the detail server-side; return a generic body to the client. 4xx
-            // messages are client-actionable, so they pass through unchanged.
+            // 5xx detail is logged, not returned; 4xx messages are client-actionable and pass through.
             val clientMessage =
                 if (status == HttpStatusCode.InternalServerError) {
                     logger.error("Internal error on {} {}", call.request.httpMethod.value, redactAccessLogPath(call.request.path()), e)
@@ -237,10 +219,9 @@ fun Application.configureStatusPages() {
 }
 
 /**
- * The HTTP status a [HomerException] escaping a route maps to. The `when` stays exhaustive
- * over the sealed hierarchy with no `else`, so a new subclass fails the build until it is
- * mapped here (ADR-0002); the caller's request errors are resolved by [requestErrorStatus],
- * the transfer, capacity and server-side ones by [transferCapacityOrServerStatus].
+ * The HTTP status a [HomerException] escaping a route maps to. Exhaustive with no `else`, so a new
+ * subclass fails the build until mapped here (ADR-0002); the rest are resolved by [requestErrorStatus]
+ * and [transferCapacityOrServerStatus].
  */
 internal fun homerExceptionStatus(e: HomerException): HttpStatusCode =
     when (e) {
