@@ -1,5 +1,6 @@
 package homer.runner
 
+import homer.app.infra.DanglingLinkException
 import homer.app.infra.PathSafety
 import homer.app.infra.coRunCatching
 import homer.app.runners.DownloadMode
@@ -9,6 +10,7 @@ import homer.app.runners.external.RunnerOp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
@@ -117,13 +119,20 @@ internal class SessionWorkspace(
      */
     private fun contained(remoteRelative: String): Path {
         val candidate = sessionRoot.resolve(remoteRelative).normalize()
-        val root = realRoot
-        val inside =
-            root != null &&
-                coRunCatching { PathSafety.assertContainedUnder(sessionRoot, root, candidate, failOnDanglingLink = true) }.isSuccess
-        require(inside) { "path '$remoteRelative' escapes the session root" }
+        val root = realRoot ?: throw IllegalArgumentException("path '$remoteRelative' refused: the session root has no resolved path")
+        try {
+            PathSafety.assertContainedUnder(sessionRoot, root, candidate, failOnDanglingLink = true)
+        } catch (e: SecurityException) {
+            throw IllegalArgumentException("path '$remoteRelative' refused: ${refusalKind(e)}", e)
+        } catch (e: IOException) {
+            throw IllegalArgumentException("path '$remoteRelative' could not be checked: ${e::class.simpleName}", e)
+        }
         return candidate
     }
+
+    /** A fixed phrase for [e]; its own message carries host paths, which must not reach the server. */
+    private fun refusalKind(e: SecurityException): String =
+        if (e is DanglingLinkException) "passes through a dangling symlink" else "escapes the session root"
 
     fun deleteTree(path: Path) {
         if (!path.exists()) return

@@ -155,6 +155,20 @@ class PathSafetyTest {
     }
 
     @Test
+    fun `a path through a dangling link is refused with DanglingLinkException, an escape is not`(
+        @TempDir root: Path,
+    ) {
+        Files.createSymbolicLink(root.resolve("dangling"), root.resolve("nowhere"))
+        val real = root.toRealPath()
+
+        assertFailsWith<DanglingLinkException> {
+            PathSafety.assertContainedUnder(root, real, root.resolve("dangling/child"), failOnDanglingLink = true)
+        }
+        val escape = assertFailsWith<SecurityException> { PathSafety.assertContainedUnder(root, real, root.resolve("../x")) }
+        assertFalse(escape is DanglingLinkException)
+    }
+
+    @Test
     fun `isLinkedOrSpecial refuses symlinks, dangling links, hard links and directories, not a plain file`(
         @TempDir root: Path,
     ) {
