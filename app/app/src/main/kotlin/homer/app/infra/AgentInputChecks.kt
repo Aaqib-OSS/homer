@@ -295,7 +295,8 @@ internal class AgentInputChecks(
 
     /**
      * WARNs when an input-bound envName feeds the workspace path, lock key, cooldown key or a RunAgent
-     * target, letting a caller pick another run's directory, lock, pacing window or target agent. Legitimate, so only a warning.
+     * target, letting a caller pick another run's directory, lock, pacing window or target agent.
+     * Legitimate, so only a warning.
      */
     fun warnOnInputSteering(agent: Agent) {
         val inputEnvNames =
