@@ -7,7 +7,8 @@
 - **Security: Guava updated past a high-severity advisory** — The backend and `homer-runner` now ship Guava 33.8.0 (from 33.5.0, under the Kubernetes client's Google auth library).
 - **Security: `homer-app` ships npm 11.21.3** — The full image replaces Alpine's npm, whose bundled dependencies carry known advisories, with the release the new `NPM_VERSION` build argument pins.
 - **Security: the server images ship zlib 1.4** — `homer-app` and `homer-runner` upgrade zlib past their base image's build, fixing CVE-2026-4738.
-- **Changed: the server images run Alpine 3.24** — `homer-app`, its slim variant and `homer-runner` move to Alpine 3.24 with Temurin 25.0.5.1, which carries the Java4Shell fix (CVE-2026-114938), so the bundled `python3` is now Python 3.14 and `glab` is 1.100.
+- **Security: the server images move to Temurin 25.0.5.1** — `homer-app`, its slim variant and `homer-runner` ship the JRE with the Java4Shell fix (CVE-2026-114938).
+- **BREAKING: the server images run Alpine 3.24 with Python 3.14** — `homer-app`'s `python3` moves from 3.12 to 3.14 and `glab` to 1.100, so derived images and agent scripts tied to Python 3.12 or Alpine 3.23 packages must move.
 - **BREAKING: env names on the ssh and Kubernetes runners must be shell identifiers** — Runner `env` and `extraUploads.env` names must match `^[A-Za-z_][A-Za-z0-9_]*$` at startup, and a run fails before it reaches the host or creates a pod on a `globalEnv`, agent `env` or `onStop:` `resultEnvParam` name that does not.
 - **Security: the step env no longer travels on the ssh command line or the Kubernetes exec URI** — Each step's env no longer appears in remote process tables, `execve` audit records or Kubernetes audit logs.
 - **BREAKING: the Kubernetes runner's image needs `sh`** — A step with an env now runs under `sh`, so an image without it fails every such step; add `sh` to the image.
