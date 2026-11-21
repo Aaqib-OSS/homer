@@ -85,13 +85,11 @@ class LogLevelOverridesTest {
     }
 
     @Test
-    fun `re-applies the overrides after a context reset`() {
+    fun `leaves logback untouched without overrides or without a logback context`() {
         val context = LoggerContext()
-        val target = context.getLogger("homer.test.loglevels.Reset")
-        applyLogLevelOverrides(mapOf("HOMER_LOG_LEVELS" to "homer.test.loglevels.Reset=error"), context)
-        context.start()
-        context.reset()
-        context.stop()
-        assertEquals(Level.ERROR, target.level)
+        val logger = context.getLogger("homer.test.loglevels.Noop")
+        applyLogLevelOverrides(emptyMap(), context)
+        applyLogLevelOverrides(mapOf("HOMER_LOG_LEVELS" to "homer.test.loglevels.Noop=error"), org.slf4j.helpers.NOPLoggerFactory())
+        assertEquals(null, logger.level)
     }
 }

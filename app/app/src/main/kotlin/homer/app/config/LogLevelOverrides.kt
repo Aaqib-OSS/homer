@@ -2,13 +2,12 @@ package homer.app.config
 
 import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.LoggerContext
-import ch.qos.logback.classic.spi.LoggerContextListener
 import org.slf4j.ILoggerFactory
 
 /**
  * Applies `HOMER_LOG_LEVELS` (comma-separated `logger=LEVEL` pairs, `trace`..`off`, case-insensitive)
  * to logback's logger context, over the levels `logback.xml` sets. Malformed pairs and unknown
- * levels are skipped. A later context reset re-applies them.
+ * levels are skipped.
  */
 private const val ENV_LOG_LEVELS = "HOMER_LOG_LEVELS"
 private val VALID_LEVELS = setOf("trace", "debug", "info", "warn", "error", "off")
@@ -34,22 +33,5 @@ fun applyLogLevelOverrides(
     val context = factory as? LoggerContext ?: return
     val overrides = logLevelOverrides(env)
     if (overrides.isEmpty()) return
-    val apply = { overrides.forEach { (name, level) -> context.getLogger(name).level = Level.toLevel(level) } }
-    apply()
-    context.addListener(
-        object : LoggerContextListener {
-            override fun isResetResistant() = true
-
-            override fun onReset(loggerContext: LoggerContext) = apply()
-
-            override fun onStart(loggerContext: LoggerContext) = Unit
-
-            override fun onStop(loggerContext: LoggerContext) = Unit
-
-            override fun onLevelChange(
-                logger: ch.qos.logback.classic.Logger,
-                level: Level,
-            ) = Unit
-        },
-    )
+    overrides.forEach { (name, level) -> context.getLogger(name).level = Level.toLevel(level) }
 }
