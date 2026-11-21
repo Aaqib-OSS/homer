@@ -340,7 +340,9 @@ private fun Route.callbackWhoamiRoutes(deps: CallbackDeps) {
     }
 }
 
-/** Refuses with a `400` a runtime tag [value] carrying a secret of [registration]'s run; logs only the key. */
+/**
+ * Refuses with a `400` a runtime tag [value] carrying a secret of [registration]'s run; logs the key, never the value.
+ */
 private fun refuseSecretTagValue(
     registration: QuestionsService.Registration,
     processId: Int,

@@ -52,9 +52,9 @@ import kotlin.time.Duration.Companion.seconds
 private val logger = LoggerFactory.getLogger("homer.app.routes.RunnerProtocolRoutes")
 
 /**
- * The runner-facing surface of pull-mode runners (ADR-0066): a domain token, mounted outside `authenticate(...)`, so
- * operator credentials and domain tokens never satisfy each other's routes. Ids resolve inside the caller's domain
- * only; anything else is the same `404` as an unknown id (ADR-0047 rule 3).
+ * The runner-facing surface of pull-mode runners (ADR-0066), authenticated by a domain token outside
+ * `authenticate(...)`, so operator credentials and domain tokens never satisfy each other's routes. Ids resolve
+ * inside the caller's domain only; anything else is the same `404` as an unknown id (ADR-0047 rule 3).
  */
 internal fun Route.runnerProtocolRoutes(
     domains: List<ExternalRunnerDomain>,
