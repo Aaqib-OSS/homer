@@ -4071,12 +4071,19 @@ read every server secret from `/proc/<server pid>/environ` or ptrace the
 server. Spawned processes are unaffected, because `execve` resets the flag for
 the child. The startup log says which way it went: `Server JVM is non-dumpable`
 at INFO, a warning on a host without `prctl` (macOS development), and an ERROR
-when the call fails on Linux. Startup goes on in every case.
+when the call fails on Linux. Startup goes on in every case. The protection
+covers the environment only where the JVM itself holds it: the images `exec`
+the JVM, but a launcher that stays alive as Homer's user, such as a shell
+wrapper without `exec` or `gradle run`, keeps its own copy readable.
 
-The cost is operational. The server writes no core dump, and attaching to it as
-Homer's user (`jcmd`, `jstack`, `jmap`, a profiler, `gdb`) may be refused. Attach
-as root (`docker exec -u root …`) or with `CAP_SYS_PTRACE`. A JVM-written heap
-dump (`-XX:+HeapDumpOnOutOfMemoryError`) still works. The image's entrypoint
+The cost is operational. The server writes no core dump, and a tool that
+attaches to it (`jcmd`, `jstack`, `jmap`, a profiler, `gdb`) may be refused,
+even as root inside a default Docker container, which lacks `CAP_SYS_PTRACE`.
+For a thread dump, `kill -3 <server pid>` still works as Homer's user and
+prints it to the server's stdout (the container log). For an attaching tool,
+start the container with `--cap-add SYS_PTRACE` (or `--privileged`) and run the
+tool as root. A JVM-written heap dump (`-XX:+HeapDumpOnOutOfMemoryError`) still
+works. The image's entrypoint
 passes `--enable-native-access=ALL-UNNAMED` for the `prctl` call; a JVM started
 without it still hardens and prints a JDK warning. What this does not cover is
 listed as AR-13 in [`SECURITY.md`](../SECURITY.md#accepted-risks). See

@@ -732,9 +732,12 @@ docker compose up -d
 ### A diagnostic tool cannot attach to the backend
 
 On Linux the backend JVM is non-dumpable, so a tool you add to the container
-(`jcmd`, `jstack`, a profiler; the image ships a JRE without them) may be
-refused when it attaches as the `homer` user, and no core dump is written.
-Attach as root instead (`docker exec -u root homer-backend …`). Why, and what
+(`jcmd`, `jstack`, a profiler, `gdb`; the image ships a JRE without them) may be
+refused when it attaches, even as root: root in a default Docker container
+lacks `CAP_SYS_PTRACE`. No core dump is written either. For a thread dump,
+`docker exec homer-backend kill -3 1` prints one to the container log. For an
+attaching tool, start the backend with `--cap-add SYS_PTRACE` (`cap_add:
+[SYS_PTRACE]` in compose, or `--privileged`) and run it as root. Why, and what
 else it changes: [`app/SERVER.md`](app/SERVER.md#server-process-hardening).
 
 ## Maintenance
