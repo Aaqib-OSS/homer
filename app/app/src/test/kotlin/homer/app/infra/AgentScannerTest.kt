@@ -225,6 +225,18 @@ class AgentScannerTest {
         assertEquals("SYSENV:REPO_TOKEN @SYSENV:1BAD", scan.parsed.getValue("literal").env["TOKEN"])
     }
 
+    @Test
+    fun `an agent definition using an anchor and an alias is rejected by the YAML parser`() {
+        // Pins the app/SERVER.md `maxConfigFileBytes` row: kaml's default configuration refuses
+        // anchors and aliases, so a billion-laughs vector cannot be expressed in an agent definition.
+        define("anchored", agentYaml("anchored") + "env:\n  A: &greeting hello\n  B: *greeting\n")
+
+        val scan = scanner().scan()
+
+        assertFalse("anchored" in scan.parsed)
+        assertTrue(scan.errors.isNotEmpty(), scan.errors.toString())
+    }
+
     private companion object {
         const val HOST_SECRET = "host-secret-value-9f2c"
     }
