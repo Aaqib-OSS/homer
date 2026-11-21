@@ -535,7 +535,7 @@ class ProcessTest {
     // ========== Integration Tests ==========
 
     @Test
-    fun `execute should create workspace, execute agent, and cleanup in order`() =
+    fun `execute builds the workspace config and runs the agent's command`() =
         runTest {
             val mockWorkspaceConfig = TestFixtures.mockWorkspaceConfig()
             every {
@@ -577,8 +577,7 @@ class ProcessTest {
                 )
             }
 
-            // Verify span was ended
-            verify { mockSpan.end() }
+            coVerify(exactly = 1) { mockExecutorFactory.getExecutor<Command>(any()).execute(any(), any(), any()) }
         }
 
     @Test

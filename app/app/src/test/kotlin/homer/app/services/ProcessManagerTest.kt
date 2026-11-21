@@ -23,6 +23,7 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.unmockkAll
 import io.mockk.verify
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -543,7 +544,7 @@ class ProcessManagerTest {
             // Create 10 processes concurrently
             coroutineScope {
                 repeat(10) {
-                    launch {
+                    launch(Dispatchers.Default) {
                         val id = processManager.obtainProcessId(NewRunRecord("test-agent"))
                         synchronized(ids) {
                             ids.add(id)
@@ -563,9 +564,9 @@ class ProcessManagerTest {
 
             coroutineScope {
                 // Multiple concurrent status updates
-                launch { processManager.setProcessStatus(id, ProcessStatus.WORKING) }
-                launch { processManager.setProcessStatus(id, ProcessStatus.WORKING) }
-                launch { processManager.setProcessStatus(id, ProcessStatus.WORKING) }
+                launch(Dispatchers.Default) { processManager.setProcessStatus(id, ProcessStatus.WORKING) }
+                launch(Dispatchers.Default) { processManager.setProcessStatus(id, ProcessStatus.WORKING) }
+                launch(Dispatchers.Default) { processManager.setProcessStatus(id, ProcessStatus.WORKING) }
             }
 
             assertEquals(ProcessStatus.WORKING, processManager.getProcessStatus(id))
@@ -582,9 +583,9 @@ class ProcessManagerTest {
 
             // Multiple concurrent kill calls
             coroutineScope {
-                launch { processManager.killProcess(id) }
-                launch { processManager.killProcess(id) }
-                launch { processManager.killProcess(id) }
+                launch(Dispatchers.Default) { processManager.killProcess(id) }
+                launch(Dispatchers.Default) { processManager.killProcess(id) }
+                launch(Dispatchers.Default) { processManager.killProcess(id) }
             }
 
             // Should end up KILLED
