@@ -169,6 +169,8 @@ internal class NativeDescriptors(
             .find(it)
             .orElse(null)
     },
+    // Test seam: runs between open(2) and building the channel that owns the descriptor.
+    private val afterOpen: (Int) -> Unit = {},
 ) {
     private val linker = Linker.nativeLinker()
     private val errnoState = Linker.Option.captureStateLayout()
@@ -215,18 +217,33 @@ internal class NativeDescriptors(
     /** Opens [path] `O_NOFOLLOW | O_NONBLOCK`, then refuses it unless its descriptor is a single-link regular file. */
     fun openRegular(path: Path): SeekableByteChannel {
         val arena = Arena.ofShared()
+        var fd = -1
         var channel: DescriptorChannel? = null
         var checked = false
         try {
-            channel = DescriptorChannel(openFd(path, arena), arena)
+            fd = openFd(path, arena)
+            afterOpen(fd)
+            channel = DescriptorChannel(fd, arena)
             channel.requireSingleLinkRegular(path)
             checked = true
             return channel
         } finally {
-            if (!checked) {
-                if (channel != null) channel.close() else arena.close()
-            }
+            if (!checked) release(channel, fd, arena)
         }
+    }
+
+    /** CWE-775: a built channel owns [fd] and [arena]; before it exists both are closed here. */
+    private fun release(
+        channel: DescriptorChannel?,
+        fd: Int,
+        arena: Arena,
+    ) {
+        if (channel != null) {
+            channel.close()
+            return
+        }
+        arena.close()
+        if (fd >= 0) closeCall.invokeWithArguments(fd)
     }
 
     private fun openFd(
