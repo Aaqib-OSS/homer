@@ -50,7 +50,7 @@
 
 ### Console
 
-- **Removed: npm and npx from the console image** — The release image no longer ships the Node.js base image's npm, which nothing in it runs; the dev compose overlay builds a `dev` stage that keeps it.
+- **Removed: package managers from the console image** — The release image no longer ships the Node.js base image's npm, npx, corepack and yarn, which nothing in it runs; the dev compose overlay builds a `dev` stage that keeps them.
 - **Security: the console image ships zlib 1.4 and OpenSSL 3.5.9-r1** — The image upgrades zlib, libcrypto3 and libssl3 past its Node.js base's builds, fixing their known advisories.
 - **Added: removing a saved instance from the instance switcher** — Each row of the header picker deletes the instance and its bearer token; the last instance cannot be removed, and removing the active one signs out of it and switches to another.
 - **Security: bearer-mode sign-in no longer grants admin** — A bearer token now sees only the pages, controls and plugins its own role and grants allow, and none of the admin ones against a server too old to report them. See [ADR-0059](docs/adr/0059-console-plugins-are-runtime-loaded-modules.md).

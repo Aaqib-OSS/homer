@@ -54,8 +54,9 @@ ENV HOSTNAME="0.0.0.0"
 
 CMD ["node", "server.js"]
 
-# Production stage: nothing in it runs npm or npx, so the release image drops them.
+# Production stage: nothing in it runs a package manager, so the release image drops npm, npx, corepack and yarn.
 FROM dev AS runner
 USER root
-RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+    /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-v*
 USER nextjs
