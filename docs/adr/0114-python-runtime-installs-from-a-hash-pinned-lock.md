@@ -10,7 +10,7 @@ consulted: ADR-0015, ADR-0094, ADR-0113
 
 > **Amendment (2026-11-20) — the package floor is now Python 3.12.** `pyproject.toml` requires Python 3.12 or newer, so the statements below that it allows 3.10 and that a 3.10 or 3.11 install is a plain, resolving install no longer hold.
 
-> **Amendment (2026-11-21) — the image's interpreter is Python 3.14.** The server images moved to Alpine 3.24, whose `python3` is 3.14, so the statement below that 3.12 is the image's interpreter no longer holds. The lock stays resolved for 3.12 and newer and installs on 3.14 unchanged; CI's tests and audit still run on 3.12.
+> **Amendment (2026-11-21) — the image's interpreter is Python 3.14.** The server images moved to Alpine 3.24, whose `python3` is 3.14, so the statement below that 3.12 is the image's interpreter no longer holds. The lock stays resolved for 3.12 and newer and installs on 3.14 unchanged; CI's tests run on both 3.12 and 3.14, and the audit on 3.14.
 
 ## Context and Problem Statement
 
