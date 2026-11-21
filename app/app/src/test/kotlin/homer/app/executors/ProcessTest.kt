@@ -123,20 +123,16 @@ class ProcessTest {
         every { mockRunner.isRemote } returns false
         every { mockRunner.runnerEnv } returns emptyMap()
         every { mockRunner.alias } returns "local"
-        // A relaxed RunnerSession would fabricate a RunDeadline with softEpochSec 0, which
-        // reads as "the soft deadline has passed" and stops the run before its first step
-        // (ADR-0108). These tests run without a deadline.
+        // A relaxed RunnerSession fabricates a RunDeadline with softEpochSec 0, which reads as a passed soft deadline
+        // and stops the run before its first step (ADR-0108). These tests run without a deadline.
         mockSession = mockk(relaxed = true)
         every { mockSession.runDeadline } returns null
         coEvery { mockRunner.openSession(any()) } returns mockSession
         mockQuestionsService = mockk(relaxed = true)
         coEvery { mockQuestionsService.registerProcess(any(), any(), any()) } returns "test-callback-token"
         mockQuestionsWorkspaceSetup = mockk(relaxed = true)
-        // AgentExecutor now records the executor-returned CommandResult's actual
-        // stdOut/stdErr in ExecutionInfo (relativized to the artifacts dir); a
-        // fully-relaxed executor mock would otherwise return synthetic mock Paths
-        // that blow up relativeTo(). These tests don't care about that path, only
-        // that Process orchestrates the executor — give it real, if arbitrary, paths.
+        // A fully-relaxed executor mock returns synthetic mock Paths that blow up AgentExecutor's relativeTo() on the
+        // result's stdOut/stdErr; give it real, if arbitrary, paths.
         coEvery {
             mockExecutorFactory.getExecutor<Command>(any()).execute(any(), any(), any())
         } returns TestFixtures.mockCommandResult(exitCode = 0)
@@ -996,7 +992,7 @@ class ProcessTest {
         } returns TestFixtures.mockWorkspaceConfig(lockKey = "shared")
     }
 
-    /** An executor whose first call suspends until [released]; later calls return a green result. */
+    /** An executor whose first call waits on [released]; later calls return a green result. */
     private fun stubExecutorSuspendingOnce(released: CompletableDeferred<Unit>): CompletableDeferred<Unit> {
         val entered = CompletableDeferred<Unit>()
         var first = true
@@ -1238,10 +1234,9 @@ class ProcessTest {
     // ========== Unresolved lock key placeholder (fail closed, before any gate) ==========
 
     /**
-     * A Process over the **real** [WorkspaceConfigFactory], so the key render and its denial are
-     * the production ones. The workspace factory throws if it is ever reached; the lock and slot
-     * managers default to the real ones, where a denial after a gate would leave that gate held
-     * and hang the test, and a mock pair lets a test assert the gates were never called at all.
+     * A Process over the **real** [WorkspaceConfigFactory], so the key render and its denial are production's. The
+     * workspace factory throws if reached; the lock and slot managers default to the real ones (a denial after a gate
+     * would hang the test), and a mock pair lets a test assert that no gate was called.
      */
     private fun processOverRealFactory(
         agent: Agent,
@@ -1372,9 +1367,8 @@ class ProcessTest {
     @Test
     fun `a denial leaves a run holding another key alone`() =
         runTest(timeout = 10.seconds) {
-            // Availability, not just correctness: another subject's run holds its own key while a
-            // run of this agent is denied. KILL_OLD_RUN_CURRENT on the denied run must kill nothing,
-            // so the holder still holds the lock afterwards (ADR-0047).
+            // Availability: another subject's run holds its own key while this agent's run is denied;
+            // KILL_OLD_RUN_CURRENT on the denied run must kill nothing, so the holder still holds the lock (ADR-0047).
             val lockManager = DefaultLockManager(mockProcessManager, TestFixtures.mockLogger())
             lockManager.acquireThenDisplace("other-subject", OnKeyCollisionStrategy.WAIT, 1)
 
@@ -1411,9 +1405,8 @@ class ProcessTest {
     @Test
     fun `default workspace wiring forwards the sibling probe to Workspace cleanup (CWE-362)`() =
         runTest {
-            // Real directory tree: the default factory builds a real Workspace, whose
-            // cleanup() consults the probe. A regression that drops the probe (the
-            // `_` default) leaves the guard dead and this verification fails.
+            // Real directory tree: the default factory builds a real Workspace whose cleanup() consults the probe;
+            // dropping the probe (the `_` default) leaves the guard dead and fails here.
             val root = Files.createTempDirectory("homer-default-wiring")
             try {
                 every {
@@ -1441,9 +1434,8 @@ class ProcessTest {
                         lockKey = "shared",
                     )
 
-                // No explicit workspaceFactory: exercise the production default. It must
-                // hand the ProcessManager-backed probe to the Workspace, so a live
-                // sibling is detected from the same process rows the purge sweep reads.
+                // No explicit workspaceFactory: the production default must hand the ProcessManager-backed probe to the
+                // Workspace, so a live sibling is detected from the same process rows the purge sweep reads.
                 process.execute(1, mockSpan)
 
                 coVerify { mockProcessManager.isWorkspaceSharedWithActiveRun(any(), 1) }
@@ -1455,11 +1447,9 @@ class ProcessTest {
     // ========== End-to-end guard over the production wiring ==========
 
     /**
-     * Drives two runs on one fixed path through the production wiring — real
-     * `Workspace`, real `ProcessManager` and repository, default workspace
-     * factory — instead of stubbing the probe. A wiring bug that calls the
-     * probe with the wrong path or forgets `excludeProcessId` fails here: the
-     * sibling's row decides the delete, not a stub.
+     * Drives two runs on one fixed path through the production wiring (real `Workspace`, `ProcessManager`, repository
+     * and default factory) instead of a stubbed probe: a wrong path or a forgotten `excludeProcessId` fails here,
+     * because the sibling's row decides the delete.
      */
     @Test
     fun `cleanup through the production wiring leaves a live sibling's files on a shared fixed path (CWE-362)`() =
@@ -1534,11 +1524,8 @@ class ProcessTest {
                     ".homer must go once no sibling is live",
                 )
 
-                // Matrix row 3: no sibling rows at all. A fresh artifacts dir carries
-                // only this run's own row, so the probe returns false on its own merits
-                // — not as a side effect of the exclusion check in the row above — and
-                // both directories go. A guard stuck true (skipping unconditionally)
-                // fails here.
+                // Matrix row 3: no sibling rows, so the probe returns false on its own merits, not via the exclusion
+                // check above, and both directories go. A guard stuck true fails here.
                 every {
                     mockWorkspaceConfigFactory.createWorkspaceConfig(
                         any(),
@@ -1688,9 +1675,8 @@ class ProcessTest {
     @Test
     fun `a throwing sibling probe still releases lock and slot (CWE-362)`() =
         runTest {
-            // The guard's probe reads the process rows; if that read fails, cleanup must
-            // not take the teardown down with it — the runCatching isolation keeps the
-            // lock/slot release, which a leaked pair would wedge for every later run.
+            // If the guard's probe read fails, cleanup must still release lock and slot (the runCatching isolation);
+            // a leaked pair would wedge every later run.
             val root = Files.createTempDirectory("homer-probe-throws")
             try {
                 every {
@@ -1839,10 +1825,8 @@ class ProcessTest {
     @Test
     fun `workspace redaction covers what was secret for the replayed run, not just current flags`() =
         runTest {
-            // A retry passes the source run's snapshot as extraSecretInputKeys. The
-            // workspace secret set is what masks values in span input/output and in the
-            // live log stream, so recomputing it from the current definition let a
-            // historically-secret value reach both unmasked.
+            // A retry passes the source run's snapshot as extraSecretInputKeys: recomputing the secret set from the
+            // current definition let a historically-secret value reach span input/output and the live log unmasked.
             val agent =
                 AgentFixtures.simpleAgent().copy(
                     inputs = listOf(Param(paramName = "mr", envName = "MR_IID", secret = false)),
@@ -1857,9 +1841,8 @@ class ProcessTest {
                         parentContext = testContext,
                     ),
                 )
-            // Full-arity matcher: this replay's secretEnvNames (extraSecretInputKeys
-            // union) is non-empty, so the common 5-arg-any() stub (which only matches
-            // calls using the trailing params' defaults) would not intercept it here.
+            // Full-arity matcher: this replay's secretEnvNames is non-empty, so the common 5-arg any() stub
+            // (which matches only calls using the trailing defaults) would not intercept it.
             every {
                 mockWorkspaceConfigFactory.createWorkspaceConfig(
                     processId = any(),
@@ -1897,15 +1880,12 @@ class ProcessTest {
             assertTrue("MR_IID" in secretNames.captured, "the source run's secret must still be masked on replay")
         }
 
-    // ========== Failure-reason redactor Tests (ADR-0052, §12 rule 8) ==========
+    // ========== Failure-reason redactor Tests (ADR-0052, ADR-0047 rule 8) ==========
 
     @Test
     fun `failureReasonRedactor masks a secret query param and a sys-env-backed agent env entry`() {
-        // Built from agent.env + queryParams over secretInputKeys + sysEnvBackedEnvNames,
-        // the same union the workspace redactor gets. Every executor test stubs this
-        // property, so a dropped source would store an unredacted secret in the stored
-        // failure reason — text every caller who can see the run reads — with nothing
-        // failing; this pins the sources on a real Process.
+        // Every executor test stubs this property; this pins its sources on a real Process, since a dropped
+        // source would store an unredacted secret in the failure reason.
         val agent =
             AgentFixtures.simpleAgent().copy(
                 inputs = listOf(Param(paramName = "mr", envName = "MR_IID", secret = true)),

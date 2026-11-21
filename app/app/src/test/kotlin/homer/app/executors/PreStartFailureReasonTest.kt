@@ -163,10 +163,8 @@ class PreStartFailureReasonTest {
 
     @Test
     fun `a cut inside a surrogate pair does not store half a character`() {
-        // An emoji in a long agent name lands the cut inside a surrogate pair; the stored
-        // reason must stay a well-formed string, never a lone trailing surrogate. The one
-        // leading ASCII char puts the cut after an odd UTF-16 count, i.e. between the two
-        // halves of an emoji, not between two whole ones.
+        // An emoji in a long agent name puts the cut inside a surrogate pair and the reason must stay well-formed;
+        // the one leading ASCII char makes the cut land between the two halves of an emoji.
         val failure = PreStartFailureReason.of(MaxParallelRunsExceededException("a" + "🏁".repeat(400), 2))!!
 
         assertTrue(failure.reason.length <= MAX_FAILURE_REASON_LENGTH)
@@ -185,10 +183,8 @@ class PreStartFailureReasonTest {
     @Test
     fun `every mapped reason fits the cap and carries no control character`() =
         runTest {
-            // The stored text reaches a console and a JSON field whatever an agent name or a
-            // filter's tags hold, so the bound must hold for any input, not just the examples.
-            // Astral-plane input (the cut landing inside a surrogate pair) is covered by the
-            // dedicated test above.
+            // The stored text reaches a console and a JSON field whatever an agent name or filter tag holds, so the
+            // bound must hold for any input; astral-plane input has the dedicated test above.
             val agentNames = Arb.string(0..600, Codepoint.printableAscii())
             val tags = Arb.string(1..64, Codepoint.alphanumeric())
             checkAll(agentNames, tags) { agentName, tag ->

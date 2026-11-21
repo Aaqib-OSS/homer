@@ -38,11 +38,9 @@ import org.slf4j.LoggerFactory
 import kotlin.test.assertEquals
 
 /**
- * `ProcessWiring`/`HookWiring` are built only by the real boot, so nothing else executes them.
- * This drives the graph they declare end to end: `ProcessManager` resolves `HookService` at call
- * time — the cycle `ProcessManager` → `HookService` → `AgentRunStarter` → `ProcessExecutor` →
- * `ProcessManager` forbids resolving it at construction — and a status write through that graph
- * reaches a hook start. See ADR-0107.
+ * `ProcessWiring`/`HookWiring` are built only by the real boot. This drives their graph end to end: `ProcessManager`
+ * resolves `HookService` at call time (the construction-time cycle forbids it) and a status write reaches a hook
+ * start. See ADR-0107.
  */
 class ProcessWiringTest {
     private val started = mutableListOf<String>()
@@ -114,10 +112,8 @@ class ProcessWiringTest {
     @Test
     fun `a status write through the wired graph fires the hook its declaring agent declared without waiting on it`() =
         runTest {
-            // The wiring launches the fire on the application scope, so the test owns that scope
-            // and holds the fire parked inside start on a gate: if the status write ever awaited
-            // the fire inline again, compareAndSetStatus could not return while the gate is shut
-            // and runTest would time out before the first assertion.
+            // The test owns the application scope and parks the fire inside start on a gate: if the status write
+            // awaited the fire inline, compareAndSetStatus could not return and runTest would time out.
             val runStartGate = CompletableDeferred<Unit>()
             val hookFireScope = CoroutineScope(Job())
             val manager = koin(hookFireScope, runStartGate).get<ProcessManager>()

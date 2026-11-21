@@ -79,11 +79,8 @@ class AgentExecutorStepRecordsTest : AgentExecutorTestBase() {
     @Test
     fun `a step whose command throws clears the current command at its boundary even with continueIfFail`() =
         runTest {
-            // continueIfFail covers a non-zero exit code, which reaches the outcome as a
-            // Success — not a command that throws. A CancellationException (a runner-enforced
-            // timeout), an EvalError or an OutputCapExceededException is rethrown
-            // unconditionally, so the run ends and the boundary must clear, never hand the
-            // next step over as the current command.
+            // continueIfFail covers a non-zero exit, not a throw: a CancellationException (runner timeout), EvalError
+            // or OutputCapExceededException ends the run, so the boundary must clear, never hand over the next step.
             val agent = AgentFixtures.agentWithContinueIfFail() // 3 steps, all continueIfFail=true
 
             // The thrown CancellationException is not our job being cancelled, so it
@@ -104,9 +101,8 @@ class AgentExecutorStepRecordsTest : AgentExecutorTestBase() {
     @Test
     fun `a finishExitCode boundary clears the current command instead of announcing the next step`() =
         runTest {
-            // The first command exits with the agent's finishExitCode, so the run ends
-            // there: the boundary must clear, never hand the second step over as the
-            // current command of a run that is about to finish.
+            // The first command exits with finishExitCode, ending the run: the boundary must clear,
+            // never hand the second step over as the current command.
             val agent = AgentFixtures.agentWithFinishExitCode(finishExitCode = 128)
 
             coEvery { mockExecutor.execute(any(), any(), any()) } returns TestFixtures.mockCommandResult(exitCode = 128)
@@ -156,9 +152,8 @@ class AgentExecutorStepRecordsTest : AgentExecutorTestBase() {
                 )
             }
             coVerify(exactly = 2) { mockProcessManager.completeStep(any(), any(), any(), any()) }
-            // The handover is the same one a success boundary computes: the start the
-            // skipped boundary hands over is the one the second step's own ExecutionInfo
-            // carries (the shared nextBoundary helper).
+            // The handover equals a success boundary's: the start the skipped boundary hands over is the one
+            // the second step's own ExecutionInfo carries (the shared nextBoundary helper).
             val secondStart = slot<ExecutionInfo>()
             coVerify { mockProcessManager.completeStep(testProcessId, capture(secondStart), null, null) }
             assertEquals(skipStart.captured, secondStart.captured.start)
@@ -218,9 +213,8 @@ class AgentExecutorStepRecordsTest : AgentExecutorTestBase() {
     @Test
     fun `llmAccounting on the CommandResult lands on the ExecutionInfo`() =
         runTest {
-            // Same arrangement as the "actual paths" test in AgentExecutorArtifactsTest, but the returned
-            // CommandResult also carries llmAccounting, which must ride onto the
-            // captured ExecutionInfo unchanged.
+            // Same arrangement as the "actual paths" test in AgentExecutorArtifactsTest, plus llmAccounting
+            // on the CommandResult, which must ride onto the captured ExecutionInfo unchanged.
             val accounting = LlmAccounting(sessionId = "s1", costUsd = 0.2, source = CostSource.CLI, fallbackReason = "http 404")
 
             coEvery { mockExecutor.execute(any(), any(), any()) } returns

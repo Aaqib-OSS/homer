@@ -30,19 +30,9 @@ import kotlin.time.Duration.Companion.nanoseconds
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Verifies the shutdown drain semantics: when `ApplicationStopping` fires, the engine joins the
- * application scope's run jobs within the configured timeout before the JVM exits — and keeps
- * joining the runs those runs start (a `!<agent>` hop's child, a dispatch, a continuation fired
- * by a run that just ended), which one snapshot of the scope would miss and leave `UNKNOWN` at
- * the next boot. The runner-consumer loops are excluded from what it waits for, so a run queued
- * for a static runner can still be claimed while the drain runs. See ADR-0102, ADR-0066.
- * Audit P0 #3.
- *
- * These tests exercise the production `drainInFlightJobsThenCloseSessions` directly, against
- * real wall time (not the kotlinx.coroutines.test virtual clock): the production drain calls
- * `runBlocking` inside the Ktor `ApplicationStopping` event hook, so there is no virtual-time
- * harness around that call site and the contract must hold against real `Dispatchers.Default`
- * delays.
+ * The shutdown drain (`drainInFlightJobsThenCloseSessions`) joins the scope's run jobs and the runs they start,
+ * excluding runner-consumer loops (ADR-0102, ADR-0066). It runs on real wall time: the production drain uses
+ * `runBlocking` inside the Ktor hook, so no virtual clock reaches it.
  */
 class ShutdownDrainTest {
     @Test
@@ -90,9 +80,8 @@ class ShutdownDrainTest {
 
     @Test
     fun `a run fired from a hook after the join is joined`() {
-        // The continuation shape: the watched run ends, a hook (the terminal-status path that
-        // fires continuations) starts the successor in the scope a moment later. The drain's
-        // re-read catches it instead of returning on the now-empty first read.
+        // The continuation shape: a hook starts the successor in the scope after the watched run ends,
+        // and the drain's re-read must catch it.
         val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val hookScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val watchedEnded = CompletableDeferred<Unit>()
@@ -231,9 +220,8 @@ class ShutdownDrainTest {
 
     @Test
     fun `consumer jobs are excluded, so an idle drain returns well under the budget`() {
-        // The consumers' `while (isActive)` loops never complete on their own: counted as run
-        // jobs they would make every drain burn the full budget. They are excluded by Job
-        // identity and stopped after the drain instead. See ADR-0066, ADR-0102.
+        // The consumers' `while (isActive)` loops never complete, so they are excluded by Job identity
+        // and stopped after the drain (ADR-0066, ADR-0102).
         val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val registry = RunnerRegistry(listOf(stubRunner("local")))
         registry.start(applicationScope)
@@ -297,7 +285,7 @@ class ShutdownDrainTest {
     fun `a claim no consumer can serve does not push the drain past its deadline`() =
         runBlocking {
             // No consumer is started for this registry, so nothing can claim the run: the drain
-            // sheds it at its deadline instead of waiting out the claim TTL. §12 rule 5, ADR-0066.
+            // sheds it at its deadline instead of waiting out the claim TTL (ADR-0047 rule 5, ADR-0066).
             val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
             val registry = RunnerRegistry(listOf(stubRunner("local")))
             val parkedStarted = CompletableDeferred<Unit>()

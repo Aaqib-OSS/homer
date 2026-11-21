@@ -61,18 +61,16 @@ abstract class AgentExecutorTestBase {
         every { mockExecutorFactory.getExecutor<Command>(any()) } returns mockExecutor
         coEvery { mockExecutor.execute(any(), any(), any()) } returns TestFixtures.mockCommandResult(exitCode = 0)
         mockProcessManager = mockk(relaxed = true)
-        // Relaxed mocks fabricate a non-null child mock for unstubbed calls returning a
-        // nullable type, which breaks Path.relativeTo() in the finally block's fallback
-        // (F1). Tests that care about a tracked path override this per-call.
+        // A relaxed mock fabricates a child mock for unstubbed nullable calls, which breaks Path.relativeTo()
+        // in the finally block's fallback; tests that care about a tracked path override this per call.
         coEvery { mockProcessManager.getCommandArtifacts(any(), any()) } returns null
         coEvery { mockProcessManager.completeStep(any(), capture(executionInfos), any(), any()) } just Runs
         mockShell = mockk(relaxed = true)
         mockSession =
             mockk(relaxed = true) {
                 every { shell } returns mockShell
-                // Same trap as getCommandArtifacts above: a relaxed mock fabricates a
-                // non-null RunDeadline whose soft bound is 0, which would end every run
-                // at its first step. A session with no deadline is the default.
+                // Same trap: a relaxed mock fabricates a RunDeadline with soft bound 0, which would end every run
+                // at its first step; no deadline is the default.
                 every { runDeadline } returns null
             }
         mockRunner =
