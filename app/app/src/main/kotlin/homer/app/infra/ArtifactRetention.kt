@@ -146,9 +146,8 @@ internal object ArtifactRetention {
         // Reverse order deletes children before parents; a dir holding a kept file is in keepDirs and survives.
         entries.sortedDescending().forEach { path ->
             if (path in keepDirs) return@forEach
-            // Re-check regular-file-under-NOFOLLOW at delete time, not just membership
-            // in `kept`: the artifacts dir is agent-writable, so a matched regular file
-            // could have been swapped for a symlink between the candidate walk and here.
+            // The artifacts dir is agent-writable: a kept file may since have been swapped for a
+            // symlink, so keep it only while it is still a NOFOLLOW regular file.
             val stillKept = path in kept && path.isRegularFile(LinkOption.NOFOLLOW_LINKS)
             if (!stillKept) {
                 Files.deleteIfExists(path)
