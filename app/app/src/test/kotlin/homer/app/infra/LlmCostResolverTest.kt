@@ -213,6 +213,15 @@ class LlmCostResolverTest {
         }
 
     @Test
+    fun `an Error from the lookup propagates instead of being priced as a failed lookup`() {
+        val engine = MockEngine { throw OutOfMemoryError("heap") }
+
+        val thrown = assertFailsWith<OutOfMemoryError> { runBlocking { LlmCostResolver(cfg(), engine).resolve("s", 0.3, 0) } }
+
+        assertEquals("heap", thrown.message)
+    }
+
+    @Test
     fun `timeout falls back`() =
         runBlocking {
             val engine =

@@ -209,7 +209,7 @@ class LlmCostResolver(
                             bytes.decodeToString()
                         }
                 }
-            } catch (e: Throwable) {
+            } catch (e: Exception) {
                 return failureFor(e)
             }
         val body: String = rawBody ?: return SessionSpendOutcome.Failed(httpFailureReason ?: "lookup failed")
@@ -217,11 +217,11 @@ class LlmCostResolver(
     }
 
     /**
-     * Maps a throwable from the request-and-read round to its fixed-vocabulary reason, or
+     * Maps an exception from the request-and-read round to its fixed-vocabulary reason, or
      * rethrows it when it is a caller's cancellation. The `is` checks run in the order the
      * catch clauses they replace did.
      */
-    private suspend fun failureFor(e: Throwable): SessionSpendOutcome.Failed =
+    private suspend fun failureFor(e: Exception): SessionSpendOutcome.Failed =
         when (e) {
             // Usually our own withTimeout above firing. But if a caller wraps resolve()
             // in a shorter withTimeout of its own, its TimeoutCancellationException can
@@ -251,10 +251,7 @@ class LlmCostResolver(
                 if (currentCoroutineContext().isActive) SessionSpendOutcome.Failed("timeout") else throw e
             }
 
-            // Catch-all: cost is metadata, never a reason to fail the run (§12
-            // availability rule). Specific branches above keep the precise reasons;
-            // anything else — a client-internals bug, an engine-specific throwable,
-            // even an Error — still degrades instead of propagating.
+            // Cost is metadata, never a reason to fail the run; an Error is not caught and propagates.
             else -> {
                 SessionSpendOutcome.Failed("lookup failed")
             }
