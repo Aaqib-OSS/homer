@@ -8,7 +8,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 
-/** Property-based companion to [RunnerVersionTest] (root §6): the token shape is swept, not sampled. */
+/** Property-based companion to [RunnerVersionTest] (root CLAUDE.md section 6): the token shape is swept. */
 class RunnerVersionPropertyTest {
     @Test
     fun `parse reports a value exactly when its trim is a safe release token`() =
