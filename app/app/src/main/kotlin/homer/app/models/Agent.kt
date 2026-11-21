@@ -108,7 +108,8 @@ data class Agent(
                 "Agent '$name': hook '${hook.status}' must not target the declaring agent"
             }
         }
-        // Computed here, not from `secretEnvNames`: that property initializes after this block.
+        // Not `secretEnvNames` or `effectiveInputs`: both initialize after this block, so it reads the
+        // legacy `queryParams` alias itself.
         @Suppress("DEPRECATION")
         val declaredSecretInputNames =
             (inputs ?: queryParams)
