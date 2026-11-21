@@ -1,17 +1,29 @@
 package homer.app.infra
 
+import io.kotest.property.Arb
+import io.kotest.property.arbitrary.byte
+import io.kotest.property.arbitrary.byteArray
+import io.kotest.property.arbitrary.int
+import io.kotest.property.checkAll
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream
+import java.io.FilterInputStream
 import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.writeText
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
@@ -170,28 +182,119 @@ class LocalFileOperationsTest {
     }
 
     @Test
-    fun `readTextBounded returns null within the open timeout when a FIFO replaces the file after the check`() {
+    fun `readTextBounded refuses at once a FIFO that replaces the file after the check`() {
         val file = tempDir.resolve("langgraph.json")
         file.writeText("{}")
-        val swapping =
-            LocalFileOperations(openTimeoutMs = 300) { path ->
-                Files.delete(path)
-                val made = ProcessBuilder("mkfifo", path.toString()).start().waitFor() == 0
-                check(made) { "mkfifo failed" }
-            }
-        assumeTrue(runCatching { ProcessBuilder("mkfifo", "--help").start().waitFor() }.isSuccess, "needs mkfifo")
+        val swapping = LocalFileOperations(openTimeoutMs = 60_000) { path -> swapForFifo(path) }
 
         val started = System.nanoTime()
         val result = swapping.readTextBounded(file, maxBytes = 1024)
-        assertFalse(Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS), "the swap must have happened")
-        assertTrue(Files.exists(file, java.nio.file.LinkOption.NOFOLLOW_LINKS), "the swap must have happened")
         val elapsedMs = (System.nanoTime() - started) / 1_000_000
 
+        assertFalse(Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS), "the swap must have happened")
         assertEquals(null, result)
-        assertTrue(elapsedMs < 5_000, "the blocked open must time out, took ${elapsedMs}ms")
-        // Release the pool thread parked in open(2) on the FIFO; its slot must not outlive the test.
-        Files.newOutputStream(file).close()
+        assertTrue(elapsedMs < 5_000, "the open must not block on the FIFO, took ${elapsedMs}ms")
     }
+
+    @Test
+    fun `streamFile refuses FIFOs swapped in after the check without holding a pool thread`() =
+        runTest {
+            val pool = LocalFileOperations.newOpenPool()
+            try {
+                val swapping = LocalFileOperations(60_000, pool) { path -> swapForFifo(path) }
+                repeat(OPEN_THREADS) { i ->
+                    val file = tempDir.resolve("swapped-$i.bin").also { it.writeText("x") }
+                    val refused = assertFailsWith<IOException> { swapping.streamFile(file, ByteArrayOutputStream()) }
+                    assertTrue(refused.message!!.contains("non-regular"), "refused at the descriptor, got: ${refused.message}")
+                }
+
+                // All slots must be free: the barrier releases only once every open runs at the same time.
+                val barrier = CyclicBarrier(OPEN_THREADS)
+                val concurrent = LocalFileOperations(60_000, pool) { _ -> barrier.await(5, TimeUnit.SECONDS) }
+                val files = List(OPEN_THREADS) { i -> tempDir.resolve("ok-$i.txt").also { it.writeText("ok-$i") } }
+                val callers = Executors.newFixedThreadPool(OPEN_THREADS)
+                try {
+                    val reads = files.map { file -> callers.submit<String?> { concurrent.readTextBounded(file, maxBytes = 64) } }
+
+                    assertEquals(files.indices.map { "ok-$it" }, reads.map { it.get(10, TimeUnit.SECONDS) })
+                } finally {
+                    callers.shutdownNow()
+                }
+            } finally {
+                pool.shutdownNow()
+            }
+        }
+
+    @Test
+    fun `an open that completes after the caller timed out has its descriptor closed`() =
+        runTest {
+            val file = tempDir.resolve("late.txt").also { it.writeText("late") }
+            val closed = CountDownLatch(1)
+            val late =
+                LocalFileOperations(
+                    openTimeoutMs = 100,
+                    openRegular = { path ->
+                        object : FilterInputStream(DescriptorOpen.openRegular(path)) {
+                            override fun close() {
+                                super.close()
+                                closed.countDown()
+                            }
+                        }
+                    },
+                    // Ignores the timed-out caller's interrupt, as a native open(2) does.
+                    beforeOpen = { sleepUninterruptibly(500) },
+                )
+
+            val timedOut = assertFailsWith<IOException> { late.streamFile(file, ByteArrayOutputStream()) }
+
+            assertTrue(timedOut.message!!.contains("Timed out"), "the caller must have given up, got: ${timedOut.message}")
+            assertTrue(closed.await(5, TimeUnit.SECONDS), "the late descriptor must be closed")
+        }
+
+    @Test
+    fun `a symlink swapped in after the check is refused at the descriptor`() =
+        runTest {
+            val outside = Files.createTempDirectory("lfo-outside")
+            try {
+                val target = outside.resolve("secret.txt").also { it.writeText("host secret") }
+                val file = tempDir.resolve("artifact.txt").also { it.writeText("own") }
+                val swapping =
+                    LocalFileOperations(60_000) { path ->
+                        Files.delete(path)
+                        Files.createSymbolicLink(path, target)
+                    }
+
+                val out = ByteArrayOutputStream()
+                assertFailsWith<IOException> { swapping.streamFile(file, out) }
+                assertEquals(0, out.size())
+            } finally {
+                outside.toFile().deleteRecursively()
+            }
+        }
+
+    @Test
+    fun `a hard link made after the check is refused at the descriptor`() =
+        runTest {
+            val file = tempDir.resolve("artifact.txt").also { it.writeText("shared") }
+            val linking = LocalFileOperations(60_000) { path -> Files.createLink(tempDir.resolve("other.txt"), path) }
+
+            val out = ByteArrayOutputStream()
+            assertFailsWith<IOException> { linking.streamFile(file, out) }
+            assertEquals(0, out.size())
+            assertEquals(null, LocalFileOperations(60_000) { }.readTextBounded(file, maxBytes = 1024))
+        }
+
+    @Test
+    fun `streamFile copies a regular file byte-identical whatever its size and the buffer size`() =
+        runTest {
+            val file = tempDir.resolve("payload.bin")
+            checkAll(40, Arb.byteArray(Arb.int(0..200_000), Arb.byte()), Arb.int(1..100_000)) { content, bufferSize ->
+                Files.write(file, content)
+                val out = ByteArrayOutputStream()
+                ops.streamFile(file, out, bufferSize)
+                assertContentEquals(content, out.toByteArray())
+            }
+        }
 
     @Test
     fun `readTextBounded returns null within the timeout when a held-open FIFO has no data, and the pool slot comes back`() {
@@ -277,5 +380,22 @@ class LocalFileOperationsTest {
         }
         assertTrue(parkedRead.isDone, "no read may stay blocked")
         assertEquals("{}", ops.readTextBounded(file, maxBytes = 1024))
+    }
+
+    private fun sleepUninterruptibly(millis: Long) {
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(millis)
+        while (System.nanoTime() < deadline) {
+            runCatching { Thread.sleep(10) }
+        }
+    }
+
+    private fun swapForFifo(path: Path) {
+        Files.delete(path)
+        val made = runCatching { ProcessBuilder("mkfifo", path.toString()).start().waitFor() == 0 }.getOrDefault(false)
+        assumeTrue(made, "needs mkfifo")
+    }
+
+    private companion object {
+        const val OPEN_THREADS = 8
     }
 }

@@ -306,11 +306,14 @@ for `LangGraphRunStatusService.identity`, whose two callers are `GET /processes/
 which reports the thread, and `POST /processes/{id}/resume`, which continues it in a new run.
 `identity` first refuses an artifacts directory that is a symlink, because a run can replace the
 directory it is handed at any time and `NOFOLLOW_LINKS` binds only the final component.
-`readTextBounded` then refuses a symlink, a hard-linked or a non-regular file, opens the file by
-name with `NOFOLLOW_LINKS` on the bounded, timed open pool, and reads at most
-`MAX_IDENTITY_BYTES`. A final-component symlink swapped in after the check fails the open. A FIFO
-swapped in bounds only the caller's wait: the blocked open keeps one of the pool's 8 threads, and
-once all 8 are held every file read through the pool fails at once for every caller.
+`readTextBounded` then opens the file on the bounded, timed open pool with
+`O_NOFOLLOW | O_NONBLOCK` through the Foreign Function & Memory API, refuses it unless `fstat` on
+the opened descriptor reports a single-link regular file, reads from that descriptor and stops at
+`MAX_IDENTITY_BYTES`. A symlink, hard link, FIFO or other non-regular file at the final component
+is refused whenever it was swapped in, and the open never blocks, so no pool thread stays held; an
+open that completes after its caller timed out is closed. Where no such open is defined (an OS or
+architecture other than Linux or macOS on x86_64 or aarch64) or the JVM denies native access, the
+read is refused, never retried as a blocking by-name open.
 
 `ContinuationFireService.extractResult` reads a watched run's stdout into a continuation's resume
 payload the same way. It refuses a symlinked artifacts directory and a recorded stdout path that is
@@ -320,14 +323,15 @@ not a direct child of it, then reads at most the 64 KiB inline-result cap throug
 The artifact download (`ArtifactService.resolveArtifactPath`, then `streamFile`), the log tail
 (`LogTailService.resolve`, then `tail`) and the LLM-event stream (`LlmEventStreamService.resolve`,
 then `followFile`) refuse a symlinked artifacts directory too, but check it only once, when they
-resolve the path. The download opens the file afterwards; each stream opens it at the first poll
-that finds it, which can be as late as the stream's end.
+resolve the path. The download opens the file afterwards, through `streamFile`'s
+descriptor-checked open; each stream opens it at the first poll that finds it, which can be as late
+as the stream's end.
 
-Four cases remain. Three are races: a hard link renamed into place between the link check and the
-open, because `NOFOLLOW_LINKS` ignores the link count; a symlink swapped in for the artifacts
-directory between its check and the open; and, for the two streams, the same swap at any time
-between `resolve` and the poll that opens the file. The fourth needs no race: a symlink
-at the run root or a directory above it is followed by every one of these reads. Each makes Homer
+Three cases remain. Two are races: a symlink swapped in for the artifacts directory between its
+check and the open, because `O_NOFOLLOW` binds only the final component; and, for the two streams,
+the same swap at any time between `resolve` and the poll that opens the file. The third needs no
+race: a symlink at the run root or a directory above it is followed by every one of these reads.
+Each makes Homer
 read a different regular file: for an identity, at most 64 KiB whose fields it reports and whose
 thread a resume continues; for a continuation, at most 64 KiB it delivers as the watched run's
 result; for a download or stream, a file it serves to the caller (CWE-59/CWE-367).
@@ -340,10 +344,9 @@ Homer does act on the read, which this ADR counts as an escalation even for read
 both identity callers keep the thread id inside the run owner's checkpoint store, so neither the
 report nor the resumed run reaches another principal's checkpoints (ADR-0046). A continuation's
 result is the watched run's own output, which that run could have written anyway, and a download
-or stream answers only a caller who may already see the run. Closing the races needs an `fstat`
-on the opened handle and an `openat`-style walk, which `java.nio` does not expose portably;
-re-checking the directory at each poll would only narrow the streams' window. Checking the run
-root and above needs the configured workspace root, which an operator may reach through a symlink
+or stream answers only a caller who may already see the run. Closing the directory swaps needs
+an `openat`-style walk from a descriptor on the checked directory; re-checking the directory at
+each poll would only narrow the streams' window. Checking the run root and above needs the configured workspace root, which an operator may reach through a symlink
 (`/tmp` on macOS), so a stored artifacts path cannot be compared with it lexically. `SECURITY.md`
 carries the row as AR-12.
 
