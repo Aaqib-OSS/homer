@@ -93,6 +93,40 @@ class LoadStartupConfigTest {
     }
 
     @Test
+    fun `agent @SYSENV names are the configured allowlist plus the host variables globalEnv references, not its keys`() {
+        val config =
+            file(
+                "config.json",
+                """
+                {
+                  "agentsSearchPath": "agents", "workspaceRootPath": "ws", "databasePath": "homer.db",
+                  "agentSysEnvAllowlist": ["EXTRA_NAME"],
+                  "globalEnv": {"HOST_PATH": "Bearer @SYSENV:PATH", "PLAIN": "literal"}
+                }
+                """.trimIndent(),
+            )
+
+        val resolved = assertNotNull(loadStartupConfig(arrayOf(config)))
+
+        assertEquals(setOf("PATH"), resolved.globalEnvSysEnvNames)
+        assertEquals(setOf("EXTRA_NAME", "PATH"), resolved.agentSysEnvNames)
+    }
+
+    @Test
+    fun `an agentSysEnvAllowlist entry that is not a variable name refuses to start`() {
+        val config =
+            file(
+                "config.json",
+                """
+                {"agentsSearchPath": "agents", "workspaceRootPath": "ws", "databasePath": "homer.db",
+                 "agentSysEnvAllowlist": ["@SYSENV:TOKEN"]}
+                """.trimIndent(),
+            )
+
+        assertNull(loadStartupConfig(arrayOf(config)))
+    }
+
+    @Test
     fun `a yaml config is parsed too`() {
         val config =
             file(

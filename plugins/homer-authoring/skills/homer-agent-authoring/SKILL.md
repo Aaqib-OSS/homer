@@ -52,7 +52,7 @@ commands:                    # required, runs in order, ≥1 item
 | `name` | yes | `^[a-zA-Z0-9_-]+$` — letters, digits, `_`, `-`. No spaces. |
 | `commands` | yes | Ordered list, ≥1. Each item is a tagged command (below). |
 | `description` | no | Free text. |
-| `env` | no | Map of `String: String`. Values support `@SYSENV:VAR` host refs. |
+| `env` | no | Map of `String: String`. Values support `@SYSENV:VAR` host refs to variables the server allows (`agentSysEnvAllowlist`, or a name `globalEnv` references); any other name fails the load. |
 | `inputs` | no | Request params (query/body/header) → env vars. See AGENT.md. |
 | `workspace` | no | `{ path, cleanAfterFinish, purgeAfter, retain }`. |
 | `lockStrategy` | no | `{ key, onCollision: WAIT\|SKIP_CURRENT\|KILL_OLD_RUN_CURRENT, acceptParentLock }`. |

@@ -19,6 +19,8 @@ data class AppConfig(
     // Host-env keys layered under `globalEnv` for the `local` runner only; an allowlisted value is
     // NOT added to the telemetry redaction set (unlike `@SYSENV:`). See ADR-0065.
     val parentEnvAllowlist: List<String> = listOf("PATH", "HOME", "LANG", "TZ"),
+    /** Host variable names an agent `env` may reference with `@SYSENV:`, beside `globalEnv`'s. See ADR-0037. */
+    val agentSysEnvAllowlist: List<String> = emptyList(),
     val openTelemetryExport: OpenTelemetryExport = OpenTelemetryExport.LANGFUSE,
     val runners: Map<String, RunnerConfig> = emptyMap(),
     val costLimits: CostLimits = CostLimits(),
@@ -32,7 +34,14 @@ data class AppConfig(
     /** Runtime-only: per-runner-alias redaction names, the runner-`env` counterpart of [sysEnvBackedGlobalEnvNames]. */
     @Transient
     val sysEnvBackedRunnerEnvNames: Map<String, Set<String>> = emptyMap(),
+    /** Runtime-only: the host variable names the raw `globalEnv` references via `@SYSENV:`, seeded by `Application`. */
+    @Transient
+    val globalEnvSysEnvNames: Set<String> = emptySet(),
 ) {
+    /** The host variable names an agent `env` may reference: [agentSysEnvAllowlist] plus [globalEnvSysEnvNames]. */
+    val agentSysEnvNames: Set<String>
+        get() = agentSysEnvAllowlist.toSet() + globalEnvSysEnvNames
+
     init {
         require("local" !in runners.keys) {
             "Runner alias 'local' is reserved for the built-in local runner and must not appear in AppConfig.runners."
@@ -47,6 +56,11 @@ data class AppConfig(
         require(costTrackedTagKeys.size <= TagValidation.MAX_TAG_QUERY_PARAMS) {
             "costTrackedTagKeys must not exceed ${TagValidation.MAX_TAG_QUERY_PARAMS} entries, " +
                 "found ${costTrackedTagKeys.size}."
+        }
+        agentSysEnvAllowlist.forEach { name ->
+            require(SYSENV_NAME_PATTERN.matches(name)) {
+                "agentSysEnvAllowlist entry '$name' is not a host variable name matching $SYSENV_NAME_PATTERN."
+            }
         }
         costTrackedTagKeys.forEach { key ->
             require(TagValidation.KEY_PATTERN.matches(key)) {
@@ -70,6 +84,9 @@ data class AppConfig(
             .toString()
     }
 }
+
+/** The variable names `@SYSENV:` can reference; an allowlist entry outside it could never match. */
+private val SYSENV_NAME_PATTERN = Regex("[A-Za-z_][A-Za-z0-9_]*")
 
 /** Bucket for LangGraph state of runs with no owner (unsecured mode, agentdebug). */
 private const val UNOWNED_STATE_SEGMENT = "_unowned"

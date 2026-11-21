@@ -5,6 +5,7 @@ import homer.app.infra.AgentInputChecks
 import homer.app.infra.AgentInputResolver
 import homer.app.infra.AgentReloadDiff
 import homer.app.infra.AgentScanner
+import homer.app.infra.AgentSysEnvAllowlist
 import homer.app.infra.InputSchemaValidator
 import homer.app.infra.ParamValidator
 import homer.app.infra.ReloadComputation
@@ -34,13 +35,19 @@ class AgentsService(
      * warning. Warn-only, so a throw here degrades to a warning; see ADR-0066 deviation (9).
      */
     runnerTagSets: () -> Collection<Set<String>> = { emptyList() },
+    /** Host variable names an agent `env` may reference with `@SYSENV:`; empty refuses all. See ADR-0037. */
+    agentSysEnvNames: Set<String> = emptySet(),
 ) {
+    /** Also gates the agent-file API's definition writes, so a refused definition never lands. */
+    internal val sysEnvAllowlist = AgentSysEnvAllowlist(agentSysEnvNames)
+
     private val scanner: AgentScanner =
         AgentInputChecks(logger, paramValidator).let { inputChecks ->
             AgentScanner(
                 agentsSearchPath,
                 logger,
                 sysEnvResolver,
+                sysEnvAllowlist,
                 maxConfigFileBytes,
                 AgentDefinitionValidator(logger, runnerAliases, runnerTagSets, inputResolver, inputSchemaValidator, inputChecks),
                 inputChecks,

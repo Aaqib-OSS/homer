@@ -56,6 +56,7 @@ This document provides comprehensive documentation for configuring the Homer ser
 - [Global Environment Variables](#global-environment-variables)
   - [Referencing System Environment Variables](#referencing-system-environment-variables)
   - [`parentEnvAllowlist`](#parentenvallowlist)
+  - [`agentSysEnvAllowlist`](#agentsysenvallowlist)
 - [OpenTelemetry Export](#opentelemetry-export)
   - [Export Options](#export-options)
   - [Knowing where traces actually go](#knowing-where-traces-actually-go)
@@ -192,6 +193,7 @@ llmPrice:
 | `langfuse` | `LangfuseConfig` | No | empty | Langfuse integration configuration |
 | `globalEnv` | `Map<String, String>` | No | `{}` | Global environment variables for all processes |
 | `parentEnvAllowlist` | `List<String>` | No | `["PATH","HOME","LANG","TZ"]` | Host JVM env keys layered under `globalEnv` for the `local` runner only — remote runners never receive them — see [`parentEnvAllowlist`](#parentenvallowlist) |
+| `agentSysEnvAllowlist` | `List<String>` | No | `[]` | Host variable names an agent's `env` may reference with `@SYSENV:`, beside the names `globalEnv` already references; an agent naming any other variable fails to load — see [`agentSysEnvAllowlist`](#agentsysenvallowlist) |
 | `openTelemetryExport` | `OpenTelemetryExport` | No | `LANGFUSE` | OpenTelemetry export destination |
 | `runners` | `Map<String, RunnerConfig>` | No | `{}` | Named pluggable execution backends — see [Runners](#runners-pluggable-execution-backends) |
 | `costLimits` | `CostLimits` | No | `{}` | Soft caps on LLM harness spend (`claude`, `codex`, `opencode`) — see [Cost Limits](#cost-limits) |
@@ -977,7 +979,7 @@ grants:
 | `run` | Invoke the agent (`GET/POST /api/v1/agent/{name}`) plus unconditional visibility/control of runs the caller itself started. |
 | `read` | See all runs of the agent. |
 | `control` | Kill/answer runs of the agent. For runs the caller did not start, `control` also needs visibility, so pair it with `read`. |
-| `edit` | File CRUD under the agent's directory, and creating a new agent whose name matches the pattern. Writing `agent.yaml`/`agent.json` that declares a name other than the target agent also requires edit on the declared name. **`edit` is authority over what the agent runs**: `agent.yaml`/`agent.json` are executable definitions, so an `edit` holder can change the agent's commands or cron and those changes then run on schedule or when someone with `run` triggers the agent — grant `edit` only to principals trusted to define behavior. (`edit` cannot reach *other* agents' authority: nested-dispatch hops are re-checked against operator-controlled grants, not the editable definition.) |
+| `edit` | File CRUD under the agent's directory, and creating a new agent whose name matches the pattern. Writing `agent.yaml`/`agent.json` that declares a name other than the target agent also requires edit on the declared name. **`edit` is authority over what the agent runs**: `agent.yaml`/`agent.json` are executable definitions, so an `edit` holder can change the agent's commands or cron and those changes then run on schedule or when someone with `run` triggers the agent — grant `edit` only to principals trusted to define behavior. (`edit` cannot reach *other* agents' authority: nested-dispatch hops are re-checked against operator-controlled grants, not the editable definition.) A definition's `env` reaches only the host variables [`agentSysEnvAllowlist`](#agentsysenvallowlist) allows through `@SYSENV:`. |
 | `debug` | `POST /api/v1/agents/{name}/debug` (arbitrary command execution). Never implied by anything except `role: admin` — a `["*"]`-style `agents` grant without `debug` in `actions` still cannot reach it. |
 
 **`agents` patterns** use the same glob rules as agent names: `*` matches
@@ -2018,7 +2020,9 @@ Several config values can reference host system environment variables using the
 does not exist, the server fails to start with a clear error message. Agent `env`
 values are the exception: they are resolved whenever the agent is loaded (at startup
 and on every reload), and a missing variable fails only that agent — it is skipped
-with an `Error loading agent from …` load error while the server keeps running.
+with an `Error loading agent from …` load error while the server keeps running. An
+agent `env` may also name only the host variables the operator allows — see
+[`agentSysEnvAllowlist`](#agentsysenvallowlist).
 
 `@SYSENV:` is resolved in:
 - `globalEnv` values, agent `env` values, and runner `env` values (`ssh`, `kubernetes`, `external`)
@@ -2149,6 +2153,54 @@ the runner's `env`, or the agent's `env` is the operator's own and reaches the
 target; a local target keeps everything.
 
 See [ADR-0065](../docs/adr/0065-remote-runner-env-composition.md) for the rationale and the full layering order.
+
+### `agentSysEnvAllowlist`
+
+The host variable names an agent definition's `env` may reference with
+`@SYSENV:`. An agent definition is not operator-owned the way this file is: a
+caller holding the `edit` grant writes it through the agent-file API, so without
+this list a definition alone could pull any variable in Homer's environment into
+the agent's runs, on any runner. The names
+allowed are the ones listed here **plus** every host variable `globalEnv`
+already references with `@SYSENV:` — a variable the operator already hands to
+every agent stays usable from an agent's own `env`. The `globalEnv` keys do not
+count, only the host variables their values name. Default: none, so an agent
+`env` may reference only what `globalEnv` references.
+
+An agent naming any other variable fails to load: it is skipped with a load
+error naming the variable, never its value, and the server keeps running. The
+check runs before resolution, so the error is the same whether the variable is
+set or not. An agent-file write (`PUT /api/v1/agents/{name}/files/{path}`) of
+such a definition is refused with `422`, like any other invalid definition, and
+the file is left untouched. `@SYSENV:` elsewhere in this file (`globalEnv`,
+runner `env`, auth secrets) is unaffected: the operator owns this file.
+
+The list bounds what a definition can *declare*. It does not sandbox the
+commands an `edit` holder can write: on the `local` runner they run as Homer's
+own OS user (see the [`edit` grant](#grants-and-roles)).
+
+```yaml
+agentSysEnvAllowlist: ["GITLAB_TOKEN", "SONAR_TOKEN"]
+globalEnv:
+  ANTHROPIC_AUTH_TOKEN: "@SYSENV:ANTHROPIC_AUTH_TOKEN"   # agents may also name ANTHROPIC_AUTH_TOKEN
+```
+
+<details>
+<summary>JSON format</summary>
+
+```json
+{
+  "agentSysEnvAllowlist": ["GITLAB_TOKEN", "SONAR_TOKEN"],
+  "globalEnv": { "ANTHROPIC_AUTH_TOKEN": "@SYSENV:ANTHROPIC_AUTH_TOKEN" }
+}
+```
+</details>
+
+Each entry must be a variable name (`[A-Za-z_][A-Za-z0-9_]*`); anything else
+fails startup. This is a **breaking change**: an agent whose `env` names a host
+variable that is neither listed here nor referenced by `globalEnv` stops
+loading — add the name here. See
+[ADR-0037](../docs/adr/0037-grants-authorization.md).
 
 ## OpenTelemetry Export
 

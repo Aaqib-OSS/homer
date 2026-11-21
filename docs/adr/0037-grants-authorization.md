@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-11
 deciders: Lukáš Vlk
-amended: 2026-10-09
+amended: 2026-10-09, 2026-11-21
 ---
 # ADR-0037: Grants-based authorization replaces path allowlists
 
@@ -139,6 +139,29 @@ settled with the operator on 2026-08-11:
   kinds gained the same authorization surface in one change.
 
 > **Amendment (2026-10-09) —** Closed by ADR-0039.
+
+## Amendment (2026-11-21): `edit` does not read the server's environment through `@SYSENV:`
+
+An agent definition's `env` may reference a host variable with `@SYSENV:NAME`, resolved against the
+server's environment when the agent loads, and the value then reaches every run of the agent on any
+runner and its LangGraph introspection. The `edit` grant writes definitions through the agent-file
+API, so it carried read access to every server variable, which this ADR never granted it.
+
+Decided with the maintainer (#370): an operator allowlist, not "`edit` is operator-equivalent".
+The top-level config key `agentSysEnvAllowlist` lists the host variable names a definition may
+reference (default empty); the variables `globalEnv` already references with `@SYSENV:` are allowed
+too, because the operator hands them to every agent anyway. The `globalEnv` keys do not count: they
+are not host variable names. A definition naming any other variable fails to load, with an error
+naming the variable and never its value. The check runs before resolution, so the refusal reads
+nothing and is the same whether the variable is set, and the agent-file write applies the same
+check, so such a definition never lands. `@SYSENV:` in the server config is unaffected, since the
+operator owns that file. `agentdebug` loads agents with the same rule.
+
+The allowlist bounds what a definition declares, not what its commands do: on the `local` runner
+an `edit` holder's commands run as Homer's OS user, which can read the server process's own
+environment (`/proc/<pid>/environ` on Linux). That is the existing "`edit` is authority over what
+the agent runs" in `app/SERVER.md`, not a gap this amendment closes; a remote runner does not share
+Homer's process table.
 
 ## More Information
 

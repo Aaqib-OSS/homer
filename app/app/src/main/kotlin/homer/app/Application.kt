@@ -183,10 +183,10 @@ private fun resolveStartupConfig(
             )
         config.copy(
             globalEnv = resolvedGlobalEnv,
-            // Computed from the RAW globalEnv: after resolveMapValues the
-            // placeholders are gone. Marks host-sourced values as secret so
-            // they are masked in telemetry (ADR-0047 §7).
+            // Both from the RAW globalEnv, whose placeholders resolveMapValues erases; host-sourced
+            // values are secret so telemetry masks them (ADR-0047 §7), and agents may name them (ADR-0037).
             sysEnvBackedGlobalEnvNames = sysEnvResolver.secretNamesFor(config.globalEnv),
+            globalEnvSysEnvNames = SysEnvResolver.referencedNames(config.globalEnv),
             // Same resolution + secrecy contract as globalEnv, per runner: a
             // runner-env value pulled from the host env is a credential too.
             runners = resolveRunnerEnvs(config.runners, sysEnvResolver),

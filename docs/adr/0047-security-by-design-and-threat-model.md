@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-21
 deciders: Lukáš Vlk
-amended: 2026-09-23, 2026-09-30, 2026-10-06, 2026-10-16, 2026-11-05, 2026-11-20
+amended: 2026-09-23, 2026-09-30, 2026-10-06, 2026-10-16, 2026-11-05, 2026-11-20, 2026-11-21
 ---
 # ADR-0047: Security is a design input, and these are the boundaries it defends
 
@@ -358,6 +358,15 @@ could abuse an `endpoint=` or `mode=` ride-along, and both producers pass
 `usePathname()`, which never carries a query, so query state does not survive a
 sign-in round trip. Accepting a query would need a second validation shape per
 target; landing on the destination's default view is the accepted cost.
+
+## Amendment (2026-11-21): an agent definition names only allowed host variables
+
+Rule 2 counts agent-declared env as attacker-controlled, and an `edit` holder is a principal
+distinct from the operator. A definition's `@SYSENV:NAME` therefore reaches only the host variables
+the operator allowed (`agentSysEnvAllowlist` plus those `globalEnv` references), checked where the
+reference is resolved, at load, and again at the agent-file write. The refusal names the variable,
+never its value, and is decided before anything is read, so it does not reveal whether the variable
+exists either. The decision and its residual are in ADR-0037's amendment of the same date.
 
 ## Pros and Cons of the Options
 

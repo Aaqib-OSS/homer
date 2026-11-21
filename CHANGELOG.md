@@ -6,6 +6,7 @@
 
 - **Added: `isErrorExitCode` on `!<claude>` commands** — An `is_error` result returns this exit code instead of failing as malformed, and is not retried.
 - **Added: `GET /api/v1/auth/me` answers a bearer token** — A request carrying a bearer token gets that token's name, role and grants, and the route is mounted whenever a `bearer` or `password` scheme is configured.
+- **BREAKING: an agent's `@SYSENV:` names only allowed host variables** — An agent whose `env` references a host variable that neither the new `agentSysEnvAllowlist` config lists nor `globalEnv` references with `@SYSENV:` fails to load, and an agent-file write of one is refused with `422`; list each such variable in `agentSysEnvAllowlist`. See [ADR-0037](docs/adr/0037-grants-authorization.md).
 - **BREAKING: the LangGraph runtime needs Python 3.12** — A runner host that runs `!<langgraph>` commands needs Python 3.12 or newer to install `homer_langgraph`.
 - **BREAKING: the optional Artifactory build path is removed** — Gradle builds and the backend and E2E image builds no longer read `ARTIFACTORY_URL`, `ARTIFACTORY_USER` or `ARTIFACTORY_TOKEN` and resolve from Maven Central and the Gradle Plugin Portal, so an operator whose network reaches dependencies only through Artifactory must provide another route to them.
 - **Security: the host launch scripts start the JVM with Base64 intrinsics off** — `homer-runner.sh` and `agentdebug.sh` pass `-XX:-UseBASE64Intrinsics`, as the images do, mitigating Java4Shell (CVE-2026-114938).

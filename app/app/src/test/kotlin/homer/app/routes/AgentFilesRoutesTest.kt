@@ -136,6 +136,25 @@ class AgentFilesRoutesTest {
             assertContains(res.bodyAsText(), "Agent definition invalid")
         }
 
+    @Test
+    fun `PUT of a definition naming an unlisted host variable is refused with 422 and leaves the file untouched`() =
+        testApplication {
+            wireRoutes()
+            val before = Files.readString(root.resolve("my_agent/agent.json"))
+            val leaky = AgentFixtures.validAgentJson().replace("\"value\"", "\"Bearer @SYSENV:PATH\"")
+            val res =
+                client.put("/api/v1/agents/test_agent/files/agent.json") {
+                    header(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+                    setBody(Json.encodeToString(mapOf("content" to leaky)))
+                }
+            assertEquals(HttpStatusCode.UnprocessableEntity, res.status)
+            val body = res.bodyAsText()
+            assertContains(body, "'PATH'")
+            assertFalse(System.getenv("PATH") in body, "the refusal must not carry the variable's value")
+            assertEquals(before, Files.readString(root.resolve("my_agent/agent.json")))
+            assertEquals("value", agentsService.agents.getValue("test_agent").env["KEY"])
+        }
+
     /**
      * ADR-0004: a write racing a permission change is 403 through the real route
      * and [respondFileOpResult] mapping, not an unhandled 500, and the body never

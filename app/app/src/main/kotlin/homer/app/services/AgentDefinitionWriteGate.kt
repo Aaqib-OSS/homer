@@ -2,6 +2,7 @@ package homer.app.services
 
 import com.charleskorn.kaml.Yaml
 import homer.app.infra.AgentDirs
+import homer.app.infra.AgentSysEnvAllowlist
 import homer.app.models.Agent
 import kotlinx.serialization.json.Json
 import org.slf4j.Logger
@@ -9,10 +10,11 @@ import org.slf4j.Logger
 /**
  * The grant and schema gate of an [AgentFilesService.write] landing on a definition
  * file: a write that would create an agent needs the create-agent grant on the name
- * it declares, and every definition written must pass the load-time schema checks.
+ * it declares, and every definition written must pass the load-time schema and `@SYSENV:` checks.
  */
 internal class AgentDefinitionWriteGate(
     private val logger: Logger,
+    private val sysEnvAllowlist: AgentSysEnvAllowlist,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -59,6 +61,7 @@ internal class AgentDefinitionWriteGate(
                     add("Invalid agent name '${agent.name}': only letters, digits, '-', '_' allowed")
                 }
                 if (agent.commands.isEmpty()) add("Agent must have at least one command")
+                sysEnvAllowlist.refusal(agent.env)?.let { add("Agent '${agent.name}' $it") }
             }
         } catch (e: Exception) {
             logger.debug("Agent definition rejected: {}", e.message)
