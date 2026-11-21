@@ -79,20 +79,39 @@ class MainTest {
     }
 
     @Test
-    fun `the help's usage lines name every registered subcommand`() {
+    fun `the help has one usage line per registered subcommand and no other`() {
         val cli = agentdebugCli()
-        val usageLines =
-            cli
-                .test("--help")
-                .stdout
-                .lines()
-                .map { it.trim() }
-                .filter { it.startsWith("agentdebug ") }
 
-        for (name in cli.registeredSubcommands().map { it.commandName }) {
-            assertTrue(usageLines.any { name in it.split(" ") }, "no usage line for '$name' in:\n${usageLines.joinToString("\n")}")
-        }
+        val usages = usagesOf(cli.test("--help").stdout)
+
+        assertEquals(
+            cli.registeredSubcommands().map { it.commandName }.sorted(),
+            usages.map(::subcommandOf).sorted(),
+            usages.joinToString("\n"),
+        )
     }
+
+    @Test
+    fun `the help's hash-password usage says it needs no --config`() {
+        val usage = usagesOf(agentdebugCli().test("--help").stdout).single { subcommandOf(it) == "hash-password" }
+
+        assertContains(usage, "needs no --config")
+    }
+
+    /** The hand-written usage block's entries, each rejoined across the help formatter's wrapping. */
+    private fun usagesOf(help: String): List<String> =
+        help
+            .lines()
+            .map { it.trim() }
+            .dropWhile { it != "Usage:" }
+            .drop(1)
+            .takeWhile { it.isNotEmpty() }
+            .joinToString(" ")
+            .split(Regex("(?=agentdebug )"))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+
+    private fun subcommandOf(usage: String): String = usage.split(" ").drop(1).first { it.matches(Regex("[a-z][a-z-]*")) }
 
     @Test
     fun `a subcommand without --config fails`() {
