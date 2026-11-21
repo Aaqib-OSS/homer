@@ -247,7 +247,7 @@ class AgentExecutor(
             val redactor = executionContext.secretRedactor()
             // A skip still hands over to the next step: its boundary sets that
             // step's currentCommand, in the same transaction as this append.
-            val next = nextBoundary(nextCommand, stop = false)
+            val next = nextBoundary(nextCommand, stop = false, now = endTime)
             if (next != null) nextStart = next.second
             stepRecords.completeStep(
                 processId,
@@ -418,7 +418,7 @@ class AgentExecutor(
         return StopStepsOutcome.FINISHED
     }
 
-    private fun nowEpochSec(): Long = config.clock() / 1000
+    private fun nowEpochSec(): Long = config.nowEpochSec()
 
     companion object {
         private val logger = LoggerFactory.getLogger(AgentExecutor::class.java)

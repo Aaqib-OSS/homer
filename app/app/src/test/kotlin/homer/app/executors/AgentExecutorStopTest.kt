@@ -23,12 +23,10 @@ import io.mockk.just
 import io.mockk.verify
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -73,13 +71,12 @@ class AgentExecutorStopTest : AgentExecutorTestBase() {
             val contexts = mutableListOf<ExecutionContext>()
             coEvery { mockExecutor.execute(any(), capture(contexts), any()) } coAnswers {
                 if (contexts.size == 1) throw CancellationException("Timeout reached. 60s.")
-                // Long enough that the stop record's `at`, read before the stop steps run, lands
-                // a full second before the stop step's `end` on the wall clock.
-                withContext(Dispatchers.IO) { Thread.sleep(2_000) }
+                // The stop step runs a second, so its `end` lands after the stop record's `at`.
+                outliveUntil(NOW + 1)
                 TestFixtures.mockCommandResult(exitCode = 0)
             }
 
-            assertThrows<CancellationException> { executor(agent).execute() }
+            assertThrows<CancellationException> { clockedExecutor(agent).execute() }
 
             // The timed-out step, then the one stop step — and no third regular step.
             assertEquals(listOf(false, true), contexts.map { it.onStop })
@@ -89,7 +86,7 @@ class AgentExecutorStopTest : AgentExecutorTestBase() {
                     reason = StopReason.STEP_TIMEOUT,
                     stepIndex = 0,
                     stepLabel = "Run tests",
-                    at = stops.single().at,
+                    at = NOW,
                     stopSteps = StopStepsOutcome.FINISHED,
                 ),
                 stops.single(),
@@ -99,10 +96,7 @@ class AgentExecutorStopTest : AgentExecutorTestBase() {
             assertEquals(null, executionInfos.last().stoppedBy)
             // The stop is stamped when it was detected, not after the stop steps ran: the
             // record's timeline must not place them before the stop itself.
-            assertTrue(
-                stops.single().at < executionInfos.last().end,
-                "stop.at must be read before the stop steps run",
-            )
+            assertEquals(NOW + 1, executionInfos.last().end, "stop.at must be read before the stop steps run")
         }
 
     @Test

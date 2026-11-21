@@ -20,8 +20,6 @@ import io.opentelemetry.api.trace.Span
 import io.opentelemetry.context.Context
 import java.nio.file.Path
 import kotlin.io.path.relativeTo
-import kotlin.time.Clock
-import kotlin.time.ExperimentalTime
 
 /**
  * Step [index]'s artifact names and attempt-0 paths, the default stem's when [agent]'s own template
@@ -101,16 +99,17 @@ internal suspend fun evaluateWhen(
 }
 
 /**
- * The next step's current-command label and start time, or null when this
+ * The next step's current-command label and start time [now], or null when this
  * step ends the run or has no successor. Both the success path (via
  * [shouldStopAfter]) and the skip path share this one handover.
  */
 internal fun nextBoundary(
     nextCommand: Command?,
     stop: Boolean,
+    now: Long,
 ): Pair<String, Long>? {
     if (stop || nextCommand == null) return null
-    return nextCommand.label to Clock.System.now().epochSeconds
+    return nextCommand.label to now
 }
 
 /**
@@ -131,7 +130,6 @@ private fun shouldStopAfter(
  * Records [run]'s ExecutionInfo for [outcome] and ends its span; returns the next step's start
  * time when one starts now.
  */
-@OptIn(ExperimentalTime::class)
 internal suspend fun completeCommand(
     run: StepRun,
     outcome: CommandOutcome,
@@ -142,7 +140,7 @@ internal suspend fun completeCommand(
     artifactsDir: Path,
 ): Long? {
     val (index, command, nextCommand, startTime, commandSpan, stdOut, stdErr, _, onStop) = run
-    val endTime = Clock.System.now().epochSeconds
+    val endTime = run.executionContext.config.nowEpochSec()
     // A retried attempt may write other files than attempt 0: the result's paths, else the tracked
     // per-attempt ones (the last attempt threw), else attempt 0 (the executor never ran).
     val recordedStdOut =
@@ -169,7 +167,7 @@ internal suspend fun completeCommand(
         )
     // The current command clears unless the next step starts now; success and skip share
     // nextBoundary, so the two paths cannot drift.
-    val next = nextBoundary(nextCommand, stop = shouldStopAfter(outcome, command))
+    val next = nextBoundary(nextCommand, stop = shouldStopAfter(outcome, command), now = endTime)
     stepRecords.completeStep(processId, executionInfo, next?.first, next?.second)
     commandSpan.end()
     return next?.second
