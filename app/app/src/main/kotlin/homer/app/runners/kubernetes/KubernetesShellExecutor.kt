@@ -78,27 +78,36 @@ class KubernetesShellExecutor(
             val pgidFile = podControl.pgidFileFor(env, interruptGrace)
             RemoteEnvFile.removingUnlessSucceeded(envFile?.path, { sync.removeIfExists(it, ENV_FILE_REMOVE_TIMEOUT) }) {
                 envFile?.let { sync.writePrivateFile(it.path, it.content) }
-                val argv = launchArgv(command, envFile?.path, pgidFile)
-                execInPod(argv, stdOut, stdErr, stdIn, env, timeout, stdOutFilter, interruptGrace, pgidFile)
+                execInPod(launch(command, envFile?.path, pgidFile), stdOut, stdErr, stdIn, env, timeout, stdOutFilter, interruptGrace)
             }
         }
 
-    /** The exec argv for [command]: under `setsid` with a [pgidFile], else via the env launcher for an [envFile]. */
-    private fun launchArgv(
+    /** The exec for [command]: under `setsid` with a [pgidFile], else via the env launcher for an [envFile]. */
+    private fun launch(
         command: List<String>,
         envFile: String?,
         pgidFile: String?,
-    ): List<String> =
-        when {
-            pgidFile != null -> podControl.setsidLaunch(pgidFile, envFile, command)
-            envFile != null -> listOf("sh", "-c", RemoteShell.sourceThenExec("\$0"), envFile) + command
-            else -> command
-        }
+    ): Launch {
+        val argv =
+            when {
+                pgidFile != null -> podControl.setsidLaunch(pgidFile, envFile, command)
+                envFile != null -> listOf("sh", "-c", RemoteShell.sourceThenExec("\$0"), envFile) + command
+                else -> command
+            }
+        return Launch(argv, command.first(), pgidFile)
+    }
 
-    /** Runs [argv] on a new exec channel under the timeout, cancellation and output-cap contract. */
+    /** One exec's [argv] and the step's own [executable], which a step error names instead of the launcher. */
+    private class Launch(
+        val argv: List<String>,
+        val executable: String,
+        val pgidFile: String?,
+    )
+
+    /** Runs [launch] on a new exec channel under the timeout, cancellation and output-cap contract. */
     @Suppress("SuspendFunSwallowedCancellation") // aborts under NonCancellable and rethrows
     private suspend fun execInPod(
-        argv: List<String>,
+        launch: Launch,
         stdOut: Path,
         stdErr: Path,
         stdIn: String?,
@@ -106,10 +115,9 @@ class KubernetesShellExecutor(
         timeout: Duration,
         stdOutFilter: OutputLineFilter?,
         interruptGrace: Duration?,
-        pgidFile: String?,
     ): CommandResult =
         coroutineScope {
-            val remote = execClient.start(namespace, podName, argv, stdin = stdIn != null)
+            val remote = execClient.start(namespace, podName, launch.argv, stdin = stdIn != null)
 
             val outPump = OutputPump(remote.inputStream, stdOut, stdOutFilter, "stdout")
             val errPump = OutputPump(remote.errorStream, stdErr, filter = null, stream = "stderr")
@@ -123,7 +131,7 @@ class KubernetesShellExecutor(
                 awaitExit(remote, stdOut, stdErr, timeout, kill)
             } catch (e: Throwable) {
                 withContext(NonCancellable) {
-                    abort(remote, stdErr, timeout, kill, stdInJob, listOf(outPump, errPump), interruptGrace, pgidFile)
+                    abort(remote, stdErr, timeout, kill, stdInJob, listOf(outPump, errPump), interruptGrace, launch.pgidFile)
                 }
                 throw e
             }
@@ -139,7 +147,7 @@ class KubernetesShellExecutor(
             // output that fit the exec buffer leaves a clean exit behind a lost stream (ADR-0063).
             val lost = listOf(outPump, errPump).firstOrNull { it.failed }
             if (lost != null) {
-                throw CommandExecutionException("${lost.stream} could not be written", -1, command.first())
+                throw CommandExecutionException("${lost.stream} could not be written", -1, launch.executable)
             }
 
             CommandResult(exitCode = exitCodeOf(remote, env), stdOut = stdOut, stdErr = stdErr)

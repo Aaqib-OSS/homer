@@ -588,6 +588,7 @@ class KubernetesShellExecutorTest {
         assertFalse(reason.contains("hi"), "the failure must not carry the pod's output: $reason")
         assertFalse(reason.contains("s3cr3t"), "the failure must not carry an env value: $reason")
         assertEquals(-1, thrown.exitCode, "a step that failed without the command's exit contributing records the sentinel")
+        assertEquals("x", thrown.command, "the step error names the step's executable, not the env launcher")
     }
 
     /** An exec stream that blocks every read until it is closed, then ends. */
