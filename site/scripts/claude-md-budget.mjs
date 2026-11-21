@@ -4,7 +4,7 @@ export const CAPS = {
   'app/CLAUDE.md': 55083,
   'app/app/src/main/kotlin/homer/app/executors/llm/CLAUDE.md': 8494,
   'app/app/src/main/kotlin/homer/app/runners/CLAUDE.md': 11488,
-  'app/app/src/main/kotlin/homer/app/services/persistence/CLAUDE.md': 19887,
+  'app/app/src/main/kotlin/homer/app/services/persistence/CLAUDE.md': 20457,
   'clients/python/homer_langgraph/CLAUDE.md': 4110,
   'console/CLAUDE.md': 34607,
 }
