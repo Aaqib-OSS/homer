@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-16
 deciders: Lukáš Vlk
+amended: 2026-10-14, 2026-11-21
 ---
 # ADR-0063: Drop configured Claude `system` subtypes from stdout at write time
 
@@ -101,9 +102,11 @@ subtypes, non-empty default"**.
   survives until the child's next write or exit — a pipe read blocked in another
   thread is not woken by `close()` — so one parked daemon thread per such step, for
   the child's lifetime, is the accepted residue. Kubernetes already pumps its exec
-  stream, which ends with the exec channel. (2026-10-14: a pod child can hold the
-  exec open past the command's exit too, so the Kubernetes pump and stdin joins
-  are bounded the same way.)
+  stream, which ends with the exec channel.
+
+  > **Amendment (2026-10-14) —** a pod child can hold the exec open past the
+  > command's exit too, so the Kubernetes pump and stdin joins are bounded the
+  > same way.
 - Bad: test doubles that mock `ShellExecutor.cmd` for Claude steps must match the
   new parameter.
 - Bad: the default is non-empty, so every Claude step on every model — not only the
@@ -117,14 +120,16 @@ subtypes, non-empty default"**.
   truncates `cmd_N.err`, so only the last attempt's `[HOMER] Dropped` line survives —
   the same lifetime the cap and TTL markers already have — and
   `claude.dropped_system_events` keeps the last non-zero attempt's total.
-- Good: a pump that cannot open or write its file fails the step, naming the stream it
-  could not write, on the local and Kubernetes runners alike — a child whose whole
-  output fits the buffer can no longer report exit 0 with the artifact lost. The
-  failure carries exit code `-1`, the sentinel for a step that failed without the
-  child's exit contributing, on both runners alike, so a failed step never records
-  the child's own `0`. The bounded join and its shed semantics are unchanged: a pump
-  still running past the bound because a background child holds the stream open is
-  abandoned, not failed. (2026-11-21.)
+
+### Amendment (2026-11-21): a pump that cannot open or write its file fails the step
+
+A pump that cannot open or write its file fails the step, naming the stream it could
+not write, on the local and Kubernetes runners alike — a child whose whole output fits
+the buffer can no longer report exit 0 with the artifact lost. The failure carries exit
+code `-1`, the sentinel for a step that failed without the child's exit contributing, on
+both runners alike, so a failed step never records the child's own `0`. The bounded join
+and its shed semantics are unchanged: a pump still running past the bound because a
+background child holds the stream open is abandoned, not failed.
 
 ## Pros and Cons of the Options
 
