@@ -128,7 +128,8 @@ Execute agent commands locally.
 and exits 0 when it passes. `run` exits 1 if a command fails (non-zero exit
 without `continueIfFail`), a `when` predicate fails to evaluate, or `--cmd N`
 names an index outside `0..count-1` — that last one fails before anything
-runs, with an error naming the valid range; `run` exits 0 otherwise,
+runs, with an error naming the valid range (the range is omitted when the
+agent has no commands); `run` exits 0 otherwise,
 including when commands were skipped.
 
 Commands with a `when:` predicate are evaluated before each real run (dry-run
