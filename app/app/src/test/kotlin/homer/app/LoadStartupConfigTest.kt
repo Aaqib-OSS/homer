@@ -1,9 +1,13 @@
 package homer.app
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.LoggerContext
 import homer.app.infra.SysEnvResolver
 import homer.app.models.RunnerConfig
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import org.slf4j.LoggerFactory
 import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -65,26 +69,27 @@ class LoadStartupConfigTest {
         assertNull(loadStartupConfig(arrayOf(File(dir, "absent.json").absolutePath), hardenJvm = {}))
     }
 
-    private val servicesLogKey = "org.slf4j.simpleLogger.log.homer.app.services"
-    private val ktorLogKey = "org.slf4j.simpleLogger.log.io.ktor"
-
     private fun logConfig(): String = file("config.json", """{"agentsSearchPath": "a", "workspaceRootPath": "w", "databasePath": "d"}""")
 
-    private fun <T> preservingLogProperties(
-        vararg keys: String,
+    private fun loggerLevel(name: String): Level? = (LoggerFactory.getLogger(name) as Logger).level
+
+    /** Restores the named loggers' levels afterwards, so one case never leaks into another. */
+    private fun <T> withLoggerLevels(
+        vararg names: String,
         block: () -> T,
     ): T {
-        val pinned = keys.associateWith { System.getProperty(it) }
+        val context = LoggerFactory.getILoggerFactory() as LoggerContext
+        val pinned = names.map { it to context.getLogger(it).level }
         try {
             return block()
         } finally {
-            pinned.forEach { (key, value) -> if (value == null) System.clearProperty(key) else System.setProperty(key, value) }
+            pinned.forEach { (name, level) -> context.getLogger(name).level = level }
         }
     }
 
     @Test
-    fun `startup applies the HOMER_LOG_LEVELS override to the logger system property`() =
-        preservingLogProperties(servicesLogKey) {
+    fun `startup applies the HOMER_LOG_LEVELS override to the logback logger`() =
+        withLoggerLevels("homer.app.services") {
             assertNotNull(
                 loadStartupConfig(
                     arrayOf(logConfig()),
@@ -93,12 +98,12 @@ class LoadStartupConfigTest {
                 ),
             )
 
-            assertEquals("debug", System.getProperty(servicesLogKey))
+            assertEquals(Level.DEBUG, loggerLevel("homer.app.services"))
         }
 
     @Test
-    fun `startup applies every HOMER_LOG_LEVELS pair to its own logger property`() =
-        preservingLogProperties(servicesLogKey, ktorLogKey) {
+    fun `startup applies every HOMER_LOG_LEVELS pair to its own logger`() =
+        withLoggerLevels("homer.app.services", "io.ktor") {
             assertNotNull(
                 loadStartupConfig(
                     arrayOf(logConfig()),
@@ -107,14 +112,15 @@ class LoadStartupConfigTest {
                 ),
             )
 
-            assertEquals("debug", System.getProperty(servicesLogKey))
-            assertEquals("warn", System.getProperty(ktorLogKey))
+            assertEquals(Level.DEBUG, loggerLevel("homer.app.services"))
+            assertEquals(Level.WARN, loggerLevel("io.ktor"))
         }
 
     @Test
-    fun `startup keeps a logger level the operator pinned with -D`() =
-        preservingLogProperties(servicesLogKey) {
-            System.setProperty(servicesLogKey, "info")
+    fun `startup replaces a logger level the logging config set`() =
+        withLoggerLevels("homer.app.services") {
+            val context = LoggerFactory.getILoggerFactory() as LoggerContext
+            context.getLogger("homer.app.services").level = Level.INFO
 
             assertNotNull(
                 loadStartupConfig(
@@ -124,7 +130,21 @@ class LoadStartupConfigTest {
                 ),
             )
 
-            assertEquals("info", System.getProperty(servicesLogKey))
+            assertEquals(Level.DEBUG, loggerLevel("homer.app.services"))
+        }
+
+    @Test
+    fun `startup applies the HOMER_LOG_LEVELS override even when the config is refused`() =
+        withLoggerLevels("homer.app.services") {
+            assertNull(
+                loadStartupConfig(
+                    arrayOf(file("config.json", "{ not json")),
+                    env = mapOf("HOMER_LOG_LEVELS" to "homer.app.services=debug"),
+                    hardenJvm = {},
+                ),
+            )
+
+            assertEquals(Level.DEBUG, loggerLevel("homer.app.services"))
         }
 
     @Test
