@@ -11,8 +11,8 @@ import kotlin.test.assertTrue
 
 /**
  * Guards the agent-CLI version pins (CWE-1357). The `runner` stage installs three global npm
- * packages that run agent prompts with the workspace's secrets in their environment, so each
- * build must ship a release someone chose, not whatever the registry published that day.
+ * packages that run agent prompts with the workspace's secrets in their environment, and npm
+ * itself, so each build must ship a release someone chose, not whatever the registry published that day.
  *
  * Each pin is declared three times — `app/Dockerfile`, the `docker-compose.build.yml` build
  * overlay and the `DOCKER.md` build-arguments table — and this test is what keeps the three
@@ -26,6 +26,7 @@ class CliVersionPinTest {
             "CLAUDE_CODE_VERSION" to "@anthropic-ai/claude-code",
             "CODEX_VERSION" to "@openai/codex",
             "OPENCODE_VERSION" to "opencode-ai",
+            "NPM_VERSION" to "npm",
         )
 
     /** An exact release: no `latest`, no `^`/`~`/`*` range, no dist-tag. */

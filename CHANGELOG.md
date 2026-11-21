@@ -4,6 +4,7 @@
 
 ### Homer
 
+- **Security: `homer-app` ships npm 11.21.3** — The full image replaces Alpine's npm, whose bundled dependencies carry known advisories, with the release the new `NPM_VERSION` build argument pins.
 - **Security: the server images ship zlib 1.4** — `homer-app` and `homer-runner` upgrade zlib past their base image's build, fixing CVE-2026-4738.
 - **Changed: the server images run Alpine 3.24** — `homer-app`, its slim variant and `homer-runner` move to Alpine 3.24 with Temurin 25.0.5.1, which carries the Java4Shell fix (CVE-2026-114938), so the bundled `python3` is now Python 3.14 and `glab` is 1.100.
 - **BREAKING: env names on the ssh and Kubernetes runners must be shell identifiers** — Runner `env` and `extraUploads.env` names must match `^[A-Za-z_][A-Za-z0-9_]*$` at startup, and a run fails before it reaches the host or creates a pod on a `globalEnv`, agent `env` or `onStop:` `resultEnvParam` name that does not.

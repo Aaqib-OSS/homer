@@ -118,8 +118,12 @@ RUN apk add --no-cache \
 ARG CLAUDE_CODE_VERSION=2.1.318
 ARG CODEX_VERSION=0.166.0
 ARG OPENCODE_VERSION=1.19.5
+# npm replaces Alpine's own first: the apk package's bundled dependencies lag the fixed releases.
+# `hash -r` drops the shell's cached path to the removed apk npm.
+ARG NPM_VERSION=11.21.3
 # The npm cache is cleaned in the same layer: nothing reads it at run time.
-RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @openai/codex@${CODEX_VERSION} opencode-ai@${OPENCODE_VERSION} && \
+RUN npm install -g npm@${NPM_VERSION} && apk del --no-cache npm && hash -r && \
+    npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @openai/codex@${CODEX_VERSION} opencode-ai@${OPENCODE_VERSION} && \
     npm cache clean --force
 
 # glab checks its release host first, and a stalled route there held this step to the CI timeout: the

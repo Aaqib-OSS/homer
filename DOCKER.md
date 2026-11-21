@@ -371,6 +371,7 @@ Build arguments are set at **image build time** (not runtime). They must be pass
 | `CLAUDE_CODE_VERSION` | `2.1.318` | Claude Code CLI version to install. Pinned by default, for the same reason as the two below; it must match `server.requireClaudeCodeVersion`, which fails a `!<claude>` run whose CLI reports another version. |
 | `CODEX_VERSION` | `0.166.0` | Codex CLI version to install. Pinned by default: the CLI runs agent prompts with the workspace's secrets in its environment, so a build ships a version someone chose, not whatever npm had. |
 | `OPENCODE_VERSION` | `1.19.5` | opencode CLI version to install. Pinned by default, for the same reason. |
+| `NPM_VERSION` | `11.21.3` | npm version that replaces the Alpine package's npm before the CLIs install. Pinned for the same reason; the Alpine package's bundled dependencies lag the fixed npm releases. |
 
 ### Pinning the Claude CLI
 
