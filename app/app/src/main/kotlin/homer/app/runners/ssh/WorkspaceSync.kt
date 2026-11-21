@@ -81,6 +81,17 @@ class WorkspaceSync(
 
     suspend fun mkdirs(remoteDir: String) = withSftp { sftp -> withTransferTimeout { sftp.mkdirsIdempotent(remoteDir) } }
 
+    /** Writes [content] to a new owner-only file at [remote], in a parent directory kept owner-only. */
+    suspend fun writePrivateFile(
+        remote: String,
+        content: ByteArray,
+    ) = withSftp { sftp ->
+        withTransferTimeout {
+            sftp.ensurePrivateDir(remote.substringBeforeLast('/'))
+            sftp.createPrivateFile(remote, content)
+        }
+    }
+
     /** `lstat`: true when [remotePath] itself is a symbolic link; false when it does not exist. */
     suspend fun isSymlink(remotePath: String): Boolean =
         withSftp { sftp ->

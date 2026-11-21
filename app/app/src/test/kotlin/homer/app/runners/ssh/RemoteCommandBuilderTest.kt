@@ -2,11 +2,13 @@ package homer.app.runners.ssh
 
 import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 class RemoteCommandBuilderTest {
     @Test
@@ -21,57 +23,79 @@ class RemoteCommandBuilderTest {
     }
 
     @Test
-    fun `builds cd + exec env + escaped argv`() {
+    fun `build sources the env file and carries only its path on the command line`() {
         val cmd =
             RemoteCommandBuilder.build(
                 remoteWorkdir = "/home/homer/ws/p1/workdir",
-                env = linkedMapOf("HMR_WORK_DIR" to "/home/homer/ws/p1/workdir"),
+                envFile = "/home/homer/ws/p1/.homer/env/a1.env",
                 argv = listOf("echo", "hello world"),
             )
         assertEquals(
-            "cd '/home/homer/ws/p1/workdir' && exec env 'HMR_WORK_DIR=/home/homer/ws/p1/workdir' 'echo' 'hello world'",
+            "cd '/home/homer/ws/p1/workdir' && exec sh -c '. \"\$0\" && exec \"\$@\"' " +
+                "'/home/homer/ws/p1/.homer/env/a1.env' 'echo' 'hello world'",
             cmd,
         )
     }
 
     @Test
-    fun `omits env prefix when env is empty`() {
-        val cmd = RemoteCommandBuilder.build("/w", emptyMap(), listOf("ls", "-la"))
+    fun `omits the env file launcher when there is no env file`() {
+        val cmd = RemoteCommandBuilder.build("/w", null, listOf("ls", "-la"))
         assertEquals("cd '/w' && exec 'ls' '-la'", cmd)
     }
 
     @Test
     fun `preserves argv semantics for tokens with spaces and globs`() {
-        val cmd = RemoteCommandBuilder.build("/w", emptyMap(), listOf("grep", "a b", "*.kt"))
+        val cmd = RemoteCommandBuilder.build("/w", null, listOf("grep", "a b", "*.kt"))
         assertEquals("cd '/w' && exec 'grep' 'a b' '*.kt'", cmd)
     }
 
     @Test
-    fun `buildReaping wraps argv in setsid and records the pgid side-file`() {
+    fun `buildReaping records the pgid, then sources the env file inside the setsid group`() {
         val cmd =
             RemoteCommandBuilder.buildReaping(
                 remoteWorkdir = "/w",
-                env = linkedMapOf("FOO" to "bar"),
+                envFile = "/w/.homer/env/a1.env",
                 argv = listOf("echo", "hi"),
                 pgidFile = "/w/.homer/reap/cmd-1.pgid",
             )
         assertEquals(
-            "cd '/w' && exec env 'FOO=bar' setsid -w sh -c " +
-                "'d=\$(dirname \"\$0\"); mkdir -p \"\$d\"; echo \$\$ > \"\$0\"; exec \"\$@\"' " +
-                "'/w/.homer/reap/cmd-1.pgid' 'echo' 'hi'",
+            "cd '/w' && exec setsid -w sh -c " +
+                "'d=\$(dirname \"\$0\"); mkdir -p \"\$d\"; echo \$\$ > \"\$0\"; f=\$1; shift; . \"\$f\" && exec \"\$@\"' " +
+                "'/w/.homer/reap/cmd-1.pgid' '/w/.homer/env/a1.env' 'echo' 'hi'",
             cmd,
         )
     }
 
     @Test
-    fun `buildReaping omits the env prefix when env is empty`() {
-        val cmd = RemoteCommandBuilder.buildReaping("/w", emptyMap(), listOf("ls"), "/w/.homer/reap/cmd-1.pgid")
+    fun `buildReaping without an env file execs the argv directly`() {
+        val cmd = RemoteCommandBuilder.buildReaping("/w", null, listOf("ls"), "/w/.homer/reap/cmd-1.pgid")
         assertEquals(
             "cd '/w' && exec setsid -w sh -c " +
                 "'d=\$(dirname \"\$0\"); mkdir -p \"\$d\"; echo \$\$ > \"\$0\"; exec \"\$@\"' " +
                 "'/w/.homer/reap/cmd-1.pgid' 'ls'",
             cmd,
         )
+    }
+
+    @Test
+    fun `envFileContent removes the file first, then exports each value single-quoted`() {
+        val content = RemoteCommandBuilder.envFileContent("/w/.homer/env/a1.env", linkedMapOf("FOO" to "it's", "BAR" to "x"))
+        assertEquals(
+            "rm -f -- '/w/.homer/env/a1.env' || exit 1\nexport FOO='it'\\''s'\nexport BAR='x'\n",
+            content,
+        )
+    }
+
+    @Test
+    fun `envFileContent refuses a key that is not a shell identifier, naming the key and no value`() {
+        for (key in listOf("A-B", "1A", "A B", "A;touch x", "", "A=B")) {
+            val e =
+                assertThrows<IllegalArgumentException> {
+                    RemoteCommandBuilder.envFileContent("/w/e.env", mapOf("OK" to "v", key to "s3cr3t-Ab9-env-value"))
+                }
+            assertContains(e.message.orEmpty(), "'$key'")
+            assertFalse(e.message.orEmpty().contains("s3cr3t-Ab9-env-value"))
+        }
     }
 
     @Test

@@ -61,6 +61,7 @@ class SshRunner(
                 // util-linux). Where absent, fall back to close(true)-only teardown.
                 val reapCapable = canReapProcessGroup(session)
                 val reapDir = if (reapCapable) "$remoteProjectRoot/.homer/reap" else null
+                val sync = WorkspaceSync(session, config.sftpTransferTimeoutSeconds.seconds)
 
                 SshRunnerSession(
                     session = session,
@@ -68,11 +69,13 @@ class SshRunner(
                         SshShellExecutor(
                             session = session,
                             remoteWorkdir = remoteWorkdir,
+                            sync = sync,
+                            envDir = "$remoteProjectRoot/.homer/env",
                             maxOutputBytes = ws.maxOutputBytes,
                             reapProcessGroup = reapCapable,
                             reapDir = reapDir,
                         ),
-                    sync = WorkspaceSync(session, config.sftpTransferTimeoutSeconds.seconds),
+                    sync = sync,
                     remoteWorkspaceRoot = config.remoteWorkspaceRoot,
                     remoteProjectRoot = remoteProjectRoot,
                     remoteWorkdir = remoteWorkdir,

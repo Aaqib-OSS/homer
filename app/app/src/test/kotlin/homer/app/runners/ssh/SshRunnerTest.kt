@@ -1,6 +1,7 @@
 package homer.app.runners.ssh
 
 import homer.app.EnvConstants
+import homer.app.exceptions.SshExecRefusedException
 import homer.app.infra.WorkspaceConfig
 import homer.app.models.ExtraUploadSpec
 import homer.app.models.RunnerConfig
@@ -21,12 +22,15 @@ import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
+import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 class SshRunnerTest {
     private lateinit var server: EmbeddedSshServer
@@ -169,9 +173,8 @@ class SshRunnerTest {
     ) = runTest {
         // Env composition happens before the session (WorkspaceConfigFactory with
         // includeParentEnv=false for a remote runner); this asserts what the ssh
-        // runner actually delivers over the exec channel: the `env K=V` prefix
-        // carries runner/agent-supplied values, and no allowlisted host key unless
-        // someone set it explicitly.
+        // runner actually delivers: the sourced env file carries runner/agent-supplied
+        // values, and no allowlisted host key unless someone set it explicitly.
         val projectRoot = serverRoot.resolve("p1")
         projectRoot.resolve("workdir").createDirectories()
         projectRoot.resolve("artifacts").createDirectories()
@@ -240,6 +243,52 @@ class SshRunnerTest {
             )
         } finally {
             session.close()
+        }
+    }
+
+    @Test
+    fun `an env file a step leaves behind is removed with the session workspace`(
+        @TempDir serverRoot: Path,
+    ) = runTest {
+        // A refused exec request stands in for a step killed after its env file was uploaded but before it was sourced.
+        val refusing = EmbeddedSshServer(refuseExec = true).also { it.start() }
+        try {
+            val projectRoot = serverRoot.resolve("p1")
+            val ws =
+                WorkspaceConfig(
+                    serverRoot = serverRoot,
+                    projectRoot = projectRoot,
+                    artifacts = projectRoot.resolve("artifacts").createDirectories(),
+                    workdir = projectRoot.resolve("workdir").createDirectories(),
+                    env = mapOf("STEP_VALUE" to "s3cr3t-Ab9-env-value"),
+                    clearAfterFinish = true,
+                    lockKey = "k",
+                    maxOutputBytes = Long.MAX_VALUE,
+                )
+            val runner =
+                SshRunner(
+                    alias = "ssh-box",
+                    config = cfg().copy(host = refusing.host, remoteWorkspaceRoot = refusing.rootDir.resolve("remote").toString()),
+                    client = client,
+                    sessionFactory = { refusing.newClientSession(client) },
+                )
+            val session = runner.openSession(RunnerSessionParams(1, "demo", ws, ws.env, Context.root()))
+            try {
+                session.createWorkspace()
+                assertThrows<SshExecRefusedException> {
+                    session.shell.cmd(listOf("true"), serverRoot.resolve("o"), serverRoot.resolve("e"), null, ws.env, 30.seconds)
+                }
+                val remoteP1 = refusing.rootDir.resolve("remote/p1")
+                val left = Files.list(remoteP1.resolve(".homer/env")).use { it.toList() }
+                assertEquals(1, left.size, "the interrupted step left its env file: $left")
+
+                session.cleanWorkspace()
+                assertFalse(remoteP1.exists(), "the session workspace, env file included, is removed")
+            } finally {
+                session.close()
+            }
+        } finally {
+            refusing.close()
         }
     }
 

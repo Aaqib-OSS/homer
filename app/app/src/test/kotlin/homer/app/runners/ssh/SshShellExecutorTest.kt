@@ -30,6 +30,7 @@ import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import java.io.IOException
 import java.net.SocketTimeoutException
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.createDirectories
@@ -60,15 +61,26 @@ class SshShellExecutorTest {
         server.close()
     }
 
-    private fun executor() = SshShellExecutor(server.newClientSession(client), workdir.toString())
+    private val envDir: Path get() = server.rootDir.resolve("p1/.homer/env")
 
-    private fun reapingExecutor() =
-        SshShellExecutor(
-            session = server.newClientSession(client),
-            remoteWorkdir = workdir.toString(),
-            reapProcessGroup = true,
-            reapDir = workdir.resolve(".homer/reap").toString(),
-        )
+    /** An executor over [session] whose env files land in [envDir], written over a sync on the same session. */
+    private fun executorOn(
+        session: ClientSession,
+        maxOutputBytes: Long = Long.MAX_VALUE,
+        reapProcessGroup: Boolean = false,
+    ) = SshShellExecutor(
+        session = session,
+        remoteWorkdir = workdir.toString(),
+        sync = WorkspaceSync(session, 30.seconds),
+        envDir = envDir.toString(),
+        maxOutputBytes = maxOutputBytes,
+        reapProcessGroup = reapProcessGroup,
+        reapDir = if (reapProcessGroup) workdir.resolve(".homer/reap").toString() else null,
+    )
+
+    private fun executor() = executorOn(server.newClientSession(client))
+
+    private fun reapingExecutor() = executorOn(server.newClientSession(client), reapProcessGroup = true)
 
     /**
      * The embedded server runs commands on this same host, so local `setsid -w`
@@ -137,15 +149,76 @@ class SshShellExecutorTest {
     }
 
     @Test
-    fun `applies env via the env prefix`(
+    fun `env values with quotes, newlines and dollar signs reach the command intact`(
         @TempDir local: Path,
     ) = runTest {
         val out = local.resolve("o.txt")
-        executor().cmd(listOf("sh", "-c", "echo \$FOO"), out, local.resolve("e"), null, mapOf("FOO" to "bar"), 10.seconds)
-        assertEquals("bar", out.readText().trim())
+        val env = linkedMapOf("FOO" to "bar", "TRICKY" to TRICKY_VALUE)
+        executor().cmd(listOf("sh", "-c", "printf '%s|%s' \"\$FOO\" \"\$TRICKY\""), out, local.resolve("e"), null, env, 10.seconds)
+        assertEquals("bar|$TRICKY_VALUE", out.readText())
     }
 
-    private fun cappedExecutor(maxOutputBytes: Long) = SshShellExecutor(server.newClientSession(client), workdir.toString(), maxOutputBytes)
+    @Test
+    fun `the exec request carries the env file path but no env value`(
+        @TempDir local: Path,
+    ) = runTest {
+        val out = local.resolve("o.txt")
+        executor().cmd(listOf("sh", "-c", "printf %s \"\$STEP_VALUE\""), out, local.resolve("e"), null, SECRET_ENV, 10.seconds)
+        assertEquals(SECRET_VALUE, out.readText(), "the value still reaches the command")
+        assertExecRequestsQuoteNoEnvValue()
+    }
+
+    @Test
+    fun `the reaping exec request carries no env value and the env still reaches the command`(
+        @TempDir local: Path,
+    ) = runTest {
+        assumeTrue(setsidAvailable())
+        val out = local.resolve("o.txt")
+        reapingExecutor().cmd(listOf("sh", "-c", "printf %s \"\$STEP_VALUE\""), out, local.resolve("e"), null, SECRET_ENV, 10.seconds)
+        assertEquals(SECRET_VALUE, out.readText())
+        assertExecRequestsQuoteNoEnvValue()
+    }
+
+    @Test
+    fun `the env file is removed before the command runs`(
+        @TempDir local: Path,
+    ) = runTest {
+        val out = local.resolve("o.txt")
+        val listing = "ls -A '$envDir' | wc -l | tr -d ' '"
+        val result = executor().cmd(listOf("sh", "-c", listing), out, local.resolve("e"), null, SECRET_ENV, 10.seconds)
+        assertEquals(0, result.exitCode)
+        assertEquals("0", out.readText().trim(), "the command saw an env file still in place")
+        assertTrue(Files.isDirectory(envDir), "the env file was written to the env dir")
+    }
+
+    @Test
+    fun `an env name the shell cannot export fails the step before any upload or exec`(
+        @TempDir local: Path,
+    ) = runTest {
+        assertThrows<IllegalArgumentException> {
+            executor().cmd(listOf("true"), local.resolve("o"), local.resolve("e"), null, mapOf("BAD-NAME" to SECRET_VALUE), 10.seconds)
+        }
+        assertTrue(server.execRequests.isEmpty(), "no exec request may be sent: ${server.execRequests.size}")
+        assertFalse(envDir.exists(), "no env file may be written")
+    }
+
+    @Test
+    fun `an empty env sends no env file`(
+        @TempDir local: Path,
+    ) = runTest {
+        executor().cmd(listOf("true"), local.resolve("o"), local.resolve("e"), null, emptyMap(), 10.seconds)
+        assertFalse(server.execRequests.single().contains(".homer/env"), server.execRequests.single())
+        assertFalse(envDir.exists(), "no env dir without an env")
+    }
+
+    /** Every exec request the fixture saw quotes [SECRET_VALUE] nowhere, and at least one sourced an env file. */
+    private fun assertExecRequestsQuoteNoEnvValue() {
+        val requests = server.execRequests.toList()
+        assertTrue(requests.any { it.contains(envDir.toString()) }, "the step sourced no env file: $requests")
+        assertTrue(requests.none { it.contains(SECRET_VALUE) }, "an exec request quoted the env value")
+    }
+
+    private fun cappedExecutor(maxOutputBytes: Long) = executorOn(server.newClientSession(client), maxOutputBytes)
 
     @Test
     fun `a command still writing past the output cap is killed while it runs`(
@@ -272,13 +345,7 @@ class SshShellExecutorTest {
         return session to commands
     }
 
-    private fun mockedReapingExecutor(session: ClientSession) =
-        SshShellExecutor(
-            session = session,
-            remoteWorkdir = workdir.toString(),
-            reapProcessGroup = true,
-            reapDir = workdir.resolve(".homer/reap").toString(),
-        )
+    private fun mockedReapingExecutor(session: ClientSession) = executorOn(session, reapProcessGroup = true)
 
     @Test
     fun `a timeout with an interrupt grace reaps the remote group with SIGINT before the kill`(
@@ -373,7 +440,7 @@ class SshShellExecutorTest {
             val (exception, events) =
                 captureAllEvents {
                     assertThrows<SshExecRefusedException> {
-                        SshShellExecutor(refusing.newClientSession(client), refusing.rootDir.toString())
+                        executorOn(refusing.newClientSession(client))
                             .cmd(
                                 listOf("echo", "hello"),
                                 local.resolve("o"),
@@ -412,7 +479,7 @@ class SshShellExecutorTest {
 
         val exception =
             assertThrows<SshExecRefusedException> {
-                SshShellExecutor(session, workdir.toString())
+                executorOn(session)
                     .cmd(listOf("echo", "hello"), local.resolve("o"), local.resolve("e"), null, emptyMap(), 10.seconds)
             }
         assertContains(exception.message.orEmpty(), "refused the exec request")
@@ -459,7 +526,7 @@ class SshShellExecutorTest {
 
         val exception =
             assertThrows<SshConnectionLostException> {
-                SshShellExecutor(session, workdir.toString())
+                executorOn(session)
                     .cmd(listOf("echo", "hello"), local.resolve("o"), local.resolve("e"), null, emptyMap(), 10.seconds)
             }
         assertContains(exception.message.orEmpty(), "SSH channel open failed")
@@ -483,7 +550,7 @@ class SshShellExecutorTest {
 
         val exception =
             assertThrows<SshConnectionLostException> {
-                SshShellExecutor(session, workdir.toString())
+                executorOn(session)
                     .cmd(listOf("echo", "hello"), local.resolve("o"), local.resolve("e"), null, emptyMap(), 10.seconds)
             }
         assertContains(exception.message.orEmpty(), "SSH channel closed without an exit status")
@@ -502,5 +569,13 @@ class SshShellExecutorTest {
             channel.close(true)
             session.close(true)
         }
+    }
+
+    private companion object {
+        /** Secret-shaped, keyword-free: the generic secret pattern of the pull-request scan keys on assignments. */
+        const val SECRET_VALUE = "s3cr3t-Ab9-env-value"
+        val SECRET_ENV = mapOf("STEP_VALUE" to SECRET_VALUE)
+
+        const val TRICKY_VALUE = "it's \"quoted\"\nline two \$HOME `id` \\ \$(true) '"
     }
 }

@@ -25,7 +25,7 @@ class RemoteCommandBuilderPropertyTest {
     /** Tokens carry no NUL (the one byte argv cannot hold) and every shell metacharacter that matters. */
     private val tokens: Arb<String> = Arb.list(Arb.element(TOKEN_CHARS), 0..12).map { it.joinToString("") }
 
-    /** `env` is given `NAME=value` tokens, so a generated name has to be a plain shell identifier. */
+    /** The env file `export`s each name, so a generated name has to be a plain shell identifier. */
     private val envNames: Arb<String> = Arb.list(Arb.element(NAME_CHARS), 0..6).map { "V" + it.joinToString("") }
 
     private val envs: Arb<Map<String, String>> =
@@ -48,9 +48,10 @@ class RemoteCommandBuilderPropertyTest {
                 val (argv, expected) = probe(env, args)
                 assertEquals(
                     expected,
-                    fields(RemoteCommandBuilder.build(workdir.toString(), env, argv)),
+                    fields(RemoteCommandBuilder.build(workdir.toString(), writeEnvFile(tmp, env), argv)),
                     "build lost an argument or env value for argv $argv",
                 )
+                assertNoEnvFileLeft(tmp)
             }
         }
     }
@@ -71,16 +72,28 @@ class RemoteCommandBuilderPropertyTest {
                 val (argv, expected) = probe(env, args)
                 assertEquals(
                     expected,
-                    fields(RemoteCommandBuilder.buildReaping(workdir.toString(), env, argv, pgidFile)),
+                    fields(RemoteCommandBuilder.buildReaping(workdir.toString(), writeEnvFile(tmp, env), argv, pgidFile)),
                     "buildReaping lost an argument or env value for argv $argv",
                 )
+                assertNoEnvFileLeft(tmp)
             }
         }
     }
 
+    /** Writes [env] as the env file the built command sources, or none for an empty env, as SshShellExecutor does. */
+    private fun writeEnvFile(
+        tmp: Path,
+        env: Map<String, String>,
+    ): String? {
+        if (env.isEmpty()) return null
+        val file = Files.createTempFile(tmp, "env-", ".env").toString()
+        Files.writeString(Path.of(file), RemoteCommandBuilder.envFileContent(file, env))
+        return file
+    }
+
     /**
      * The argv to hand the builder, and what running it must print: one `printf '%s\0'` field per
-     * env value (read by name, so the builder's `env` prefix is exercised) followed by one per
+     * env value (read by name, so the sourced env file is exercised) followed by one per
      * generated argument (read through `"$@"`, so they are argv elements and not re-parsed).
      */
     private fun probe(
@@ -89,6 +102,12 @@ class RemoteCommandBuilderPropertyTest {
     ): Pair<List<String>, List<String>> {
         val script = "printf '%s\\0' " + env.keys.joinToString(" ") { "\"\$$it\"" } + " \"\$@\""
         return listOf("sh", "-c", script, PROBE) + args to env.values.toList() + args
+    }
+
+    /** The sourced env file removes itself before the command runs, so none is left once it has. */
+    private fun assertNoEnvFileLeft(tmp: Path) {
+        val left = Files.list(tmp).use { files -> files.filter { it.fileName.toString().startsWith("env-") }.toList() }
+        assertEquals(emptyList(), left, "the env file outlived the command")
     }
 
     /** Runs [command] under a real `sh -c` and splits its stdout on the NUL separators the probe prints. */

@@ -25,18 +25,21 @@ import java.io.IOException
 import java.io.OutputStream
 import java.nio.file.Path
 import java.util.EnumSet
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.io.path.outputStream
 import kotlin.time.Duration
 
 /**
- * Runs each command in its own SSH exec channel, argv kept by [RemoteCommandBuilder], under KubernetesShellExecutor's
- * timeout, cancellation and output-cap contract. With [reapProcessGroup] the command leads its own remote process
- * group, which a kill or timeout kills over a control channel before the exec channel closes (ADR-0041).
+ * Runs each command in its own SSH exec channel, argv kept by [RemoteCommandBuilder] and env in a file under [envDir]
+ * written over [sync], under KubernetesShellExecutor's timeout, cancellation and output-cap contract. With
+ * [reapProcessGroup] the command leads its own remote process group, killed over a control channel first (ADR-0041).
  */
 class SshShellExecutor(
     private val session: ClientSession,
     private val remoteWorkdir: String,
+    private val sync: WorkspaceSync,
+    private val envDir: String,
     private val maxOutputBytes: Long = Long.MAX_VALUE,
     private val reapProcessGroup: Boolean = false,
     private val reapDir: String? = null,
@@ -59,7 +62,8 @@ class SshShellExecutor(
             // jscpd:ignore-end
             // Non-null exactly when the command reaps its process group.
             val pgidFile = if (reapProcessGroup && reapDir != null) "$reapDir/cmd-${reapCounter.incrementAndGet()}.pgid" else null
-            val remoteCmd = remoteCommand(command, env, pgidFile)
+            val envFile = if (env.isNotEmpty()) writeEnvFile(env) else null
+            val remoteCmd = remoteCommand(command, envFile, pgidFile)
             val channel = session.createExecChannel(remoteCmd)
             // use{} closes the channel on every path; the catch below closes it forcibly first, and the
             // graceful close after that is idempotent.
@@ -95,16 +99,23 @@ class SshShellExecutor(
             }
         }
 
+    /** Uploads [env] as a new owner-only file under a random name in [envDir], the path returned. */
+    private suspend fun writeEnvFile(env: Map<String, String>): String {
+        val envFile = "$envDir/${UUID.randomUUID()}.env"
+        sync.writePrivateFile(envFile, RemoteCommandBuilder.envFileContent(envFile, env).toByteArray(Charsets.UTF_8))
+        return envFile
+    }
+
     /** The remote argv for [command]: the reaping launcher when the command reports its own group. */
     private fun remoteCommand(
         command: List<String>,
-        env: Map<String, String>,
+        envFile: String?,
         pgidFile: String?,
     ): String =
         if (pgidFile != null) {
-            RemoteCommandBuilder.buildReaping(remoteWorkdir, env, command, pgidFile)
+            RemoteCommandBuilder.buildReaping(remoteWorkdir, envFile, command, pgidFile)
         } else {
-            RemoteCommandBuilder.build(remoteWorkdir, env, command)
+            RemoteCommandBuilder.build(remoteWorkdir, envFile, command)
         }
 
     /** The channel's exit status as the result; a channel closed without one fails the step ([noExitStatus]). */

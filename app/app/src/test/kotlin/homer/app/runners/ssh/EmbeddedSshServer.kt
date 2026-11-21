@@ -24,6 +24,7 @@ import java.nio.file.Files
 import java.nio.file.OpenOption
 import java.nio.file.Path
 import java.nio.file.attribute.FileAttribute
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 
 /**
@@ -44,6 +45,9 @@ class EmbeddedSshServer(
     private val refuseExec: Boolean = false,
 ) : AutoCloseable {
     val host = "127.0.0.1"
+
+    /** Every exec request string the server received, in arrival order. */
+    val execRequests: MutableList<String> = CopyOnWriteArrayList()
     lateinit var rootDir: Path
         private set
     private lateinit var server: SshServer
@@ -60,7 +64,11 @@ class EmbeddedSshServer(
                     listOf(
                         SftpSubsystemFactory().apply { fileSystemAccessor = StallingSftpAccessor },
                     )
-                commandFactory = if (refuseExec) RefusingCommandFactory else ShellCommandFactory
+                commandFactory =
+                    CommandFactory { channel, command ->
+                        execRequests.add(command)
+                        (if (refuseExec) RefusingCommandFactory else ShellCommandFactory).createCommand(channel, command)
+                    }
             }
         server.start()
         return server.port
