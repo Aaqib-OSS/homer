@@ -306,7 +306,12 @@ class AgentCatalogTest : E2eTestBase() {
                 // A local onStop runnerCmd loads: the stop phase gets no extra rejection.
                 assertEquals(HttpStatusCode.OK, putFile(name, "agent.yaml", stopRunnerCmdDef(name, "local")).status)
                 var reload: ReloadResult = HomerApi.decode(E2e.client.post("/api/v1/agents/reload"))
-                assertTrue(reload.errors.isEmpty(), "a local onStop runnerCmd must load: ${reload.errors}")
+                // The catalog always holds load-error-sysenv, so the reload is never error-free:
+                // the local onStop runnerCmd must simply add no error of its own.
+                assertFalse(
+                    reload.errors.any { name in it },
+                    "a local onStop runnerCmd must load: ${reload.errors}",
+                )
                 assertTrue(HomerApi.agents().agents.any { it.name == name })
 
                 // An absolute syncToRemote path on an onStop runnerCmd is denied at load, naming the path.
