@@ -7,8 +7,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Every JVM the host launch scripts start runs with `-XX:-UseBASE64Intrinsics`, the CVE-2026-114938
- * (Java4Shell) stopgap for a host JDK without the fix, placed before `$JAVA_OPTS` where one is passed (W-020).
+ * Every JVM the host launch scripts start runs with `-XX:-UseBASE64Intrinsics` (W-020), placed before `$JAVA_OPTS`
+ * so an operator's `JAVA_OPTS` does not drop it.
  */
 class Base64IntrinsicsMitigationTest {
     private val launch = Regex("""exec (?:su-exec homer )?java\b[^\n]*""")

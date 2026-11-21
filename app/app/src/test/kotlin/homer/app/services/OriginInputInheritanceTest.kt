@@ -141,10 +141,8 @@ class OriginInputInheritanceTest {
         }
 
     /**
-     * §6: security-relevant input handling gets a property test. Whatever the origin
-     * run stored and whatever the continuation carries itself, the inherited map is
-     * bounded by the agent's declared inputs, never reserved, and never wins over the
-     * continuation's own param of the same name.
+     * Whatever the origin run stored and the continuation carries, the inherited map is bounded by the
+     * agent's declared inputs, never reserved, and never wins over the continuation's own param.
      */
     @Test
     fun `inherited params are declared, unreserved, and lose to the continuation's own params`() =

@@ -8,7 +8,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 
-/** Encoding [TokenConfig] round-trips through both decoders Homer reads config with (#238). */
+/** Encoding [TokenConfig] round-trips through both decoders Homer reads config with. */
 class TokenConfigSerializerTest {
     private val scalar = TokenConfig("tok")
     private val full = TokenConfig("ci-tok", grants = listOf(Grant(listOf("deploy-*"), listOf(Action.RUN, Action.READ))))

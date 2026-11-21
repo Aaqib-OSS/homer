@@ -24,12 +24,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * The parent-to-child copy that puts the run's `langfuse.trace.name` / `langfuse.trace.tags` on
- * every observation — the half of Langfuse v4 support that does not live in the start paths.
- *
- * These run against a real [SdkTracerProvider] because what is being tested is the SDK's own
- * parent/child wiring (an ended parent still in the context, a wrapped non-recording parent),
- * which a mocked span would assert away. See ADR-0050.
+ * The parent-to-child copy that puts the run's `langfuse.trace.name` / `langfuse.trace.tags` on every observation.
+ * Run against a real [SdkTracerProvider], since a mocked span would assert away the SDK's own parent/child wiring
+ * (an ended parent still in the context, a wrapped non-recording parent). See ADR-0050.
  */
 class LangfuseTraceAttributesSpanProcessorTest {
     private val agent = AgentFixtures.simpleAgent(name = "triage-decision")
@@ -105,9 +102,8 @@ class LangfuseTraceAttributesSpanProcessorTest {
 
     @Test
     fun `a span started after its parent ended still inherits both keys`() {
-        // The settlement span is written once a command has already ended, so the parent in the
-        // context is a finished span. If reading it stopped working at `end()`, exactly these
-        // late observations would drop out of a v4 filter.
+        // The settlement span is written after the command ended, so its context parent is a finished span; losing
+        // that read at `end()` would drop exactly these observations from a v4 filter.
         val provider = provider(withProcessor = true)
         val root = provider.span("agent_request")
         root.stampLangfuseTrace(agent, listOf("mr:4211"))
@@ -186,12 +182,9 @@ class LangfuseTraceAttributesSpanProcessorTest {
     }
 
     /**
-     * A context whose span slot holds [parent].
-     *
-     * `Context.with(span)` stores the span through `Span.storeInContext`, which a mocked span
-     * answers with a relaxed `Context` — a mocked parent never reaches `Span.fromContext` that
-     * way. Stubbing the two calls is enough here: the real parent/child plumbing is what the
-     * cases above exercise against an actual [SdkTracerProvider].
+     * A context whose span slot holds [parent]. `Context.with(span)` stores through `Span.storeInContext`, which a
+     * mocked span answers with a relaxed `Context`, so a mocked parent never reaches `Span.fromContext`; stubbing
+     * the two calls is enough here.
      */
     private fun contextHolding(parent: Span): Context {
         val context = mockk<Context>(relaxed = true)

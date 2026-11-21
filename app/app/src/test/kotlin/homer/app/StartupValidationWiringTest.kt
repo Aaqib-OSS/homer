@@ -30,14 +30,9 @@ import kotlin.test.assertTrue
 import ch.qos.logback.classic.Logger as LogbackLogger
 
 /**
- * The boot-time validator wiring: every config a `validate*` refuses must still be refused
- * through the real startup path (`configureServer` → `validateStartupConfig`), so deleting a
- * `validate*` call from `validateStartupConfig` fails a test instead of silently shipping a
- * misconfigured deployment (ADR-0047 rule 8). The validators' own cases stay in their
- * per-validator test classes; these boot the whole module.
- *
- * Every secret, token and HMAC key here is an inline fixture, never echoed into an assertion
- * message (root §12 rule 7).
+ * Every config a `validate*` refuses must still be refused through the real startup path (`configureServer`),
+ * so deleting a call from `validateStartupConfig` fails a test (ADR-0047 rule 8). Inline fixture secrets are
+ * never echoed into an assertion message (ADR-0047 rule 7).
  */
 @ExtendWith(ResetDrainingExtension::class)
 class StartupValidationWiringTest {

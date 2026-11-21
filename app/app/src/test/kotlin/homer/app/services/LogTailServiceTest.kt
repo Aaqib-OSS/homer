@@ -251,10 +251,8 @@ class LogTailServiceTest {
     fun `resolve falls back to cmd_N naming when the tracked path escapes the artifacts dir`(
         @TempDir tmp: Path,
     ) = runTest {
-        // Containment guard (§12): commandArtifacts is a map value populated from an
-        // agent-influenced artifactNameTemplate rendering elsewhere. A tracked path
-        // whose parent is not this process's own artifacts dir must never be trusted
-        // here, whatever produced it.
+        // ADR-0047 rule 2: commandArtifacts holds agent-influenced paths; one whose parent is not this
+        // process's own artifacts dir must never be trusted, whatever produced it.
         val processManager = processManagerWithoutJob()
         val escapedOut = tmp.resolve("../escaped.out")
         val escapedErr = tmp.resolve("../escaped.err")
@@ -408,11 +406,7 @@ class LogTailServiceTest {
     fun `tail replays existing content on fresh connection with no resume offset`(
         @TempDir tmp: Path,
     ) = runTest {
-        // Regression: short-running debug commands finished and wrote their
-        // entire stdout before the client's SSE connection opened. The tail
-        // previously started from path.length() on fresh connections, so the
-        // pre-existing content was silently skipped and the client saw an
-        // empty stream followed by log.end.
+        // A short command can finish before the SSE connection opens: the tail must still replay it.
         val processManager = processManagerWithoutJob()
         coEvery { processManager.getProcessStatus(1) } returns ProcessStatus.FINISHED
         val path = tmp.resolve("cmd_0.out")
@@ -686,7 +680,7 @@ class LogTailServiceTest {
     fun `tail reads a large file in bounded chunks with increasing offsets`(
         @TempDir tmp: Path,
     ) = runTest {
-        // §12 rule 4 / CWE-400: one subscriber must not allocate the whole remainder at once.
+        // ADR-0047 rule 4, CWE-400: one subscriber must not allocate the whole remainder at once.
         val path = tmp.resolve("cmd_0.out")
         val content = "abcdefghij\n".repeat(3 * 1024 * 1024 / 11 + 1)
         path.writeText(content)

@@ -7,10 +7,9 @@ import java.sql.Connection
 import java.sql.SQLException
 
 /**
- * A [Connection] whose `createStatement()` throws, so every raw-SQL path on the writer handle —
- * `DatabaseService.rawStatement` and everything built on it — fails before it can run. It wraps at
- * the same `wrapWriterConnection` seam as [PostCommitFailureConnection], which is the only seam a
- * test has for making a writer statement fail.
+ * A [Connection] whose `createStatement()` throws, so every raw-SQL path on the writer handle
+ * (`DatabaseService.rawStatement` and its callers) fails. Wraps at the `wrapWriterConnection` seam,
+ * like [PostCommitFailureConnection].
  */
 internal class FailingStatementConnection(
     private val real: Connection,

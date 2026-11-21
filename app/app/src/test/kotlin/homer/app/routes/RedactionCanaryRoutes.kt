@@ -20,17 +20,9 @@ internal enum class CanaryPayload {
 }
 
 /**
- * One route, classified for the canary sweep: a [payload] plus the request that reaches its body, or
- * an exemption (`payload == null`) with [note] saying why the route carries no run data.
- *
- * [target] and [body] fill the route's placeholders from the canary run the way `ROUTE_AUTHZ`'s samples
- * do (`{processId}`, `{watchedId}`, `{questionId}`, `{dispatchId}`, `{continuationId}`, `{agentName}`,
- * `{...}`); [expect] is the status the probe must answer before its body is read. [startsRun] marks a
- * row whose request launches a run: the sweep waits for that run, so none outlives the test.
- *
- * A route the canary agent cannot exercise — a callback credential the test does not hold, a
- * runner-protocol endpoint, a command type the agent does not declare — is exempt. An exemption is a
- * decision, so it states its reason: `SecretRedactionCanaryTest` fails on a blank one.
+ * One route classified for the canary sweep: a [payload] plus the request reaching its body, or an exemption
+ * (`payload == null`) with a non-blank [note] saying why. [target] and [body] fill placeholders as `ROUTE_AUTHZ`
+ * does; [expect] is the status before the body is read; a [startsRun] row launches a run the sweep waits for.
  */
 internal data class CanaryRoute(
     val route: String,
@@ -68,6 +60,10 @@ private const val RUNNER_PROTOCOL = "runner protocol; the canary run is local"
  * inputs the canary agent declares. `{canary}` is filled by `SecretRedactionCanaryTest`'s sample map.
  */
 internal const val CANARY_START_BODY = """{"canary":"{canary}","tagged":"{canary}"}"""
+
+/** A JSON-RPC `tools/call` of the MCP run tool `get_run_info` on the canary run. */
+private const val CANARY_MCP_CALL_BODY =
+    """{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_run_info","arguments":{"runId":{processId}}}}"""
 
 /**
  * Every route `configureRouting` mounts with every optional surface on, in registration order, each
@@ -150,7 +146,13 @@ internal val CANARY_ROUTES: List<CanaryRoute> =
         exempt("PUT /api/v1/agents/{agentName}/files/{...}", "writes an agent file: no run data"),
         exempt("DELETE /api/v1/agents/{agentName}/files/{...}", "deletes an agent file: no run data"),
         exempt("GET /api/v1/agents/{agentName}/langgraph", "renders a LangGraph command's topology; the canary agent declares none"),
-        exempt("POST /api/v1/agents/{agentName}/debug", "debugs a LangGraph command; the canary agent declares none"),
+        served(
+            "POST /api/v1/agents/{agentName}/debug",
+            CanaryPayload.JSON,
+            "a one-command debug run's start response; the request body is where both canaries enter the run",
+            body = """{"commandIndex":0,"body":$CANARY_START_BODY}""",
+            startsRun = true,
+        ),
         exempt("POST /api/v1/agents/{agentName}/cron-run", "fires a cron entry; the canary agent declares none"),
         exempt("DELETE /api/v1/kill/{processId}", "kills a run; the response carries no run data"),
         served(
@@ -228,7 +230,12 @@ internal val CANARY_ROUTES: List<CanaryRoute> =
         ),
         exempt("GET /api/v1/processes/{id}/langgraph", "renders a LangGraph run's state; the canary agent declares none"),
         exempt("POST /api/v1/processes/{id}/resume", "resumes a LangGraph run; the canary agent declares none"),
-        exempt("POST /mcp", "protocol-exempt: MCP JSON-RPC transport; its run tools are covered by McpRunToolsTest"),
+        served(
+            "POST /mcp",
+            CanaryPayload.JSON,
+            "the canary run read back over the MCP transport by the get_run_info tool",
+            body = CANARY_MCP_CALL_BODY,
+        ),
         exempt("GET /mcp", "static-405: every method but POST is a handler answering a static 405 error body, no run data"),
         exempt("DELETE /mcp", "static-405: every method but POST is a handler answering a static 405 error body, no run data"),
     )

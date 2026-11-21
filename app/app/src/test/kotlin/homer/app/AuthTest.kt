@@ -25,12 +25,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.test.assertEquals
 
 /**
- * Integration tests for bearer token authentication.
- *
- * Runs the production provider("auth-bearer") ([buildBearerProvider]): a
- * valid token authenticates regardless of request path. `TokenConfig.endpoints`
- * is a deprecated, tolerated-but-unenforced field here (see ADR-0037);
- * authorization by grants happens at the route, not in this provider.
+ * Integration tests for bearer token authentication: the production provider("auth-bearer") ([buildBearerProvider])
+ * authenticates a valid token on any path. The removed `TokenConfig.endpoints` is ignored here (startup rejects it,
+ * ADR-0037); grants authorize at the route.
  */
 class AuthTest {
     // Token definitions used across tests
@@ -110,7 +107,7 @@ class AuthTest {
             )
         }
 
-    // ===== Test 3: a valid token authenticates regardless of its (deprecated) endpoints scope =====
+    // ===== Test 3: a valid token authenticates regardless of its removed `endpoints` field =====
 
     @Test
     fun `valid token with prefix wildcard authenticates on a route outside that prefix`() =
@@ -162,7 +159,7 @@ class AuthTest {
             )
         }
 
-    // ===== Test 6: a token scoped (deprecated field) to one prefix authenticates on both routes =====
+    // ===== Test 6: a token carrying a removed `endpoints` prefix authenticates on both routes =====
 
     @Test
     fun `prefix-scoped token authenticates both on its prefix and outside it`() =
@@ -187,11 +184,11 @@ class AuthTest {
                 HttpStatusCode.OK,
                 offPrefix.status,
                 "Expected 200 on /api/v1/agents — the auth provider authenticates any valid token " +
-                    "regardless of its (deprecated) endpoints scope; authorization moves to the route (ADR-0037)",
+                    "regardless of its removed endpoints scope; authorization moves to the route (ADR-0037)",
             )
         }
 
-    // ===== Test 7: a token scoped (deprecated field) to one exact path authenticates on another too =====
+    // ===== Test 7: a token carrying a removed exact-path `endpoints` entry authenticates on another too =====
 
     @Test
     fun `exact-path-scoped token authenticates both on that path and on other paths`() =
@@ -216,13 +213,13 @@ class AuthTest {
                 HttpStatusCode.OK,
                 offPath.status,
                 "Expected 200 on /api/v1/agents with a status-only token — the auth provider authenticates " +
-                    "any valid token regardless of its (deprecated) endpoints scope; authorization moves to " +
+                    "any valid token regardless of its removed endpoints scope; authorization moves to " +
                     "the route (ADR-0037)",
             )
         }
 
     @Test
-    fun `livez and readyz are reachable without bearer token under bearer auth (audit P1 #12)`() =
+    fun `livez and readyz are reachable without bearer token under bearer auth`() =
         testApplication {
             val deps =
                 mockk<ApiDeps>(relaxed = true) {
@@ -232,9 +229,8 @@ class AuthTest {
             application {
                 installAuthApp(allTokens)
                 routing {
-                    // The production probe routes, mounted OUTSIDE authenticate(...)
-                    // as configureRouting does, so kubelet (which never sends
-                    // Authorization) can hit them.
+                    // The production probe routes, mounted outside authenticate(...) as configureRouting does,
+                    // so kubelet (which sends no Authorization) can reach them.
                     install(ContentNegotiation) { json(apiJson) }
                     apiV1UnsecuredRoutes(deps)
                 }

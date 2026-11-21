@@ -35,12 +35,9 @@ import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 
 /**
- * Parent/child run linkage at the HTTP boundary (ADR-0058): the
- * `X-Homer-Parent-Process-Id` request header on a run request, the
- * `parentProcessId` / `rootProcessId` filters and the roots-only filter on
- * `GET /status/all`, and the two fields on the status responses. The denial
- * cases pin that an unknown parent and a parent the caller cannot see are
- * indistinguishable (§12: hide existence).
+ * Parent/child run linkage at the HTTP boundary (ADR-0058): the `X-Homer-Parent-Process-Id` header, the
+ * `parentProcessId` / `rootProcessId` / roots-only filters on `GET /status/all`, and both fields on status
+ * responses. An unknown parent and one the caller cannot see are indistinguishable (ADR-0047 rule 3).
  */
 class ParentProcessLinkageRoutesTest {
     private lateinit var processManager: ProcessManager
@@ -175,8 +172,7 @@ class ParentProcessLinkageRoutesTest {
         testApplication {
             mount()
 
-            // An absent link and an empty one are the same request: only a value that parses
-            // as a positive integer names a parent, so a blank header must not reach the
+            // An absent link and an empty one are the same request: a blank header must not reach the
             // positive-integer check and answer 400.
             for (value in listOf("", "   ")) {
                 val response = client.post("/api/v1/agent/echo") { header(HomerHeaders.PARENT_PROCESS_ID, value) }
@@ -289,9 +285,8 @@ class ParentProcessLinkageRoutesTest {
     @Test
     fun `run request with a parent that is itself a segment reuses the flow root`() =
         testApplication {
-            // The parent is not the root row — its own root is. Deriving the root from the
-            // parent's `rootProcessId` (not from the parent's id) is what keeps a chain of
-            // external hops in one flow.
+            // The root comes from the parent's `rootProcessId`, not its id, which keeps a chain of external hops in one
+            // flow.
             coEvery { processManager.getProcessInfo(404) } returns
                 root.copy(id = 404, parentProcessId = 9, rootProcessId = 7)
             mount()
@@ -315,19 +310,14 @@ class ParentProcessLinkageRoutesTest {
     @Test
     fun `run request whose parent's flow root the caller cannot see is stamped rootless`() =
         testApplication {
-            // [information_disclosure / CWE-200] The parent row is visible (the 422 gate
-            // passed), but the flow root above it belongs to another principal on an agent
-            // this caller holds no grant on. Deriving the root from the parent row would
-            // publish that foreign id through the new run, its HMR_ROOT_PROCESS_ID env and
-            // its span — the id the status responses withhold. The child is stored rootless
-            // instead of mis-rooted.
+            // CWE-200: the foreign flow root must not be published through the new run (env, span); the child is
+            // stored rootless instead of mis-rooted.
             val authorizer =
                 mockk<Authorizer> {
                     every { hasAction(any(), Action.RUN, "echo") } returns true
                     every { anyGrant(any(), "echo") } returns true
-                    // The parent row runs "echo" (visible to the unsecured caller); its
-                    // flow root runs "root" (not visible) — otherwise the header would be
-                    // refused outright.
+                    // The parent row runs "echo" (visible to the caller); its flow root runs "root" (not visible), else
+                    // the header would be refused outright.
                     every { canSee(any(), "carol", "echo") } returns true
                     every { canSee(any(), "alice", "root") } returns false
                 }

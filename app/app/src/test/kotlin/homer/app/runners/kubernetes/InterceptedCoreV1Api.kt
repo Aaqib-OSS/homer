@@ -12,11 +12,9 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import java.net.SocketTimeoutException
 
 /**
- * An ApiClient whose OkHttp client is short-circuited by an interceptor:
- * requests land in [seen] and get [respond]'s status code and JSON body back,
- * no network. A request [timeoutOn] selects fails with a [SocketTimeoutException] instead — the
- * failure a stalled API server produces once the client's read timeout expires, which client-java's
- * `execute` wraps in an `ApiException` (ADR-0100).
+ * An ApiClient whose OkHttp client is short-circuited by an interceptor: requests land in [seen] and get [respond]'s
+ * status and JSON body, no network. A request [timeoutOn] selects fails with a [SocketTimeoutException], the failure
+ * of a stalled API server once the read timeout expires, wrapped by client-java in an `ApiException` (ADR-0100).
  */
 fun interceptedApiClient(
     seen: MutableList<Request>,

@@ -10,13 +10,9 @@ import java.sql.Connection
 import java.sql.DriverManager
 
 /**
- * The `query-plans` check's report (ADR-0082): plans every statement [QueryPlanCapture] collected
- * during `:app:test` against a freshly migrated schema and lists each full scan of a table that
- * grows with use — SQLite rule 1 in `app/CLAUDE.md`. Run by `:app:queryPlanReport`;
- * `tools/quality/query-plans.mjs` turns the JSON into the gate's report.
- *
- * The schema has no `sqlite_stat1`, as on a first boot, so the plans are the planner's
- * statistics-free choice. Parameters are bound to NULL: a plan does not depend on their values.
+ * The `query-plans` check's report (ADR-0082): plans every statement [QueryPlanCapture] collected against a freshly
+ * migrated schema without `sqlite_stat1` and lists each full scan of a table that grows with use (SQLite rule 1 in
+ * `app/CLAUDE.md`). Parameters are bound to NULL; run by `:app:queryPlanReport`.
  */
 object QueryPlanReport {
     /** The tables SQLite rule 1 in `app/CLAUDE.md` names as growing with use; a scan of one is a finding. */

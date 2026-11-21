@@ -69,9 +69,8 @@ class HookTest : E2eTestBase() {
                 )
             assertEquals("FINISHED", Awaits.awaitTerminal(declarerId).status, "the declaring run still ends FINISHED")
 
-            // The refusal settles on the hook row, which no API surface reads; black-box, the
-            // denial is the target's absence, polled past the fire window that the status
-            // commit opens.
+            // No API surface reads the hook row, so the denial is the target's absence, polled past
+            // the fire window.
             val deadline = System.currentTimeMillis() + 10_000
             while (System.currentTimeMillis() < deadline) {
                 val runs =

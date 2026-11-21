@@ -17,10 +17,8 @@ import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
- * Background SSE subscription buffering every received event. Open the
- * collector BEFORE triggering the action whose events you assert on —
- * the broadcaster does not replay. `: ping` keep-alive comments arrive as
- * events with a null `event` field; predicates should match on `event`.
+ * Background SSE subscription buffering every received event. Open it BEFORE the action under test: the
+ * broadcaster does not replay. `: ping` comments arrive with a null `event`.
  */
 class SseCollector private constructor(
     private val scope: CoroutineScope,

@@ -232,9 +232,7 @@ class WorkspaceSyncTest {
     }
 
     // ===== Hard-link parity with TarStreams (CWE-59) =====
-    // The ssh runner streams over SFTP and never goes through TarStreams.pack, so
-    // WorkspaceSync must apply the shared PathSafety.isHardLinked check itself
-    // rather than inherit the guard for free.
+    // The ssh runner streams over SFTP, not TarStreams.pack: WorkspaceSync applies PathSafety.isHardLinked itself.
 
     @Test
     fun `uploadDir skips a hard-linked file and still uploads the rest (CWE-59)`(
@@ -356,9 +354,8 @@ class WorkspaceSyncTest {
     fun `uploadDir stops at a directory-symlink cycle back to the upload root and uploads each real directory once`(
         @TempDir local: Path,
     ) = runBlocking {
-        // "loop" resolves back to the upload root itself (an ancestor cycle): isDirectory()
-        // follows the link, and without a visited set each recursion re-lists the same
-        // content under a path that looks unvisited, so the walk never terminates.
+        // "loop" resolves back to the upload root (an ancestor cycle): isDirectory() follows the link, and without a
+        // visited set each recursion re-lists the same content under an unvisited-looking path, never terminating.
         local
             .resolve("a")
             .createDirectories()
@@ -383,12 +380,8 @@ class WorkspaceSyncTest {
     fun `uploadDir stops at a directory symlink that cycles back to a non-root ancestor and uploads it once`(
         @TempDir local: Path,
     ) = runBlocking {
-        // "self" resolves back to "a" itself — a non-root ancestor, unlike the test above.
-        // A plain directory's own (unresolved) path and a link that resolves to it are the
-        // same physical directory but different Path values whenever the upload root's own
-        // path isn't already canonical (e.g. macOS's @TempDir sitting under /var ->
-        // /private/var): visited must compare one canonical form for both, or the alias goes
-        // undetected and "a"'s content uploads a second time under "a/self".
+        // "self" resolves to its non-root ancestor "a". When the upload root isn't canonical (macOS /var ->
+        // /private/var) visited must compare one canonical form, or "a"'s content uploads twice, under "a/self".
         val a = local.resolve("a").createDirectories()
         a.resolve("f.txt").writeText("a-content")
         Files.createSymbolicLink(a.resolve("self"), Path.of("."))
@@ -407,9 +400,8 @@ class WorkspaceSyncTest {
     fun `uploadDir still uploads a contained directory symlink to a sibling directory under the link's name`(
         @TempDir local: Path,
     ) = runBlocking {
-        // "hidden" is excluded by name so this proves the symlink path alone uploads the
-        // sibling's content, deterministically — not a coincidence of which of two aliases
-        // to the same directory the (unordered) directory listing happens to visit first.
+        // "hidden" is excluded by name so the symlink path alone must upload the sibling's content, deterministically,
+        // not by which alias the unordered directory listing visits first.
         local
             .resolve("hidden")
             .createDirectories()
@@ -754,8 +746,7 @@ class WorkspaceSyncTest {
     }
 
     // ===== Remote-supplied entry names must stay inside localDir =====
-    // The embedded server can't emit malicious listings (a real filesystem
-    // can't hold "/" in a name), so the containment seam is tested directly.
+    // The embedded server can't emit malicious listings (a real filesystem can't hold "/" in a name): tested directly.
 
     @Test
     fun `containedChild resolves a plain filename inside localDir`(
@@ -765,9 +756,8 @@ class WorkspaceSyncTest {
         assertEquals(local.toAbsolutePath().normalize().resolve("out.bin"), resolved)
     }
 
-    // One case per unsafe name, each pinned to the name guard's own message; the
-    // containment throw behind the guard is accepted as defence in depth in
-    // tools/quality/mutation-exceptions/backend.json (ADR-0047, ADR-0082).
+    // One case per unsafe name, pinned to the name guard's own message; the containment throw behind it is accepted
+    // as defence in depth in tools/quality/mutation-exceptions/backend.json (ADR-0047, ADR-0082).
 
     @Test
     fun `containedChild rejects an empty name as not a plain file name`(
@@ -947,10 +937,7 @@ class WorkspaceSyncTest {
     }
 
     // ===== Transfer deadline on a stalling peer (CWE-400) =====
-    // Keepalives only disconnect a peer that stops answering; these tests pin
-    // the coroutine-level bound that also fires for one that keeps answering
-    // while withholding SFTP data. EmbeddedSshServer serves any `stall*` file
-    // as an eternally-hanging read for this.
+    // Keepalives only drop a silent peer; these pin the bound for one that keeps answering but withholds SFTP data.
 
     @Test
     fun `download_times_out_when_sftp_stalls`(
@@ -1010,22 +997,15 @@ class WorkspaceSyncTest {
     }
 
     // ===== The release itself is bounded (CWE-400) =====
-    // MINA's own SftpClient.close() only *enqueues* SSH_MSG_CHANNEL_CLOSE
-    // on the non-blocking session write and returns, so no SSH peer can make it
-    // stall (verified against a healthy, a torn-down, a mid-rekey and a
-    // mid-stalled-read session). The client is therefore injected here: the
-    // bound under test is ours, and a fake is the only way to exercise it.
+    // MINA's close() only enqueues the channel close and cannot stall; the bound is ours, so a fake is injected.
 
     @Test
     fun `close_times_out_when_the_release_stalls`() =
         runBlocking {
             val session = server.newClientSession(client)
             val stalling = mockk<SftpClient>(relaxed = true)
-            // The round trip succeeds instantly; only the release stalls. It polls
-            // the session the way a real blocked SFTP call does — the watchdog's
-            // session.close(true) is what sheds it, so a mock that ignored the
-            // teardown would just hang and prove nothing. The cap is a safety valve:
-            // without the bound the test fails on the assertion below, not hangs.
+            // The round trip succeeds; only the release stalls, polling the session like a real blocked SFTP call
+            // (the watchdog's session.close(true) sheds it). The cap is a safety valve: no bound fails, not hangs.
             every { stalling.close() } answers { releaseWhenSessionCloses(session, 30.seconds) }
             val sync = WorkspaceSync(session, transferTimeout = 2.seconds) { stalling }
 
@@ -1063,10 +1043,8 @@ class WorkspaceSyncTest {
     @Test
     fun `failed_close_sheds_the_session`() =
         runBlocking {
-            // A close that fails outright (not a deadline expiry — the watchdog
-            // already sheds those) must close the session too: the session's state
-            // is unknown, and reusing it would let each failed release strand
-            // another SFTP channel while the run still holds the lock and slot.
+            // A close that fails outright (not a deadline expiry) must close the session too: its state is unknown, and
+            // reusing it would strand another SFTP channel per failed release while the run holds the lock and slot.
             val session = server.newClientSession(client)
             val failing = mockk<SftpClient>(relaxed = true)
             every { failing.close() } throws IOException("peer refused the release")
@@ -1082,10 +1060,8 @@ class WorkspaceSyncTest {
         runBlocking {
             val session = server.newClientSession(client)
             val stalling = mockk<SftpClient>(relaxed = true)
-            // The watchdog is a child of the caller's job: once the caller is
-            // cancelled its delay() throws before the deadline ever fires, so only
-            // a non-cancellable release keeps the bound alive (a run killed during
-            // sync-up lands exactly here).
+            // The watchdog is a child of the caller's job: once the caller is cancelled its delay() throws before the
+            // deadline, so only a non-cancellable release keeps the bound alive (a run killed in sync-up).
             every { stalling.close() } answers { releaseWhenSessionCloses(session, 30.seconds) }
             val sync = WorkspaceSync(session, transferTimeout = 2.seconds) { stalling }
 

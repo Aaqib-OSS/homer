@@ -27,10 +27,9 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * The `is_error` reason is built from CLI-written fields, so the examples above are mirrored by
- * properties over what a CLI could actually write: control characters, oversized text and shapes
- * Homer does not expect. The reason must stay one bounded line, and a result that is not an error
- * must never fail (no over-denial). See ADR-0047.
+ * The `is_error` reason is built from CLI-written fields, so properties mirror the examples over control characters,
+ * oversized text and unexpected shapes: the reason stays one bounded line and a non-error result never fails
+ * (no over-denial). See ADR-0047.
  */
 class ClaudeResultReasonPropertyTest {
     private val harness = ClaudeHarness()
@@ -103,7 +102,7 @@ class ClaudeResultReasonPropertyTest {
     fun `a mapped is_error stop carries no part of the result text`() =
         runTest {
             // The opt-in exit code rewrites the verdict, and the verdict is all the step, its error and its
-            // logs carry: the `result` text the CLI echoed must not reach any of them (§12 rule 7).
+            // logs carry: the `result` text the CLI echoed must not reach any of them (ADR-0047 rule 7).
             val command =
                 Command.Claude(prompt = LlmPrompt.Prompt("hi"), options = ClaudeCmdOptions(isErrorExitCode = 76))
 

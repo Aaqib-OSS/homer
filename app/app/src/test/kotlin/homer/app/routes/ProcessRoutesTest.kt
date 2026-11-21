@@ -275,12 +275,9 @@ class ProcessRoutesTest : ApiRouteTestBase() {
         }
 
     // ========== GET /status/all Tests ==========
-    //
-    // These mount the *real* apiV1Routes handler against a *real* ProcessManager
-    // (mockk<ApiDeps> only supplies the processManager dependency) so the whole
-    // parse → getAllProcesses → serialize path is exercised. Query-parameter
-    // validation (invalid types/order/limit/offset and early-return ordering)
-    // is pinned by StatusAllValidationTest, not here.
+
+    // Real apiV1Routes handler over a real ProcessManager, so parse -> getAllProcesses -> serialize runs;
+    // query-parameter validation is pinned by StatusAllValidationTest.
 
     @Test
     fun `GET status all should return all processes without filters`() =
@@ -351,9 +348,8 @@ class ProcessRoutesTest : ApiRouteTestBase() {
     @Test
     fun `GET status all should report one root for a continuation chain three segments deep`() =
         testApplication {
-            // A real ProcessManager plus a real ContinuationService sharing one database: every
-            // segment row is INSERTed through the production persistence path (obtainProcessId),
-            // carrying the root the fire path derived, so the read below sees stored values.
+            // A real ProcessManager and ContinuationService share one database, so every segment row is INSERTed
+            // through the production path (obtainProcessId) with the root the fire path derived.
             val db = PersistenceTestSupport.tempDatabase()
             val pm = PersistenceTestSupport.processManager(db = db)
             val questions = PersistenceTestSupport.questionsService(db = db)
@@ -722,9 +718,8 @@ class ProcessRoutesTest : ApiRouteTestBase() {
     fun `GET artifacts marks a queued process's artifact incomplete`(
         @TempDir dir: java.nio.file.Path,
     ) = testApplication {
-        // CREATED is an active status too: a run still queued has produced nothing
-        // final, so dropping it from the active check would serve its artifact as
-        // complete before the run even started.
+        // CREATED is an active status too: a queued run has produced nothing final, so dropping it from the active
+        // check would serve its artifact as complete before the run started.
         dir.resolve("cmd_0.out").toFile().writeText("partial\n")
         coEvery { mockProcessManager.getProcessStatus(123) } returns ProcessStatus.CREATED
         mountArtifactRoutes(finishedProcessWithArtifacts(123, dir).copy(status = ProcessStatus.CREATED))

@@ -215,10 +215,8 @@ class AgentCatalogTest : E2eTestBase() {
             val refused = E2e.client.delete("/api/v1/agents/$name/files/agent.yaml")
             assertEquals(HttpStatusCode.Forbidden, refused.status)
 
-            // A definition discovery could never load is refused as 400 before any
-            // disk touch; a plain file under the same hidden directory still passes
-            // (ADR-0068). The over-deep chain uses the 10-segment file-API cap
-            // SERVER.md documents — the server's MAX_PATH_SEGMENTS.
+            // Refused as 400 before any disk touch; a plain file under the same hidden directory
+            // still passes. The chain is the 10-segment file-API cap (ADR-0068, SERVER.md).
             val overDeep = (1..10).joinToString("/") { "s$it" } + "/agent.yaml"
             val validDef =
                 """

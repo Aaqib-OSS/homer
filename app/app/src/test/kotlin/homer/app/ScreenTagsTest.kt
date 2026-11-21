@@ -6,10 +6,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * Read-time screen for a run's subject tags: a tag carrying a value that is secret
- * for the run under the ADR-0052 union (snapshot ∪ current flags) is dropped from
- * the response. Defense in depth behind the write-time guard on the callback route.
- * See ADR-0060.
+ * Read-time screen for a run's subject tags: a tag carrying a value that is secret for the run under the
+ * ADR-0052 union (snapshot ∪ current flags) is dropped from the response. See ADR-0060.
  */
 class ScreenTagsTest {
     private fun agentWith(vararg inputs: Param) = AgentFixtures.simpleAgent(name = "a").copy(inputs = inputs.toList())
@@ -47,10 +45,9 @@ class ScreenTagsTest {
     }
 
     @Test
-    fun `a renamed secret with null storedSecretKeys is screened — AUwjzGsW`() {
-        // Pre-v15 rows carry no snapshot, and the agent no longer declares OLD_TOKEN
-        // (renamed or removed). The value must still screen — fail closed like
-        // redactInputParams, which redacts keys unknown to the current definition.
+    fun `a renamed secret with null storedSecretKeys is screened`() {
+        // Pre-v15 rows carry no snapshot and the agent no longer declares OLD_TOKEN: fail closed,
+        // like redactInputParams, which redacts keys unknown to the current definition.
         val agent = agentWith(Param(paramName = "token", envName = "NEW_TOKEN", secret = true))
 
         val screened =
@@ -66,9 +63,8 @@ class ScreenTagsTest {
 
     @Test
     fun `a renamed key absent from both snapshot and definition is screened — non-null storedSecretKeys`() {
-        // AUwjzGsW symmetric case (§12.8): storedSecretKeys is non-null (post-v15 row)
-        // but the renamed key is absent from both the snapshot and the current definition.
-        // The k !in allCurrentEnvNames branch must still drop the tag.
+        // Non-null (post-v15) snapshot, but the renamed key is in neither it nor the current definition:
+        // the `k !in allCurrentEnvNames` branch must still drop the tag.
         val agent = agentWith(Param(paramName = "token", envName = "NEW_TOKEN", secret = true))
 
         val screened =

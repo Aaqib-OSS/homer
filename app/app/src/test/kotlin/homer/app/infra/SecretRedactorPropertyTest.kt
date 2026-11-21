@@ -14,13 +14,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 
 /**
- * [SecretRedactor.redact]'s no-leak property over generated secret values (ADR-0047 rule 7,
- * CWE-532): a declared secret must not survive in the text Homer emits to telemetry or logs —
- * neither verbatim nor in the JSON-escaped spelling the encoders write. The example cases live in
- * `SecretRedactorTest`; these drive the quoting, escaping and whitespace combinations an author
- * would not think of (root CLAUDE.md §6).
- *
- * Every value here is generated: no real credential is read, and a failure message names only
+ * [SecretRedactor.redact]'s no-leak property over generated secret values (ADR-0047 rule 7, CWE-532): a declared
+ * secret must not survive in telemetry or log text, verbatim or JSON-escaped. A failure message names only
  * lengths and indexes, never the value that leaked.
  */
 class SecretRedactorPropertyTest {

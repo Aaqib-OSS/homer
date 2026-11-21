@@ -107,10 +107,8 @@ class AgentDirsTest {
 
     @Test
     fun `a symlinked definition file is not an agent directory (CWE-59)`() {
-        // CWE-59: `isRegularFile` follows the link, so a
-        // symlinked `agent.yaml` would have discovery read the target — outside
-        // the search path, or shared by two directories, failing all claimants —
-        // as its own agent. The definition must be a real file in the walked dir.
+        // CWE-59: `isRegularFile` follows the link, so a symlinked `agent.yaml` would be read from outside the search
+        // path or shared by two directories; the definition must be a real file in the walked dir.
         val dir = root.resolve("linked").createDirectories()
         val outside = Files.createTempDirectory("agent-dirs-outside")
         try {
@@ -189,17 +187,14 @@ class AgentDirsTest {
     }
 
     /**
-     * Shared-contract test: the walk is [AgentDirs.isUnreachableByDiscovery]'s
-     * oracle. Every candidate landing is physically planted (its definition
-     * written), and the walk must reach it iff the predicate calls it reachable —
-     * so a future change to the walk (a new skip rule, a depth-convention fix, an
-     * additional bound) cannot desynchronize the predicate silently (§12 rule 8).
+     * The walk is [AgentDirs.isUnreachableByDiscovery]'s oracle: every candidate landing is physically planted and must
+     * be reached iff the predicate calls it reachable, so a change to the walk cannot desynchronize the predicate
+     * silently (ADR-0047 rule 8).
      */
     @Test
     fun `isUnreachableByDiscovery agrees with the walk on every landing (shared contract)`() {
-        // Build every candidate landing shape the predicate can be asked about:
-        // plain chains, agents rooted deeper, hidden components at each position,
-        // and depths straddling MAX_DEPTH.
+        // Every candidate landing shape: plain chains, deeper roots, hidden components at each position, depths
+        // across MAX_DEPTH.
         data class Tree(
             val agentDirDepth: Int,
             /** The landing's directory chain, relative to the AGENT directory — what the predicate takes. */
@@ -213,9 +208,8 @@ class AgentDirsTest {
             depthOfAgent: Int,
             landingDirs: List<String>,
         ): Tree {
-            // One top-level agent at `depthOfAgent` levels; the landing sits inside
-            // it, `landingDirs` below the agent dir, every intermediate component
-            // carrying a definition like a real nested pipeline would.
+            // One top-level agent at `depthOfAgent` levels; the landing sits `landingDirs` below it, every
+            // intermediate component carrying a definition like a nested pipeline.
             var dir = root.resolve("t${trees.size}")
             writeAgent(dir, "top-${trees.size}")
             var depth = 1
@@ -263,11 +257,8 @@ class AgentDirsTest {
     }
 
     /**
-     * CWE-400: the entry budget is per top-level
-     * directory, not shared by the whole catalog. One principal's wide subtree
-     * must spend its own budget, never a sibling's — a walk that shares one
-     * counter lets the first agent's directories starve the rest of the catalog,
-     * and the dropped agents reload as removed.
+     * CWE-400: the entry budget is per top-level directory, not shared by the catalog: a walk sharing one counter lets
+     * one principal's wide subtree starve a sibling's agents, which then reload as removed.
      */
     @Test
     fun `one agent's wide subtree does not exhaust the budget of a sibling agent`() {
@@ -347,11 +338,8 @@ class AgentDirsTest {
     }
 
     /**
-     * CWE-400: a single flat directory of any size
-     * must not be materialized and sorted in full — a listing holds at most the
-     * remaining entry budget of the directories it reads (plus one) and reads at
-     * most [AgentDirs.MAX_SUBTREE_RAW_ENTRIES] raw entries, so the walk's allocation
-     * is bounded by its caps, not by the directory's own entry count.
+     * CWE-400: a flat directory of any size must not be materialized and sorted in full; a listing holds at most the
+     * remaining entry budget (plus one) and reads at most [AgentDirs.MAX_SUBTREE_RAW_ENTRIES] raw entries.
      */
     @Test
     fun `walk bounds the per-directory listing, not only the visited count`() {
@@ -513,10 +501,8 @@ class AgentDirsTest {
     }
 
     /**
-     * Entries the walk never visits must not spend the listing. The
-     * agents are created before the filler so that neither creation order
-     * (tmpfs lists newest first) nor a hashed order (APFS, ext4 htree) puts
-     * all of them inside the first [AgentDirs.MAX_ENTRIES] raw entries.
+     * Entries the walk never visits must not spend the listing. Agents are created before the filler so neither
+     * creation order (tmpfs) nor hashed order (APFS, ext4) puts them all in the first [AgentDirs.MAX_ENTRIES] entries.
      */
     private fun assertNestedAgentsSurvive(filler: (parent: Path, index: Int) -> Unit) {
         val parent = root.resolve("parent")
@@ -643,10 +629,8 @@ class AgentDirsTest {
     ) = repeat(count) { Files.write(dir.resolve("file%03d".format(it)), byteArrayOf()) }
 
     /**
-     * CWE-400: the directory budgets count directories only, so raw
-     * reads have their own per-subtree budget. Running it out truncates that
-     * subtree only, reported by name — a sibling keeps walking, so one
-     * principal's files cannot starve another's agents.
+     * CWE-400: directory budgets count directories only, so raw reads have their own per-subtree budget; running it
+     * out truncates that subtree only, reported by name, so one principal's files cannot starve another's agents.
      */
     @Test
     fun `a subtree past its raw-entry budget is truncated with the warning while a sibling still loads`() {

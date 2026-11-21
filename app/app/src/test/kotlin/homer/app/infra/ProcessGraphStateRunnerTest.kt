@@ -90,7 +90,7 @@ class ProcessGraphStateRunnerTest {
         return script
     }
 
-    /** Names of the legacy temp files the runner used to leave in `java.io.tmpdir`. */
+    /** Names of the temp files the runner no longer leaves in `java.io.tmpdir`. */
     private fun stateTempFiles(): Set<String> =
         Files.list(Path.of(System.getProperty("java.io.tmpdir"))).use { stream ->
             stream

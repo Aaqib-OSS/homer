@@ -142,7 +142,6 @@ class SchemaEquivalenceTest {
     /**
      * SQLite stores by a column's type affinity, not its declared name (BIGINT, INT and INTEGER
      * behave the same; VARCHAR's length is not enforced), so the affinity is what is compared.
-     * The rules of https://www.sqlite.org/datatype3.html#determination_of_column_affinity.
      */
     private fun affinity(declared: String): String =
         declared.uppercase().let { type ->
@@ -179,10 +178,9 @@ class SchemaEquivalenceTest {
         val KNOWN_DIFFERENCES: Set<String> = emptySet()
 
         /**
-         * The databases upgraded: v1, the oldest version `migrate()` upgrades from, and v4, the
-         * first with every table a later step ALTERs (the v1 seed covers `processes` and
-         * `questions`). Each table as `Tables.kt` declared it at that version; a
-         * table a seed omits is created by `SchemaUtils.create` from today's model.
+         * The databases upgraded: v1, the oldest `migrate()` upgrades from, and v4, the first with every
+         * table a later step ALTERs. Each table as `Tables.kt` declared it then; an omitted one is
+         * created from today's model.
          */
         val SEEDS: List<Pair<Int, List<Table>>> =
             listOf(

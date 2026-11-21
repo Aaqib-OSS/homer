@@ -334,9 +334,9 @@ jobs:
   # Every quality report in one table (ADR-0082). A warn-mode check with findings
   # makes gate.mjs exit 3, which passes with a warning annotation; exit 1 fails.
   quality-gate:
-    needs: [homer-app-tests, homer-app-detekt, homer-console-tests, homer-python-tests, homer-console-mutation, homer-app-mutation, homer-infra-lint]
-    # The mutation jobs are skipped outside pull requests; the gate still runs. A failed
-    # homer-infra-lint leaves its report missing, which fails the gate.
+    needs: [homer-app-tests, homer-app-detekt, homer-console-tests, homer-python-tests, homer-console-mutation, homer-app-mutation, homer-infra-lint, homer-e2e]
+    # The mutation jobs are skipped outside pull requests; the gate still runs. A failed homer-infra-lint
+    # or homer-e2e may leave its report missing, a finding; the required job's own red still blocks.
     if: >-
       !cancelled()
       && needs.homer-app-tests.result == 'success'
@@ -429,6 +429,19 @@ jobs:
           docker cp homer-e2e-backend:/app/workspace/api.log e2e-logs/ || true
           docker compose logs --no-color homer-runner homer-runner-crash > e2e-logs/homer-runner.log 2>&1 || true
           docker compose down -v || true
+      # quality-gate's skipped-tests reads the suite's JUnit XML back at its repository path.
+      - name: Pack reports
+        if: always()
+        run: |
+          mkdir -p app/e2e/build/test-results/test
+          cp -R e2e-results/. app/e2e/build/test-results/test/
+          tar -czf reports.tgz app/e2e/build/test-results/test/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: reports-homer-e2e
+          path: reports.tgz
+          retention-days: 7
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

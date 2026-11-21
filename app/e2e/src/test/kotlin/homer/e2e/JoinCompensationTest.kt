@@ -11,10 +11,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * A refused join leaves no sub running (ADR-0026, 2026-10-01 amendment): the
- * second `join-cooldown-sub` start hits that agent's cooldown after the first
- * one started, so `/callback/joins` answers `429` and must kill the first sub
- * rather than leave it running untracked.
+ * A refused join leaves no sub running (ADR-0026, 2026-10-01 amendment): `/callback/joins` answers `429` on
+ * the second `join-cooldown-sub` start and must kill the first sub.
  */
 class JoinCompensationTest : E2eTestBase() {
     @Test

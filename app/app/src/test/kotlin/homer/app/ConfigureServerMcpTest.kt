@@ -27,10 +27,8 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * Boots the real server module (`configureServer`) with `server.mcp.enabled`
- * to catch wiring-level regressions that per-route test apps can't see —
- * e.g. the app-level ContentNegotiation install colliding with the
- * route-scoped McpJson install on /mcp (DuplicatePluginException at startup).
+ * Boots the real server module (`configureServer`) with `server.mcp.enabled` to catch wiring regressions that
+ * per-route test apps can't see, e.g. the app-level ContentNegotiation colliding with the route-scoped McpJson on /mcp.
  */
 @ExtendWith(ResetDrainingExtension::class)
 class ConfigureServerMcpTest {

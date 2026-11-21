@@ -51,11 +51,8 @@ class RunnerAffinityTest : E2eTestBase() {
     fun `the flow's second run lands on the instance that served its first`() =
         runBlocking {
             awaitInstances()
-            // An `!<agent>` hop is fire-and-forget: the parent starts a child and returns, so the
-            // ordering the case needs must come from the flow itself. The parent starts
-            // `affinity-sub`, whose first command writes the marker on the instance serving it
-            // and whose second starts `affinity-check` — only after the marker exists, and with
-            // the same flow root, so both children carry one (flow root, group) affinity key.
+            // An `!<agent>` hop is fire-and-forget, so the ordering comes from the flow: `affinity-sub`
+            // writes the marker, then starts `affinity-check` under the same flow root.
             val parentId = HomerApi.startRun("affinity-parent")
             Awaits.awaitTerminal(parentId, timeoutMs = 180_000)
 

@@ -82,6 +82,81 @@ class AgentInputChecksTest {
         assertTrue(checks.checkCommandBindings(AgentFixtures.simpleAgent(name = "a"), mutableListOf()))
     }
 
+    private fun capturingStep(
+        label: String,
+        envName: String,
+    ) = Command.Cmd(
+        cmd = listOf("echo"),
+        label = label,
+        resultEnvParam = listOf(ResultEnvParam(src = SrcType.STD_OUT, envName = envName)),
+    )
+
+    /** A valid capture on the command, and the given capture on an `onStop:` step. */
+    private fun agentStoppingWithCapture(envName: String) =
+        AgentFixtures.simpleAgent(name = "a").copy(
+            commands = listOf(capturingStep(label = "run", envName = "OK")),
+            onStop = listOf(capturingStep(label = "save", envName = envName)),
+        )
+
+    @Test
+    fun `an onStop step capturing into a reserved envName is refused, naming the step and the key`() {
+        assertFalse(checks.checkCommandBindings(agentStoppingWithCapture("PATH"), errors))
+        // Threat model (Secrets): the message carries the step and the key name, never a captured value.
+        assertEquals(
+            listOf("Agent 'a': onStop step 'save' captures a result into invalid envName 'PATH'"),
+            errors,
+        )
+    }
+
+    @Test
+    fun `an onStop capture into a Homer token or an LD_ name is refused`() {
+        assertFalse(checks.checkCommandBindings(agentStoppingWithCapture("HMR_CALLBACK_TOKEN"), errors))
+        assertFalse(checks.checkCommandBindings(agentStoppingWithCapture("LD_PRELOAD"), errors))
+        assertEquals(2, errors.size)
+    }
+
+    @Test
+    fun `an onStop capture into a non-identifier name is refused`() {
+        assertFalse(checks.checkCommandBindings(agentStoppingWithCapture("1A-B"), errors))
+        assertTrue(errors.single().contains("invalid envName '1A-B'"), errors.single())
+    }
+
+    @Test
+    fun `an onStop capture into a valid name loads`() {
+        assertTrue(checks.checkCommandBindings(agentStoppingWithCapture("SAVED_REPORT"), errors))
+        assertEquals(emptyList(), errors)
+    }
+
+    @Test
+    fun `an input templated into a command's cmd is refused`() {
+        val agent =
+            claudeAgent(claudeCommand(ClaudeCmdOptions(), label = "run").copy(cmd = "{{BIN}}"))
+                .copy(inputs = listOf(Param(paramName = "bin", envName = "BIN")))
+
+        assertFalse(checks.checkCommandBindings(agent, errors))
+        assertEquals(
+            listOf("Agent 'a': command 'run' cmd references input '{{BIN}}'; an input must not choose the executable"),
+            errors,
+        )
+    }
+
+    @Test
+    fun `an onStop step whose cmd references an input is refused, like a command step`() {
+        val agent =
+            claudeAgent(claudeCommand(ClaudeCmdOptions(), label = "run"))
+                .copy(
+                    inputs = listOf(Param(paramName = "bin", envName = "BIN")),
+                    onStop = listOf(claudeCommand(ClaudeCmdOptions(), label = "stop").copy(cmd = "{{BIN}}")),
+                )
+
+        assertFalse(checks.checkCommandBindings(agent, errors))
+        // Threat model (Secrets): the message names the step and the input's env key, never a value.
+        assertEquals(
+            listOf("Agent 'a': onStop step 'stop' cmd references input '{{BIN}}'; an input must not choose the executable"),
+            errors,
+        )
+    }
+
     /** An agent whose commands are the given claude steps. */
     private fun claudeAgent(vararg commands: Command.Claude) = Agent(name = "a", commands = commands.toList())
 
@@ -109,12 +184,14 @@ class AgentInputChecksTest {
         checks.warnOnUncontainedClaudeTools(agent)
 
         // The mock records the format and its arguments as passed, so the fields are asserted
-        // on the format and the command on the label argument.
+        // on the format and the step's phase and label on their arguments.
         val formats = mutableListOf<String>()
         val names = mutableListOf<String>()
+        val kinds = mutableListOf<String>()
         val labels = mutableListOf<String>()
-        verify(exactly = 2) { logger.warn(capture(formats), capture(names), capture(labels)) }
+        verify(exactly = 2) { logger.warn(capture(formats), capture(names), capture(kinds), capture(labels)) }
         assertEquals(listOf("a", "a"), names)
+        assertEquals(listOf("command", "command"), kinds)
         assertEquals(listOf("verify", "ship"), labels)
         assertTrue(formats.all { it.contains("allowedTools") && it.contains("disallowedTools: [Agent, Task]") }, formats.toString())
         // Threat model (Secrets): the message names the command and the fields, never a prompt or option value.
@@ -139,7 +216,52 @@ class AgentInputChecksTest {
 
         checks.warnOnUncontainedClaudeTools(agent)
 
-        verify(exactly = 0) { logger.warn(any<String>(), any<Any>(), any<Any>()) }
+        verify(exactly = 0) { logger.warn(any<String>(), any<Any>(), any<Any>(), any<Any>()) }
+    }
+
+    @Test
+    fun `an onStop claude step that skips permissions with only allowedTools warns as a stop step`() {
+        val stopStep =
+            claudeCommand(
+                ClaudeCmdOptions(dangerouslySkipPermissions = true, allowedTools = listOf("Read")),
+                label = "ship",
+            )
+        val agent =
+            claudeAgent(claudeCommand(ClaudeCmdOptions(), label = "run"))
+                .copy(onStop = listOf(stopStep))
+
+        checks.warnOnUncontainedClaudeTools(agent)
+
+        val kinds = mutableListOf<String>()
+        val labels = mutableListOf<String>()
+        verify(exactly = 1) { logger.warn(any<String>(), any<Any>(), capture(kinds), capture(labels)) }
+        assertEquals(listOf("ship"), labels)
+        // The phase is what tells the operator to look under `onStop:`, not `commands:`.
+        assertEquals(listOf("onStop step"), kinds)
+    }
+
+    @Test
+    fun `the load error and the warning name an offending onStop step with the same phase tag`() {
+        val agent =
+            AgentFixtures.simpleAgent(name = "a").copy(
+                commands = listOf(capturingStep(label = "run", envName = "OK")),
+                onStop =
+                    listOf(
+                        capturingStep(label = "save", envName = "PATH"),
+                        claudeCommand(
+                            ClaudeCmdOptions(dangerouslySkipPermissions = true, allowedTools = listOf("Read")),
+                            label = "ship",
+                        ),
+                    ),
+            )
+
+        assertFalse(checks.checkCommandBindings(agent, errors))
+        assertTrue(errors.single().startsWith("Agent 'a': onStop step 'save'"), errors.toString())
+
+        checks.warnOnUncontainedClaudeTools(agent)
+        val kinds = mutableListOf<String>()
+        verify(exactly = 1) { logger.warn(any<String>(), any<Any>(), capture(kinds), any<Any>()) }
+        assertEquals(listOf("onStop step"), kinds)
     }
 
     @Test

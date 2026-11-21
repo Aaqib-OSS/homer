@@ -52,15 +52,9 @@ import kotlin.time.Duration.Companion.seconds
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation as ServerContentNegotiation
 
 /**
- * Integration tests for the password-auth HTTP surfaces of `apiV1UnsecuredRoutes`:
- *  - POST /api/v1/auth/login (rate-limited, constant-time-ish on unknown user)
- *  - POST /api/v1/auth/logout (idempotent)
- *  - GET  /api/v1/auth/me
- *
- * Provider-level invariants (signature rejection, rotation, allowlist enforcement,
- * cookie attribute set on `Sessions` install, expired-session 401) live in
- * `SessionAuthTest` — this file does not duplicate them. Anything that depends
- * on the *route block* mounted outside `authenticate(...)` lives here.
+ * Integration tests for the password-auth surfaces of `apiV1UnsecuredRoutes`: POST /api/v1/auth/login (rate-limited),
+ * POST /api/v1/auth/logout (idempotent) and GET /api/v1/auth/me. Provider-level invariants live in `SessionAuthTest`;
+ * what depends on the route block mounted outside `authenticate(...)` lives here.
  */
 class PasswordAuthTest {
     // Real bcrypt hash of "correct-horse" produced via PasswordVerifier so the
@@ -88,10 +82,8 @@ class PasswordAuthTest {
         )
 
     /**
-     * Mounts the production `apiV1UnsecuredRoutes` (login/logout/me) the way
-     * `configureServer` does — StatusPages, routing-scoped ContentNegotiation on [apiJson] —
-     * behind the `register(RateLimitName("login"))` registration the real login
-     * route wraps itself in.
+     * Mounts the production `apiV1UnsecuredRoutes` the way `configureServer` does (StatusPages, routing-scoped
+     * ContentNegotiation on [apiJson]) behind the `register(RateLimitName("login"))` the real login route uses.
      */
     private fun io.ktor.server.application.Application.installAuthRoutes(
         s: AuthConfig.Password,
@@ -153,8 +145,8 @@ class PasswordAuthTest {
     @Test
     fun `login issues a session expiring sessionTtlMin minutes after the login second`() =
         testApplication {
-            // sessionTtlMin = 7 keeps `*` and `/` apart: 7 / 60 is 0, so a mutant that divides
-            // would stamp the login second itself instead of a lifetime of 420 s (`sessionAuthRoutes` in UnsecuredRoutes.kt).
+            // sessionTtlMin = 7 keeps `*` and `/` apart: 7 / 60 is 0, so a mutant that divides would stamp
+            // the login second itself instead of a lifetime of 420 s (`sessionAuthRoutes`).
             val ttlScheme = scheme.copy(sessionTtlMin = 7)
             application {
                 installAuthRoutes(ttlScheme)
@@ -438,9 +430,8 @@ class PasswordAuthTest {
     @Test
     fun `login limiter honors a higher configured limit`() =
         testApplication {
-            // server.loginRateLimit is now configurable; a raised limit must let
-            // more attempts through before 429. Proves the register block is
-            // value-driven, which is what RateLimiting.kt feeds from config.
+            // A raised server.loginRateLimit must let more attempts through before 429, proving the register
+            // block is value-driven from config.
             application { installAuthRoutes(scheme, loginLimit = 10) }
             repeat(6) {
                 val resp =

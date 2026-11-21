@@ -18,10 +18,8 @@ import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 
 /**
- * Characterization tests for the query-parameter validation of
- * GET /api/v1/status/all. These mount the *real* [apiV1Routes] handler so a
- * regression in the production validation is actually caught. They pin the
- * exact 400 status, the exact ErrorResponse body, and the early-return order
+ * Characterization tests for the query-parameter validation of GET /api/v1/status/all, mounting the real
+ * [apiV1Routes] handler: they pin the exact 400 status, the ErrorResponse body and the early-return order
  * (which error wins when two params are invalid).
  */
 class StatusAllValidationTest {
@@ -179,7 +177,7 @@ class StatusAllValidationTest {
         testApplication {
             mountStatusAllRoutes()
 
-            // 11 distinct tags is one over the MAX_TAG_QUERY_PARAMS cap (§12 rule 4).
+            // 11 distinct tags is one over the MAX_TAG_QUERY_PARAMS cap (ADR-0047 rule 4).
             val query = (1..11).joinToString("&") { "tag=k:v$it" }
             val response = client.get("/api/v1/status/all?$query")
 
@@ -196,7 +194,7 @@ class StatusAllValidationTest {
             mountStatusAllRoutes()
 
             // One character past MAX_TAG_QUERY_LENGTH (193): longer than any storable
-            // key:value tag, so it can match nothing and is refused before the DB bind (§12 rule 4).
+            // key:value tag, so it can match nothing and is refused before the DB bind (ADR-0047 rule 4).
             val overLong = "k:" + "v".repeat(homer.app.models.TagValidation.MAX_TAG_QUERY_LENGTH)
             val response = client.get("/api/v1/status/all?tag=$overLong")
 

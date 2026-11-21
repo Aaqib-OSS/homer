@@ -22,13 +22,9 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * The `/api/v1/livez` and `/api/v1/readyz` probes must not draw from any rate
- * limiter (`RateLimiting.kt` `configureRateLimiting`).
- *
- * These tests assert the denial path (§12): from a drained *global* bucket and
- * from an exhausted *per-caller* bucket, including with the drain flag set,
- * while the ceiling still binds everything else so the exemption did not
- * disable either limiter. Why: `app/SERVER.md`, "Liveness & readiness probes".
+ * The `/api/v1/livez` and `/api/v1/readyz` probes must not draw from any rate limiter (`configureRateLimiting`): from a
+ * drained *global* bucket, an exhausted *per-caller* bucket and with the drain flag set (ADR-0047 rule 8), while the
+ * ceiling still binds everything else. Why: `app/SERVER.md`, "Liveness & readiness probes".
  */
 class GlobalRateLimitProbeExemptionTest {
     @TempDir
@@ -38,10 +34,8 @@ class GlobalRateLimitProbeExemptionTest {
     lateinit var workspaceDir: File
 
     /**
-     * `isDraining` is a JVM-global flag flipped by `ApplicationStopping`; each test
-     * host's shutdown leaves it set for whichever test runs next, which would make
-     * `/readyz` answer 503 here. Reset it on both sides so the drain state is
-     * deterministic, and never depends on JUnit's method order.
+     * `isDraining` is a JVM-global flag each test host's shutdown leaves set, which would make `/readyz` answer 503
+     * in the next test; reset it on both sides so the drain state never depends on JUnit's method order.
      */
     @BeforeEach
     @AfterEach
@@ -88,9 +82,8 @@ class GlobalRateLimitProbeExemptionTest {
             assertEquals(HttpStatusCode.OK, readyz.status, "readiness must report the drain state, never 429")
             assertEquals("ready", apiJson.decodeFromString<ReadinessResponse>(readyz.bodyAsText()).status)
 
-            // The drained-bucket + draining combination is the state the pod actually
-            // hits during a graceful shutdown: readiness must surface the drain as
-            // 503 — and still never as 429 — while liveness stays 200.
+            // A drained bucket while draining is the state the pod hits during graceful shutdown: readiness
+            // must answer 503, never 429, while liveness stays 200.
             isDraining.set(true)
             val drainingReadyz = client.get("/api/v1/readyz")
             assertEquals(HttpStatusCode.ServiceUnavailable, drainingReadyz.status, "drain state must surface, and still not as 429")
@@ -140,9 +133,8 @@ class GlobalRateLimitProbeExemptionTest {
                 "the per-caller bucket must be exhausted before the probes are checked",
             )
 
-            // The probes sit outside the `perCaller` wrapper by mount position; this
-            // guards that structural fact, which nothing in `configureRateLimiting`
-            // itself enforces.
+            // The probes sit outside the `perCaller` wrapper by mount position, which nothing in
+            // `configureRateLimiting` itself enforces; this guards that structural fact.
             assertEquals(
                 HttpStatusCode.OK,
                 client.get("/api/v1/livez").status,

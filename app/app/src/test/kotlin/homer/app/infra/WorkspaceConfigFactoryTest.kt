@@ -193,12 +193,8 @@ class WorkspaceConfigFactoryTest {
 
     @Test
     fun `path template escaping the server root is rejected`() {
-        // A literal ".." in workspace.path is now rejected earlier, at agent load
-        // (Workspace.init) — inject the escape via a query param so this still
-        // exercises the resolve-time containment check (assertContained). Uses a
-        // fixed template with an embedded param (distinct from the param-only
-        // template in `escape injected via query param is rejected` below) so the
-        // two tests carry distinct signal instead of covering the same path twice.
+        // ".." in workspace.path is rejected at agent load, so the escape is injected via a query param to reach the
+        // resolve-time containment check (assertContained), with a template distinct from the param-only one below.
         assertFailsWith<WorkspaceException> {
             factory.createWorkspaceConfig(
                 processId = 1,
@@ -225,9 +221,7 @@ class WorkspaceConfigFactoryTest {
 
     @Test
     fun `a workspace path that collapses to the server root is rejected`() {
-        // The template "{{dir}}" contains no literal ".." (so it passes
-        // Workspace.init's load-time check), but the query-param value it
-        // expands to resolves back to serverRoot itself.
+        // "{{dir}}" has no literal ".." so it passes the load-time check, but its value expands back to serverRoot.
         val ex =
             assertFailsWith<WorkspaceException> {
                 factory.createWorkspaceConfig(
@@ -245,14 +239,8 @@ class WorkspaceConfigFactoryTest {
     fun `a root-collapsing path is rejected even once the workspace root already exists on disk`(
         @TempDir root: Path,
     ) {
-        // Regression for a canonicalization asymmetry: an empty path resolves to
-        // serverRoot's own (unnormalized) form, which already exists on disk
-        // (created by @TempDir) — so assertContained takes the toRealPath()
-        // branch and returns the *canonical* projectRoot, while a naive
-        // comparison against the raw, uncanonicalized serverRoot never resolves
-        // symlinks. On Darwin/CI the temp root sits behind one (e.g.
-        // /var -> /private/var), so `projectRoot == serverRoot` alone silently
-        // fails to fire here — this must still be rejected.
+        // An empty path resolves to serverRoot's unnormalized form, which exists on disk, so assertContained
+        // returns the canonical root; the raw serverRoot misses it behind a symlink (/var -> /private/var).
         val rootFactory =
             WorkspaceConfigFactory(
                 workspaceRoot = root.toString(),
@@ -366,7 +354,7 @@ class WorkspaceConfigFactoryTest {
     @Test
     fun `an unresolved placeholder never puts a resolved value in the denial`() {
         // The key mixes a secret input with a name that has no value: the denial must name the
-        // placeholder only, never the partially rendered key (ADR-0098, §12 rule 7).
+        // placeholder only, never the partially rendered key (ADR-0098, ADR-0047 rule 7).
         val ex =
             assertFailsWith<UnresolvedLockKeyPlaceholderException> {
                 factory.createWorkspaceConfig(
@@ -404,9 +392,8 @@ class WorkspaceConfigFactoryTest {
 
     @Test
     fun `a key templated on HMR_AGENT_NAME is denied, not left literal`() {
-        // HMR_AGENT_NAME is appended at run-start (layer 7), after this factory resolves the key,
-        // so it is not in the env a key renders over: AGENT.md says the variable is unusable in a
-        // key template, and the denial is what that means in practice.
+        // HMR_AGENT_NAME is appended at run-start, after the key renders, so AGENT.md calls it unusable in a key
+        // template; the denial is what that means in practice.
         val ex =
             assertFailsWith<UnresolvedLockKeyPlaceholderException> {
                 factory.createWorkspaceConfig(

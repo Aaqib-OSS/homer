@@ -51,28 +51,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 
 /**
- * The denial test for the cooldown bound on the three manual-recovery endpoints
- * (root §12 rule 8): retry, resume and debug each get `429` inside the agent's
- * `minInterval` window, and the refused start launches nothing.
- *
- * Everything on the start path is **real** here — `ProcessFactory`,
- * `ProcessExecutor`, `ProcessManager` over a temp database — so the refusal comes
- * from the same INSERT transaction production uses
- * (`ProcessRepository.obtainProcessId`, ADR-0051) and the cooldown value it sees
- * is the one the handler actually passed (`Process.cooldown = agent.cooldown`,
- * `Process.kt:49`, fed by `Agent.withoutFailureBackoff()`). Only the workspace /
- * runner / telemetry collaborators are relaxed mocks; `create` is reached but
- * `Process.execute` never runs, because a refused start throws before the
- * coroutine is launched.
- *
- * "Launches nothing" is therefore asserted where it is observable: the process
- * table. A mocked `ProcessExecutor` could not show this — it is the INSERT inside
- * `execute` that has to be refused.
- *
- * The window is opened by the endpoint's *own* first start: the first request is
- * the `200` that proves admission, the immediate second one is the denial. Only
- * milliseconds pass between them, so a `1m` window cannot elapse mid-test — no
- * clock control, and no production signature change, is needed.
+ * Denial test for the manual-recovery cooldown (ADR-0051): retry, resume and debug get `429` inside `minInterval`.
+ * The start path is real, so the refusal comes from the INSERT transaction and shows in the process table.
  */
 class CooldownEndpointTest {
     /** Long enough that the second request is always inside the window. */
@@ -126,10 +106,8 @@ class CooldownEndpointTest {
         suspend fun processCount(): Int = processManager.lastProcessId()
 
         /**
-         * Records a FAILED run of the subject agent, ending now, so the next start is
-         * inside any `afterFailure` window. Without this the window is never open —
-         * every run these tests actually launch ends `FINISHED` — and the admission
-         * cases would pass whether or not the fix is present.
+         * Records a FAILED run ending now, so the next start is inside any `afterFailure` window. Runs these tests
+         * launch end `FINISHED`, so without it the admission cases would pass without the fix.
          */
         suspend fun seedFailedRun(cooldownKey: String? = null) {
             val id = processManager.obtainProcessId(NewRunRecord(agent.name, emptyMap(), cooldownKey = cooldownKey))
@@ -426,10 +404,8 @@ class CooldownEndpointTest {
     // ===== the stored-secret snapshot refuses a key naming a secret input (CWE-312) =====
 
     /**
-     * A source run whose snapshot marks `MR` secret although the current definition does
-     * not: what was secret when the inputs were stored stays secret for the replay
-     * (ADR-0052), so a key templated over it must be refused — not rendered into the
-     * indexed `processes.cooldown_key` column.
+     * A source run whose snapshot marks `MR` secret though the current definition does not: it stays secret for
+     * the replay (ADR-0052), so a key templated over it is refused, never stored in `processes.cooldown_key`.
      */
     private fun storedSecretSource() = failedSource().copy(inputParams = mapOf("MR" to "s3cret-mr-value"), secretInputKeys = setOf("MR"))
 

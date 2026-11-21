@@ -10,8 +10,8 @@ import { runMain, writeCheck } from './lib.mjs';
 const TITLE = 'Tests skipped in the CI run';
 
 /**
- * The report of each stack: a directory of JUnit XML files, or one file. Not :e2e, which homer-app-tests
- * runs without a live stack, so `E2eTestBase` skips all of it by design; homer-e2e runs it for real.
+ * The report of each stack: a directory of JUnit XML files, or one file. The :e2e report is homer-e2e's,
+ * which runs the suite against a live stack; homer-app-tests runs it without one and does not pack it.
  */
 export const REPORTS = [
   { stack: ':app', path: 'app/app/build/test-results/test' },
@@ -19,6 +19,7 @@ export const REPORTS = [
   { stack: ':homer-runner', path: 'app/homer-runner/build/test-results/test' },
   { stack: ':agentdebug', path: 'app/agentdebug/build/test-results/test' },
   { stack: 'buildSrc', path: 'app/buildSrc/build/test-results/test' },
+  { stack: ':e2e', path: 'app/e2e/build/test-results/test' },
   { stack: 'console (Vitest)', path: 'console/reports/quality/junit/vitest.xml' },
   { stack: 'Python client (pytest)', path: 'clients/python/report.xml' },
 ];

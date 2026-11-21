@@ -24,11 +24,8 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * The session cookie `installPasswordSessions` wires (`auth/SessionAuth.kt`): a login through the
- * real startup path must issue a cookie that is `HttpOnly` on `Path=/`, so dropping either
- * attribute from the plugin's cookie config fails a test. `PasswordAuthTest` mounts the plugin
- * itself — which is exactly why those lines could be dropped unnoticed — so these go through
- * `configureServer` instead. The secret and password hash are inline fixtures.
+ * A login through the real startup path (`configureServer`) must issue a session cookie that is `HttpOnly` on
+ * `Path=/`; `PasswordAuthTest` mounts the plugin itself and would not notice either attribute being dropped.
  */
 @ExtendWith(ResetDrainingExtension::class)
 class SessionCookieWiringTest {

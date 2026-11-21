@@ -7,10 +7,9 @@ import java.lang.reflect.Modifier
 import kotlin.test.assertTrue
 
 /**
- * Doc-drift backstop for app/CLAUDE.md § System environment variables: every `HMR_*` name in
- * [EnvConstants] is either named in `app/AGENT.md` or listed in [internalOnly] with the reason an
- * agent author does not need it. An internal entry that names no constant any more, or a name
- * AGENT.md now documents, is stale and fails too.
+ * Doc-drift backstop for the System environment variables section of app/CLAUDE.md: every `HMR_*` name in
+ * [EnvConstants] is named in `app/AGENT.md` or listed in [internalOnly] with a reason; an entry naming no constant,
+ * or a name AGENT.md now documents, is stale and fails.
  */
 class HmrEnvVarsDocumentedTest {
     /** Names Homer sets for its own consumers only, each with the one-line reason. */
@@ -38,7 +37,7 @@ class HmrEnvVarsDocumentedTest {
         assertTrue(
             undocumented.isEmpty(),
             "HMR_* constants neither named in app/AGENT.md nor listed as internal-only: $undocumented. " +
-                "Document each in AGENT.md § Workspace Environment Variables, or add it to internalOnly with a reason.",
+                "Document each in the Workspace Environment Variables section of AGENT.md, or add it to internalOnly with a reason.",
         )
     }
 

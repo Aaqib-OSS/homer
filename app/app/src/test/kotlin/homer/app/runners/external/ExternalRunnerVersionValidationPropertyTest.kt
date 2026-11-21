@@ -15,10 +15,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * The version boundary as a property rather than examples: the value is runner-written text that
- * reaches a log line and an operator view, so whatever the instance sends, the domain either
- * stores it verbatim or refuses it with a message that cannot carry it. Example tests pin the
- * shapes the implementation was written around; this pins the ones it was not. See root §6, §12.
+ * The version boundary as a property: the value is runner-written text reaching a log line and an operator view, so
+ * the domain either stores it verbatim or refuses it with a message that cannot carry it. Example tests pin the
+ * shapes the implementation was written around; this pins the others.
  */
 class ExternalRunnerVersionValidationPropertyTest {
     private fun domain() = ExternalRunnerDomain("workers", RunnerConfig.External(token = "t".repeat(32)), RunnerClaimQueue(maxPending = 10))

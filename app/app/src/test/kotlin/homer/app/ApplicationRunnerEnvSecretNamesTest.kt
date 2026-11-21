@@ -14,7 +14,7 @@ import kotlin.test.assertTrue
 /**
  * The per-alias secret-name sets startup derives from each runner's `env`, read
  * through the base member rather than a per-variant `when`. Same contract as
- * `globalEnv`: a value pulled from the host env is a credential. See ADR-0047 §7.
+ * `globalEnv`: a value pulled from the host env is a credential. See ADR-0047 rule 7.
  */
 class ApplicationRunnerEnvSecretNamesTest {
     @TempDir

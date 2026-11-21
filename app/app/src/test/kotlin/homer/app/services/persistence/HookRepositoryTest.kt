@@ -81,10 +81,8 @@ class HookRepositoryTest {
             val recorded = recordResult(hook(target = "first"), hook(target = "second"), hook(target = "third"))
 
             assertEquals(listOf("first", "second", "third"), recorded.rows.map { it.targetAgentName })
-            // The fire after the commit settles by the delivered row's id and starts its data, so
-            // each returned row must be the persisted one, keyed in submission order: a generated
-            // id that came back out of order would settle one hook without firing it and leave
-            // another PENDING to refire at boot. §12 rule 8, for the pairing this insert assumes.
+            // Rows come back in submission order: an out-of-order id would settle one hook without
+            // firing it and leave another PENDING to refire at boot.
             for (row in recorded.rows) {
                 assertEquals(assertNotNull(repo.get(row.id)), row)
             }
@@ -99,9 +97,8 @@ class HookRepositoryTest {
     @Test
     fun `the global pending cap stops the insert at maxPending and reports the rest as shed`() =
         runTest {
-            // A fan-out burst sheds rather than queues: the run that caused it must not fail,
-            // and the rows over the cap are never written at all. The shed entries are what the
-            // caller logs after the commit. §12 rule 4.
+            // A burst over the cap sheds without failing the run (ADR-0047 rule 4, ADR-0107); the shed entries
+            // are what the caller logs after the commit.
             val recorded = recordResult(hook(target = "a"), hook(target = "b"), hook(target = "c"), maxPending = 2)
 
             assertEquals(listOf("a", "b"), recorded.rows.map { it.targetAgentName })

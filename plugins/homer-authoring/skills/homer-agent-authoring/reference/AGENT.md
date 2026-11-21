@@ -1542,7 +1542,8 @@ of any type, with three differences:
 `onStop:` accepts at most 10 steps, and a step with `onTimeout: stop` may not itself be a stop step.
 `onTimeout: stop` on a command of an agent with no `onStop:` fails agent load — a stop request with
 nothing to run is a mistake, not a no-op. Both are rejected at load time, like any other invalid
-agent definition.
+agent definition. A stop step's `resultEnvParam` `envName`s are checked at load exactly as a
+`commands:` step's are: a reserved (`HMR_*`, `PATH`, `LD_*`, …) or malformed name fails the agent.
 
 **Interrupting the step.** `interruptGraceSeconds` (default `30`, `0`..`600`) is how long an
 interrupted step may take to exit after Homer signals its process group, before it is killed; `0`
@@ -1906,7 +1907,7 @@ options:
     - Edit
 ```
 
-**Note:** A step that skips permissions is contained by `disallowedTools` (or `tools`), not by `allowedTools`. Homer warns at load for each such step that sets `allowedTools` and neither `tools` nor `disallowedTools`, naming the command and pointing at both containment options; `agentdebug validate` reports the same warning on the command's line. See the case study [Containing a Claude step](../docs/case-studies/claude-tool-limits.md).
+**Note:** A step that skips permissions is contained by `disallowedTools` (or `tools`), not by `allowedTools`. Homer warns at load for each such step that sets `allowedTools` and neither `tools` nor `disallowedTools`, naming the step's phase (`command` or `onStop step`) and label and pointing at both containment options; `agentdebug validate` reports the same warning on a `commands:` step's line. See the case study [Containing a Claude step](../docs/case-studies/claude-tool-limits.md).
 
 ### MCP Configuration
 
@@ -1967,7 +1968,7 @@ resultEnvParam:
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `src` | `SrcType` | Yes | Where to extract from (`STD_OUT`, `STD_ERR`, `RESULT_CODE`) |
-| `envName` | `String` | Yes | Environment variable name to store result. Same restrictions as input `envName`: **cannot** target Homer-controlled names (`HMR_*`) or host-controlled names (`PATH`, `HOME`, `USER`, `SHELL`, `LANG`, `TZ`, `PWD`, `OLDPWD`, `IFS`, `BASH_ENV`, `ENV`, or anything beginning with `LD_`, `JAVA_`, or `LC_`), and must match `^[A-Za-z_][A-Za-z0-9_]*$`. Captured values are merged into the env of later commands, so an agent that captures into a reserved/malformed name is skipped at load time with an error in the reload result. The load check covers `commands:` only; a run on an `ssh` or `kubernetes` runner fails before it starts on an `onStop:` step's `envName` that is not a shell identifier. |
+| `envName` | `String` | Yes | Environment variable name to store result. Same restrictions as input `envName`: **cannot** target Homer-controlled names (`HMR_*`) or host-controlled names (`PATH`, `HOME`, `USER`, `SHELL`, `LANG`, `TZ`, `PWD`, `OLDPWD`, `IFS`, `BASH_ENV`, `ENV`, or anything beginning with `LD_`, `JAVA_`, or `LC_`), and must match `^[A-Za-z_][A-Za-z0-9_]*$`. Captured values are merged into the env of later commands, so an agent that captures into a reserved/malformed name is skipped at load time with an error in the reload result — on a `commands:` step and on an `onStop:` step alike. An `ssh` or `kubernetes` runner additionally re-checks every capture name at run start and refuses to start the run when one is not a shell identifier; that run-start check is kept as a backstop for agents loaded before the load-time rule, not removed with it. |
 | `transformer` | `ResultTransformer` | No | How to transform the output (default: Pass) |
 
 #### Source Types (SrcType)

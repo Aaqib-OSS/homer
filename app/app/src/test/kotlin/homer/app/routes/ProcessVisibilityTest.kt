@@ -119,14 +119,9 @@ import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
 /**
- * Task 6 (Plan 2, process visibility): the union rule (admin ∪ owner-match ∪
- * read-grant) enforced on the single-resource process routes
- * (status/kill/artifacts/artifacts-list/retry/answer), with denial mapped to
- * 404 so a foreign caller cannot distinguish "no permission" from "does not
- * exist". [installGrantsApp] mounts the production bearer provider, so
- * `call.principalName()` is exercised through the real Authentication
- * pipeline with a real [Authorizer] built from [TokenConfig]
- * grants.
+ * The union rule (admin ∪ owner-match ∪ read-grant) on the single-resource process routes (status, kill,
+ * artifacts, artifacts-list, retry, answer), with denial mapped to 404 so a foreign caller cannot tell "no
+ * permission" from "does not exist". [installGrantsApp] mounts the production bearer provider.
  */
 @OptIn(ExperimentalTime::class)
 class ProcessVisibilityTest {
@@ -298,7 +293,7 @@ class ProcessVisibilityTest {
 
                 assertEquals(HttpStatusCode.OK, res.status)
                 // Alice owns the failed run, not the run that blocked it: she reads the reason,
-                // never the id of a run she may not open. §12 rule 3, ADR-0058.
+                // never the id of a run she may not open. ADR-0047 rule 3, ADR-0058.
                 assertEquals("Lock skip (SKIP_CURRENT)", apiJson.decodeFromString<ProcessInfoResponse>(res.bodyAsText()).failureReason)
             }
         }
@@ -350,12 +345,8 @@ class ProcessVisibilityTest {
     @Test
     fun `status reports each execution's kind and the running command's kind and index`() =
         testApplication {
-            // Simulates a debug single-command run at cmdIndex 3: the debug path
-            // (AgentExecutor's selectedIndices) skips non-selected indices with a bare
-            // `continue`, so `executions` never grows past one entry, but
-            // commandArtifacts is still keyed by the command's real loop index — the
-            // status handler must resolve the *tracked* index (3), not
-            // `executions.size` (1).
+            // Debug single-command run at cmdIndex 3: `executions` holds one entry but commandArtifacts is keyed by the
+            // real loop index, so the status handler must resolve the tracked index (3), not `executions.size`.
             val tokens = mapOf("root" to adminToken)
             val pm = mockk<ProcessManager>(relaxed = true)
             val info =
@@ -397,8 +388,7 @@ class ProcessVisibilityTest {
     @Test
     fun `status withholds the runner alias from a non-admin caller and emits the backend type`() =
         testApplication {
-            // CWE-200: the alias is operator-chosen backend metadata
-            // (an ssh host, a Kubernetes pool, an external instance name). A read-granted
+            // CWE-200: the alias is operator-chosen backend metadata (ssh host, pool, instance name); a read-granted
             // non-admin who can see the run must get the generic backend type instead.
             val tokens = mapOf("reader" to readToken)
             application {
@@ -642,9 +632,8 @@ class ProcessVisibilityTest {
     @Test
     fun `artifacts foreign principal gets 404 before the artifact is even resolved`() =
         testApplication {
-            // Path validation happens before the process lookup (pure input
-            // validation), so it still runs; what must NOT happen is resolving
-            // the artifact path itself -- that's the visibility gate's job.
+            // Path validation is pure input validation and runs before the process lookup; resolving the artifact path
+            // itself is the visibility gate's job and must not happen.
             val artifactService = readyArtifactService()
             val tokens = mapOf("mallory" to foreignToken)
             application {
@@ -706,9 +695,8 @@ class ProcessVisibilityTest {
             }
 
             val res = client.post("/api/v1/processes/42/retry") { header(HttpHeaders.Authorization, "Bearer foreign-token") }
-            // Existence-hiding must win over the "cannot retry a non-terminal
-            // process" 409 -- a foreign caller must not learn the process even
-            // exists, let alone its current status.
+            // Existence-hiding must win over the non-terminal-process 409: a foreign caller must not learn the process
+            // exists, let alone its status.
             assertEquals(HttpStatusCode.NotFound, res.status)
             assertNotEquals(HttpStatusCode.Conflict, res.status)
         }
@@ -731,10 +719,8 @@ class ProcessVisibilityTest {
     @Test
     fun `retry owner with a RUN grant passes canRetry and reaches handleRetry`() =
         testApplication {
-            // Positive counterpart to the two denial tests above: proves the
-            // canRetry gate actually lets an authorized caller through (not just
-            // that it blocks everyone else) -- an inverted condition or a
-            // wrong-argument bug in the gate would otherwise go undetected.
+            // Positive counterpart to the two denial tests above: an inverted or wrong-argument canRetry gate would
+            // otherwise go undetected.
             val tokens = mapOf("alice" to ownerRunToken)
             val processExecutor = mockk<ProcessExecutor>(relaxed = true)
             coEvery { processExecutor.execute(any(), any()) } returns ProcessCreationResult(processId = 100)
@@ -917,10 +903,8 @@ class ProcessVisibilityTest {
             val processFactory = mockk<ProcessFactory>(relaxed = true)
             val fakeProcess = mockk<Process>(relaxed = true)
             val paramsSlot = slot<Map<String, String>>()
-            // Named matchers for every parameter: the real call supplies `owner` by name
-            // (leaving commandIndices/invocationChain/ancestorLockKeys defaulted), and a
-            // positional stub would otherwise bake the *stub's own* defaults in as literal
-            // expected values -- silently mismatching the real (non-null) owner.
+            // Named matchers for every parameter: a positional stub would bake the stub's own defaults in as expected
+            // values and mismatch the real call, which supplies `owner` by name.
             every {
                 processFactory.create(
                     agent = any(),
@@ -1121,11 +1105,8 @@ class ProcessVisibilityTest {
     @Test
     fun `status-all tag filter does not reveal a screened secret-derived tag`() =
         testApplication {
-            // End-to-end denial path for the tag-filter oracle (CWE-203): a run stores a tag
-            // derived from an input that is secret at run time. `?tag=<secret value>`
-            // must return total=0 / empty even though the row exists and matches in SQL —
-            // otherwise `total` is an oracle for the guessed secret. A sibling run carries
-            // a non-secret tag with the same key and is still returned for its own value.
+            // CWE-203: a run stores a tag derived from an input secret at run time; `?tag=<secret value>` must return
+            // total=0 though the row matches in SQL, else `total` is an oracle. A non-secret sibling still matches.
             val tokens = mapOf("reader" to readToken)
             val pm = PersistenceTestSupport.processManager()
             val secretValue = "supersecretvalue"
@@ -1167,7 +1148,7 @@ class ProcessVisibilityTest {
             assertEquals(0, deniedBody.total)
             assertTrue(deniedBody.processes.isEmpty(), "screened secret-derived tag must not be matchable: ${denied.bodyAsText()}")
 
-            // A non-secret tag on a sibling run still filters correctly (AC #3).
+            // A non-secret tag on a sibling run still filters correctly.
             val allowed =
                 client.get("/api/v1/status/all?tag=token:publicvalue") {
                     header(HttpHeaders.Authorization, "Bearer read-token")
@@ -1181,14 +1162,12 @@ class ProcessVisibilityTest {
     @Test
     fun `status-all rootProcessId omits a descendant owned by another principal`() =
         testApplication {
-            // The flow filter runs inside the same visibility union as every other
-            // predicate (ADR-0037): asking for root N's flow must not hand a caller the
-            // segments of it that belong to somebody else.
+            // The flow filter runs inside the same visibility union as every other predicate (ADR-0037): root N's flow
+            // must not hand a caller segments that belong to somebody else.
             val tokens = mapOf("reader" to readToken)
             val pm = PersistenceTestSupport.processManager()
-            // The foreign segment runs a different agent: the reader's grant is on
-            // "deploy" alone, so an alice-owned *deploy* run would still be visible
-            // through the read-grant branch of the union and prove nothing.
+            // The foreign segment runs a different agent: an alice-owned *deploy* run would be visible through the
+            // reader's read grant on "deploy" and prove nothing.
             val root = pm.obtainProcessId(NewRunRecord("deploy", owner = "reader"))
             val mine = pm.obtainProcessId(NewRunRecord("deploy", owner = "reader", parentProcessId = root, rootProcessId = root))
             pm.obtainProcessId(NewRunRecord("other", owner = "alice", parentProcessId = root, rootProcessId = root))
@@ -1216,7 +1195,7 @@ class ProcessVisibilityTest {
     fun `status-all with a rootProcessId the caller cannot see returns an empty list`() =
         testApplication {
             // A root owned by another principal must read exactly like an id that does
-            // not exist — an error or a non-empty list would leak its existence (§12).
+            // not exist — an error or a non-empty list would leak its existence (ADR-0047 rule 3).
             val tokens = mapOf("reader" to readToken)
             val pm = PersistenceTestSupport.processManager()
             // Same reason as above: a foreign flow has to run an agent the caller
@@ -1246,16 +1225,12 @@ class ProcessVisibilityTest {
     @Test
     fun `status-all rootProcessId filter is gated on the requested root's visibility`() =
         testApplication {
-            // [information_disclosure / CWE-200] Existence-oracle denial: a caller who can
-            // see one descendant of a hidden flow must not be able to test guessed root
-            // ids by filtering on them. The filter is honoured only when the root row
-            // exists AND is visible under the union rule, so a foreign id reads exactly
-            // like an empty flow.
+            // CWE-200 existence oracle: a caller seeing one descendant of a hidden flow must not test guessed root ids;
+            // the filter is honoured only for a visible, existing root, so a foreign id reads as an empty flow.
             val tokens = mapOf("reader" to readToken)
             val pm = PersistenceTestSupport.processManager()
-            // The hidden flow: alice's root on an agent the reader holds no grant on, with
-            // one deploy-agent descendant — visible on its own grant, so the reader does
-            // hold a toehold in a flow whose root they cannot see.
+            // The hidden flow: alice's root on an agent the reader has no grant on, with one deploy-agent descendant
+            // the reader can see, a toehold in a flow whose root they cannot.
             val foreignRoot = pm.obtainProcessId(NewRunRecord("other", owner = "alice"))
             val toehold =
                 pm.obtainProcessId(
@@ -1350,11 +1325,8 @@ class ProcessVisibilityTest {
     @Test
     fun `status-all nulls rootProcessId on a visible row whose flow root the caller cannot see`() =
         testApplication {
-            // CWE-200 denial path: the row's visibility check passes (a READ grant on
-            // its agent), but the rootProcessId it carries names a run owned by another
-            // principal on an agent the caller holds no grant on. Emitting the id would
-            // leak a foreign flow root's existence, so it must read as unknown (null) —
-            // the same value an evicted root already produces.
+            // CWE-200: the row is visible but its rootProcessId names a foreign run on an agent the caller has no grant
+            // on; emitting it would leak that root's existence, so it reads as unknown (null), as an evicted root does.
             val tokens = mapOf("reader" to readToken)
             val pm = PersistenceTestSupport.processManager()
             val foreignRoot = pm.obtainProcessId(NewRunRecord("other", owner = "alice"))
@@ -1385,9 +1357,8 @@ class ProcessVisibilityTest {
     @Test
     fun `status nulls rootProcessId when the flow root is not visible to the caller`() =
         testApplication {
-            // CWE-200 denial path for GET /status/{id}: the reader may see the
-            // descendant (READ grant on its agent) but not the foreign root the row
-            // points at, so the root id is nulled server-side.
+            // CWE-200 for GET /status/{id}: the reader sees the descendant but not the foreign root, so the root id is
+            // nulled server-side.
             val tokens = mapOf("reader" to readToken)
             val pm = PersistenceTestSupport.processManager()
             val foreignRoot = pm.obtainProcessId(NewRunRecord("other", owner = "alice"))
@@ -1417,10 +1388,8 @@ class ProcessVisibilityTest {
     @Test
     fun `status-all nulls rootProcessId when the flow root row is gone`() =
         testApplication {
-            // The fail-closed twin of the foreign-root denial above: an evicted or
-            // record-purged root row is indistinguishable from an invisible one — both
-            // null the id, the documented "flow root unknown" meaning (ADR-0058). Pinned
-            // so the two read-path gates cannot drift apart on a missing row.
+            // Fail-closed twin of the foreign-root denial above: an evicted or purged root row reads like an invisible
+            // one, null ("flow root unknown", ADR-0058), so the two read-path gates cannot drift apart.
             val tokens = mapOf("reader" to readToken)
             val pm = PersistenceTestSupport.processManager()
             // Root 9999 was never inserted: getProcessInfo finds no row for it.
@@ -1496,9 +1465,8 @@ class ProcessVisibilityTest {
     @Test
     fun `status nulls rootProcessId when the flow root row is gone`() =
         testApplication {
-            // Same fail-closed case on GET /status/{id}: the row itself is visible, but
-            // the root row it points at no longer exists, so the id reads as unknown
-            // rather than guessing (§12: fail closed).
+            // Same fail-closed case on GET /status/{id}: the root row the visible row points at no longer exists, so
+            // the id reads as unknown (ADR-0047 rule 3).
             val tokens = mapOf("reader" to readToken)
             val pm = PersistenceTestSupport.processManager()
             val mine = pm.obtainProcessId(NewRunRecord("deploy", owner = "reader", parentProcessId = 9999, rootProcessId = 9999))
@@ -1906,11 +1874,9 @@ class ProcessVisibilityTest {
     // ---------- Continuation input inheritance across an owner boundary (ADR-0101) ----------
 
     /**
-     * A continuation inherits its origin run's stored inputs only while the two agree on the
-     * owner. Here the origin row belongs to another principal, so the fired run must carry none
-     * of its inputs — asserted on the fired run's own status response, the surface an operator
-     * reads (§12 rule 3). The same path is then driven with a matching owner, so the denial
-     * assertion cannot pass vacuously.
+     * A continuation inherits its origin run's stored inputs only while both agree on the owner: with a foreign
+     * origin row the fired run carries none (ADR-0047 rule 3), asserted on its own status response. The same path
+     * with a matching owner keeps the denial assertion from passing vacuously.
      */
     @Test
     fun `a continuation whose origin run belongs to another owner inherits none of its inputs`() =
@@ -2158,10 +2124,8 @@ class ProcessVisibilityTest {
                 .prepareGet("/api/v1/stream/agents") {
                     header(HttpHeaders.Authorization, "Bearer read-token")
                 }.execute { response ->
-                    // Reload touches only a non-granted agent: the frame must still
-                    // arrive (it is the reload-completed signal) with empty lists —
-                    // suppressing it would both break consumers that await the event
-                    // and let the silence reveal that some hidden agent changed.
+                    // A reload touching only a non-granted agent must still send the frame (the reload-completed
+                    // signal) with empty lists: dropping it breaks awaiting consumers and reveals a hidden change.
                     val dataLine = firstAgentReloadDataLine(broadcaster, response, added = listOf("other"))
                     assertTrue(dataLine != null, "reload frame must be sent even when the filtered diff is empty")
                     assertTrue("other" !in dataLine, "other must be filtered out: $dataLine")

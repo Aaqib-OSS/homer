@@ -16,11 +16,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Behavioural tests for the materialized `homer-inbox` helper (the shell script itself, run
- * through `/bin/sh`). A stub `curl` on PATH records its arguments and returns a canned body and
- * HTTP status, so the tests cover the script's own logic: the plain mode's exit 0 / exit 2, and
- * the hook mode's contract with Claude Code — the body on 200, nothing on 204, and exit 1 (a
- * non-blocking hook error, never 2) with a `homer-inbox:` reason on any failure. See ADR-0097.
+ * Behavioural tests for the materialized `homer-inbox` helper (run through `/bin/sh`, with a stub `curl` returning a
+ * canned body and status): plain mode's exit 0 / 2, and hook mode's contract with Claude Code: the body on 200,
+ * nothing on 204, exit 1 (never 2) with a `homer-inbox:` reason on failure.
  */
 class HomerInboxScriptTest {
     private data class Run(
