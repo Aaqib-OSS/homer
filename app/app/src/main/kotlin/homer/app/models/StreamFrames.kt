@@ -3,10 +3,9 @@ package homer.app.models
 import kotlinx.serialization.Serializable
 
 /**
- * The `data:` payloads of the SSE frames `routes/StreamingRoutes.kt` sends, as `@Serializable` classes so
- * the `dto-contract` check can compare them with their mirrors in `console/types/homer.ts` (ADR-0082).
- * Fields are declared in wire order and encoded with [LlmEventJson] — compact, explicit nulls — so a
- * nullable field is always present as `null` and the bytes are identical to the `buildJsonObject` form.
+ * The `data:` payloads of the SSE frames `routes/StreamingRoutes.kt` sends, checked against
+ * `console/types/homer.ts` by `dto-contract` (ADR-0082). Declared in wire order and encoded with
+ * [LlmEventJson], so a nullable field is always present as `null`.
  */
 @Serializable
 data class ProcessStatusFrame(

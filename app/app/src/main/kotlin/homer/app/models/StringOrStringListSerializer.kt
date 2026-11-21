@@ -1,12 +1,8 @@
 package homer.app.models
 
 /**
- * Accepts a field as either a scalar string (mapped to a single-element list) or a
- * list of strings (passed through unchanged). Internal representation is always
- * List<String>.
- *
- * Unlike [CmdArgsSerializer], a scalar maps to `listOf(content)` — it must NOT
- * POSIX-tokenize, or a path containing spaces would be wrongly split into multiple values.
+ * Accepts a scalar string (one-element list) or a list of strings. Unlike [CmdArgsSerializer] a
+ * scalar is never POSIX-tokenized, so a path containing spaces stays one value.
  */
 object StringOrStringListSerializer : ScalarOrStringListSerializer(
     "homer.app.models.StringOrStringList",

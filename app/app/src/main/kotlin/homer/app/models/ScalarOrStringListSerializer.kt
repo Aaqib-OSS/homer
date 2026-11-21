@@ -21,12 +21,9 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
- * Base of the serializers that accept a field as either a scalar string (mapped by [fromScalar])
- * or a list of strings (passed through unchanged); always serialized as a list. [subject] names
- * the field and [elementPrefix] leads the element errors.
- *
- * Uses a CONTEXTUAL descriptor so kaml does not pre-validate scalar vs list before delegating to
- * this deserializer.
+ * Accepts a field as a scalar string (mapped by [fromScalar]) or a list of strings; always
+ * serialized as a list. [subject] names the field and [elementPrefix] leads element errors.
+ * Its CONTEXTUAL descriptor stops kaml pre-validating scalar vs list.
  */
 abstract class ScalarOrStringListSerializer(
     serialName: String,

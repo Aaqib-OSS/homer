@@ -38,12 +38,10 @@ data class ProcessInfoResponse(
     val executions: List<ExecutionInfoResponse>,
     val currentCommand: String? = null,
     val currentCommandStart: Long? = null,
-    // Tag of the command running now (`cmd`, `script`, `claude`, `codex`, `opencode`,
-    // `agent`, `langgraph`, `runnerCmd`), from in-memory tracking; null when nothing
-    // runs or after a restart.
+    // Tag of the command running now (`cmd`, `claude`, `agent`, `langgraph`, ...); in-memory,
+    // so null when nothing runs or after a restart.
     val currentCommandKind: String? = null,
-    // Index of the command running now, from in-memory tracking; null when nothing
-    // runs or after a restart.
+    // Index of the command running now; in-memory, null when nothing runs or after a restart.
     val currentCommandIndex: Int? = null,
     val purgeAt: Long? = null, // Unix epoch seconds; null if not yet scheduled or process is active
     val inputParams: Map<String, String> = emptyMap(),
@@ -54,10 +52,8 @@ data class ProcessInfoResponse(
     // Count of OPEN operator questions waiting on this process (ADR-0019).
     val openQuestions: Int = 0,
     val owner: String? = null,
-    // Deep link to this run's Langfuse trace. Null unless the run has a trace id
-    // AND `langfuse.serverUrl` + `langfuse.projectId` are both configured —
-    // Langfuse derives the project from the API keys and never sends it back, so
-    // without the configured id there is no URL to build.
+    // Deep link to this run's Langfuse trace; null without a trace id or without both
+    // `langfuse.serverUrl` and `langfuse.projectId` configured.
     val langfuseTraceUrl: String? = null,
     // Id of the run that caused this one; null at the root of a flow. See ADR-0058.
     val parentProcessId: Int? = null,
@@ -70,14 +66,11 @@ data class ProcessInfoResponse(
     // Subject tags carried by this run: `key:value` strings resolved from inputs at
     // start and/or declared at run time. Filter runs by them with `?tag=`. See ADR-0060.
     val tags: List<String> = emptyList(),
-    // Why the run ended FAILED before any of its commands started (a claim timeout, a
-    // SKIP_CURRENT lock skip, a parallel-run cap or a full queue). Null for every other
-    // failure. The run that blocked this one is named inside the text only for a caller who
-    // may see it. See ADR-0058.
+    // Why the run failed before any command started (claim timeout, lock skip, run cap, full
+    // queue); null otherwise. Names a blocking run only to a caller who may see it. ADR-0058.
     val failureReason: String? = null,
-    // Why and where this run was stopped gracefully — the cause, the step it interrupted and
-    // how its `onStop:` steps ended. Null for a run no graceful stop ended; the run's status
-    // is still `FAILED`. See ADR-0108.
+    // Why and where a graceful stop ended this run (cause, interrupted step, `onStop:` outcome);
+    // null otherwise. The status is still `FAILED`. ADR-0108.
     val stop: RunStop? = null,
 )
 
@@ -247,9 +240,8 @@ data class AgentInfo(
     // The agent's optional group label, null when unset. The console renders one
     // tab per distinct non-null value; ungrouped agents appear under "All" only.
     val group: String? = null,
-    // Canonical declared inputs. `queryParams` is the deprecated alias kept for
-    // older clients; new-style agents (`inputs:`) populate `inputs` only, so the
-    // list endpoint MUST send both or a migrated agent shows no parameters.
+    // Declared inputs. `queryParams` is the alias older clients read; the list endpoint
+    // must send both or a migrated agent shows no parameters. ADR-0031.
     val inputs: List<Param>? = null,
     val queryParams: List<Param>? = null,
     val scriptCount: Int,
@@ -272,7 +264,7 @@ data class AgentInfo(
                 description = agent.description,
                 group = agent.group,
                 inputs = agent.inputs?.map { it.redactedForSummary() },
-                // The legacy alias is still served to older clients (see the field above).
+                // The `queryParams` alias stays populated for older clients. ADR-0031.
                 queryParams = @Suppress("DEPRECATION") agent.queryParams?.map { it.redactedForSummary() },
                 scriptCount = agent.commands.size,
                 cron = cron,
@@ -296,10 +288,7 @@ data class LoginRequest(
     val password: String,
 ) {
     init {
-        // Cap inbound field sizes so a pathological login body can't drag the
-        // bcrypt verify path or the JSON decoder. Bcrypt itself truncates to
-        // 72 bytes after key-stretch, but the bytes still allocate; 256 / 1024
-        // are well above any real-world value and small enough to be cheap.
+        // Caps field sizes so an oversized login body cannot burden bcrypt verify or the JSON decoder. CWE-400.
         require(username.length <= MAX_USERNAME_LEN) {
             "LoginRequest.username must be <= $MAX_USERNAME_LEN chars; got ${username.length}"
         }
