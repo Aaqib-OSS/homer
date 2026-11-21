@@ -24,9 +24,8 @@ class RunnerProtocolRequestParsingTest {
 
     @Test
     fun `a next body from an instance newer than this server is decoded, not refused`() {
-        // The instance and the Homer it reports to are upgraded independently, so a field this
-        // binary does not know — at either level of the body — is ignored: a refused poll would
-        // cost the run the op result the instance already carried here (ADR-0066).
+        // Instance and Homer upgrade independently, so an unknown field at either level is ignored: a refused poll
+        // would cost the run the op result the instance already carried (ADR-0066).
         val request =
             nextRequest(
                 """{"completed":{"opId":"op-1","exitCode":0,"stdoutChunks":2,"stderrChunks":1,"future":true},"future":1}""",

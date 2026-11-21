@@ -45,13 +45,9 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
- * The runtime counterpart of the architecture module's static `RouteAuthorizationTest`: boots the
- * real server module with every optional surface on (bearer + session auth, MCP, two external runner
- * domains), enumerates every registered route, requires each to have a row in [ROUTE_AUTHZ], and
- * drives every row's denial cases against seeded data the no-grant credentials do not own (root
- * CLAUDE.md §12 rules 3 and 8). The MCP tool sets are held to [OPERATOR_MCP_TOOLS] and
- * [QUESTIONS_MCP_TOOLS] the same way. Divergences live in [KNOWN_GAPS], each of which merges only
- * with an open GitHub issue tracking its fix. See ADR-0112.
+ * Runtime counterpart of the architecture module's static `RouteAuthorizationTest`: boots the real server with
+ * every optional surface on, requires a [ROUTE_AUTHZ] row per registered route and drives its denial cases
+ * (ADR-0112); MCP tools are held to [OPERATOR_MCP_TOOLS] and [QUESTIONS_MCP_TOOLS]; divergences live in [KNOWN_GAPS].
  */
 @ExtendWith(ResetDrainingExtension::class)
 class RouteAuthorizationMatrixTest {
@@ -290,7 +286,7 @@ class RouteAuthorizationMatrixTest {
 
     /**
      * Whether the no-grant `404` [hiddenBody] for the seeded resource differs from the answer for a
-     * resource that does not exist: a denial must hide existence (§12 rule 3), and a `404` that only
+     * resource that does not exist: a denial must hide existence (ADR-0047 rule 3), and a `404` that only
      * reports, say, a missing artifact file would otherwise pass for a denial.
      */
     private suspend fun ApplicationTestBuilder.existenceLeak(
@@ -410,7 +406,8 @@ class RouteAuthorizationMatrixTest {
                 ?.get("isError")
                 ?.jsonPrimitive
                 ?.content == "true"
-        // Refused exactly like a resource (or, for an unlisted tool, a tool name) that does not exist (§12 rule 3).
+        // Refused exactly like a resource (or, for an unlisted tool, a tool name) that does not exist (ADR-0047 rule
+        // 3).
         val ghost = seeds.ghost()
         val ghostTool = if (tool.denial == McpDenial.UNLISTED) ghost.agentName else tool.tool
         val unknown = seeds.fromGhost(ghost, callTool(path, bearer, ghostTool, ghost, tool.arguments).toString())

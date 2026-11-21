@@ -336,9 +336,8 @@ class RunnerProtocolRoutesTest {
                     ) { header(HttpHeaders.Authorization, "Bearer greeter-token") }
                 assertEquals(HttpStatusCode.OK, claimed.status)
                 val session = run.await()
-                // WorkspaceConfigFactory already layered the domain env below the agent's own
-                // env for an alias-filtered run; a wrapper here would re-apply it above the
-                // agent env and drop the agent's override.
+                // WorkspaceConfigFactory already layered the domain env below the agent's for an alias-filtered run; a
+                // wrapper here would re-apply it above the agent env and drop the agent's override.
                 assertTrue(session is ExternalRunnerSession, "an alias-filtered claim is delivered unwrapped")
                 assertNull(session.env["GREETING"], "the domain env must not be layered a second time")
                 session.close()
@@ -603,9 +602,8 @@ class RunnerProtocolRoutesTest {
     /** Registers, parks a run, claims it and hands back the session plus its id — the preamble every transfer test needs. */
     private suspend fun ApplicationTestBuilder.claimedSession(): Pair<String, ExternalRunnerSession> {
         val id = registered().instanceId
-        // params() builds a mockk<WorkspaceConfig>; evaluated here on the test thread so
-        // MockK's first-use ByteBuddy bootstrap never lands inside the async producer's
-        // timed rendezvous with the claim call below (fix round 1, item 3).
+        // params() builds a mockk<WorkspaceConfig>; evaluated on the test thread so MockK's first-use ByteBuddy
+        // bootstrap never lands inside the async producer's timed rendezvous with the claim call below.
         val p = params()
         return coroutineScope {
             val run = async(Dispatchers.Default) { queue.awaitClaim(p, RunnerFilter.Tags(setOf("gpu")), 30.seconds) }
@@ -914,9 +912,8 @@ class RunnerProtocolRoutesTest {
                                 header(HttpHeaders.Authorization, "Bearer slow-token")
                             }.bodyAsText(),
                     )
-                // A perfectly valid tar, dribbled: it stays far under maxTransferBytes and the
-                // rest arrives only after the answer, so the 408 cannot wait for the peer — a
-                // deadline that only fires once the blocked read returns would hang here.
+                // A valid tar, dribbled: it stays under maxTransferBytes and the rest arrives only after the answer, so
+                // a deadline that fires only once the blocked read returns would hang here.
                 val body = tarOf(tmp.resolve("stallsrc").createDirectories().also { it.resolve("f").writeText("x") })
                 val answered = CompletableDeferred<Unit>()
                 val stalling =
@@ -1135,9 +1132,8 @@ class RunnerProtocolRoutesTest {
                                         channel.writeByteArray(body.copyOfRange(0, 1))
                                         channel.flush()
                                         resume.await()
-                                        // No flush after the last write: the server closes the stream once the
-                                        // tar ends, and the test engine's counted flush throws if that close lands
-                                        // before it returns (GH #332). The engine flushes on return instead.
+                                        // No flush after the last write: the server closes the stream at tar end, and
+                                        // the engine's counted flush throws if that lands first; it flushes on return.
                                         channel.writeByteArray(body.copyOfRange(1, body.size))
                                     }
                                 },
@@ -1437,7 +1433,7 @@ class RunnerProtocolRoutesTest {
             assertNull(workers.instance(id), "an instance silent past the heartbeat timeout is swept")
 
             // Its absence is answered like any other unknown id — the same 404, naming nothing —
-            // and the call must not put the instance back (§12 rule 3).
+            // and the call must not put the instance back (ADR-0047 rule 3).
             assertEquals(
                 HttpStatusCode.NotFound,
                 client
@@ -1468,9 +1464,8 @@ class RunnerProtocolRoutesTest {
                     setBody(body)
                 }
 
-                // One byte over the wire cap is refused before the sink sees it, and consumes no
-                // seq: the same chunk of exactly the cap is then served. The fixture's own
-                // 1024-byte output cap drops it afterwards, so only the status is asserted here.
+                // One byte over the wire cap is refused before the sink sees it and consumes no seq: a chunk of
+                // exactly the cap is then served. The 1024-byte output cap drops it, so only the status is asserted.
                 assertEquals(HttpStatusCode.PayloadTooLarge, chunk(0, ByteArray(RunnerProtocol.MAX_OUTPUT_CHUNK_BYTES + 1)).status)
                 assertEquals(HttpStatusCode.Accepted, chunk(0, ByteArray(RunnerProtocol.MAX_OUTPUT_CHUNK_BYTES)).status)
 

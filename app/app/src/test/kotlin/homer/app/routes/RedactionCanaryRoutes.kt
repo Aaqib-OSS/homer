@@ -20,18 +20,9 @@ internal enum class CanaryPayload {
 }
 
 /**
- * One route, classified for the canary sweep: a [payload] plus the request that reaches its body, or
- * an exemption (`payload == null`) with [note] saying why the route carries no run data.
- *
- * [target] and [body] fill the route's placeholders from the canary run the way `ROUTE_AUTHZ`'s samples
- * do (`{processId}`, `{watchedId}`, `{questionId}`, `{dispatchId}`, `{continuationId}`, `{agentName}`,
- * `{...}`); [expect] is the status the probe must answer before its body is read. [startsRun] marks a
- * row whose request launches a run: the sweep waits for that run, so none outlives the test, and reads
- * its stored row back.
- *
- * A route the canary agent cannot exercise — a callback credential the test does not hold, a
- * runner-protocol endpoint, a command type the agent does not declare — is exempt. An exemption is a
- * decision, so it states its reason: `SecretRedactionCanaryTest` fails on a blank one.
+ * One route classified for the canary sweep: a [payload] plus the request reaching its body, or an exemption
+ * (`payload == null`) with a non-blank [note] saying why. [target] and [body] fill placeholders as `ROUTE_AUTHZ`
+ * does; [expect] is the status before the body is read; a [startsRun] row launches a run the sweep waits for.
  */
 internal data class CanaryRoute(
     val route: String,

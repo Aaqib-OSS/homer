@@ -58,36 +58,9 @@ import kotlin.time.Duration.Companion.seconds
 import homer.app.models.Workspace as WorkspaceAgentConfig
 
 /**
- * The redaction canary: one run started with a canary secret input and a canary `@SYSENV`-backed
- * global, then every response body and SSE frame that run can produce, read back and asserted
- * canary-free.
- *
- * The payloads come from [CANARY_ROUTES], one row per registered route, so a new response type is
- * either covered here or fails `` `every registered route has exactly one canary row and every row
- * names a registered route` `` (app/CLAUDE.md, "Adding a new HTTP endpoint"). A new JSON or raw-body
- * response type is covered by adding its row; a new SSE stream also needs its stop marker in
- * [sseStop], a driver event in [drive] when it is a broadcast stream, and an entry in the exact
- * stream list of `no SSE frame of the four streams carries either canary`. Removing a redaction
- * call must fail this test: the two sites it exercises per request are `redactInputParams` (the
- * run's stored inputs, `ResponseMapping.kt`) and `redactStoredParams` (a dispatch's and a
- * continuation's stored params, `DispatchContinuationRoutes.kt`).
- *
- * Two canaries, because they enter the run by different routes and are masked by different
- * mechanisms: [secretCanary] is a `secret: true` input value, [sysEnvCanary] is a `globalEnv` value
- * the operator declared `@SYSENV`-backed, so its name is in every run's secret screen.
- *
- * The run is seeded in two phases, and the second one is load-bearing. A `tags.fromInputs` tag may
- * only name a *declared, non-secret* input (AGENT.md), so the tag that carries the canary exists
- * only while its input is non-secret — and while it is, `redactInputParams` would echo that input's
- * value in the clear. Rewriting `agent.yaml` to make the input `secret: true` and reloading is the
- * documented "flipped to `secret: true` after the run" case: the stored snapshot then masks the
- * original secret input, the current flag masks the flipped one, and `screenTags` drops the tag that
- * contains either. See ADR-0052 and ADR-0060.
- *
- * The run's own output is deliberately canary-free. `/logs` and `/artifacts` are never masked
- * (ADR-0070's accepted residual), so a canary written to stdout would leave this test with nothing
- * to assert but a leak the ticket forbids fixing here; the script writes `hi` instead. What the last
- * test asserts about that output is that it is real.
+ * The redaction canary: one run with a canary secret input and a `@SYSENV`-backed global, then every response
+ * body and SSE frame it can produce, read back and asserted canary-free. Payloads come from [CANARY_ROUTES]; a
+ * new stop marker ([sseStop]) or driver event ([drive]) is added here (app/CLAUDE.md, "Adding a new HTTP endpoint").
  */
 @ExtendWith(ResetDrainingExtension::class)
 class SecretRedactionCanaryTest {
@@ -245,14 +218,12 @@ class SecretRedactionCanaryTest {
                 .getValue("processId")
                 .jsonPrimitive.int
         awaitStatus(processId, ProcessStatus.FINISHED)
-        // The response above echoed `TAGGED_IN` in the clear, which is exactly what a declared
-        // non-secret input is for; every read below happens after the flip, so the sweep asserts
-        // what the API serves for this run *now* — the case ADR-0052 exists for.
+        // The response above echoed `TAGGED_IN` in the clear, as a declared non-secret input should; every read below
+        // follows the flip, so the sweep asserts what the API serves for this run now (ADR-0052).
         flipCanaryAgentToSecretTagged()
 
-        // The pending resources hang off runs created after the reload: `/agents/reload` kills the
-        // CREATED runs of an agent it updated, so a run of the canary agent made before the flip
-        // would be gone by the time the message and question rows are probed.
+        // The pending resources hang off runs created after the reload: `/agents/reload` kills the CREATED runs of an
+        // agent it updated, so a run made before the flip would be gone by the time they are probed.
         val processes = app.get<ProcessManager>()
         val watched = processes.obtainProcessId(NewRunRecord(CANARY_AGENT, owner = ADMIN))
         val questions = app.get<QuestionsService>()
@@ -271,11 +242,9 @@ class SecretRedactionCanaryTest {
     }
 
     /**
-     * Rewrites the canary agent so its tag input is secret too, and reloads.
-     *
-     * This is what makes the tag assertion non-vacuous — see the class KDoc — and what puts the
-     * flipped input into `redactInputParams`' masking set. The reload also kills the CREATED runs of
-     * the agent it updated, which is why the seeded resources are created afterwards.
+     * Rewrites the canary agent so its tag input is secret too, and reloads. A `tags.fromInputs` tag may only name a
+     * non-secret input, so this flip after the first reads makes the tag assertion non-vacuous (ADR-0052, ADR-0060).
+     * The reload also kills the CREATED runs of the agent, so the seeded resources are created afterwards.
      */
     private suspend fun ApplicationTestBuilder.flipCanaryAgentToSecretTagged() {
         writeAgent(phaseOne = false)
@@ -404,7 +373,7 @@ class SecretRedactionCanaryTest {
     }
 
     /**
-     * The frames [row]'s stream writes, read until the marker its own end carries: `log.end` /
+     * The frames [row]'s stream writes, read up to the marker its own end carries: `log.end` /
      * `llm.end` for the two tails, a sentinel event for the two broadcast streams. The read is
      * bounded, so a stream that never reaches its marker is a failure ([sseProbe]) rather than a hang.
      */
@@ -552,10 +521,8 @@ class SecretRedactionCanaryTest {
             agentsSearchPath = File(dir, "agents").absolutePath,
             workspaceRootPath = File(dir, "workspace").absolutePath,
             databasePath = File(dir, "homer.db").absolutePath,
-            // The operator's `@SYSENV`-backed global. `configureServer` does not re-resolve it, so
-            // the value here is the run's; the name set is what `SysEnvResolver.secretNamesFor`
-            // produces for `@SYSENV:CANARY_TOKEN`, and it is what makes the value a needle in every
-            // screen the run builds.
+            // The operator's `@SYSENV`-backed global; `configureServer` does not re-resolve it, so the value is
+            // the run's. Its name set (`SysEnvResolver.secretNamesFor`) makes it a needle in every screen.
             globalEnv = mapOf(SYSENV_KEY to sysEnvCanary),
             sysEnvBackedGlobalEnvNames = setOf(SYSENV_KEY),
             // The tag the canary run carries, so `GET /costs/by-tag` screens its values on read.

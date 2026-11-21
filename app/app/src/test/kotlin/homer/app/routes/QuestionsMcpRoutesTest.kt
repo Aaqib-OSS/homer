@@ -272,9 +272,8 @@ class QuestionsMcpRoutesTest {
             val question = runBlocking { service.ask(1, "Proceed?") }
             application { wireQuestionsMcp(service) }
 
-            // check_answer sends no progress notifications, so a hold longer than
-            // the 15 s heartbeat leaves the channel genuinely idle: the ping is
-            // what keeps a spec-compliant client from timing the request out.
+            // check_answer sends no progress notifications, so a hold past the 15 s heartbeat leaves the channel idle:
+            // the ping is what keeps a spec-compliant client from timing the request out.
             val response =
                 withTimeout(30_000) {
                     client.mcpPost(
@@ -371,10 +370,8 @@ class QuestionsMcpRoutesTest {
             val token = runBlocking { service.registerProcess(1, "agent-a") }
             application { wireQuestionsMcp(service, holdChunkSec = 1) }
 
-            // The answerer works against server-side state as a sibling of the
-            // request — the test client hands over a POST response only after
-            // the handler completes, so it cannot answer from inside a body
-            // reader. Held for >1 chunk so a progress notification fires first.
+            // The answerer is a sibling of the request: the test client hands over a POST response only after the
+            // handler completes. Held for >1 chunk so a progress notification fires first.
             coroutineScope {
                 val answerer =
                     launch {
