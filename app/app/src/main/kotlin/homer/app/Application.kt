@@ -83,7 +83,7 @@ fun main(args: Array<String>) {
         if (System.getProperty(key) == null) System.setProperty(key, value)
     }
 
-    val resolvedConfig = loadStartupConfig(args) ?: return
+    val resolvedConfig = loadStartupConfig(args, hardenJvm = ::hardenServerJvm) ?: return
 
     logger.info(
         "Starting server on port {} with workspace: {}",
@@ -98,16 +98,14 @@ fun main(args: Array<String>) {
 }
 
 /**
- * Reads, parses and `@SYSENV`-resolves the config file named by `args[0]`. Returns `null`
- * after logging and printing why startup cannot continue.
+ * Reads and parses the config file named by `args[0]`, runs [hardenJvm], then `@SYSENV`-resolves it.
+ * Returns `null` after logging and printing why startup cannot continue.
  */
 internal fun loadStartupConfig(
     args: Array<String>,
     sysEnvResolver: SysEnvResolver = SysEnvResolver(),
-): AppConfig? {
-    val config = readStartupConfig(args) ?: return null
-    return resolveStartupConfig(config, sysEnvResolver)
-}
+    hardenJvm: () -> Unit,
+): AppConfig? = readStartupConfig(args)?.also { hardenJvm() }?.let { resolveStartupConfig(it, sysEnvResolver) }
 
 /** Loads the config file named by `args[0]`, capped at the bootstrap size; `null` = refused. */
 private fun readStartupConfig(args: Array<String>): AppConfig? {

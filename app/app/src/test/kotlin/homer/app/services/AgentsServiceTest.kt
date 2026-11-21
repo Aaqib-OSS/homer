@@ -1997,7 +1997,7 @@ class AgentsServiceTest {
                "globalEnv": $globalEnv}""",
         )
         return try {
-            assertNotNull(loadStartupConfig(arrayOf(configFile.toString())))
+            assertNotNull(loadStartupConfig(arrayOf(configFile.toString()), hardenJvm = {}))
         } finally {
             Files.delete(configFile)
         }

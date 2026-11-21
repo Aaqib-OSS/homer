@@ -4,6 +4,7 @@ import com.github.ajalt.clikt.testing.CliktCommandTestResult
 import com.github.ajalt.clikt.testing.test
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import homer.app.infra.Dumpability
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.io.TempDir
 import java.net.InetAddress

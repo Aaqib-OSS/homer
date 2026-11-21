@@ -50,7 +50,7 @@ class ApplicationRunnerEnvSecretNamesTest {
             }
             """.trimIndent(),
         )
-        return assertNotNull(loadStartupConfig(arrayOf(file.absolutePath), hostEnv))
+        return assertNotNull(loadStartupConfig(arrayOf(file.absolutePath), hostEnv, hardenJvm = {}))
     }
 
     private fun envOf(

@@ -87,6 +87,7 @@ This document provides comprehensive documentation for configuring the Homer ser
   - [`ssh` runner](#ssh-runner)
   - [Runner claim queue](#runner-claim-queue)
   - [External runners (pull mode)](#external-runners-pull-mode)
+- [Server process hardening](#server-process-hardening)
 - [Logging](#logging)
 - [Configuration Best Practices](#configuration-best-practices)
 - [See Also](#see-also)
@@ -4050,6 +4051,27 @@ the sum of every agent's `maxParallelRuns`, and there is no way to reserve a
 share of the queue for one agent. Size `maxPendingRunnerClaims` at or above
 that sum (default `maxParallelRuns` is `10` per agent) and the bound becomes a
 backstop that only trips on misconfiguration, never in steady state.
+
+## Server process hardening
+
+On Linux the server JVM makes itself non-dumpable (`prctl(PR_SET_DUMPABLE, 0)`)
+once its config file parses, before it resolves any `@SYSENV:` reference or
+starts a run. Agent commands on the `local` runner and the LangGraph
+inspect/state interpreters run as Homer's own user, so without this they could
+read every server secret from `/proc/<server pid>/environ` or ptrace the
+server. Spawned processes are unaffected, because `execve` resets the flag for
+the child. The startup log says which way it went: `Server JVM is non-dumpable`
+at INFO, a warning on a host without `prctl` (macOS development), and an ERROR
+when the call fails on Linux. Startup goes on in every case.
+
+The cost is operational. The server writes no core dump, and attaching to it as
+Homer's user (`jcmd`, `jstack`, `jmap`, a profiler, `gdb`) may be refused. Attach
+as root (`docker exec -u root …`) or with `CAP_SYS_PTRACE`. A JVM-written heap
+dump (`-XX:+HeapDumpOnOutOfMemoryError`) still works. The image's entrypoint
+passes `--enable-native-access=ALL-UNNAMED` for the `prctl` call; a JVM started
+without it still hardens and prints a JDK warning. What this does not cover is
+listed as AR-13 in [`SECURITY.md`](../SECURITY.md#accepted-risks). See
+[ADR-0078](../docs/adr/0078-runner-jvm-is-non-dumpable.md).
 
 ## Logging
 
