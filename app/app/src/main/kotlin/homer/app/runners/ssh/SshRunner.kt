@@ -42,7 +42,7 @@ class SshRunner(
     override suspend fun openSession(params: RunnerSessionParams): RunnerSession =
         withContext(Dispatchers.IO) {
             // Before any remote effect: every step sources the env from a shell file (ADR-0032).
-            val invalid = ShellEnvNames.firstInvalid(params.env.keys)
+            val invalid = ShellEnvNames.firstInvalid(params.env.keys + params.resultEnvNames)
             require(invalid == null) { "env name '$invalid' must be a shell identifier (${ShellEnvNames.PATTERN}) on ssh runner '$alias'" }
             val ws = params.workspace
             val relative = ws.serverRoot.relativize(ws.projectRoot).toString()

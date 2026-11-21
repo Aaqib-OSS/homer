@@ -58,7 +58,7 @@ class KubernetesRunner(
     @Suppress("SuspendFunSwallowedCancellation") // records the span error and rethrows
     override suspend fun openSession(params: RunnerSessionParams): RunnerSession =
         withContext(Dispatchers.IO) {
-            val invalid = ShellEnvNames.firstInvalid(params.env.keys)
+            val invalid = ShellEnvNames.firstInvalid(params.env.keys + params.resultEnvNames)
             require(invalid == null) {
                 "env name '$invalid' must be a shell identifier (${ShellEnvNames.PATTERN}) on kubernetes runner '$alias'"
             }

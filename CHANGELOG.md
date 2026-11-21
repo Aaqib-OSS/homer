@@ -4,7 +4,7 @@
 
 ### Homer
 
-- **BREAKING: env names on the ssh and Kubernetes runners must be shell identifiers** — Runner `env` keys and `extraUploads.env` names on these runners must match `^[A-Za-z_][A-Za-z0-9_]*$` at startup, and an ssh or Kubernetes run fails before it touches the remote host or creates a pod on a `globalEnv`, agent `env` or input name that does not; rename such keys (for example `FOO-BAR` to `FOO_BAR`).
+- **BREAKING: env names on the ssh and Kubernetes runners must be shell identifiers** — Runner `env` keys and `extraUploads.env` names on these runners must match `^[A-Za-z_][A-Za-z0-9_]*$` at startup, and an ssh or Kubernetes run fails before it touches the remote host or creates a pod on a `globalEnv`, agent `env`, input or `onStop:` `resultEnvParam` name that does not; rename such keys (for example `FOO-BAR` to `FOO_BAR`).
 - **Added: `isErrorExitCode` on `!<claude>` commands** — An `is_error` result returns this exit code instead of failing as malformed, and is not retried.
 - **Added: `GET /api/v1/auth/me` answers a bearer token** — A request carrying a bearer token gets that token's name, role and grants, and the route is mounted whenever a `bearer` or `password` scheme is configured.
 - **BREAKING: the LangGraph runtime needs Python 3.12** — A runner host that runs `!<langgraph>` commands needs Python 3.12 or newer to install `homer_langgraph`.

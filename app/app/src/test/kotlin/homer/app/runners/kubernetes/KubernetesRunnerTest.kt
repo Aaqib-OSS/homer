@@ -99,6 +99,28 @@ class KubernetesRunnerTest {
         }
 
     @Test
+    fun `openSession refuses a result env name that is not a shell identifier before any pod or exec`() =
+        runTest {
+            val api = mockk<CoreV1Api>(relaxed = true)
+            var execs = 0
+            val execClient =
+                KubernetesExecClient { _, _, _, _ ->
+                    execs++
+                    mockk(relaxed = true)
+                }
+            val runner = KubernetesRunner("k8s-dev", config, api, execClient, clock = { 0L })
+
+            val error =
+                assertThrows<IllegalArgumentException> {
+                    runner.openSession(params.copy(resultEnvNames = setOf("BUILD_ID", "build-id")))
+                }
+
+            assertTrue(error.message!!.contains("'build-id'") && error.message!!.contains("'k8s-dev'"), error.message)
+            verify(exactly = 0) { api.createNamespacedPod(any(), any()) }
+            assertEquals(0, execs, "no exec before the refusal")
+        }
+
+    @Test
     fun `openSession session env contains only HMR_API_URL, not runner config env`() =
         runTest {
             val api = mockk<CoreV1Api>(relaxed = true)

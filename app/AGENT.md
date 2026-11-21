@@ -1967,7 +1967,7 @@ resultEnvParam:
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `src` | `SrcType` | Yes | Where to extract from (`STD_OUT`, `STD_ERR`, `RESULT_CODE`) |
-| `envName` | `String` | Yes | Environment variable name to store result. Same restrictions as input `envName`: **cannot** target Homer-controlled names (`HMR_*`) or host-controlled names (`PATH`, `HOME`, `USER`, `SHELL`, `LANG`, `TZ`, `PWD`, `OLDPWD`, `IFS`, `BASH_ENV`, `ENV`, or anything beginning with `LD_`, `JAVA_`, or `LC_`), and must match `^[A-Za-z_][A-Za-z0-9_]*$`. Captured values are merged into the env of later commands, so an agent that captures into a reserved/malformed name is skipped at load time with an error in the reload result. |
+| `envName` | `String` | Yes | Environment variable name to store result. Same restrictions as input `envName`: **cannot** target Homer-controlled names (`HMR_*`) or host-controlled names (`PATH`, `HOME`, `USER`, `SHELL`, `LANG`, `TZ`, `PWD`, `OLDPWD`, `IFS`, `BASH_ENV`, `ENV`, or anything beginning with `LD_`, `JAVA_`, or `LC_`), and must match `^[A-Za-z_][A-Za-z0-9_]*$`. Captured values are merged into the env of later commands, so an agent that captures into a reserved/malformed name is skipped at load time with an error in the reload result. The load check covers `commands:` only; a run on an `ssh` or `kubernetes` runner fails before it starts on an `onStop:` step's `envName` that is not a shell identifier. |
 | `transformer` | `ResultTransformer` | No | How to transform the output (default: Pass) |
 
 #### Source Types (SrcType)

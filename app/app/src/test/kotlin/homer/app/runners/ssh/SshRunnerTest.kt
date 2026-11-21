@@ -326,6 +326,41 @@ class SshRunnerTest {
     }
 
     @Test
+    fun `openSession refuses a result env name that is not a shell identifier before connecting`(
+        @TempDir serverRoot: Path,
+    ) = runTest {
+        val projectRoot = serverRoot.resolve("p1")
+        val ws =
+            WorkspaceConfig(
+                serverRoot = serverRoot,
+                projectRoot = projectRoot,
+                artifacts = projectRoot.resolve("artifacts"),
+                workdir = projectRoot.resolve("workdir"),
+                env = mapOf("OK" to "1"),
+                clearAfterFinish = true,
+                lockKey = "k",
+                maxOutputBytes = Long.MAX_VALUE,
+            )
+        var connects = 0
+        val runner =
+            SshRunner(
+                alias = "ssh-box",
+                config = cfg(),
+                client = client,
+                sessionFactory = {
+                    connects++
+                    server.newClientSession(client)
+                },
+            )
+        val error =
+            assertThrows<IllegalArgumentException> {
+                runner.openSession(RunnerSessionParams(1, "demo", ws, ws.env, Context.root(), resultEnvNames = setOf("build-id")))
+            }
+        assertTrue(error.message!!.contains("'build-id'") && error.message!!.contains("'ssh-box'"), error.message)
+        assertEquals(0, connects, "no connection, and so no remote effect, before the refusal")
+    }
+
+    @Test
     fun `createWorkspace failure surfaces the SftpException`(
         @TempDir serverRoot: Path,
     ) = runTest {
