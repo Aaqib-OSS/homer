@@ -6,10 +6,9 @@ import java.io.File
 internal const val REPO_ROOT_PROPERTY = "homer.repoRoot"
 
 /**
- * The repository root, for tests that read files outside the Gradle build (compose files,
- * workflows, examples, schemas). Gradle passes it as [REPO_ROOT_PROPERTY]; a runner that does
- * not (an IDE's own JUnit launcher) falls back to walking up from `user.dir` to the first
- * directory holding `app/settings.gradle.kts`.
+ * The repository root, for tests that read files outside the Gradle build. Gradle passes it as [REPO_ROOT_PROPERTY];
+ * a runner that does not (an IDE's JUnit launcher) falls back to the first ancestor of `user.dir` holding
+ * `app/settings.gradle.kts`.
  */
 internal val repoRoot: File by lazy {
     System.getProperty(REPO_ROOT_PROPERTY)?.let(::File) ?: run {

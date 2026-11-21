@@ -428,9 +428,7 @@ class JsonPathTransformerTest {
         )
     }
 
-    // ========================================
-    // Edge Cases
-    // ========================================
+    // ========== Edge Cases ==========
 
     @Test
     fun `resolveDebug throws on empty JSON object with jsonPath miss when strict`() {

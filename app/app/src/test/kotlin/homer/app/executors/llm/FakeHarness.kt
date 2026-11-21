@@ -14,10 +14,9 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
 
 /**
- * A minimal dialect for the generic-executor tests: `{"t":"start","sid":..}`,
- * `{"t":"msg","id":..}`, `{"t":"end","ok":true|false,"cost":..,"in":..}`, `{"t":"stop"}`,
- * `{"t":"junk"}`. Codex is the real "no-cost" harness; Claude is the real "cost" harness;
- * this one exercises the executor without either adapter's own rules.
+ * A minimal dialect for the generic-executor tests: `{"t":"start","sid":..}`, `{"t":"msg","id":..}`,
+ * `{"t":"end","ok":true|false,"cost":..,"in":..}`, `{"t":"stop"}`, `{"t":"junk"}`. It exercises the executor
+ * without the rules of the Codex (no-cost) or Claude (cost) adapters.
  */
 open class FakeHarness(
     private val terminalExit: Int? = null,

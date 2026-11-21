@@ -13,11 +13,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Behavioural tests for the materialized `homer-tag` helper (the shell script
- * itself, run through `/bin/sh`). A stub `curl` on PATH captures the request and
- * returns a canned body + HTTP status, so the tests cover the script's own logic:
- * env/argument validation before any network call, success mapping to exit 0, and
- * a server rejection surfacing its `msg` on stderr with exit 2. See ADR-0060.
+ * Behavioural tests for the materialized `homer-tag` helper (run through `/bin/sh`, with a stub `curl` returning a
+ * canned body and status): argument validation before any network call, success as exit 0, and a server rejection
+ * surfacing its `msg` on stderr with exit 2. See ADR-0060.
  */
 class HomerTagScriptTest {
     private data class Run(

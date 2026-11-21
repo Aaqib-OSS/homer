@@ -143,9 +143,8 @@ class AgentHookValidationTest {
     @Test
     fun `any hook graph converges to survivors that are cycle-free and fully loaded`() =
         runTest {
-            // The examples pin who is rejected; the property pins the post-conditions on every
-            // graph: survivors declare only survivors, none reaches itself, every removal has a
-            // reason, and a second pass finds nothing left to remove.
+            // The examples pin who is rejected; the property pins every graph's post-conditions: survivors declare only
+            // survivors, none reaches itself, every removal has a reason, and a second pass removes nothing.
             checkAll(
                 Arb.list(Arb.element(POOL_NAMES), 1..5),
                 Arb.list(Arb.list(Arb.element(POOL_NAMES + "ghost"), 0..3), POOL_NAMES.size..POOL_NAMES.size),

@@ -6,11 +6,9 @@ import org.jetbrains.exposed.v1.core.statements.StatementContext
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
- * Records every SQL statement Exposed executes, JVM-wide. Registered through
- * `META-INF/services` so it needs no hook in production code; tests call
- * [reset] before the code under test and inspect [statements] afterwards to
- * assert which queries did — or did not — run, and [transactionCount] to
- * assert how many transactions ran them.
+ * Records every SQL statement Exposed executes, JVM-wide, registered through `META-INF/services`. Tests call [reset]
+ * before the code under test, then inspect [statements] and [transactionCount] to assert which queries and how many
+ * transactions ran.
  */
 class SqlStatementRecorder : GlobalStatementInterceptor {
     override fun beforeExecution(

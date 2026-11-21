@@ -14,17 +14,13 @@ import kotlin.time.Duration.Companion.seconds
 /** How long [eventually] and [pollUntil] poll before they give up: finite, so a wait fails a test. */
 private val EVENTUALLY_TIMEOUT = 5.seconds
 
-/** The pause between two polls: short enough to be quick, long enough not to spin (root `CLAUDE.md` §6). */
+/** The pause between two polls: short enough to be quick, long enough not to spin. */
 private val POLL_INTERVAL = 50.milliseconds
 
 /**
- * Retries [block] until it passes, rethrowing its last failure once [timeout] elapses: a test
- * waits on the condition it asserts instead of on a fixed sleep, which is both slower and
- * flakier under load. [block] is an assertion — poll for a state, never for a side effect that
- * each attempt would repeat.
- *
- * The `:app` sibling of the e2e suite's `Awaits` (`homer.e2e.support`): the modules share no
- * test source, so the pattern is ported, not imported.
+ * Retries [block] until it passes, rethrowing its last failure once [timeout] elapses: a test waits on the
+ * condition it asserts, not a fixed sleep. [block] is an assertion: poll for a state, never for a side effect.
+ * The `:app` sibling of the e2e suite's `Awaits` (`homer.e2e.support`); the modules share no test source.
  */
 suspend fun eventually(
     timeout: Duration = EVENTUALLY_TIMEOUT,

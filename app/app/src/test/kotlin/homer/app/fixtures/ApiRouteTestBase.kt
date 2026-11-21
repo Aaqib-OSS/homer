@@ -23,10 +23,9 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
 /**
- * Shared setup for the route tests that mount the real [apiV1Routes] over relaxed service mocks:
- * a [mockProcessManager] answering a fixed start time and last process id, a [mockAgentsService]
- * with no agents, a [mockTelemetryService], and the helpers that wire them into [ApiDeps].
- * The helpers are `internal` because [ApiDeps] is.
+ * Shared setup for route tests that mount the real [apiV1Routes] over relaxed service mocks: [mockProcessManager]
+ * (fixed start time and last process id), [mockAgentsService] (no agents), [mockTelemetryService], and the
+ * helpers wiring them into [ApiDeps], which are `internal` because [ApiDeps] is.
  */
 abstract class ApiRouteTestBase {
     protected lateinit var mockProcessManager: ProcessManager

@@ -712,9 +712,8 @@ class AgentInputResolverTest {
     @Test
     fun `resolve - GET on an optional-only body input still requires POST`() =
         testApplication {
-            // ADR-0072: the bodyless relaxation is POST-only. Every body input optional
-            // must not let a bodyless GET through — the 400 must come from the method
-            // check, not from requiredness.
+            // ADR-0072: the bodyless relaxation is POST-only; with every body input optional a bodyless GET must
+            // still get its 400 from the method check, not from requiredness.
             application {
                 install(io.ktor.server.plugins.statuspages.StatusPages) {
                     exception<QueryParamValidationException> { call, ex ->
@@ -1313,9 +1312,8 @@ class AgentInputResolverTest {
 
     @Test
     fun `resolveFromParams validates but does not re-transform a stored input named in skipTransformFor`() {
-        // An inherited value is the origin run's already-extracted one (stored
-        // post-transformer): running the JsonPath transformer over "Alice" again would
-        // reject it. A caller-supplied value of the same name is still transformed.
+        // An inherited value is the origin run's already-extracted one (stored post-transformer), so re-running the
+        // JsonPath transformer would reject it; a caller-supplied value of the same name is still transformed.
         val agent =
             bodyAgent(
                 Param(
