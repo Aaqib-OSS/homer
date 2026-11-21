@@ -157,6 +157,46 @@ class PodProcessControlTest {
     }
 
     @Test
+    fun `a wrapper that does not lead its process group removes a stale pgid file under every shell`(
+        @TempDir tmp: Path,
+    ) {
+        assumeFalse(isWindows())
+        for (shell in podShells()) {
+            val dir = Files.createTempDirectory(tmp, "run")
+            val stale = seedStalePgid(dir)
+            exitOf(start(alone(dir, shell, listOf("true")), dir))
+            assertFalse(stale.exists(), "under $shell")
+        }
+    }
+
+    @Test
+    fun `without rm on the PATH the wrapper still runs the argv with nothing on stderr under every shell`(
+        @TempDir tmp: Path,
+    ) {
+        assumeFalse(isWindows())
+        for (shell in podShells()) {
+            val dir = Files.createTempDirectory(tmp, "run")
+            val emptyPath = Files.createDirectories(dir.resolve("empty-path"))
+            val builder = ProcessBuilder(alone(dir, shell, listOf("/bin/sh", "-c", "echo ran"))).directory(dir.toFile())
+            builder.environment()["PATH"] = emptyPath.toString()
+            val process = builder.redirectOutput(dir.resolve("out").toFile()).redirectError(dir.resolve("err").toFile()).start()
+            val exit = exitOf(process)
+            assertEquals(Triple(0, "ran\n", ""), Triple(exit, dir.resolve("out").readText(), dir.resolve("err").readText()), "$shell")
+        }
+    }
+
+    @Test
+    fun `under setsid -w a stale pgid file is replaced by the wrapper's own pid`(
+        @TempDir dir: Path,
+    ) {
+        assumeTrue(setsidCanFormGroup(), "util-linux setsid -w is required")
+        val stale = seedStalePgid(dir)
+        val process = start(podControl(hasSetsidWait = true).groupLaunch(pgidFile(dir), null, listOf("true")), dir)
+        exitOf(process)
+        assertEquals(process.pid().toString(), stale.readText().trim())
+    }
+
+    @Test
     fun `under setsid -w the pgid file holds the wrapper's process group id`(
         @TempDir dir: Path,
     ) {
@@ -184,6 +224,14 @@ class PodProcessControlTest {
     ): List<String> = underShell(podControl(hasSetsidWait = false).groupLaunch(pgidFile(dir), null, argv), shell)
 
     private fun pgidFile(dir: Path): String = dir.resolve(".homer/homer-exec-1.pgid").toString()
+
+    /** An earlier session's pgid file in [dir], holding a live group's id that would pass the pgid guard: the test JVM's. */
+    private fun seedStalePgid(dir: Path): Path {
+        val file = Path.of(pgidFile(dir))
+        Files.createDirectories(file.parent)
+        file.writeText(groupOf(ProcessHandle.current().pid()) + "\n")
+        return file
+    }
 
     /** Starts [argv] in [dir] with its stdout and stderr in `out` and `err` there. */
     private fun start(
@@ -234,7 +282,7 @@ class PodProcessControlTest {
         const val ENV = "/homer/workspace/.homer/env/a1.env"
         const val TRAP = "trap : INT TERM HUP; "
         const val RECORD =
-            "p=\"\$0\"; d=\"\${p%/*}\"; mkdir -p \"\$d\" 2>/dev/null; " +
+            "p=\"\$0\"; d=\"\${p%/*}\"; mkdir -p \"\$d\" 2>/dev/null; rm -f \"\$p\" 2>/dev/null; " +
                 "g=; read -r _ _ _ _ g _ 2>/dev/null < /proc/\$\$/stat; [ \"\$g\" = \"\$\$\" ] && echo \$\$ > \"\$p\" 2>/dev/null; "
         const val RUN = "(exec \"\$@\")"
         const val SOURCE_THEN_RUN = "f=\$1; shift; . \"\$f\" && (exec \"\$@\")"

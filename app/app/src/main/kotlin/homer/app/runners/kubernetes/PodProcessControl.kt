@@ -141,11 +141,11 @@ internal class PodProcessControl(
         private val SETSID_WAIT = listOf("setsid", "-w")
 
         /**
-         * $0 is the pgid file: the wrapper records its pid there only when `/proc` shows it leads its group, before the
-         * launch sources or runs anything; `g=` first, so a failed read cannot match an inherited `g`.
+         * $0 is the pgid file: the wrapper removes any earlier one, then records its pid there only when `/proc` shows it
+         * leads its group, before the launch sources or runs anything; `g=` first, so a failed read cannot match an inherited `g`.
          */
         private const val PGID_RECORD =
-            "p=\"\$0\"; d=\"\${p%/*}\"; mkdir -p \"\$d\" 2>/dev/null; " +
+            "p=\"\$0\"; d=\"\${p%/*}\"; mkdir -p \"\$d\" 2>/dev/null; rm -f \"\$p\" 2>/dev/null; " +
                 "g=; read -r _ _ _ _ g _ 2>/dev/null < /proc/\$\$/stat; [ \"\$g\" = \"\$\$\" ] && echo \$\$ > \"\$p\" 2>/dev/null; "
 
         private val logger = LoggerFactory.getLogger(PodProcessControl::class.java)
