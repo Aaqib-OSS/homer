@@ -286,8 +286,8 @@ class KubernetesShellExecutor(
         }
 
     /**
-     * The step error for a channel lost on a live pod: the cause without its exec URL and the pod's last event, on one
-     * line of at most [TERMINATION_MESSAGE_MAX_CHARS], with credential-length env values masked (ADR-0047 rule 7).
+     * The one-line step error for a channel lost on a live pod: cause without its exec URL, plus the pod's last event,
+     * with credential-length env values masked (ADR-0047 rule 7).
      */
     private fun channelLostMessage(
         cause: Throwable?,
