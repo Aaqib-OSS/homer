@@ -22,6 +22,11 @@ tasks.test {
     // Live-server tests: results depend on the server under test, never on
     // task inputs — always rerun.
     outputs.upToDateWhen { false }
-    environment("E2E_BASE_URL", System.getenv("E2E_BASE_URL") ?: "")
+    val baseUrl = System.getenv("E2E_BASE_URL") ?: ""
+    environment("E2E_BASE_URL", baseUrl)
     environment("E2E_TOKEN", System.getenv("E2E_TOKEN") ?: "")
+    environment("E2E_REQUIRED", System.getenv("E2E_REQUIRED") ?: "")
+    doFirst {
+        if (baseUrl.isBlank()) logger.warn("E2E_BASE_URL is not set: every black-box E2E test is skipped (app/e2e/README.md).")
+    }
 }
