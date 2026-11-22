@@ -3,14 +3,17 @@ package homer.app
 import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.LoggerContext
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import homer.app.infra.SysEnvResolver
 import homer.app.models.RunnerConfig
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.slf4j.LoggerFactory
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.PrintStream
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -27,6 +30,44 @@ class LoadStartupConfigTest {
         name: String,
         content: String,
     ): String = File(dir, name).apply { writeText(content) }.absolutePath
+
+    /**
+     * Runs [block] with stdout and the `homer.app.Application` log captured, restoring both afterwards.
+     * Returns the result, everything printed and the error lines logged.
+     */
+    private fun <T> capturingOutput(block: () -> T): Triple<T, String, List<String>> {
+        val logger = LoggerFactory.getLogger("homer.app.Application") as Logger
+        val appender = ListAppender<ILoggingEvent>().also { it.start() }
+        val originalOut = System.out
+        val buffer = ByteArrayOutputStream()
+        logger.addAppender(appender)
+        System.setOut(PrintStream(buffer, true))
+        try {
+            return Triple(block(), buffer.toString(), appender.list.filter { it.level == Level.ERROR }.map { it.formattedMessage })
+        } finally {
+            System.setOut(originalOut)
+            logger.detachAppender(appender)
+        }
+    }
+
+    /** Asserts [name] is refused like a malformed config: no throw, no hardening, one error naming the extension. */
+    private fun assertUnsupportedExtensionRefused(
+        name: String,
+        extension: String,
+    ) {
+        val (result, stdout, errors) =
+            capturingOutput {
+                loadStartupConfig(arrayOf(file(name, "agentsSearchPath: a")), hardenJvm = { fail("hardened an unsupported config") })
+            }
+
+        assertNull(result)
+        assertEquals(1, errors.size, errors.toString())
+        listOf(stdout, errors.single()).forEach { message ->
+            assertTrue("extension '$extension'" in message, message)
+            assertTrue(".yaml" in message && ".json" in message, message)
+        }
+        assertTrue("agentsSearchPath" !in stdout, stdout)
+    }
 
     @Test
     fun `no config path argument refuses to start`() {
@@ -156,10 +197,21 @@ class LoadStartupConfigTest {
     }
 
     @Test
-    fun `an unknown config file extension fails startup with an UnknownError`() {
-        // An Error, so the parse-failure catch (Exception) does not turn it into a clean refusal.
-        val error = assertFailsWith<UnknownError> { loadStartupConfig(arrayOf(file("config.txt", "agentsSearchPath: a")), hardenJvm = {}) }
-        assertEquals("Cant parse configuration file type txt", error.message)
+    fun `a yml config file is refused cleanly, naming the extension and the accepted ones`() {
+        assertUnsupportedExtensionRefused("config.yml", "yml")
+    }
+
+    @Test
+    fun `a config file with no extension is refused cleanly`() {
+        assertUnsupportedExtensionRefused("config", "")
+    }
+
+    @Test
+    fun `the usage block names both accepted config file types`() {
+        val (result, stdout, _) = capturingOutput { loadStartupConfig(emptyArray(), hardenJvm = {}) }
+
+        assertNull(result)
+        assertTrue("config.yaml" in stdout && "config.json" in stdout, stdout)
     }
 
     @Test

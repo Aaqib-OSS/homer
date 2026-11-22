@@ -111,7 +111,7 @@ private fun readStartupConfig(args: Array<String>): AppConfig? {
     if (args.isEmpty()) {
         logger.error("Missing required argument: config-path")
         println("Usage: <config-path>")
-        println("  config-path - Path to config.json file")
+        println("  config-path - Path to config.yaml or config.json file")
         return null
     }
 
@@ -144,12 +144,11 @@ private fun readStartupConfig(args: Array<String>): AppConfig? {
         if (configFile.extension == "json") {
             Json.decodeFromString<AppConfig>(configFile.readText())
         } else if (configFile.extension == "yaml") {
-            Yaml.default.decodeFromString(
-                AppConfig.serializer(),
-                configFile.readText(),
-            )
+            Yaml.default.decodeFromString(AppConfig.serializer(), configFile.readText())
         } else {
-            throw UnknownError("Cant parse configuration file type ${configFile.extension}")
+            logger.error("Unsupported configuration file extension '{}'; use .yaml or .json", configFile.extension)
+            println("Error: Unsupported configuration file extension '${configFile.extension}'; use .yaml or .json")
+            return null
         }
     } catch (e: Exception) {
         logger.error("Failed to parse configuration file: {}", e.message, e)
