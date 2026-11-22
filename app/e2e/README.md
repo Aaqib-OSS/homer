@@ -108,7 +108,8 @@ docker compose -f docker-compose.e2e.yml down -v
 # Fast dev loop — backend and runners in docker, tests from the host / IDE:
 # (18080 is the default host port; override by setting E2E_BACKEND_PORT
 # before `up` and updating E2E_BASE_URL below to match)
-docker compose -f docker-compose.e2e.yml up -d --build homer-backend homer-runner homer-runner-crash
+docker compose -f docker-compose.e2e.yml up -d --build homer-backend homer-runner homer-runner-crash \
+  homer-runner-affinity-a homer-runner-affinity-b
 E2E_BASE_URL=http://localhost:18080 E2E_TOKEN=e2e-token \
   JAVA_HOME=<path to a JDK 25> app/gradlew -p app :e2e:test
 
