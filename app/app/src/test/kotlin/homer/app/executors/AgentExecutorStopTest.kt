@@ -419,6 +419,41 @@ class AgentExecutorStopTest : AgentExecutorTestBase() {
         }
 
     @Test
+    fun `a stop step's timeout is capped at 300 seconds even with no near deadline`() =
+        runTest {
+            every { mockSession.runDeadline } returns RunDeadline(softEpochSec = NOW + 3600, hardEpochSec = NOW + 7200)
+            // A declared timeout well past the 300 s cap, so only the cap can produce the value seen.
+            val agent = stoppableAgent(listOf(Command.Cmd(cmd = listOf("save"), label = "Save report", timeout = 600)))
+            val contexts = mutableListOf<ExecutionContext>()
+            coEvery { mockExecutor.execute(any(), capture(contexts), any()) } coAnswers {
+                if (contexts.size == 1) throw CancellationException("Timeout reached. 60s.")
+                TestFixtures.mockCommandResult(exitCode = 0)
+            }
+
+            assertThrows<CancellationException> { clockedExecutor(agent).execute() }
+
+            // Neither the soft nor the hard deadline binds here: the stop step's own 300 s cap does.
+            assertEquals(300L, contexts[1].timeoutOverrideSeconds)
+        }
+
+    @Test
+    fun `a stop step's timeout is capped at 300 seconds when the run has no deadline at all`() =
+        runTest {
+            // No `runDeadline` stub: the base's default is null, so no deadline remainder exists and
+            // the stop step's own 300 s cap is the only bound — it applies with or without a deadline.
+            val agent = stoppableAgent(listOf(Command.Cmd(cmd = listOf("save"), label = "Save report", timeout = 600)))
+            val contexts = mutableListOf<ExecutionContext>()
+            coEvery { mockExecutor.execute(any(), capture(contexts), any()) } coAnswers {
+                if (contexts.size == 1) throw CancellationException("Timeout reached. 60s.")
+                TestFixtures.mockCommandResult(exitCode = 0)
+            }
+
+            assertThrows<CancellationException> { clockedExecutor(agent).execute() }
+
+            assertEquals(300L, contexts[1].timeoutOverrideSeconds)
+        }
+
+    @Test
     fun `a regular step's timeout is capped at the soft run deadline and still granted the interrupt grace`() =
         runTest {
             every { mockSession.runDeadline } returns RunDeadline(softEpochSec = NOW + 30, hardEpochSec = NOW + 7230)
