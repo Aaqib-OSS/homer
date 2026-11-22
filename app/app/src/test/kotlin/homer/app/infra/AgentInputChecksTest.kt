@@ -282,6 +282,66 @@ class AgentInputChecksTest {
     }
 
     @Test
+    fun `an input templated into an onStop RunAgent target warns as a stop step`() {
+        val agent =
+            agentWith(Param(paramName = "target", envName = "TARGET"))
+                .copy(onStop = listOf(Command.RunAgent(agentName = "{{TARGET}}", label = "hand-off")))
+
+        checks.warnOnInputSteering(agent)
+
+        val steered = mutableListOf<String>()
+        verify(exactly = 1) { logger.warn(any<String>(), any<Any>(), capture(steered)) }
+        assertEquals(
+            listOf("agent onStop step 'hand-off' target uses input '{{TARGET}}'"),
+            steered.single().split("; "),
+        )
+    }
+
+    @Test
+    fun `an input templated into an onStop claude option warns as a stop step`() {
+        val agent =
+            claudeAgent(claudeCommand(ClaudeCmdOptions(), label = "run"))
+                .copy(
+                    inputs = listOf(Param(paramName = "dir", envName = "EXTRA_DIR")),
+                    onStop = listOf(claudeCommand(ClaudeCmdOptions(addDir = listOf("{{EXTRA_DIR}}")), label = "ship")),
+                )
+
+        checks.warnOnInputSteering(agent)
+
+        val steered = mutableListOf<String>()
+        verify(exactly = 1) { logger.warn(any<String>(), any<Any>(), capture(steered)) }
+        assertEquals(
+            listOf("claude onStop step 'ship' option 'addDir' uses input '{{EXTRA_DIR}}'"),
+            steered.single().split("; "),
+        )
+    }
+
+    @Test
+    fun `a command RunAgent or claude step keeps the command wording`() {
+        val agent =
+            AgentFixtures.simpleAgent(name = "a").copy(
+                commands =
+                    listOf(
+                        Command.RunAgent(agentName = "{{TARGET}}", label = "hand-off"),
+                        claudeCommand(ClaudeCmdOptions(permissionMode = "{{MODE}}"), label = "verify"),
+                    ),
+                inputs = listOf(Param(paramName = "t", envName = "TARGET"), Param(paramName = "m", envName = "MODE")),
+            )
+
+        checks.warnOnInputSteering(agent)
+
+        val steered = mutableListOf<String>()
+        verify(exactly = 1) { logger.warn(any<String>(), any<Any>(), capture(steered)) }
+        assertEquals(
+            listOf(
+                "agent command 'hand-off' target uses input '{{TARGET}}'",
+                "claude command 'verify' option 'permissionMode' uses input '{{MODE}}'",
+            ),
+            steered.single().split("; "),
+        )
+    }
+
+    @Test
     fun `a cooldown key over the agent env or a literal steers no input`() {
         checks.warnOnInputSteering(
             agentWith(Param(paramName = "mr", envName = "MR"))

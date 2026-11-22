@@ -297,6 +297,88 @@ class AgentCatalogTest : E2eTestBase() {
         variable: String,
     ) = "name: $name\nenv:\n  HOST_VALUE: \"@SYSENV:$variable\"\ncommands:\n  - !<script>\n    content: printenv HOST_VALUE\n"
 
+    @Test
+    fun `reload refuses an agent whose onStop holds a runnerCmd the load rules reject`() =
+        runBlocking {
+            val name = uniqueAgentName("stopdeny")
+            assertEquals(HttpStatusCode.Created, createAgent(name).status)
+            try {
+                // A local onStop runnerCmd loads: the stop phase gets no extra rejection.
+                assertEquals(HttpStatusCode.OK, putFile(name, "agent.yaml", stopRunnerCmdDef(name, "local")).status)
+                var reload: ReloadResult = HomerApi.decode(E2e.client.post("/api/v1/agents/reload"))
+                // The catalog always holds load-error-sysenv, so the reload is never error-free:
+                // the local onStop runnerCmd must simply add no error of its own.
+                assertFalse(
+                    reload.errors.any { name in it },
+                    "a local onStop runnerCmd must load: ${reload.errors}",
+                )
+                assertTrue(HomerApi.agents().agents.any { it.name == name })
+
+                // An absolute syncToRemote path on an onStop runnerCmd is denied at load, naming the path.
+                assertEquals(
+                    HttpStatusCode.OK,
+                    putFile(name, "agent.yaml", stopRunnerCmdDef(name, "local", syncToRemote = "/etc/passwd")).status,
+                )
+                reload = HomerApi.decode(E2e.client.post("/api/v1/agents/reload"))
+                assertTrue(
+                    reload.errors.any { name in it && "invalid runnerCmd sync path '/etc/passwd'" in it },
+                    "the denial must name the agent and the sync path: ${reload.errors}",
+                )
+
+                // An unknown runner alias on an onStop runnerCmd is denied at load, naming the alias.
+                assertEquals(HttpStatusCode.OK, putFile(name, "agent.yaml", stopRunnerCmdDef(name, "ghost")).status)
+                reload = HomerApi.decode(E2e.client.post("/api/v1/agents/reload"))
+                assertTrue(
+                    reload.errors.any { name in it && "references unknown runner 'ghost' in a runnerCmd" in it },
+                    "the denial must name the unknown alias: ${reload.errors}",
+                )
+
+                // The local-only rule keys on the agent's own runner filter, not the step's runner:.
+                assertEquals(HttpStatusCode.OK, putFile(name, "agent.yaml", offLocalStopRunnerCmdDef(name)).status)
+                reload = HomerApi.decode(E2e.client.post("/api/v1/agents/reload"))
+                assertTrue(
+                    reload.errors.any { name in it && "contains a runnerCmd command but uses runner 'e2e-ext'" in it },
+                    "the denial must name the agent's runner: ${reload.errors}",
+                )
+            } finally {
+                // A directory that failed to load stays in the catalog as the stale agent, so its
+                // definition stays writable: repair it, or every later reload reports the scan error.
+                putFile(name, "agent.yaml", stopRunnerCmdDef(name, "local"))
+            }
+        }
+
+    private fun stopRunnerCmdDef(
+        name: String,
+        runner: String,
+        syncToRemote: String? = null,
+    ) = """
+        name: $name
+        description: written by the E2E suite
+        commands:
+          - !<cmd>
+            cmd: [echo, created-agent-ran]
+        onStop:
+          - !<runnerCmd>
+            runner: $runner
+            execute: echo stop-done
+        """.trimIndent() +
+        (syncToRemote?.let { "\n    syncToRemote:\n      - $it" } ?: "") +
+        "\n"
+
+    private fun offLocalStopRunnerCmdDef(name: String) =
+        """
+        name: $name
+        description: written by the E2E suite
+        runner: e2e-ext
+        commands:
+          - !<cmd>
+            cmd: [echo, created-agent-ran]
+        onStop:
+          - !<runnerCmd>
+            runner: local
+            execute: echo stop-done
+        """.trimIndent() + "\n"
+
     private var counter = 0
 
     /** Unique per run: agent dirs persist in the volume between suite runs without `down -v`. */
