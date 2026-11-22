@@ -103,6 +103,7 @@
         "com.networknt:**",
         "io.kubernetes:**",
         "org.jetbrains.exposed:**",
+        "org.apache.sshd:**",
         "dev.detekt:**",
         "dev.detekt",
         "eclipse-temurin"

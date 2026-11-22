@@ -436,7 +436,7 @@ jobs:
           mkdir -p e2e-results e2e-logs
           docker cp homer-e2e-runner:/e2e/e2e/build/test-results/test/. e2e-results/ || true
           docker cp homer-e2e-runner:/e2e/e2e/build/reports/tests/test/. e2e-logs/html/ || true
-          # Backend stdout goes to the workspace volume (entrypoint.sh); `docker logs` is empty.
+          # app.log repeats the backend's stdout; api.log holds the access lines, which no other stream carries.
           docker cp homer-e2e-backend:/app/workspace/app.log e2e-logs/ || true
           docker cp homer-e2e-backend:/app/workspace/api.log e2e-logs/ || true
           docker compose logs --no-color homer-runner homer-runner-crash > e2e-logs/homer-runner.log 2>&1 || true
