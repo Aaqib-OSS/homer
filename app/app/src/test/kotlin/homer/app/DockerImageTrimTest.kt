@@ -37,7 +37,7 @@ class DockerImageTrimTest {
         // A stage built FROM another stage of this file inherits that stage's base; every other base must be musl.
         val runtimeBases =
             dockerfile.stages
-                .filter { it.name != "builder" }
+                .filter { it.name !in setOf("gradle-home", "builder", "gradle-home-export") }
                 .map { it.base }
                 .filterNot { dockerfile.isStage(it) }
         assertTrue(

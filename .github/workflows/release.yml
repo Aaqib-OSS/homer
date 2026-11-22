@@ -117,10 +117,42 @@ jobs:
             echo "moving=$slug" >>"$GITHUB_OUTPUT"
           fi
 
+  # The Gradle dependency cache of this run's app/Dockerfile builds, resolved once instead of in each of them,
+  # so a release reaches Maven Central from one job (ADR-0084). Built from this run's commit with no cache.
+  gradle-deps:
+    needs: image-tags
+    if: github.ref_protected
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # A retry resumes from the builder's own layers of this job; Gradle's cache-copy rules exclude the locks.
+      - name: Resolve
+        env:
+          SEED: ${{ runner.temp }}/gradle-home
+        run: |
+          for attempt in 1 2 3; do
+            docker buildx build --target gradle-home-export -f app/Dockerfile --output "type=local,dest=$SEED" . && break
+            [ "$attempt" -lt 3 ] || exit 1
+            sleep $((attempt * 60))
+          done
+          find "$SEED" \( -name '*.lock' -o -name '*.lck' -o -name gc.properties \) -delete
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gradle-home
+          path: ${{ runner.temp }}/gradle-home/
+          if-no-files-found: error
+          retention-days: 1
+
   # Each image is built natively per platform, not under QEMU, and pushed by digest only: no tag names a
   # platform image until job `images` joins them (ADR-0086).
   image-builds:
-    needs: image-tags
+    needs: [image-tags, gradle-deps]
     if: github.ref_protected
     runs-on: ${{ matrix.platform.runner }}
     # Bounds the build, not the wait for a runner: GitHub does not count queue time.
@@ -140,6 +172,7 @@ jobs:
             dockerfile: app/Dockerfile
             target: runner
             version-arg: HOMER_VERSION
+            gradle-home: true
           # The slim server image (ADR-0094): the same image name, its tags suffixed.
           - image: homer-app
             context: .
@@ -147,11 +180,13 @@ jobs:
             target: slim
             version-arg: HOMER_VERSION
             tag-suffix: '-slim'
+            gradle-home: true
           - image: homer-runner
             context: .
             dockerfile: app/Dockerfile
             target: homer-runner
             version-arg: HOMER_VERSION
+            gradle-home: true
           - image: homer-console
             context: console
             dockerfile: console/Dockerfile
@@ -177,6 +212,8 @@ jobs:
       VERSION: ${{ needs.image-tags.outputs.version }}${{ matrix.build.tag-suffix }}
       VERSION_BUILD_ARG: ${{ matrix.build.version-arg }}=${{ needs.image-tags.outputs.version }}${{ matrix.build.tag-suffix }}
       TITLE: ${{ matrix.build.image }}
+      # Set for the app/Dockerfile entries, whose push builds from this run's Gradle dependency cache.
+      GRADLE_SEED: ${{ matrix.build.gradle-home }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -187,6 +224,13 @@ jobs:
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: printf '%s' "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      # Job `gradle-deps`' dependency cache of this run, which the push passes as build context `gradle-home`.
+      - name: Gradle dependency cache
+        if: matrix.build.gradle-home
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: gradle-home
+          path: ${{ runner.temp }}/gradle-home
       # LGPL gate (ADR-0056): scans a local build of each platform before the push, then the push rebuilds
       # from cache. It fails closed: an early exit is a failed gate.
       - name: Build for the LGPL gate
@@ -211,10 +255,15 @@ jobs:
       - name: Push
         id: push
         run: |
-          docker buildx build --platform "$PLATFORM" --provenance=false --sbom=false --target "$TARGET" \
-            --build-arg "$VERSION_BUILD_ARG" -f "$DOCKERFILE" --metadata-file build.json \
-            --label "org.opencontainers.image.title=$TITLE" --label "org.opencontainers.image.version=$VERSION" \
-            --output "type=image,name=$IMAGE,push-by-digest=true,name-canonical=true,push=true" "$CONTEXT"
+          for attempt in 1 2 3; do
+            docker buildx build --platform "$PLATFORM" --provenance=false --sbom=false --target "$TARGET" \
+              --build-arg "$VERSION_BUILD_ARG" -f "$DOCKERFILE" --metadata-file build.json \
+              ${GRADLE_SEED:+--build-context "gradle-home=$RUNNER_TEMP/gradle-home"} \
+              --label "org.opencontainers.image.title=$TITLE" --label "org.opencontainers.image.version=$VERSION" \
+              --output "type=image,name=$IMAGE,push-by-digest=true,name-canonical=true,push=true" "$CONTEXT" && break
+            [ "$attempt" -lt 3 ] || exit 1
+            sleep $((attempt * 60))
+          done
           digest=$(jq -r '."containerimage.digest"' build.json)
           printf '%s\n' "$digest" | grep -qxE 'sha256:[0-9a-f]{64}' || { echo "No registry digest for $IMAGE ($PLATFORM)"; exit 1; }
           echo "digest=$digest" >>"$GITHUB_OUTPUT"

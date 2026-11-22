@@ -1,8 +1,10 @@
 package homer.app
 
+import homer.app.fixtures.DockerfileStages
 import homer.app.fixtures.repoRoot
 import org.junit.jupiter.api.Test
 import java.io.File
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -26,6 +28,16 @@ class ReleaseWorkflowGateTest {
             .drop(start + 1)
             .takeWhile { it.isBlank() || it.startsWith("    ") || it.trimStart().startsWith("#") }
     }
+
+    /** Each step of [lines] that has an `if:`, by its first line (`name:` or `uses:`), to that `if:` line. */
+    private fun stepConditions(lines: List<String>): Map<String, String> =
+        lines
+            .fold(mutableListOf<MutableList<String>>()) { steps, line ->
+                if (line.startsWith("      - ")) steps += mutableListOf(line) else steps.lastOrNull()?.add(line)
+                steps
+            }.mapNotNull { step ->
+                step.firstOrNull { it.startsWith("        if:") }?.let { step.first().removePrefix("      - ").trim() to it.trim() }
+            }.toMap()
 
     /** The one literal `runs-on:` label of release.yml's jobs, which the image matrix's runners must follow. */
     private fun releaseRunnerLabel(): String {
@@ -64,7 +76,7 @@ class ReleaseWorkflowGateTest {
     fun `release jobs run only on a protected ref`() {
         val jobs = jobNames(release)
         assertTrue(
-            jobs.containsAll(listOf("ci", "docs", "image-tags", "image-builds", "images", "release-notes")),
+            jobs.containsAll(listOf("ci", "docs", "image-tags", "gradle-deps", "image-builds", "images", "release-notes")),
             "$release defines jobs $jobs; a renamed job must keep this guard.",
         )
         for (job in jobs) {
@@ -129,11 +141,14 @@ class ReleaseWorkflowGateTest {
                 "--predicate-type https://cyclonedx.org/bom",
             ),
         )
-        val gateConditions = jobLines(release, "image-builds").filter { it.startsWith("        if:") }.map { it.trim() }
+        val conditions = stepConditions(jobLines(release, "image-builds"))
+        val (gate, other) = conditions.entries.partition { "LGPL" in it.key }
         assertTrue(
-            gateConditions.all { it == "if: matrix.build.image == 'homer-console'" },
-            "$release job `image-builds` conditions a step with $gateConditions; the LGPL gate must run for every " +
-                "platform build of the console, since each platform image is pushed and conveyed on its own.",
+            gate.size == 2 && gate.all { it.value == "if: matrix.build.image == 'homer-console'" } &&
+                other.map { it.key to it.value } == listOf("name: Gradle dependency cache" to "if: matrix.build.gradle-home"),
+            "$release job `image-builds` conditions its steps with $conditions; the LGPL gate must run for every " +
+                "platform build of the console, since each platform image is pushed and conveyed on its own, and " +
+                "only the Gradle dependency cache download may skip an entry.",
         )
         for (job in listOf("image-builds", "images")) {
             val text = jobLines(release, job).joinToString("\n")
@@ -183,10 +198,13 @@ class ReleaseWorkflowGateTest {
             )
             from = at + step.length
         }
-        assertTrue(
-            "    needs: image-tags" in jobLines(release, "image-builds"),
-            "$release job `image-builds` no longer needs `image-tags`, so it could push before the changelog check.",
-        )
+        for (job in listOf("gradle-deps", "image-builds")) {
+            val needs = jobLines(release, job).firstOrNull { it.startsWith("    needs:") }.orEmpty()
+            assertTrue(
+                Regex("""\bimage-tags\b""").containsMatchIn(needs),
+                "$release job `$job` no longer needs `image-tags`, so it could build before the changelog check.",
+            )
+        }
     }
 
     @Test
@@ -373,6 +391,79 @@ class ReleaseWorkflowGateTest {
             }
         }
         return entries.toSet()
+    }
+
+    @Test
+    fun `release builds take no cache another run wrote, only this run's Gradle dependency cache`() {
+        val text = File(repoRoot, release).readText()
+        val foreign =
+            listOf("--cache-from", "type=gha", "actions/cache", "setup-gradle").filter { it in text } +
+                Regex("""^\s+cache:""", RegexOption.MULTILINE).findAll(text).map { it.value.trim() }
+        assertEquals(
+            emptyList(),
+            foreign,
+            "$release takes a cache another run wrote; a release builds only from its own commit and from job " +
+                "`gradle-deps` of the same run (ADR-0084).",
+        )
+        val deps = jobLines(release, "gradle-deps")
+        assertEquals(
+            listOf("contents: read"),
+            deps
+                .dropWhile { it != "    permissions:" }
+                .drop(1)
+                .takeWhile { it.startsWith("      ") }
+                .map { it.trim() },
+            "$release job `gradle-deps` must hold `contents: read` only: it builds, it never pushes or signs.",
+        )
+        val builds = jobLines(release, "image-builds").map { it.trim() }
+        assertTrue(
+            "name: gradle-home" in deps.map { it.trim() } && "name: gradle-home" in builds &&
+                "path: \${{ runner.temp }}/gradle-home" in builds &&
+                builds.any { "--build-context \"gradle-home=\$RUNNER_TEMP/gradle-home\"" in it },
+            "$release job `image-builds` no longer builds from artifact `gradle-home` of job `gradle-deps`, " +
+                "downloaded into the directory its push passes as build context `gradle-home`.",
+        )
+        assertTrue(
+            "find \"\$SEED\" \\( -name '*.lock' -o -name '*.lck' -o -name gc.properties \\) -delete" in deps.map { it.trim() },
+            "$release job `gradle-deps` no longer strips the lock files Gradle's cache-copy rules exclude from the seed.",
+        )
+        for ((job, lines) in listOf("gradle-deps" to deps.map { it.trim() }, "image-builds" to builds)) {
+            val loop = lines.drop(lines.indexOf("for attempt in 1 2 3; do").coerceAtLeast(0)).take(9)
+            assertTrue(
+                loop.firstOrNull() == "for attempt in 1 2 3; do" && loop.any { it.endsWith(" && break") } &&
+                    loop.containsAll(listOf("[ \"\$attempt\" -lt 3 ] || exit 1", "sleep \$((attempt * 60))")),
+                "$release job `$job` no longer retries its Gradle build with a backoff; Gradle's signature checks " +
+                    "still reach Maven Central, so a single `429` would fail the release again (ADR-0084).",
+            )
+        }
+    }
+
+    @Test
+    fun `app Dockerfile builds from an empty gradle-home unless a build passes one, and exports its own`() {
+        val dockerfile = DockerfileStages.app
+        val seed = dockerfile.stage("gradle-home")
+        assertTrue(
+            seed.base == "scratch" && seed.instructions.isEmpty(),
+            "app/Dockerfile stage `gradle-home` is no longer empty, so a build without the release's context " +
+                "would start from content no build passed.",
+        )
+        val builder = dockerfile.stage("builder").instructions
+        val copy = builder.indexOf("COPY --from=gradle-home / /root/.gradle/")
+        val firstGradle = builder.indexOfFirst { it.startsWith("RUN ./gradlew") }
+        assertTrue(
+            copy in 0 until firstGradle,
+            "app/Dockerfile stage `builder` no longer copies `gradle-home` into the Gradle user home before it " +
+                "first runs Gradle, so the release's image builds reach Maven Central again.",
+        )
+        assertEquals(
+            listOf(
+                "COPY --from=builder /root/.gradle/caches/modules-2 /caches/modules-2",
+                "COPY --from=builder /root/.gradle/wrapper/dists /wrapper/dists",
+            ),
+            dockerfile.stage("gradle-home-export").instructions,
+            "app/Dockerfile stage `gradle-home-export` must hold the builder's dependency cache and wrapper " +
+                "distribution only, laid out as a Gradle user home.",
+        )
     }
 
     @Test
