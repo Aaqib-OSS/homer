@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.44.0] - 2026-11-22
+
 ### Homer
 
 - **Fixed: an unsupported config file extension is refused with a clean error** — Startup prints which extension it got and that `.yaml` or `.json` is required, and exits like any other bad config instead of dying with an uncaught `UnknownError`.
