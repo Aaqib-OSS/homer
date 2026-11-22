@@ -145,7 +145,7 @@ class ReleaseWorkflowGateTest {
         val (gate, other) = conditions.entries.partition { "LGPL" in it.key }
         assertTrue(
             gate.size == 2 && gate.all { it.value == "if: matrix.build.image == 'homer-console'" } &&
-                other.all { it.value == "if: matrix.build.gradle-home" },
+                other.map { it.key to it.value } == listOf("name: Gradle dependency cache" to "if: matrix.build.gradle-home"),
             "$release job `image-builds` conditions its steps with $conditions; the LGPL gate must run for every " +
                 "platform build of the console, since each platform image is pushed and conveyed on its own, and " +
                 "only the Gradle dependency cache download may skip an entry.",
@@ -423,6 +423,19 @@ class ReleaseWorkflowGateTest {
             "$release job `image-builds` no longer builds from artifact `gradle-home` of job `gradle-deps`, " +
                 "downloaded into the directory its push passes as build context `gradle-home`.",
         )
+        assertTrue(
+            "find \"\$SEED\" \\( -name '*.lock' -o -name '*.lck' -o -name gc.properties \\) -delete" in deps.map { it.trim() },
+            "$release job `gradle-deps` no longer strips the lock files Gradle's cache-copy rules exclude from the seed.",
+        )
+        for ((job, lines) in listOf("gradle-deps" to deps.map { it.trim() }, "image-builds" to builds)) {
+            val loop = lines.drop(lines.indexOf("for attempt in 1 2 3; do").coerceAtLeast(0)).take(9)
+            assertTrue(
+                loop.firstOrNull() == "for attempt in 1 2 3; do" && loop.any { it.endsWith(" && break") } &&
+                    loop.containsAll(listOf("[ \"\$attempt\" -lt 3 ] || exit 1", "sleep \$((attempt * 60))")),
+                "$release job `$job` no longer retries its Gradle build with a backoff; Gradle's signature checks " +
+                    "still reach Maven Central, so a single `429` would fail the release again (ADR-0084).",
+            )
+        }
     }
 
     @Test
