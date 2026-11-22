@@ -5,6 +5,7 @@
 ### Homer
 
 - **Fixed: an unsupported config file extension is refused with a clean error** — Startup prints which extension it got and that `.yaml` or `.json` is required, and exits like any other bad config instead of dying with an uncaught `UnknownError`.
+- **BREAKING: the `runnerCmd` and langgraph load-time rules cover `onStop:` steps** — An agent not on `runner: local` whose stop phase holds a `runnerCmd`, on an unknown runner or with an invalid sync path, or a `!<langgraph>` stop step without `dispatch.enabled: true`, now fails to load, as a `commands:` step already did; the input-steering warning covers stop steps too. See [ADR-0034](docs/adr/0034-runnercmd-command-type.md) and [ADR-0108](docs/adr/0108-graceful-stop-of-a-run.md).
 - **Added: `GET /api/v1/agents/load-errors`** — The last published agent scan's skipped definitions and their reasons, admin-only, at most 500 messages kept with the rest counted in `truncated`.
 - **Fixed: a Kubernetes step with a grace reports 128 + n when its command dies by a signal** — It no longer reports the bare signal number with a `setsid:` line on stderr. See [ADR-0108](docs/adr/0108-graceful-stop-of-a-run.md).
 - **Fixed: a Kubernetes step with a grace on a BusyBox `setsid` pod waits for its command** — It reports the command's exit code instead of 0 while the command ran on detached. See [ADR-0108](docs/adr/0108-graceful-stop-of-a-run.md).

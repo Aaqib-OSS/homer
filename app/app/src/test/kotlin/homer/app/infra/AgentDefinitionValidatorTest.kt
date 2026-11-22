@@ -2,6 +2,7 @@ package homer.app.infra
 
 import homer.app.fixtures.AgentFixtures
 import homer.app.fixtures.TestFixtures
+import homer.app.models.AgentDispatchConfig
 import homer.app.models.ClaudeCmdOptions
 import homer.app.models.Command
 import homer.app.models.CronConfig
@@ -15,6 +16,7 @@ import homer.app.models.SrcType
 import io.mockk.verify
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -174,5 +176,112 @@ class AgentDefinitionValidatorTest {
             false,
             validator.checkDefinition(stoppableAgent(onStop = List(MAX_ON_STOP_STEPS) { stopStep() }), "dir", errors),
         )
+    }
+
+    // ========== The runnerCmd and langgraph rules cover onStop steps too ==========
+
+    /** A validator whose runner registry serves [aliases] alongside `local`. */
+    private fun validatorServing(vararg aliases: String) =
+        AgentDefinitionValidator(
+            logger,
+            runnerAliases = aliases.toSet() + "local",
+            runnerTagSets = { error("registry unavailable") },
+            inputResolver = AgentInputResolver(),
+            inputSchemaValidator = InputSchemaValidator(),
+            inputChecks = AgentInputChecks(logger, ParamValidator()),
+        )
+
+    /** A `runnerCmd` step targeting [runner], uploading [syncToRemote] when given. */
+    private fun runnerCmdStep(
+        runner: String = "local",
+        syncToRemote: String? = null,
+    ) = Command.RunnerCmd(
+        runner = runner,
+        execute = "echo hi",
+        syncToRemote = listOfNotNull(syncToRemote),
+        label = "sync",
+    )
+
+    @Test
+    fun `an onStop runnerCmd off a local runner is refused with the command message`() {
+        val validator = validatorServing("gpu-box")
+        val asStopStep = stoppableAgent(onStop = listOf(runnerCmdStep())).copy(runner = "gpu-box")
+        val asCommand =
+            stoppableAgent(onStop = listOf(stopStep())).copy(commands = listOf(runnerCmdStep()), runner = "gpu-box")
+
+        assertNull(validator.checkDefinition(asStopStep, "dir", errors))
+        assertTrue(errors.single().contains("agents with runnerCmd must run on runner: local"), errors.single())
+
+        val commandErrors = mutableListOf<String>()
+        assertNull(validator.checkDefinition(asCommand, "dir", commandErrors))
+        assertEquals(commandErrors, errors)
+    }
+
+    @Test
+    fun `an onStop runnerCmd naming an unknown runner is refused with the command message`() {
+        val asStopStep = stoppableAgent(onStop = listOf(runnerCmdStep(runner = "ghost")))
+        val asCommand = stoppableAgent(onStop = listOf(stopStep())).copy(commands = listOf(runnerCmdStep(runner = "ghost")))
+
+        assertNull(validator.checkDefinition(asStopStep, "dir", errors))
+        assertTrue(errors.single().contains("references unknown runner 'ghost' in a runnerCmd"), errors.single())
+
+        val commandErrors = mutableListOf<String>()
+        assertNull(validator.checkDefinition(asCommand, "dir", commandErrors))
+        assertEquals(commandErrors, errors)
+    }
+
+    @Test
+    fun `an onStop runnerCmd sync path that is absolute, escaping or blank is refused`() {
+        for (path in listOf("/etc/passwd", "../outside", "  ")) {
+            errors.clear()
+            assertNull(
+                validator.checkDefinition(stoppableAgent(onStop = listOf(runnerCmdStep(syncToRemote = path))), "dir", errors),
+                "onStop sync path '$path'",
+            )
+            assertTrue(errors.single().contains("has an invalid runnerCmd sync path '$path'"), errors.single())
+
+            val commandErrors = mutableListOf<String>()
+            assertNull(
+                validator.checkDefinition(
+                    stoppableAgent(onStop = listOf(stopStep())).copy(commands = listOf(runnerCmdStep(syncToRemote = path))),
+                    "dir",
+                    commandErrors,
+                ),
+                "command sync path '$path'",
+            )
+            assertEquals(commandErrors, errors, "sync path '$path'")
+        }
+    }
+
+    @Test
+    fun `an onStop runnerCmd rejection names the path, never an env value`() {
+        val agent =
+            stoppableAgent(onStop = listOf(runnerCmdStep(syncToRemote = "../outside")))
+                .copy(env = mapOf("TOKEN" to "s3cr3t-value"))
+
+        assertNull(validator.checkDefinition(agent, "dir", errors))
+        assertTrue(errors.single().contains("'../outside'"), errors.single())
+        assertFalse(errors.single().contains("s3cr3t-value"), errors.single())
+    }
+
+    @Test
+    fun `a valid local onStop runnerCmd still loads`() {
+        assertEquals(false, validator.checkDefinition(stoppableAgent(onStop = listOf(runnerCmdStep())), "dir", errors))
+        assertEquals(emptyList(), errors)
+    }
+
+    @Test
+    fun `a langgraph step only in onStop needs dispatch enabled`() {
+        val agent = stoppableAgent(onStop = listOf(Command.LangGraph(module = "graphs.flow")))
+
+        assertNull(validator.checkDefinition(agent, "dir", errors))
+        assertTrue(errors.single().contains("has a langgraph command but dispatch.enabled is not true"), errors.single())
+
+        errors.clear()
+        assertEquals(
+            false,
+            validator.checkDefinition(agent.copy(dispatch = AgentDispatchConfig(enabled = true)), "dir", errors),
+        )
+        assertEquals(emptyList(), errors)
     }
 }

@@ -9,6 +9,10 @@ import homer.app.models.bypassesPermissionsWithoutToolLimit
 import homer.app.models.templatePlaceholderPattern
 import org.slf4j.Logger
 
+/** The agent's commands and onStop steps, each tagged with the phase name the messages use (ADR-0108). */
+internal val Agent.phaseTaggedSteps: List<Pair<String, Command>>
+    get() = commands.map { "command" to it } + onStop.map { "onStop step" to it }
+
 /**
  * Load-time checks on an agent's inputs and their command bindings (envNames, tags, duplicates, result
  * captures, input-chosen executables), plus warn-only notes. A failing `check*` reports into `errors`
@@ -219,10 +223,6 @@ internal class AgentInputChecks(
         return true
     }
 
-    /** The agent's commands and onStop steps, each tagged with the phase name the messages use (ADR-0108). */
-    private val Agent.phaseTaggedSteps: List<Pair<String, Command>>
-        get() = commands.map { "command" to it } + onStop.map { "onStop step" to it }
-
     /** Rejects result captures into invalid envNames and input-chosen LLM executables; `false` = skip the agent. */
     fun checkCommandBindings(
         agent: Agent,
@@ -305,8 +305,8 @@ internal class AgentInputChecks(
 
     /**
      * WARNs when an input-bound envName feeds the workspace path, lock key, cooldown key or a RunAgent
-     * target, letting a caller pick another run's directory, lock, pacing window or target agent.
-     * Legitimate, so only a warning.
+     * target or Claude option, letting a caller pick another run's directory, lock, pacing window or
+     * target agent. Legitimate, so only a warning; `onStop:` steps are swept as `commands:` steps are.
      */
     fun warnOnInputSteering(agent: Agent) {
         val inputEnvNames =
@@ -317,41 +317,47 @@ internal class AgentInputChecks(
         if (inputEnvNames.isEmpty()) return
 
         fun refs(template: String) = templatePlaceholderPattern.findAll(template).map { it.groupValues[1] }.toSet() intersect inputEnvNames
+        // Both phases: a stop step's target or options steer the run exactly as a command's do (ADR-0108).
+        val steps = agent.phaseTaggedSteps
         val steered =
             buildList {
                 refs(agent.workspace.path).forEach { add("workspace.path uses input '{{$it}}'") }
                 refs(agent.lockStrategy.key).forEach { add("lockStrategy.key uses input '{{$it}}'") }
                 agent.cooldown?.key?.let { key -> refs(key).forEach { add("cooldown.key uses input '{{$it}}'") } }
-                agent.commands.filterIsInstance<Command.RunAgent>().forEach { cmd ->
-                    refs(cmd.agentName).forEach { add("agent command '${cmd.label}' target uses input '{{$it}}'") }
-                }
+                steps
+                    .mapNotNull { (kind, cmd) -> (cmd as? Command.RunAgent)?.let { kind to it } }
+                    .forEach { (kind, cmd) ->
+                        refs(cmd.agentName).forEach { add("agent $kind '${cmd.label}' target uses input '{{$it}}'") }
+                    }
                 // Claude path/mode options grant filesystem or permission power.
-                agent.commands.filterIsInstance<Command.Claude>().forEach { cmd ->
-                    val o = cmd.options
+                steps
+                    .mapNotNull { (kind, cmd) -> (cmd as? Command.Claude)?.let { kind to it } }
+                    .forEach { (kind, cmd) ->
+                        val o = cmd.options
 
-                    fun flag(
-                        name: String,
-                        it: String,
-                    ) = add("claude command '${cmd.label}' option '$name' uses input '{{$it}}'")
-                    mapOf(
-                        "settings" to o.settings,
-                        "systemPromptFile" to o.systemPromptFile,
-                        "appendSystemPromptFile" to o.appendSystemPromptFile,
-                        "permissionMode" to o.permissionMode,
-                        "permissionPromptTool" to o.permissionPromptTool,
-                    ).forEach { (name, value) ->
-                        if (value != null) refs(value).forEach { flag(name, it) }
+                        fun flag(
+                            name: String,
+                            it: String,
+                        ) = add("claude $kind '${cmd.label}' option '$name' uses input '{{$it}}'")
+                        mapOf(
+                            "settings" to o.settings,
+                            "systemPromptFile" to o.systemPromptFile,
+                            "appendSystemPromptFile" to o.appendSystemPromptFile,
+                            "permissionMode" to o.permissionMode,
+                            "permissionPromptTool" to o.permissionPromptTool,
+                        ).forEach { (name, value) ->
+                            if (value != null) refs(value).forEach { flag(name, it) }
+                        }
+                        mapOf(
+                            "addDir" to o.addDir,
+                            "mcpConfig" to o.mcpConfig,
+                            "pluginDir" to o.pluginDir,
+                            "pluginUrl" to o.pluginUrl,
+                            "file" to o.file,
+                        ).forEach { (name, values) ->
+                            values?.forEach { value -> refs(value).forEach { flag(name, it) } }
+                        }
                     }
-                    mapOf(
-                        "addDir" to o.addDir,
-                        "mcpConfig" to o.mcpConfig,
-                        "pluginDir" to o.pluginDir,
-                        "pluginUrl" to o.pluginUrl,
-                        "file" to o.file,
-                    ).forEach { (name, values) ->
-                        values?.forEach { value -> refs(value).forEach { flag(name, it) } }
-                    }
-                }
             }
         if (steered.isNotEmpty()) {
             logger.warn(
