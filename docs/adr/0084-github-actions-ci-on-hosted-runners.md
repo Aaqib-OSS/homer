@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-10-14
 deciders: Lukáš Vlk
-amended: 2026-11-15, 2026-11-20
+amended: 2026-11-15, 2026-11-20, 2026-11-22
 ---
 
 # ADR-0084: GitHub Actions CI on GitHub-hosted runners, without Artifactory
@@ -135,3 +135,32 @@ Plugin Portal, as CI already did, and Gradle dependency verification
 ([ADR-0115](0115-gradle-dependency-verification.md)) checks what they serve. CI's Gradle cache is
 `setup-gradle`'s, which only the default branch writes. An environment that meets the `429` again
 has the Gradle user-home cache as its remedy, as CI does, not a proxy in this repository.
+
+## Amendment (2026-11-22): a release resolves its Gradle dependencies once per run
+
+The `429` came back in the Release workflow: the `1.44.0` run lost one of its six `app/Dockerfile`
+image builds to `Too Many Requests` from Maven Central, and a failed platform build skips every
+index. Those builds each resolved the whole graph at the same moment with nothing cached, because a
+release takes no cache another run wrote: `setup-gradle`'s cache, which CI uses, is written by the
+default branch, and a release must not build from it.
+
+The remedy named above is applied within one run instead. Job `gradle-deps` of `release.yml` builds
+`app/Dockerfile` stage `gradle-home-export` from the release commit, with no cache and up to three
+attempts, and uploads the builder's `caches/modules-2` and wrapper distribution (without the lock
+files Gradle's cache-copy rules exclude) as artifact `gradle-home`. The `app/Dockerfile` image
+builds of the same run download it and pass it as build context `gradle-home`, which stage
+`builder` copies into the Gradle user home before it runs Gradle. Stage `gradle-home` is empty, so
+every build that passes no such context (compose, the E2E image, a local build) resolves as before.
+
+- Good: a release downloads its dependencies in one job instead of six concurrent builds. An image
+  build resolves the graph with no request at all and downloads nothing; Gradle's signature
+  verification still checks each cached `.asc` against the repository (about 375 conditional
+  requests per build, also with `--offline`), so `gradle-deps` and every push retry a failed build
+  with a backoff rather than failing a platform build.
+- Good: the seed is data of the same run, built from the same commit; Gradle dependency
+  verification ([ADR-0115](0115-gradle-dependency-verification.md)) still checks every artifact
+  where it is used. `ReleaseWorkflowGateTest` fails on a cache another run wrote in `release.yml`.
+- Bad: the image builds wait for `gradle-deps`, which compiles the backend once more, so a release
+  takes several minutes longer.
+- Neutral: the seed is resolved on amd64 and reused on arm64; no dependency of the build differs by
+  architecture, and one that did would be fetched by the arm64 build as before.

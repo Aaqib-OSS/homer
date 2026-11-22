@@ -1,4 +1,9 @@
 # Multi-stage Dockerfile for Homer
+
+# The Gradle user home the builder starts from: empty, unless a build passes its own as build context
+# `gradle-home`, as each release image build does with its run's dependency cache (ADR-0084).
+FROM scratch AS gradle-home
+
 # Stage 1: Build the fat jar
 FROM eclipse-temurin:25-jdk-alpine-3.24@sha256:22edbb1021420ae6e248519d1af07577742314d67d4c60fcbb2e285b7e47fa78 AS builder
 
@@ -23,6 +28,8 @@ COPY app/schemas ./schemas
 # settings.gradle.kts includes :e2e and :architecture, never built here; empty dirs satisfy Gradle.
 RUN mkdir -p e2e architecture
 
+COPY --from=gradle-home / /root/.gradle/
+
 # Caches the Gradle distribution, buildSrc and plugins in their own layer.
 RUN ./gradlew dependencies --no-daemon
 
@@ -34,6 +41,12 @@ RUN ./gradlew shadowJar --no-daemon -PhomerVersion="$HOMER_VERSION"
 # Alpine (musl) loads only sqlite-jdbc's Linux-Musl native library, so the image's jar drops the
 # other platforms' copies; a source build keeps them (ADR-0015).
 RUN zip -q -d app/build/libs/homer-*-all.jar 'org/sqlite/native/*' -x 'org/sqlite/native/Linux-Musl/*'
+
+# The builder's dependency cache and wrapper distribution: the release workflow exports this stage once per
+# run and hands it to that run's image builds as `gradle-home` (ADR-0084).
+FROM scratch AS gradle-home-export
+COPY --from=builder /root/.gradle/caches/modules-2 /caches/modules-2
+COPY --from=builder /root/.gradle/wrapper/dists /wrapper/dists
 
 # Stage 2: the slim server image (ADR-0094): Homer, a JRE, bash, su-exec, curl and the LangGraph
 # runtime, with no agent toolchain.
