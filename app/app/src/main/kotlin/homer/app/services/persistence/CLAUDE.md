@@ -44,7 +44,8 @@ See ADR-0020.
   refuses a checkpoint with `SQLITE_LOCKED`. See ADR-0020 (2026-09-29
   amendments).
 - **`ProcessRepository` / `QuestionsRepository` / `DispatchRepository` /
-  `ContinuationRepository` / `HookRepository` / `CostRepository`** — all access via
+  `ContinuationRepository` / `HookRepository` / `RunMessagesRepository` /
+  `CostRepository`** — all access via
   `DatabaseService.query` (writes) or `DatabaseService.read` (transactions
   that only read). Map rows ↔ `ProcessInfo` / `Question` / `Dispatch` /
   `Continuation` at this boundary; the `ProcessInfo.job` comes from
@@ -80,6 +81,10 @@ See ADR-0020.
   `FiredRecords`, but its rows are written by `ProcessRepository`'s status
   transactions through the free `insertPendingHooksTx`, so recording needs no
   second database handle. See ADR-0107.
+  `RunMessagesRepository` owns the `run_messages` table (schema v29), the per-run
+  operator inbox: `tryInsert` refuses an ended run and caps a run's messages,
+  `take`/`markUndelivered` settle its QUEUED rows, and
+  `markUndeliveredForEndedRuns` is the boot backstop. See ADR-0097.
   `ResultTokenRepository` owns the `result_tokens` table (schema v4;
   `consumer_agent` audience column v7, its upgrade default dropped v33). See ADR-0025.
   `CostRepository` owns the append-only `cost_entries` LLM-spend ledger
@@ -107,7 +112,11 @@ See ADR-0020.
   by the restart (so a crash mid-fire can't cause a duplicate re-fire), then re-fires any PENDING dispatch
   whose question is already ANSWERED (crash-safety for ask-and-dispatch). Same
   two-step crash-safety for continuations: fail any left `DISPATCHING`, then
-  fire any PENDING continuation whose watched process is already terminal.
+  fire any PENDING continuation whose watched process is already terminal. Hooks
+  get the same treatment (ADR-0107): the `UNKNOWN` writes record the hooks their
+  transitions declare, any hook left `DISPATCHING` fails, and the recorded rows
+  plus whatever is still PENDING fire or replay — the claim CAS stops a replay
+  double-firing a live row.
 
 ### Planner statistics
 

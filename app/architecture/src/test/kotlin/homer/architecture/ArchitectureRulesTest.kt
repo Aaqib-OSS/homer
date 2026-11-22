@@ -191,35 +191,18 @@ class ArchitectureRulesTest {
         const val OTEL = "OtelTelemetryService"
 
         /**
-         * The "Services" row of app/CLAUDE.md "Layered architecture", plus the `services/` types ADR-0083 moved to
-         * other rows, whose tests stay required; an interface counts through its implementations.
+         * The "Services" row of app/CLAUDE.md "Layered architecture" (read from the layer map, so the row exists
+         * once), plus the `services/` types ADR-0083 moved to other rows, whose tests stay required; an interface
+         * counts through its implementations.
          */
         val DOCUMENTED_SERVICES =
-            setOf(
-                "AgentsService",
-                "AgentRunStarter",
-                "AgentSubRunStarter",
-                "ProcessManager",
-                "CostMeter",
-                "LockManager",
-                "ParallelRunsManager",
-                "TelemetryService",
-                "LangfuseClient",
-                "ArtifactService",
-                "LogTailService",
-                "LlmEventStreamService",
-                "ProcessEventBroadcaster",
-                "CronSchedulerService",
-                "WorkspacePurgeService",
-                "QuestionsService",
-                "DispatchService",
-                "ContinuationService",
-                "LangGraphInspectService",
-                "LangGraphRunStatusService",
-                "Authorizer",
-                "CooldownGate",
-                "StartupReconciliation",
-            )
+            Layer.services +
+                setOf(
+                    "LockManager",
+                    "ParallelRunsManager",
+                    "TelemetryService",
+                    "LangfuseClient",
+                )
 
         /** Where the [DOCUMENTED_SERVICES] live: `services/`, and the rows ADR-0083 moved some of them to. */
         val SERVICE_PACKAGES = listOf("homer.app.services..", "homer.app.executors..", "homer.app.infra..")
