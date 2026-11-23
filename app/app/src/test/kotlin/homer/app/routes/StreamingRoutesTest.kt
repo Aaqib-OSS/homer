@@ -388,65 +388,112 @@ class StreamingRoutesTest {
             assertEquals(listOf(Int.MAX_VALUE + 1L, null), offsets)
         }
 
+    /** The processes the `/stream/processes` visibility cases broadcast: pid → (agent name, owner). */
+    private val streamedProcesses: Map<Int, Pair<String, String?>> =
+        mapOf(
+            1 to ("deploy" to null),
+            2 to ("other" to "mallory"),
+        )
+
+    private fun streamedProcessInfo(pid: Int): ProcessInfo {
+        val (agent, owner) = streamedProcesses.getValue(pid)
+        return ProcessInfo(id = pid, status = ProcessStatus.WORKING, agentName = agent, owner = owner)
+    }
+
     /**
-     * The per-event visibility filter skips a hidden process instead of ending the stream: the same
-     * connection still delivers the visible event broadcast after the hidden one (ADR-0038).
+     * The per-event visibility filter skips a hidden process instead of ending the stream: one connection as
+     * [bearer] over a broadcast of a visible, a hidden and a later visible event delivers exactly [delivered]
+     * and skips [skipped] (ADR-0038).
      */
+    private fun assertStreamedProcessFrames(
+        tokens: Map<String, TokenConfig>,
+        bearer: String,
+        delivered: Set<Int>,
+        skipped: Set<Int>,
+    ) = testApplication {
+        val broadcaster = ProcessEventBroadcaster()
+        val pm =
+            mockk<ProcessManager>(relaxed = true) {
+                streamedProcesses.keys.forEach { pid -> coEvery { getProcessInfo(pid) } returns streamedProcessInfo(pid) }
+            }
+        val deps =
+            mockk<ApiDeps>(relaxed = true) {
+                every { authorizer } returns authorizerFor(tokens)
+                every { processManager } returns pm
+                every { processEventBroadcaster } returns broadcaster
+            }
+        application { installGrantsApp(tokens, deps) }
+
+        // The sentinel rides a delivered process, so a skipped event before it must not end the stream.
+        val sentinelPid = delivered.min()
+        client
+            .prepareGet("/api/v1/stream/processes") {
+                header(HttpHeaders.Authorization, "Bearer $bearer")
+            }.execute { response ->
+                coroutineScope {
+                    val trigger =
+                        launch {
+                            delay(300)
+                            streamedProcesses.keys.forEach { pid ->
+                                broadcaster.emit(ProcessEvent.StatusChanged(pid, ProcessStatus.WORKING, streamedProcessInfo(pid).agentName))
+                            }
+                            broadcaster.emit(
+                                ProcessEvent.QuestionAsked(sentinelPid, "after-hidden", streamedProcessInfo(sentinelPid).agentName),
+                            )
+                        }
+                    val channel = response.bodyAsChannel()
+                    val lines = mutableListOf<String>()
+                    withTimeout(10_000) {
+                        while (true) {
+                            val line = channel.readLine() ?: break
+                            lines += line
+                            if ("after-hidden" in line) break
+                        }
+                    }
+                    trigger.join()
+                    for (pid in delivered) {
+                        assertTrue(lines.any { "\"processId\":$pid" in it }, "process $pid is delivered: $lines")
+                    }
+                    for (pid in skipped) {
+                        assertTrue(lines.none { "\"processId\":$pid" in it }, "process $pid is skipped: $lines")
+                    }
+                    assertTrue(lines.any { "after-hidden" in it }, "the stream keeps going past a skipped event: $lines")
+                }
+            }
+    }
+
     @Test
     fun `the processes stream skips a hidden process and still delivers the next visible one`() =
-        testApplication {
-            val broadcaster = ProcessEventBroadcaster()
-            val tokens =
+        assertStreamedProcessFrames(
+            tokens =
                 mapOf(
-                    "reader" to
-                        TokenConfig(
-                            token = "read-token",
-                            grants = listOf(Grant(listOf("deploy"), listOf(Action.READ))),
-                        ),
-                )
-            val pm =
-                mockk<ProcessManager>(relaxed = true) {
-                    coEvery { getProcessInfo(1) } returns
-                        ProcessInfo(id = 1, status = ProcessStatus.WORKING, agentName = "deploy", owner = null)
-                    coEvery { getProcessInfo(2) } returns
-                        ProcessInfo(id = 2, status = ProcessStatus.WORKING, agentName = "other", owner = "mallory")
-                }
-            val deps =
-                mockk<ApiDeps>(relaxed = true) {
-                    every { authorizer } returns authorizerFor(tokens)
-                    every { processManager } returns pm
-                    every { processEventBroadcaster } returns broadcaster
-                }
-            application { installGrantsApp(tokens, deps) }
+                    "reader" to TokenConfig(token = "read-token", grants = listOf(Grant(listOf("deploy"), listOf(Action.READ)))),
+                ),
+            bearer = "read-token",
+            delivered = setOf(1),
+            skipped = setOf(2),
+        )
 
-            client
-                .prepareGet("/api/v1/stream/processes") {
-                    header(HttpHeaders.Authorization, "Bearer read-token")
-                }.execute { response ->
-                    coroutineScope {
-                        val trigger =
-                            launch {
-                                delay(300)
-                                broadcaster.emit(ProcessEvent.StatusChanged(1, ProcessStatus.WORKING, "deploy"))
-                                // Hidden: neither owned by the reader nor covered by its read grant.
-                                broadcaster.emit(ProcessEvent.StatusChanged(2, ProcessStatus.WORKING, "other"))
-                                // Sentinel on the visible process: the skipped event must not end the stream.
-                                broadcaster.emit(ProcessEvent.QuestionAsked(1, "after-hidden", "deploy"))
-                            }
-                        val channel = response.bodyAsChannel()
-                        val lines = mutableListOf<String>()
-                        withTimeout(10_000) {
-                            while (true) {
-                                val line = channel.readLine() ?: break
-                                lines += line
-                                if ("after-hidden" in line) break
-                            }
-                        }
-                        trigger.join()
-                        assertTrue(lines.any { "\"processId\":1" in it }, "the visible process is delivered: $lines")
-                        assertTrue(lines.none { "\"processId\":2" in it }, "the hidden process is skipped: $lines")
-                        assertTrue(lines.any { "after-hidden" in it }, "the stream keeps going past the skipped event: $lines")
-                    }
-                }
-        }
+    @Test
+    fun `the processes stream delivers every process to an admin`() =
+        assertStreamedProcessFrames(
+            tokens = mapOf("admin" to TokenConfig(token = "admin-token", role = "admin")),
+            bearer = "admin-token",
+            delivered = setOf(1, 2),
+            skipped = emptySet(),
+        )
+
+    // The owner branch of canSee: a RUN grant on another agent is no READ grant here, so pid 2 is
+    // visible through ownership alone and pid 1 stays hidden.
+    @Test
+    fun `the processes stream delivers an owned process to its owner without a read grant`() =
+        assertStreamedProcessFrames(
+            tokens =
+                mapOf(
+                    "mallory" to TokenConfig(token = "owner-token", grants = listOf(Grant(listOf("deploy"), listOf(Action.RUN)))),
+                ),
+            bearer = "owner-token",
+            delivered = setOf(2),
+            skipped = setOf(1),
+        )
 }
