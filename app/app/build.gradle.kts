@@ -215,15 +215,13 @@ tasks.test {
     outputs.dir(dtoContractDir).withPropertyName("dtoContract")
     systemProperty("homer.dtoContract.dir", dtoContractDir.get().asFile.absolutePath)
 
-    // QueryPlanCapture appends production SQL here for the `query-plans` check (ADR-0082): an executing run
-    // empties it first, a cache-restored one keeps its capture; absent when it captured nothing — an empty capture fails that report.
+    // QueryPlanCapture collects production SQL here for queryPlanReport (check `query-plans`, ADR-0082);
+    // emptied first, as the capture only ever appends, and left absent when it captured nothing — an empty one fails that report.
     val queryPlansDir = layout.buildDirectory.dir("reports/query-plans/captured")
     outputs.dir(queryPlansDir).withPropertyName("queryPlansCapture")
     systemProperty("homer.queryPlans.dir", queryPlansDir.get().asFile.absolutePath)
     val queryPlansCaptureDir = queryPlansDir.get().asFile
-    doFirst {
-        if (state.skipMessage == null) queryPlansCaptureDir.deleteRecursively()
-    }
+    doFirst { queryPlansCaptureDir.deleteRecursively() }
 
     // MockCallBudget (ADR-0082, `mock-calls`) is the only autodetected extension: mockk-jvm registers its
     // own MockKExtension, which stays opt-in per class.
@@ -234,11 +232,8 @@ tasks.test {
     systemProperty("homer.mockCalls.dir", mockCallsDir.get().asFile.absolutePath)
     val mockCallsReportDir = mockCallsDir.get().asFile
     doFirst {
-        // Same restore guard as the query-plans capture above.
-        if (state.skipMessage == null) {
-            mockCallsReportDir.deleteRecursively()
-            mockCallsReportDir.mkdirs()
-        }
+        mockCallsReportDir.deleteRecursively()
+        mockCallsReportDir.mkdirs()
     }
 }
 
