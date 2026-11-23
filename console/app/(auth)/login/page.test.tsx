@@ -52,6 +52,14 @@ function setActiveInstanceMode(mode: 'cookie' | 'bearer') {
   ];
 }
 
+/** The default instance plus a second saved one, so a URL seed has something to match against. */
+function setTwoInstances() {
+  instancesMock.instances = [
+    { id: 'default', label: 'Default', baseUrl: 'http://localhost:8080', mode: 'cookie' },
+    { id: 'other', label: 'other.example', baseUrl: 'http://other.example', mode: 'cookie' },
+  ];
+}
+
 /** Fill in and submit the sign-in form. */
 async function signIn(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText(/username/i), 'alice');
@@ -134,6 +142,112 @@ describe('LoginPage', () => {
     expect(screen.queryByText(/came from the page link/i)).not.toBeInTheDocument();
     // Known endpoint stays folded behind the disclosure.
     expect(screen.queryByRole('textbox', { name: /instance endpoint/i })).not.toBeInTheDocument();
+  });
+
+  it('seeds nothing when the URL carries no endpoint parameter', () => {
+    renderPage();
+    expect(screen.queryByText(/came from the page link/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /trust this endpoint/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^login$/i })).toBeEnabled();
+  });
+
+  it('seeds nothing when the endpoint parameter is empty', () => {
+    searchParamsMock.mockReturnValue(new URLSearchParams('endpoint='));
+    renderPage();
+    expect(screen.queryByText(/came from the page link/i)).not.toBeInTheDocument();
+    // An empty parameter is not an endpoint: the field stays folded.
+    expect(screen.queryByRole('textbox', { name: /instance endpoint/i })).not.toBeInTheDocument();
+  });
+
+  it('treats an unnormalisable endpoint parameter as untrusted', () => {
+    searchParamsMock.mockReturnValue(new URLSearchParams('endpoint=not a url'));
+    renderPage();
+    expect(screen.getByText(/came from the page link/i)).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /trust this endpoint/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^login$/i })).toBeDisabled();
+  });
+
+  it('trusts a URL endpoint that matches one of several saved instances', () => {
+    setTwoInstances();
+    searchParamsMock.mockReturnValue(new URLSearchParams('endpoint=http://other.example/'));
+    renderPage();
+    // One match among several is enough, and the trailing slash normalises away.
+    expect(screen.queryByText(/came from the page link/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: /instance endpoint/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^login$/i })).toBeEnabled();
+  });
+
+  it('warns and blocks login when the URL endpoint matches none of several saved instances', () => {
+    setTwoInstances();
+    searchParamsMock.mockReturnValue(new URLSearchParams('endpoint=https://attacker.example'));
+    renderPage();
+    expect(screen.getByText(/came from the page link/i)).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /trust this endpoint/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^login$/i })).toBeDisabled();
+  });
+
+  it('unblocks login when the endpoint is edited to a saved instance', async () => {
+    setTwoInstances();
+    searchParamsMock.mockReturnValue(new URLSearchParams('endpoint=https://attacker.example'));
+    const user = userEvent.setup();
+    renderPage();
+    expect(screen.getByRole('button', { name: /^login$/i })).toBeDisabled();
+
+    const endpoint = screen.getByLabelText(/instance endpoint/i);
+    await user.clear(endpoint);
+    await user.type(endpoint, 'http://other.example/');
+
+    expect(screen.queryByText(/came from the page link/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^login$/i })).toBeEnabled();
+  });
+
+  it('keeps login blocked when the edited endpoint cannot be normalised', async () => {
+    searchParamsMock.mockReturnValue(new URLSearchParams('endpoint=https://attacker.example'));
+    const user = userEvent.setup();
+    renderPage();
+
+    const endpoint = screen.getByLabelText(/instance endpoint/i);
+    await user.clear(endpoint);
+    await user.type(endpoint, 'not a url');
+
+    expect(screen.getByRole('checkbox', { name: /trust this endpoint/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^login$/i })).toBeDisabled();
+  });
+
+  it('refuses a submit while the endpoint is unconfirmed and does not log in', async () => {
+    searchParamsMock.mockReturnValue(new URLSearchParams('endpoint=https://attacker.example'));
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(screen.getByLabelText(/username/i), 'alice');
+    await user.type(screen.getByLabelText(/^password$/i), 'pw');
+    const submit = screen.getByRole('button', { name: /^login$/i });
+    // The button is disabled while blocked, so only a programmatic submit reaches the handler.
+    const form = submit.closest('form');
+    expect(form).not.toBeNull();
+    fireEvent.submit(form as HTMLFormElement);
+
+    expect(
+      await screen.findByText(/confirm you trust this endpoint before signing in/i),
+    ).toBeInTheDocument();
+    expect(login).not.toHaveBeenCalled();
+    expect(upsertInstance).not.toHaveBeenCalled();
+  });
+
+  it('re-blocks login when the endpoint is edited after trust was confirmed', async () => {
+    searchParamsMock.mockReturnValue(new URLSearchParams('endpoint=https://attacker.example'));
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole('checkbox', { name: /trust this endpoint/i }));
+    expect(screen.getByRole('button', { name: /^login$/i })).toBeEnabled();
+
+    const endpoint = screen.getByLabelText(/instance endpoint/i);
+    await user.clear(endpoint);
+    await user.type(endpoint, 'https://other-attacker.example');
+
+    expect(screen.getByRole('checkbox', { name: /trust this endpoint/i })).not.toBeChecked();
+    expect(screen.getByRole('button', { name: /^login$/i })).toBeDisabled();
   });
 
   it('logs into the matched instance and routes to /processes on success', async () => {

@@ -2,12 +2,16 @@ package homer.app.routes
 
 import homer.app.exceptions.BodylessBadRequestException
 import homer.app.fixtures.TestFixtures
+import homer.app.fixtures.assertStreamedProcessFrames
 import homer.app.fixtures.mountApiV1Routes
 import homer.app.infra.SecretRedactor
+import homer.app.models.Action
 import homer.app.models.ExecutionInfo
+import homer.app.models.Grant
 import homer.app.models.LlmEvent
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
+import homer.app.models.TokenConfig
 import homer.app.services.LlmArtifact
 import homer.app.services.LlmEventStreamService
 import homer.app.services.LlmStreamEvent
@@ -373,4 +377,78 @@ class StreamingRoutesTest {
 
             assertEquals(listOf(Int.MAX_VALUE + 1L, null), offsets)
         }
+
+    @Test
+    fun `the processes stream skips a hidden process and still delivers the next visible one`() =
+        assertStreamedProcessFrames(
+            tokens =
+                mapOf(
+                    "reader" to TokenConfig(token = "read-token", grants = listOf(Grant(listOf("deploy"), listOf(Action.READ)))),
+                ),
+            bearer = "read-token",
+            delivered = setOf(1),
+            skipped = setOf(2),
+        )
+
+    @Test
+    fun `the processes stream delivers every process to an admin`() =
+        assertStreamedProcessFrames(
+            tokens = mapOf("admin" to TokenConfig(token = "admin-token", role = "admin")),
+            bearer = "admin-token",
+            delivered = setOf(1, 2),
+        )
+
+    // The owner branch of canSee: a RUN grant on another agent is no READ grant here, so pid 2 is
+    // visible through ownership alone and pid 1 stays hidden.
+    @Test
+    fun `the processes stream delivers an owned process to its owner without a read grant`() =
+        assertStreamedProcessFrames(
+            tokens =
+                mapOf(
+                    "mallory" to TokenConfig(token = "owner-token", grants = listOf(Grant(listOf("deploy"), listOf(Action.RUN)))),
+                ),
+            bearer = "owner-token",
+            delivered = setOf(2),
+            skipped = setOf(1),
+        )
+
+    // An event whose pid the manager no longer knows resolves to no owner and no agent: fail closed
+    // for a scoped reader, while an admin's unfiltered view still frames it.
+    @Test
+    fun `the processes stream sends a scoped reader no frame for a process the manager no longer knows`() =
+        assertStreamedProcessFrames(
+            tokens =
+                mapOf(
+                    "reader" to TokenConfig(token = "read-token", grants = listOf(Grant(listOf("deploy"), listOf(Action.READ)))),
+                ),
+            bearer = "read-token",
+            delivered = setOf(1),
+            skipped = setOf(2, 99),
+            extraEvents = listOf(ProcessEvent.StatusChanged(99, ProcessStatus.WORKING, "ghost")),
+        )
+
+    @Test
+    fun `the processes stream still frames a process the manager no longer knows for an admin`() =
+        assertStreamedProcessFrames(
+            tokens = mapOf("admin" to TokenConfig(token = "admin-token", role = "admin")),
+            bearer = "admin-token",
+            delivered = setOf(1, 2, 99),
+            extraEvents = listOf(ProcessEvent.StatusChanged(99, ProcessStatus.WORKING, "ghost")),
+        )
+
+    // An event type streamedProcessId does not map (an AgentsReloaded riding the shared broadcaster
+    // flow) is skipped before any lookup and produces no frame at all.
+    @Test
+    fun `the processes stream carries no frame for an event type it does not stream`() =
+        assertStreamedProcessFrames(
+            tokens =
+                mapOf(
+                    "reader" to TokenConfig(token = "read-token", grants = listOf(Grant(listOf("deploy"), listOf(Action.READ)))),
+                ),
+            bearer = "read-token",
+            delivered = setOf(1),
+            skipped = setOf(2),
+            extraEvents = listOf(ProcessEvent.AgentsReloaded(listOf("deploy"), emptyList(), emptyList())),
+            absent = listOf("agent.reload"),
+        )
 }

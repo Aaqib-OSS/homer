@@ -215,8 +215,8 @@ tasks.test {
     outputs.dir(dtoContractDir).withPropertyName("dtoContract")
     systemProperty("homer.dtoContract.dir", dtoContractDir.get().asFile.absolutePath)
 
-    // QueryPlanCapture appends production SQL here for the `query-plans` check (ADR-0082), so an
-    // executing run empties it first; an up-to-date or cache-restored run keeps its restored capture.
+    // QueryPlanCapture appends production SQL here for the `query-plans` check (ADR-0082): an executing run
+    // empties it first, a cache-restored one keeps its capture; absent when it captured nothing — an empty capture fails that report.
     val queryPlansDir = layout.buildDirectory.dir("reports/query-plans/captured")
     outputs.dir(queryPlansDir).withPropertyName("queryPlansCapture")
     systemProperty("homer.queryPlans.dir", queryPlansDir.get().asFile.absolutePath)
