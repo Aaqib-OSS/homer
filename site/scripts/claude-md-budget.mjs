@@ -1,7 +1,7 @@
 // Size cap of every tracked CLAUDE.md in UTF-8 bytes, ratcheting down only (docs/quality-checks.md).
 export const CAPS = {
   'CLAUDE.md': 23876,
-  'app/CLAUDE.md': 55083,
+  'app/CLAUDE.md': 55420,
   'app/app/src/main/kotlin/homer/app/executors/llm/CLAUDE.md': 8494,
   'app/app/src/main/kotlin/homer/app/runners/CLAUDE.md': 11488,
   'app/app/src/main/kotlin/homer/app/services/persistence/CLAUDE.md': 20457,

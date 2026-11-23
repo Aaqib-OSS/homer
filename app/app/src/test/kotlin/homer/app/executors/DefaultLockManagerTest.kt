@@ -354,6 +354,24 @@ class DefaultLockManagerTest {
         }
 
     @Test
+    fun `a cancelled run that was the pending replacement still frees the key`() =
+        runTest {
+            val lockName = "test-lock"
+            coEvery { mockProcessManager.killProcess(any(), any()) } returns Unit
+            lockManager.acquireThenDisplace(lockName, OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT, 1)
+            // Run 2 registers as the pending replacement, then re-queues on the same key with WAIT and
+            // is cancelled: the cleanup must clear the pending registration, or the key strands (CWE-667).
+            lockManager.acquireLock(lockName, OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT, 2, noOpGate)
+
+            val requeued = launch { lockManager.acquireThenDisplace(lockName, OnKeyCollisionStrategy.WAIT, 2) }
+            runCurrent()
+            requeued.cancelAndJoin()
+
+            lockManager.releaseLock(lockName, 1)
+            lockManager.acquireThenDisplace(lockName, OnKeyCollisionStrategy.SKIP_CURRENT, 3)
+        }
+
+    @Test
     fun `releaseLock by the victim during a pending handover promotes no WAIT waiter`() =
         runTest {
             val lockName = "test-lock"
