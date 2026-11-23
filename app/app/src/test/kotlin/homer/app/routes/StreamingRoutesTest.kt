@@ -2,17 +2,23 @@ package homer.app.routes
 
 import homer.app.exceptions.BodylessBadRequestException
 import homer.app.fixtures.TestFixtures
+import homer.app.fixtures.authorizerFor
+import homer.app.fixtures.installGrantsApp
 import homer.app.fixtures.mountApiV1Routes
 import homer.app.infra.SecretRedactor
+import homer.app.models.Action
 import homer.app.models.ExecutionInfo
+import homer.app.models.Grant
 import homer.app.models.LlmEvent
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessStatus
+import homer.app.models.TokenConfig
 import homer.app.services.LlmArtifact
 import homer.app.services.LlmEventStreamService
 import homer.app.services.LlmStreamEvent
 import homer.app.services.LogTailService
 import homer.app.services.ProcessEvent
+import homer.app.services.ProcessEventBroadcaster
 import homer.app.services.ProcessManager
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.int
@@ -20,15 +26,23 @@ import io.kotest.property.arbitrary.string
 import io.kotest.property.checkAll
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.prepareGet
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.testApplication
+import io.ktor.utils.io.readLine
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import kotlin.io.path.Path
@@ -372,5 +386,67 @@ class StreamingRoutesTest {
             }
 
             assertEquals(listOf(Int.MAX_VALUE + 1L, null), offsets)
+        }
+
+    /**
+     * The per-event visibility filter skips a hidden process instead of ending the stream: the same
+     * connection still delivers the visible event broadcast after the hidden one (ADR-0038).
+     */
+    @Test
+    fun `the processes stream skips a hidden process and still delivers the next visible one`() =
+        testApplication {
+            val broadcaster = ProcessEventBroadcaster()
+            val tokens =
+                mapOf(
+                    "reader" to
+                        TokenConfig(
+                            token = "read-token",
+                            grants = listOf(Grant(listOf("deploy"), listOf(Action.READ))),
+                        ),
+                )
+            val pm =
+                mockk<ProcessManager>(relaxed = true) {
+                    coEvery { getProcessInfo(1) } returns
+                        ProcessInfo(id = 1, status = ProcessStatus.WORKING, agentName = "deploy", owner = null)
+                    coEvery { getProcessInfo(2) } returns
+                        ProcessInfo(id = 2, status = ProcessStatus.WORKING, agentName = "other", owner = "mallory")
+                }
+            val deps =
+                mockk<ApiDeps>(relaxed = true) {
+                    every { authorizer } returns authorizerFor(tokens)
+                    every { processManager } returns pm
+                    every { processEventBroadcaster } returns broadcaster
+                }
+            application { installGrantsApp(tokens, deps) }
+
+            client
+                .prepareGet("/api/v1/stream/processes") {
+                    header(HttpHeaders.Authorization, "Bearer read-token")
+                }.execute { response ->
+                    coroutineScope {
+                        val trigger =
+                            launch {
+                                delay(300)
+                                broadcaster.emit(ProcessEvent.StatusChanged(1, ProcessStatus.WORKING, "deploy"))
+                                // Hidden: neither owned by the reader nor covered by its read grant.
+                                broadcaster.emit(ProcessEvent.StatusChanged(2, ProcessStatus.WORKING, "other"))
+                                // Sentinel on the visible process: the skipped event must not end the stream.
+                                broadcaster.emit(ProcessEvent.QuestionAsked(1, "after-hidden", "deploy"))
+                            }
+                        val channel = response.bodyAsChannel()
+                        val lines = mutableListOf<String>()
+                        withTimeout(10_000) {
+                            while (true) {
+                                val line = channel.readLine() ?: break
+                                lines += line
+                                if ("after-hidden" in line) break
+                            }
+                        }
+                        trigger.join()
+                        assertTrue(lines.any { "\"processId\":1" in it }, "the visible process is delivered: $lines")
+                        assertTrue(lines.none { "\"processId\":2" in it }, "the hidden process is skipped: $lines")
+                        assertTrue(lines.any { "after-hidden" in it }, "the stream keeps going past the skipped event: $lines")
+                    }
+                }
         }
 }
