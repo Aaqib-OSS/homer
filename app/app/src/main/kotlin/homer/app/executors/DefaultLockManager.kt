@@ -87,7 +87,11 @@ class DefaultLockManager(
         try {
             deferred.await()
         } catch (e: CancellationException) {
-            removeCancelledWaiter(lockName, processID)
+            // NonCancellable: a cancelled withLock throws when the mutex is contended, which
+            // would leave this dead waiter queued for releaseLock to hand the lock to.
+            withContext(NonCancellable) {
+                mutex.withLock { abandonWait(lockName, processID) }
+            }
             throw e
         } finally {
             waitTicket?.close()
@@ -95,27 +99,17 @@ class DefaultLockManager(
         return LockGrant()
     }
 
-    // NonCancellable: a cancelled withLock throws when the mutex is contended, which
-    // would leave this dead waiter queued for releaseLock to hand the lock to.
-    private suspend fun removeCancelledWaiter(
+    /**
+     * Releases what a cancelled wait still holds: its queue entry, and the holdership a promotion
+     * may have granted it just before the cancellation landed (CWE-667, CWE-772, ADR-0104).
+     */
+    private fun abandonWait(
         lockName: String,
         processID: Int,
     ) {
-        withContext(NonCancellable) {
-            mutex.withLock {
-                locks[lockName]?.let { entry ->
-                    entry.waitQueue.removeAll { it.first == processID }
-                    // A promotion may already have handed the key to this run before its
-                    // cancellation landed, leaving the key stranded on a dead id (CWE-667).
-                    if (entry.holder == processID) entry.holder = null
-                    if (entry.pending == processID) {
-                        entry.pending = null
-                        pendingEntries.remove(processID)
-                    }
-                    settleReleasedEntry(lockName, entry)
-                }
-            }
-        }
+        val entry = locks[lockName] ?: return
+        entry.waitQueue.removeAll { it.first == processID }
+        releaseHolder(lockName, entry, processID)
     }
 
     override suspend fun killDisplaced(
@@ -152,25 +146,39 @@ class DefaultLockManager(
                     logger.warn("releaseLock called for unknown lock '{}' by process {}", lockName, processID)
                     return@withLock
                 }
-                val holder = entry.holder
-                val pending = entry.pending
-                if (holder == processID) {
-                    entry.holder = null
-                } else if (pending == processID) {
-                    // A replacement refused its slot gives the key back, its victim left untouched.
-                    entry.pending = null
-                    pendingEntries.remove(processID)
-                } else if (!entry.superseded.remove(processID)) {
+                if (!releaseHolder(lockName, entry, processID)) {
                     logger.warn(
                         "releaseLock called by process {} which is not a holder of lock '{}'",
                         processID,
                         lockName,
                     )
                 }
-
-                settleReleasedEntry(lockName, entry)
             }
         }
+
+    /**
+     * Removes [processID] from [entry] and settles the key it may have freed: the next queued
+     * waiter is promoted, or the key is dropped. Returns whether [processID] held it (ADR-0104).
+     */
+    private fun releaseHolder(
+        lockName: String,
+        entry: LockEntry,
+        processID: Int,
+    ): Boolean {
+        val holder = entry.holder
+        val pending = entry.pending
+        if (holder == processID) {
+            entry.holder = null
+        } else if (pending == processID) {
+            // A replacement refused its slot gives the key back, its victim left untouched.
+            entry.pending = null
+            pendingEntries.remove(processID)
+        } else if (!entry.superseded.remove(processID)) {
+            return false
+        }
+        settleReleasedEntry(lockName, entry)
+        return true
+    }
 
     /** The key is free: hand it to the next queued waiter, or drop the entry. Called under the mutex. */
     private fun settleReleasedEntry(

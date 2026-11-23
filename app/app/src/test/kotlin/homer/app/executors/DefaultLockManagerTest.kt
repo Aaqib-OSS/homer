@@ -616,9 +616,13 @@ class DefaultLockManagerTest {
 
             // First process should still hold the lock
             // Verify by trying SKIP_CURRENT strategy
-            assertFailsWith<AnotherProcessStillActive> {
-                lockManager.acquireThenDisplace(lockName, OnKeyCollisionStrategy.SKIP_CURRENT, 3)
-            }
+            val blocked =
+                assertFailsWith<AnotherProcessStillActive> {
+                    lockManager.acquireThenDisplace(lockName, OnKeyCollisionStrategy.SKIP_CURRENT, 3)
+                }
+            assertEquals("The process $processId1 is still active, stopping current", blocked.message)
+            assertEquals(0, waitQueueSize(lockName), "the cancelled waiter left the queue")
+            verify(exactly = 0) { mockLogger.warn(any<String>(), any(), any()) }
         }
 
     @Test
@@ -643,6 +647,123 @@ class DefaultLockManagerTest {
 
             // Had the dead waiter stayed queued, the release would have handed it the lock.
             lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.SKIP_CURRENT, 3)
+            verify(exactly = 0) { mockLogger.warn(any<String>(), any(), any()) }
+        }
+
+    @Test
+    fun `a WAIT cancelled during the handover leaves no holder and the key is admitted again (CWE-667, CWE-772)`() =
+        runTest {
+            lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.WAIT, 1)
+            val waiter = launch { lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.WAIT, 2) }
+            runCurrent()
+
+            // The mutex is held across the cancel, as a concurrent release would: the release queues
+            // first, so the promotion lands before the cancelled waiter's own cleanup runs.
+            val mutex = managerMutex()
+            mutex.lock()
+            val releasing = launch { lockManager.releaseLock("test-lock", 1) }
+            runCurrent()
+            waiter.cancel()
+            runCurrent()
+            mutex.unlock()
+            releasing.join()
+            waiter.join()
+
+            assertTrue(waiter.isCancelled, "the waiting run was cancelled")
+            assertTrue(lockEntries().isEmpty(), "the cancelled waiter left its key behind")
+            lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.SKIP_CURRENT, 3)
+        }
+
+    @Test
+    fun `a WAIT cancelled during the handover promotes the live waiter behind it`() =
+        runTest {
+            lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.WAIT, 1)
+            val cancelled = launch { lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.WAIT, 2) }
+            val behind = launch { lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.WAIT, 3) }
+            runCurrent()
+
+            val mutex = managerMutex()
+            mutex.lock()
+            val releasing = launch { lockManager.releaseLock("test-lock", 1) }
+            runCurrent()
+            cancelled.cancel()
+            runCurrent()
+            mutex.unlock()
+            releasing.join()
+            cancelled.join()
+            behind.join()
+
+            // The handover the cancelled waiter gave back went to the run behind it, not to nobody.
+            val blocked =
+                assertFailsWith<AnotherProcessStillActive> {
+                    lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.SKIP_CURRENT, 4)
+                }
+            assertEquals("The process 3 is still active, stopping current", blocked.message)
+            lockManager.releaseLock("test-lock", 3)
+            lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.SKIP_CURRENT, 4)
+        }
+
+    @Test
+    fun `a WAIT cancelled during the handover leaves the key to the co-holder that joined it (CWE-667, CWE-772)`() =
+        runTest {
+            lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.WAIT, 1)
+            val waiter = launch { lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.WAIT, 2) }
+            runCurrent()
+
+            // Queue order while the mutex is held: the release promotes 2, a KILL_OLD_RUN_CURRENT
+            // run joins it in `holders`, and only then does the cancelled waiter's cleanup run.
+            val mutex = managerMutex()
+            mutex.lock()
+            val releasing = launch { lockManager.releaseLock("test-lock", 1) }
+            runCurrent()
+            val coHolder =
+                launch { lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT, 3) }
+            runCurrent()
+            waiter.cancel()
+            runCurrent()
+            mutex.unlock()
+            releasing.join()
+            coHolder.join()
+            waiter.join()
+
+            assertTrue(waiter.isCancelled, "the waiting run was cancelled")
+            assertTrue(lockEntries().containsKey("test-lock"), "the co-holder's key went with the cancelled waiter")
+            val blocked =
+                assertFailsWith<AnotherProcessStillActive> {
+                    lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.SKIP_CURRENT, 4)
+                }
+            assertEquals("The process 3 is still active, stopping current", blocked.message)
+            lockManager.releaseLock("test-lock", 3)
+            assertTrue(lockEntries().isEmpty(), "the key went with its last holder")
+            lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.SKIP_CURRENT, 4)
+        }
+
+    @Test
+    fun `a cancelled waiter's cleanup does not release another run's holder`() =
+        runTest {
+            lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.WAIT, 1)
+            val waiter = launch { lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.WAIT, 2) }
+            runCurrent()
+
+            // The cleanup queues while the mutex is held and runs against the entry 1 still holds.
+            val mutex = managerMutex()
+            mutex.lock()
+            waiter.cancel()
+            runCurrent()
+            mutex.unlock()
+            waiter.join()
+
+            val blocked =
+                assertFailsWith<AnotherProcessStillActive> {
+                    lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.SKIP_CURRENT, 3)
+                }
+            assertEquals("The process 1 is still active, stopping current", blocked.message)
+            lockManager.releaseLock("test-lock", 1)
+            lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.SKIP_CURRENT, 3)
+            assertFailsWith<AnotherProcessStillActive> {
+                lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.SKIP_CURRENT, 4)
+            }
+            verify(exactly = 0) { mockLogger.warn(any<String>(), any(), any()) }
         }
 
     @Test
@@ -748,6 +869,8 @@ class DefaultLockManagerTest {
 
             lockManager.acquireThenDisplace(lockName, OnKeyCollisionStrategy.WAIT, processId)
             lockManager.releaseLock(lockName, processId)
+
+            assertTrue(lockEntries().isEmpty(), "the key went with its last holder")
 
             // Acquire lock again - should succeed immediately since lock was removed
             val startTime = System.currentTimeMillis()
@@ -977,4 +1100,30 @@ class DefaultLockManagerTest {
 
             assertTrue(true)
         }
+
+    // ========== Reflected lock state ==========
+
+    /** The manager's own mutex, so a test can hold it across a cancel, as a release would. */
+    private fun managerMutex(): Mutex =
+        DefaultLockManager::class.java
+            .getDeclaredField("mutex")
+            .apply { isAccessible = true }
+            .get(lockManager) as Mutex
+
+    /** The per-key entries, so a test can assert a key was dropped or a queue left empty. */
+    private fun lockEntries(): Map<*, *> =
+        DefaultLockManager::class.java
+            .getDeclaredField("locks")
+            .apply { isAccessible = true }
+            .get(lockManager) as Map<*, *>
+
+    private fun waitQueueSize(lockName: String): Int {
+        val entry = lockEntries().entries.firstOrNull { it.key == lockName }?.value ?: return 0
+        val queue =
+            entry.javaClass
+                .getDeclaredField("waitQueue")
+                .apply { isAccessible = true }
+                .get(entry) as ArrayDeque<*>
+        return queue.size
+    }
 }

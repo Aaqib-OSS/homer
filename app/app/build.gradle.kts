@@ -215,8 +215,8 @@ tasks.test {
     outputs.dir(dtoContractDir).withPropertyName("dtoContract")
     systemProperty("homer.dtoContract.dir", dtoContractDir.get().asFile.absolutePath)
 
-    // QueryPlanCapture collects production SQL here for queryPlanReport (check `query-plans`,
-    // ADR-0082); emptied first, as the capture only ever appends.
+    // QueryPlanCapture collects production SQL here for queryPlanReport (check `query-plans`, ADR-0082);
+    // emptied first, as the capture only ever appends, and left absent when it captured nothing — an empty one fails that report.
     val queryPlansDir = layout.buildDirectory.dir("reports/query-plans/captured")
     outputs.dir(queryPlansDir).withPropertyName("queryPlansCapture")
     systemProperty("homer.queryPlans.dir", queryPlansDir.get().asFile.absolutePath)
