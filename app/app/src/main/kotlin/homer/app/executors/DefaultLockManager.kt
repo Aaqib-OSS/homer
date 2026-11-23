@@ -17,6 +17,8 @@ class DefaultLockManager(
     private val processManager: RunKiller,
     private val logger: Logger,
 ) : LockManager {
+    // A holder a promotion adds is released on every end of acquireLock — granted, cancelled or
+    // killed — or the key wedges with no holder left to release it (CWE-667, CWE-772, ADR-0104).
     private data class LockEntry(
         val holders: MutableSet<Int> = mutableSetOf(),
         val waitQueue: ArrayDeque<Pair<Int, CompletableDeferred<Unit>>> = ArrayDeque(),
@@ -75,9 +77,7 @@ class DefaultLockManager(
             // NonCancellable: a cancelled withLock throws when the mutex is contended, which
             // would leave this dead waiter queued for releaseLock to hand the lock to.
             withContext(NonCancellable) {
-                mutex.withLock {
-                    locks[lockName]?.waitQueue?.removeAll { it.first == processID }
-                }
+                mutex.withLock { abandonWait(lockName, processID) }
             }
             throw e
         } finally {
@@ -106,24 +106,48 @@ class DefaultLockManager(
                     logger.warn("releaseLock called for unknown lock '{}' by process {}", lockName, processID)
                     return@withLock
                 }
-                val removed = entry.holders.remove(processID)
-                if (!removed) {
+                if (!releaseHolder(lockName, entry, processID)) {
                     logger.warn(
                         "releaseLock called by process {} which is not a holder of lock '{}'",
                         processID,
                         lockName,
                     )
                 }
-
-                if (entry.holders.isNotEmpty()) return@withLock
-
-                val next = entry.waitQueue.removeFirstOrNull()
-                if (next != null) {
-                    entry.holders.add(next.first)
-                    next.second.complete(Unit)
-                } else {
-                    locks.remove(lockName)
-                }
             }
         }
+
+    /**
+     * Releases what a cancelled wait still holds: its queue entry, and the holdership a promotion
+     * may have granted it just before the cancellation landed (CWE-667, CWE-772, ADR-0104).
+     */
+    private fun abandonWait(
+        lockName: String,
+        processID: Int,
+    ) {
+        val entry = locks[lockName] ?: return
+        entry.waitQueue.removeAll { it.first == processID }
+        releaseHolder(lockName, entry, processID)
+    }
+
+    /**
+     * Removes [processID] from [entry] and, when it was the last holder, promotes the next waiter
+     * or drops the key. Returns whether [processID] held it (ADR-0104).
+     */
+    private fun releaseHolder(
+        lockName: String,
+        entry: LockEntry,
+        processID: Int,
+    ): Boolean {
+        if (!entry.holders.remove(processID)) return false
+        if (entry.holders.isNotEmpty()) return true
+
+        val next = entry.waitQueue.removeFirstOrNull()
+        if (next == null) {
+            locks.remove(lockName)
+            return true
+        }
+        entry.holders.add(next.first)
+        next.second.complete(Unit)
+        return true
+    }
 }
