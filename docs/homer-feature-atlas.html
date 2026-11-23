@@ -1554,7 +1554,7 @@ HMR_MCP_CONFIG     HMR_INVOCATION_CHAIN HMR_PARENT_PROCESS_ID HMR_ROOT_PROCESS_I
 
       <figure class="diagram">
         <svg viewBox="0 0 1160 372" role="img"
-             aria-label="Two limiters in series, the lock first. Concurrent runs of one agent first need the lock named by their key template: WAIT queues behind the holder while holding no run slot, SKIP_CURRENT fails the new run at once, and KILL_OLD_RUN_CURRENT kills the holder once the new run holds a run slot — a run refused its slot leaves the holder alive. A run whose key is already held by an ancestor in its own invocation chain skips the lock entirely when acceptParentLock is set, but still needs a slot. A run whose key template still holds a placeholder its environment cannot resolve is refused before either gate, so it takes no slot and no lock. Runs waiting for a lock are bounded: by maxQueuedRuns under WAIT, by maxParallelRuns under REJECT, and the surplus run ends FAILED. A run holding the lock then needs a parallel-run slot bounded by maxParallelRuns: under REJECT the surplus run ends FAILED at once, under WAIT it queues, and a queue bounded by maxQueuedRuns fails the next run the same way once full. Either way the request itself has already answered 200 with a process id. Slots are per agent; lock keys are global across agents.">
+             aria-label="Two limiters in series, the lock first. Concurrent runs of one agent first need the lock named by their key template: WAIT queues behind the holder while holding no run slot, SKIP_CURRENT fails the new run at once, and KILL_OLD_RUN_CURRENT kills the holder once the new run holds a run slot, one holder at a time: a third run supersedes a second still waiting for its slot, which then fails — a run refused its slot leaves the holder alive. A run whose key is already held by an ancestor in its own invocation chain skips the lock entirely when acceptParentLock is set, but still needs a slot. A run whose key template still holds a placeholder its environment cannot resolve is refused before either gate, so it takes no slot and no lock. Runs waiting for a lock are bounded: by maxQueuedRuns under WAIT, by maxParallelRuns under REJECT, and the surplus run ends FAILED. A run holding the lock then needs a parallel-run slot bounded by maxParallelRuns: under REJECT the surplus run ends FAILED at once, under WAIT it queues, and a queue bounded by maxQueuedRuns fails the next run the same way once full. Either way the request itself has already answered 200 with a process id. Slots are per agent; lock keys are global across agents.">
           <defs>
             <marker id="cc-arrow" viewBox="0 0 10 10" refX="9" refY="5"
                     markerWidth="6" markerHeight="6" orient="auto-start-reverse">
@@ -1653,7 +1653,9 @@ HMR_MCP_CONFIG     HMR_INVOCATION_CHAIN HMR_PARENT_PROCESS_ID HMR_ROOT_PROCESS_I
           <p>Every collision is decided at the lock, before the run holds a slot: <code>WAIT</code> queues behind the
             holder, <code>SKIP_CURRENT</code> fails the new run (first wins), and <code>KILL_OLD_RUN_CURRENT</code>
             kills the holder (latest wins) — but only once the new run holds a slot, so a new run refused one leaves
-            the old run alive and releases the lock again.</p>
+            the old run alive and releases the lock again. A key has one holder at a time: a second
+            <code>KILL_OLD_RUN_CURRENT</code> run on it waits as the pending replacement, and a third supersedes it,
+            so the superseded run fails instead of running beside the one that took the key.</p>
           <pre><code>onCollision: KILL_OLD_RUN_CURRENT   # latest deploy wins</code></pre>
         </article>
 

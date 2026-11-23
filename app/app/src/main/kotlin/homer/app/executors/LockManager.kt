@@ -23,7 +23,11 @@ interface LockManager {
         waitGate: LockWaitGate,
     ): LockGrant
 
-    /** Kills the holder [grant] displaced, if any, naming [processID] as the run taking precedence. */
+    /**
+     * Installs [processID] as the key's holder and kills the holder [grant] displaced, if any, naming
+     * [processID] as the run taking precedence. A replacement a later `KILL_OLD_RUN_CURRENT`
+     * superseded is refused with `AnotherProcessStillActive` and kills nobody. See ADR-0104.
+     */
     suspend fun killDisplaced(
         grant: LockGrant,
         processID: Int,

@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-11-12
 deciders: Lukáš Vlk
-amended: 2026-11-19
+amended: 2026-11-19, 2026-11-23
 consulted: ADR-0002, ADR-0029, ADR-0047, ADR-0051, ADR-0098
 ---
 
@@ -236,3 +236,49 @@ fallback applies only under `REJECT`. Rejected alternatives:
 - a server-level key moves the bound away from the agent it protects;
 - `null` as an explicit opt-in to unbounded contradicts CLAUDE.md §12 rule 4: every bound a
   caller can multiply is finite (ADR-0047).
+
+## Amendment (2026-11-23): the handover keeps one holder per key
+
+The decide/kill split above registered the replacement as a **second holder** of the key and
+returned `holders.first()` as the victim. That left the key with two holders for the whole slot
+wait: a third `KILL_OLD_RUN_CURRENT` run on the key read the first holder again, so it named the
+already-doomed original as its victim, and once the original released, `releaseLock` found the set
+non-empty, promoted no waiter and removed nothing — the second and third runs then executed
+concurrently under one key (CWE-667, CWE-362). Mutual exclusion is what option **C** was rejected
+for losing, so the shape below restores it; the decision itself — lock first, kill after the slot,
+the derived bound — is unchanged.
+
+- **A key has one holder and at most one pending replacement.** `acquireLock` records the new
+  `KILL_OLD_RUN_CURRENT` run as the entry's *pending replacement* — a field beside the holder, never
+  a member of a holder set — and returns the run that currently holds the key as the displaced one.
+  A later `KILL_OLD_RUN_CURRENT` on the key supersedes an earlier pending replacement, and a
+  collision (`SKIP_CURRENT`, `WAIT`, `KILL_OLD_RUN_CURRENT`) is decided against the key's single
+  holder — or against the pending replacement, once the victim has released and only the handover
+  is left to complete.
+- **`killDisplaced` performs the handover.** Once the run holds a slot, it installs the pending
+  replacement as the holder and clears the field under the same mutex, then kills outside it (the
+  kill writes to the database). A replacement a later run superseded holds no key: it is refused
+  with `AnotherProcessStillActive` and kills nobody, so it ends `FAILED` without running beside the
+  run that took the key.
+- **`releaseLock` respects the handover.** A pending replacement that a refused slot gives back is
+  cleared through the same release path, leaving the victim running and the key grantable by the
+  next run; while a replacement is pending, the release promotes no queued `WAIT` waiter — the
+  handover owns the key, not the queue.
+
+The cost is one visible behaviour change: a run superseded while it waits for a slot now ends
+`FAILED` where it would previously have executed beside the newest run. That is the point — the
+alternative is two runs under one key.
+
+### Confirmation (2026-11-23 amendment)
+
+- `KILL_OLD_RUN_CURRENT` keeps a single holder between `acquireLock` and `killDisplaced`, and the
+  key names the replacement only after the deferred kill (`DefaultLockManagerTest`);
+- a third KILL run on one key supersedes the pending replacement and targets the live holder, and a
+  superseded pending run is refused by `killDisplaced` and kills nobody (`DefaultLockManagerTest`);
+- `releaseLock` by the victim during a pending handover promotes no `WAIT` waiter, and by a refused
+  pending run leaves the victim holding and the key grantable next (`DefaultLockManagerTest`);
+- a stale or foreign id in `killDisplaced` or `releaseLock` removes and installs nothing, and a
+  mixed `WAIT`/`KILL` sequence on one key keeps at most one holder (`DefaultLockManagerTest`);
+- three `KILL_OLD_RUN_CURRENT` runs on one key never execute concurrently: the middle run fails
+  without a kill, the last reaches `WORKING` only after the first is killed, and the observed
+  concurrency never exceeds one (`ProcessTest`, named for CWE-667).

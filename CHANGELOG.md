@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Homer
+
+- **Security: `KILL_OLD_RUN_CURRENT` keeps a single holder per lock key** — A run the newest same-key run superseded now fails instead of executing beside it. See [ADR-0104](docs/adr/0104-lock-before-slot-admission-order.md).
+
 ## [1.44.0] - 2026-11-22
 
 ### Homer
