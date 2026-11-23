@@ -431,6 +431,41 @@ class DefaultLockManagerTest {
         }
 
     @Test
+    fun `a WAIT cancelled during the handover leaves the key to the co-holder that joined it (CWE-667, CWE-772)`() =
+        runTest {
+            lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.WAIT, 1)
+            val waiter = launch { lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.WAIT, 2) }
+            runCurrent()
+
+            // Queue order while the mutex is held: the release promotes 2, a KILL_OLD_RUN_CURRENT
+            // run joins it in `holders`, and only then does the cancelled waiter's cleanup run.
+            val mutex = managerMutex()
+            mutex.lock()
+            val releasing = launch { lockManager.releaseLock("test-lock", 1) }
+            runCurrent()
+            val coHolder =
+                launch { lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT, 3) }
+            runCurrent()
+            waiter.cancel()
+            runCurrent()
+            mutex.unlock()
+            releasing.join()
+            coHolder.join()
+            waiter.join()
+
+            assertTrue(waiter.isCancelled, "the waiting run was cancelled")
+            assertTrue(lockEntries().containsKey("test-lock"), "the co-holder's key went with the cancelled waiter")
+            val blocked =
+                assertFailsWith<AnotherProcessStillActive> {
+                    lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.SKIP_CURRENT, 4)
+                }
+            assertEquals("The process 3 is still active, stopping current", blocked.message)
+            lockManager.releaseLock("test-lock", 3)
+            assertTrue(lockEntries().isEmpty(), "the key went with its last holder")
+            lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.SKIP_CURRENT, 4)
+        }
+
+    @Test
     fun `a cancelled waiter's cleanup does not release another run's holder`() =
         runTest {
             lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.WAIT, 1)
