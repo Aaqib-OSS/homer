@@ -22,10 +22,15 @@ class DefaultLockManager(
     private data class LockEntry(
         var holder: Int? = null,
         var pending: Int? = null,
+        val superseded: MutableSet<Int> = mutableSetOf(),
         val waitQueue: ArrayDeque<Pair<Int, CompletableDeferred<Unit>>> = ArrayDeque(),
     )
 
     private val locks = mutableMapOf<String, LockEntry>()
+
+    // A pending replacement indexed by its process id, so the deferred kill resolves its entry
+    // without scanning every active key. Guarded by the mutex, like the entries it points to.
+    private val pendingEntries = mutableMapOf<Int, LockEntry>()
 
     private val mutex = Mutex()
 
@@ -59,7 +64,12 @@ class DefaultLockManager(
                     KILL_OLD_RUN_CURRENT -> {
                         // The replacement is registered here and installed and killed later: neither
                         // may land before the new run holds a slot, and a later KILL supersedes it.
+                        entry.pending?.let { superseded ->
+                            pendingEntries.remove(superseded)
+                            entry.superseded.add(superseded)
+                        }
                         entry.pending = processID
+                        pendingEntries[processID] = entry
                         activeProcessID
                     }
 
@@ -77,18 +87,35 @@ class DefaultLockManager(
         try {
             deferred.await()
         } catch (e: CancellationException) {
-            // NonCancellable: a cancelled withLock throws when the mutex is contended, which
-            // would leave this dead waiter queued for releaseLock to hand the lock to.
-            withContext(NonCancellable) {
-                mutex.withLock {
-                    locks[lockName]?.waitQueue?.removeAll { it.first == processID }
-                }
-            }
+            removeCancelledWaiter(lockName, processID)
             throw e
         } finally {
             waitTicket?.close()
         }
         return LockGrant()
+    }
+
+    // NonCancellable: a cancelled withLock throws when the mutex is contended, which
+    // would leave this dead waiter queued for releaseLock to hand the lock to.
+    private suspend fun removeCancelledWaiter(
+        lockName: String,
+        processID: Int,
+    ) {
+        withContext(NonCancellable) {
+            mutex.withLock {
+                locks[lockName]?.let { entry ->
+                    entry.waitQueue.removeAll { it.first == processID }
+                    // A promotion may already have handed the key to this run before its
+                    // cancellation landed, leaving the key stranded on a dead id (CWE-667).
+                    if (entry.holder == processID) entry.holder = null
+                    if (entry.pending == processID) {
+                        entry.pending = null
+                        pendingEntries.remove(processID)
+                    }
+                    settleReleasedEntry(lockName, entry)
+                }
+            }
+        }
     }
 
     override suspend fun killDisplaced(
@@ -100,14 +127,18 @@ class DefaultLockManager(
         // one. A later KILL leaves no entry holding this run, which refuses it instead (ADR-0104).
         val installed =
             mutex.withLock {
-                val entry = locks.values.firstOrNull { it.pending == processID } ?: return@withLock false
+                val entry = pendingEntries[processID]?.takeIf { it.pending == processID } ?: return@withLock false
                 entry.holder = processID
                 entry.pending = null
+                pendingEntries.remove(processID)
                 true
             }
         if (!installed) throw AnotherProcessStillActive(victim)
-        // killProcess writes to the database, so it runs after the mutex is released.
-        processManager.killProcess(victim, "The new process $processID takes precedence")
+        // NonCancellable: a replacement cancelled between installing itself and the kill must still
+        // kill the victim it displaced. killProcess writes to the database, so this is outside the mutex.
+        withContext(NonCancellable) {
+            processManager.killProcess(victim, "The new process $processID takes precedence")
+        }
     }
 
     override suspend fun releaseLock(
@@ -128,7 +159,8 @@ class DefaultLockManager(
                 } else if (pending == processID) {
                     // A replacement refused its slot gives the key back, its victim left untouched.
                     entry.pending = null
-                } else {
+                    pendingEntries.remove(processID)
+                } else if (!entry.superseded.remove(processID)) {
                     logger.warn(
                         "releaseLock called by process {} which is not a holder of lock '{}'",
                         processID,
@@ -136,17 +168,25 @@ class DefaultLockManager(
                     )
                 }
 
-                // A pending handover holds the key for the replacement the deferred kill installs:
-                // promoting a waiter now would put two runs on it (CWE-667). See ADR-0104.
-                if (entry.holder != null || entry.pending != null) return@withLock
-
-                val next = entry.waitQueue.removeFirstOrNull()
-                if (next != null) {
-                    entry.holder = next.first
-                    next.second.complete(Unit)
-                } else {
-                    locks.remove(lockName)
-                }
+                settleReleasedEntry(lockName, entry)
             }
         }
+
+    /** The key is free: hand it to the next queued waiter, or drop the entry. Called under the mutex. */
+    private fun settleReleasedEntry(
+        lockName: String,
+        entry: LockEntry,
+    ) {
+        // A pending handover holds the key for the replacement the deferred kill installs:
+        // promoting a waiter now would put two runs on it (CWE-667). See ADR-0104.
+        if (entry.holder != null || entry.pending != null) return
+
+        val next = entry.waitQueue.removeFirstOrNull()
+        if (next != null) {
+            entry.holder = next.first
+            next.second.complete(Unit)
+        } else {
+            locks.remove(lockName)
+        }
+    }
 }

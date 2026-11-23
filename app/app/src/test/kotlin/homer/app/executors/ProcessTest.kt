@@ -1163,13 +1163,15 @@ class ProcessTest {
             val run1Entered = CompletableDeferred<Unit>()
             var first = true
             coEvery { mockExecutorFactory.getExecutor<Command>(any()).execute(any(), any(), any()) } coAnswers {
+                // Every executed command counts, so the peak is observed, not assumed for run 1 alone.
+                working.incrementAndGet()
+                peak.getAndUpdate { maxOf(it, working.get()) }
                 if (first) {
                     first = false
-                    peak.getAndUpdate { maxOf(it, working.incrementAndGet()) }
                     run1Entered.complete(Unit)
                     release.await()
-                    working.decrementAndGet()
                 }
+                working.decrementAndGet()
                 TestFixtures.mockCommandResult(exitCode = 0)
             }
 

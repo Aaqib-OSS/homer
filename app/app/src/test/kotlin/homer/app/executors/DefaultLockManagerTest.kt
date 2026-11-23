@@ -233,6 +233,127 @@ class DefaultLockManagerTest {
         }
 
     @Test
+    fun `a collision in the released window is decided against the pending replacement`() =
+        runTest {
+            val lockName = "test-lock"
+            coEvery { mockProcessManager.killProcess(any(), any()) } returns Unit
+            lockManager.acquireThenDisplace(lockName, OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT, 1)
+            val replacement = lockManager.acquireLock(lockName, OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT, 2, noOpGate)
+
+            // Run 1 released while only the pending handover still holds the key.
+            lockManager.releaseLock(lockName, 1)
+            assertEquals("The process 2 is still active, stopping current", lockManager.holderOf(lockName, 3))
+
+            // A later KILL run supersedes the pending one: run 2's handover is refused, run 3's installs.
+            val third = lockManager.acquireLock(lockName, OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT, 3, noOpGate)
+            assertEquals(2, third.displacedProcessId)
+            assertFailsWith<AnotherProcessStillActive> { lockManager.killDisplaced(replacement, 2) }
+            lockManager.killDisplaced(third, 3)
+
+            coVerify(exactly = 1) { mockProcessManager.killProcess(2, "The new process 3 takes precedence") }
+            assertEquals("The process 3 is still active, stopping current", lockManager.holderOf(lockName, 4))
+        }
+
+    @Test
+    fun `a WAIT run queues behind a pending handover whose holder is already gone`() =
+        runTest {
+            val lockName = "test-lock"
+            coEvery { mockProcessManager.killProcess(any(), any()) } returns Unit
+            lockManager.acquireThenDisplace(lockName, OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT, 1)
+            val replacement = lockManager.acquireLock(lockName, OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT, 2, noOpGate)
+            lockManager.releaseLock(lockName, 1)
+
+            var waiterGranted = false
+            val waiter =
+                launch {
+                    lockManager.acquireThenDisplace(lockName, OnKeyCollisionStrategy.WAIT, 3)
+                    waiterGranted = true
+                }
+            runCurrent()
+            assertFalse(waiterGranted, "the waiter queues behind the pending replacement")
+
+            // The pending run installs and releases: only then does the queued waiter get the key.
+            lockManager.killDisplaced(replacement, 2)
+            lockManager.releaseLock(lockName, 2)
+            runCurrent()
+            assertTrue(waiterGranted)
+
+            waiter.join()
+        }
+
+    @Test
+    fun `a superseded replacement releases without the not-a-holder warning`() =
+        runTest {
+            coEvery { mockProcessManager.killProcess(any(), any()) } returns Unit
+            lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT, 1)
+            lockManager.acquireLock("test-lock", OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT, 2, noOpGate)
+            lockManager.acquireLock("test-lock", OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT, 3, noOpGate)
+
+            // Run 2 was superseded while pending: its release is the designed refusal, not a bug.
+            lockManager.releaseLock("test-lock", 2)
+
+            verify(exactly = 0) { mockLogger.warn(match<String> { it.contains("not a holder") }, any(), any()) }
+            // Run 1 still holds and run 3 is still the pending replacement.
+            assertEquals("The process 1 is still active, stopping current", lockManager.holderOf("test-lock", 4))
+
+            val fourth = lockManager.acquireLock("test-lock", OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT, 5, noOpGate)
+            assertEquals(1, fourth.displacedProcessId)
+            lockManager.killDisplaced(fourth, 5)
+            lockManager.releaseLock("test-lock", 1)
+        }
+
+    @Test
+    fun `the handover kill lands even when the replacing run is cancelled while it runs`() =
+        runTest {
+            val killEntered = CompletableDeferred<Unit>()
+            val killRelease = CompletableDeferred<Unit>()
+            val killReturned = CompletableDeferred<Unit>()
+            coEvery { mockProcessManager.killProcess(any(), any()) } coAnswers {
+                killEntered.complete(Unit)
+                killRelease.await()
+                killReturned.complete(Unit)
+            }
+            lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT, 1)
+            val grant = lockManager.acquireLock("test-lock", OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT, 2, noOpGate)
+
+            val handover = launch { lockManager.killDisplaced(grant, 2) }
+            killEntered.await()
+            handover.cancel()
+            killRelease.complete(Unit)
+
+            // The kill is non-cancellable: it completes although the replacing run was cancelled mid-kill.
+            withTimeout(1.seconds) { killReturned.await() }
+            handover.join()
+        }
+
+    @Test
+    fun `a WAIT run promoted before its cancellation landed still frees the key`() =
+        runTest {
+            val lockName = "test-lock"
+            lockManager.acquireThenDisplace(lockName, OnKeyCollisionStrategy.WAIT, 1)
+
+            val second = launch { lockManager.acquireThenDisplace(lockName, OnKeyCollisionStrategy.WAIT, 2) }
+            var thirdGranted = false
+            val third =
+                launch {
+                    lockManager.acquireThenDisplace(lockName, OnKeyCollisionStrategy.WAIT, 3)
+                    thirdGranted = true
+                }
+            runCurrent()
+
+            // Run 1's release promotes run 2 before run 2's own cancellation reaches the cleanup:
+            // the key must not stay stranded on the dead run id, nor be lost on run 3.
+            second.cancel()
+            lockManager.releaseLock(lockName, 1)
+            runCurrent()
+            second.join()
+
+            assertTrue(thirdGranted)
+            assertEquals("The process 3 is still active, stopping current", lockManager.holderOf(lockName, 4))
+            third.join()
+        }
+
+    @Test
     fun `releaseLock by the victim during a pending handover promotes no WAIT waiter`() =
         runTest {
             val lockName = "test-lock"
