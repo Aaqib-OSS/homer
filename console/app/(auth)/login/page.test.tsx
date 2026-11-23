@@ -159,6 +159,14 @@ describe('LoginPage', () => {
     expect(screen.queryByRole('textbox', { name: /instance endpoint/i })).not.toBeInTheDocument();
   });
 
+  it('treats an unnormalisable endpoint parameter as untrusted', () => {
+    searchParamsMock.mockReturnValue(new URLSearchParams('endpoint=not a url'));
+    renderPage();
+    expect(screen.getByText(/came from the page link/i)).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /trust this endpoint/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^login$/i })).toBeDisabled();
+  });
+
   it('trusts a URL endpoint that matches one of several saved instances', () => {
     setTwoInstances();
     searchParamsMock.mockReturnValue(new URLSearchParams('endpoint=http://other.example/'));
