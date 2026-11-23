@@ -2,8 +2,7 @@ package homer.app.routes
 
 import homer.app.exceptions.BodylessBadRequestException
 import homer.app.fixtures.TestFixtures
-import homer.app.fixtures.authorizerFor
-import homer.app.fixtures.installGrantsApp
+import homer.app.fixtures.assertStreamedProcessFrames
 import homer.app.fixtures.mountApiV1Routes
 import homer.app.infra.SecretRedactor
 import homer.app.models.Action
@@ -18,7 +17,6 @@ import homer.app.services.LlmEventStreamService
 import homer.app.services.LlmStreamEvent
 import homer.app.services.LogTailService
 import homer.app.services.ProcessEvent
-import homer.app.services.ProcessEventBroadcaster
 import homer.app.services.ProcessManager
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.int
@@ -26,23 +24,15 @@ import io.kotest.property.arbitrary.string
 import io.kotest.property.checkAll
 import io.ktor.client.request.get
 import io.ktor.client.request.header
-import io.ktor.client.request.prepareGet
-import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
-import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.testApplication
-import io.ktor.utils.io.readLine
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import kotlin.io.path.Path
@@ -388,80 +378,6 @@ class StreamingRoutesTest {
             assertEquals(listOf(Int.MAX_VALUE + 1L, null), offsets)
         }
 
-    /** The processes the `/stream/processes` visibility cases broadcast: pid → (agent name, owner). */
-    private val streamedProcesses: Map<Int, Pair<String, String?>> =
-        mapOf(
-            1 to ("deploy" to null),
-            2 to ("other" to "mallory"),
-        )
-
-    private fun streamedProcessInfo(pid: Int): ProcessInfo {
-        val (agent, owner) = streamedProcesses.getValue(pid)
-        return ProcessInfo(id = pid, status = ProcessStatus.WORKING, agentName = agent, owner = owner)
-    }
-
-    /**
-     * The per-event visibility filter skips a hidden process instead of ending the stream: one connection as
-     * [bearer] over a broadcast of a visible, a hidden and a later visible event delivers exactly [delivered]
-     * and skips [skipped] (ADR-0038).
-     */
-    private fun assertStreamedProcessFrames(
-        tokens: Map<String, TokenConfig>,
-        bearer: String,
-        delivered: Set<Int>,
-        skipped: Set<Int>,
-    ) = testApplication {
-        val broadcaster = ProcessEventBroadcaster()
-        val pm =
-            mockk<ProcessManager>(relaxed = true) {
-                streamedProcesses.keys.forEach { pid -> coEvery { getProcessInfo(pid) } returns streamedProcessInfo(pid) }
-            }
-        val deps =
-            mockk<ApiDeps>(relaxed = true) {
-                every { authorizer } returns authorizerFor(tokens)
-                every { processManager } returns pm
-                every { processEventBroadcaster } returns broadcaster
-            }
-        application { installGrantsApp(tokens, deps) }
-
-        // The sentinel rides a delivered process, so a skipped event before it must not end the stream.
-        val sentinelPid = delivered.min()
-        client
-            .prepareGet("/api/v1/stream/processes") {
-                header(HttpHeaders.Authorization, "Bearer $bearer")
-            }.execute { response ->
-                coroutineScope {
-                    val trigger =
-                        launch {
-                            delay(300)
-                            streamedProcesses.keys.forEach { pid ->
-                                broadcaster.emit(ProcessEvent.StatusChanged(pid, ProcessStatus.WORKING, streamedProcessInfo(pid).agentName))
-                            }
-                            broadcaster.emit(
-                                ProcessEvent.QuestionAsked(sentinelPid, "after-hidden", streamedProcessInfo(sentinelPid).agentName),
-                            )
-                        }
-                    val channel = response.bodyAsChannel()
-                    val lines = mutableListOf<String>()
-                    withTimeout(10_000) {
-                        while (true) {
-                            val line = channel.readLine() ?: break
-                            lines += line
-                            if ("after-hidden" in line) break
-                        }
-                    }
-                    trigger.join()
-                    for (pid in delivered) {
-                        assertTrue(lines.any { "\"processId\":$pid" in it }, "process $pid is delivered: $lines")
-                    }
-                    for (pid in skipped) {
-                        assertTrue(lines.none { "\"processId\":$pid" in it }, "process $pid is skipped: $lines")
-                    }
-                    assertTrue(lines.any { "after-hidden" in it }, "the stream keeps going past a skipped event: $lines")
-                }
-            }
-    }
-
     @Test
     fun `the processes stream skips a hidden process and still delivers the next visible one`() =
         assertStreamedProcessFrames(
@@ -480,7 +396,6 @@ class StreamingRoutesTest {
             tokens = mapOf("admin" to TokenConfig(token = "admin-token", role = "admin")),
             bearer = "admin-token",
             delivered = setOf(1, 2),
-            skipped = emptySet(),
         )
 
     // The owner branch of canSee: a RUN grant on another agent is no READ grant here, so pid 2 is
@@ -495,5 +410,45 @@ class StreamingRoutesTest {
             bearer = "owner-token",
             delivered = setOf(2),
             skipped = setOf(1),
+        )
+
+    // An event whose pid the manager no longer knows resolves to no owner and no agent: fail closed
+    // for a scoped reader, while an admin's unfiltered view still frames it.
+    @Test
+    fun `the processes stream sends a scoped reader no frame for a process the manager no longer knows`() =
+        assertStreamedProcessFrames(
+            tokens =
+                mapOf(
+                    "reader" to TokenConfig(token = "read-token", grants = listOf(Grant(listOf("deploy"), listOf(Action.READ)))),
+                ),
+            bearer = "read-token",
+            delivered = setOf(1),
+            skipped = setOf(2, 99),
+            extraEvents = listOf(ProcessEvent.StatusChanged(99, ProcessStatus.WORKING, "ghost")),
+        )
+
+    @Test
+    fun `the processes stream still frames a process the manager no longer knows for an admin`() =
+        assertStreamedProcessFrames(
+            tokens = mapOf("admin" to TokenConfig(token = "admin-token", role = "admin")),
+            bearer = "admin-token",
+            delivered = setOf(1, 2, 99),
+            extraEvents = listOf(ProcessEvent.StatusChanged(99, ProcessStatus.WORKING, "ghost")),
+        )
+
+    // An event type streamedProcessId does not map (an AgentsReloaded riding the shared broadcaster
+    // flow) is skipped before any lookup and produces no frame at all.
+    @Test
+    fun `the processes stream carries no frame for an event type it does not stream`() =
+        assertStreamedProcessFrames(
+            tokens =
+                mapOf(
+                    "reader" to TokenConfig(token = "read-token", grants = listOf(Grant(listOf("deploy"), listOf(Action.READ)))),
+                ),
+            bearer = "read-token",
+            delivered = setOf(1),
+            skipped = setOf(2),
+            extraEvents = listOf(ProcessEvent.AgentsReloaded(listOf("deploy"), emptyList(), emptyList())),
+            absent = listOf("agent.reload"),
         )
 }

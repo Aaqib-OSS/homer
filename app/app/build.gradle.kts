@@ -221,7 +221,10 @@ tasks.test {
     outputs.dir(queryPlansDir).withPropertyName("queryPlansCapture")
     systemProperty("homer.queryPlans.dir", queryPlansDir.get().asFile.absolutePath)
     val queryPlansCaptureDir = queryPlansDir.get().asFile
-    doFirst { queryPlansCaptureDir.deleteRecursively() }
+    doFirst {
+        queryPlansCaptureDir.deleteRecursively()
+        queryPlansCaptureDir.mkdirs()
+    }
 
     // MockCallBudget (ADR-0082, `mock-calls`) is the only autodetected extension: mockk-jvm registers its
     // own MockKExtension, which stays opt-in per class.
