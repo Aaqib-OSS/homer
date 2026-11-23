@@ -34,6 +34,7 @@ import homer.app.runners.queue.RunnerClaimQueue
 import homer.app.services.AgentFilesService
 import homer.app.services.AgentsService
 import homer.app.services.Authorizer
+import homer.app.services.CostMeter
 import homer.app.services.ProcessManager
 import homer.app.services.QuestionsService
 import io.ktor.client.request.delete
@@ -60,6 +61,7 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -94,8 +96,9 @@ class GrantsEnforcementTest {
         authorizer: Authorizer,
         agents: Map<String, homer.app.models.Agent> = mapOf("echo" to echoAgent, "other" to otherAgent),
         agentFilesService: AgentFilesService = mockk(relaxed = true),
+        agentsService: AgentsService = mockk(relaxed = true),
+        costMeter: CostMeter = mockk(relaxed = true),
     ): ApiDeps {
-        val agentsService = mockk<AgentsService>(relaxed = true)
         every { agentsService.agents } returns agents
         // Relaxed AgentReloadResult defaults its List fields to null, not
         // emptyList() -- NPEs during kotlinx.serialization. Stub a real value.
@@ -105,6 +108,7 @@ class GrantsEnforcementTest {
             every { this@mockk.authorizer } returns authorizer
             every { this@mockk.agentsService } returns agentsService
             every { this@mockk.agentFilesService } returns agentFilesService
+            every { this@mockk.costMeter } returns costMeter
         }
     }
 
@@ -213,13 +217,18 @@ class GrantsEnforcementTest {
     fun `reload requires admin`() =
         testApplication {
             val tokens = mapOf("runner" to runToken, "root" to adminToken)
-            application { installGrantsApp(tokens, deps(authorizerFor(tokens))) }
+            val agentsService = mockk<AgentsService>(relaxed = true)
+            application { installGrantsApp(tokens, deps(authorizerFor(tokens), agentsService = agentsService)) }
 
             val scoped = client.post("/api/v1/agents/reload") { header(HttpHeaders.Authorization, "Bearer run-token") }
             assertEquals(HttpStatusCode.Forbidden, scoped.status)
+            assertContains(scoped.bodyAsText(), "Admin role required")
+            // The gate answers before the handler body, so a denied reload never rescans the agents directory.
+            verify(exactly = 0) { agentsService.reload() }
 
             val admin = client.post("/api/v1/agents/reload") { header(HttpHeaders.Authorization, "Bearer admin-token") }
             assertEquals(HttpStatusCode.OK, admin.status)
+            verify(exactly = 1) { agentsService.reload() }
         }
 
     @Test
@@ -271,22 +280,26 @@ class GrantsEnforcementTest {
             val agentFilesService = mockk<AgentFilesService>(relaxed = true)
             application { installGrantsApp(tokens, deps(authorizerFor(tokens), agentFilesService = agentFilesService)) }
 
-            for (agent in listOf("echo", "ghost")) {
-                val answers =
-                    listOf(
-                        client.get("/api/v1/agents/$agent/files") { header(HttpHeaders.Authorization, "Bearer other-token") },
-                        client.get("/api/v1/agents/$agent/files/notes.md") { header(HttpHeaders.Authorization, "Bearer other-token") },
-                        client.put("/api/v1/agents/$agent/files/notes.md") {
-                            header(HttpHeaders.Authorization, "Bearer other-token")
-                            contentType(ContentType.Application.Json)
-                            setBody("""{"content":"hi"}""")
-                        },
-                        client.delete("/api/v1/agents/$agent/files/notes.md") { header(HttpHeaders.Authorization, "Bearer other-token") },
-                    )
-                answers.forEach {
-                    assertEquals(HttpStatusCode.NotFound, it.status)
-                    assertContains(it.bodyAsText(), "Agent '$agent' not found")
-                }
+            suspend fun answers(agent: String) =
+                listOf(
+                    client.get("/api/v1/agents/$agent/files") { header(HttpHeaders.Authorization, "Bearer other-token") },
+                    client.get("/api/v1/agents/$agent/files/notes.md") { header(HttpHeaders.Authorization, "Bearer other-token") },
+                    client.put("/api/v1/agents/$agent/files/notes.md") {
+                        header(HttpHeaders.Authorization, "Bearer other-token")
+                        contentType(ContentType.Application.Json)
+                        setBody("""{"content":"hi"}""")
+                    },
+                    client.delete("/api/v1/agents/$agent/files/notes.md") { header(HttpHeaders.Authorization, "Bearer other-token") },
+                )
+
+            val hidden = answers("echo")
+            val unknown = answers("ghost")
+            hidden.zip(unknown).forEach { (denied, absent) ->
+                assertEquals(HttpStatusCode.NotFound, denied.status)
+                assertContains(denied.bodyAsText(), "Agent 'echo' not found")
+                // Byte-identical to the unknown-agent answer, the name apart: the denial hides
+                // whether the agent exists at all (ADR-0047 rule 3, ADR-0112).
+                assertEquals(absent.bodyAsText().replace("ghost", "echo"), denied.bodyAsText())
             }
             verify(exactly = 0) { agentFilesService.list(any()) }
             verify(exactly = 0) { agentFilesService.read(any(), any()) }
@@ -315,7 +328,8 @@ class GrantsEnforcementTest {
     fun `file write and delete require edit action`() =
         testApplication {
             val tokens = mapOf("runner" to runToken)
-            application { installGrantsApp(tokens, deps(authorizerFor(tokens))) }
+            val agentFilesService = mockk<AgentFilesService>(relaxed = true)
+            application { installGrantsApp(tokens, deps(authorizerFor(tokens), agentFilesService = agentFilesService)) }
 
             val putRes =
                 client.put("/api/v1/agents/echo/files/notes.md") {
@@ -324,12 +338,17 @@ class GrantsEnforcementTest {
                     setBody("""{"content":"hi"}""")
                 }
             assertEquals(HttpStatusCode.Forbidden, putRes.status)
+            assertContains(putRes.bodyAsText(), "Not permitted to edit 'echo'")
 
             val deleteRes =
                 client.delete("/api/v1/agents/echo/files/notes.md") {
                     header(HttpHeaders.Authorization, "Bearer run-token")
                 }
             assertEquals(HttpStatusCode.Forbidden, deleteRes.status)
+            assertContains(deleteRes.bodyAsText(), "Not permitted to edit 'echo'")
+            // A visible agent without EDIT stops at the gate: neither file operation runs.
+            verify(exactly = 0) { agentFilesService.write(any(), any(), any(), any()) }
+            verify(exactly = 0) { agentFilesService.delete(any(), any()) }
         }
 
     @Test
@@ -349,6 +368,7 @@ class GrantsEnforcementTest {
             // `200`, not just "not 403": proves the EDIT grant reaches agentFilesService.write rather than being
             // stopped by a mismapped action.
             assertEquals(HttpStatusCode.OK, res.status)
+            verify(exactly = 1) { agentFilesService.write("echo", "notes.md", "hi", any()) }
         }
 
     @Test
@@ -364,6 +384,7 @@ class GrantsEnforcementTest {
                     header(HttpHeaders.Authorization, "Bearer edit-token")
                 }
             assertEquals(HttpStatusCode.NoContent, res.status)
+            verify(exactly = 1) { agentFilesService.delete("echo", "notes.md") }
         }
 
     /**
@@ -469,15 +490,22 @@ class GrantsEnforcementTest {
     fun `costs and server status require admin`() =
         testApplication {
             val tokens = mapOf("runner" to runToken, "root" to adminToken)
-            application { installGrantsApp(tokens, deps(authorizerFor(tokens))) }
+            val costMeter = mockk<CostMeter>(relaxed = true)
+            application { installGrantsApp(tokens, deps(authorizerFor(tokens), costMeter = costMeter)) }
 
             for (path in listOf("/api/v1/costs", "/api/v1/costs/monthly", "/api/v1/costs/totals", "/api/v1/status")) {
                 val scoped = client.get(path) { header(HttpHeaders.Authorization, "Bearer run-token") }
                 assertEquals(HttpStatusCode.Forbidden, scoped.status, "expected 403 for scoped token on $path")
+                assertContains(scoped.bodyAsText(), "Admin role required", message = "the gate's own body on $path")
 
                 val admin = client.get(path) { header(HttpHeaders.Authorization, "Bearer admin-token") }
                 assertEquals(HttpStatusCode.OK, admin.status, "expected 200 for admin token on $path")
             }
+            // One meter read per admin request and none for a denial: the gate stops the handler
+            // before it reads the meter.
+            coVerify(exactly = 1) { costMeter.snapshot() }
+            coVerify(exactly = 1) { costMeter.monthly(any()) }
+            coVerify(exactly = 1) { costMeter.totals() }
         }
 
     @Test
@@ -509,8 +537,10 @@ class GrantsEnforcementTest {
      * The runner-state fixture: a configured `ssh` runner, an `external` domain with one live instance (with its
      * reported version) and one pending alias claim. Returns the deps and the instance for golden comparison.
      */
-    private fun runnerStateDeps(tokens: Map<String, TokenConfig>): Pair<ApiDeps, ExternalRunnerInstance> {
-        val queue = mockk<RunnerClaimQueue>(relaxed = true)
+    private fun runnerStateDeps(
+        tokens: Map<String, TokenConfig>,
+        queue: RunnerClaimQueue = mockk(relaxed = true),
+    ): Pair<ApiDeps, ExternalRunnerInstance> {
         coEvery { queue.pendingSnapshot() } returns listOf(PendingClaim(RunnerFilter.Alias("gpu-box"), enqueuedAtMs = 1_000))
         every { queue.nowMs() } returns 11_000
         val domain = ExternalRunnerDomain("workers", RunnerConfig.External(token = "t".repeat(32)), queue)
@@ -553,11 +583,13 @@ class GrantsEnforcementTest {
     fun `runner state reads deny a caller without a read grant on star`() =
         testApplication {
             val tokens = mapOf("runner" to runToken, "reader" to readToken, "root" to adminToken)
-            application { installGrantsApp(tokens, runnerStateDeps(tokens).first) }
+            val queue = mockk<RunnerClaimQueue>(relaxed = true)
+            application { installGrantsApp(tokens, runnerStateDeps(tokens, queue).first) }
 
             for (path in listOf("/api/v1/runners", "/api/v1/runners/queue")) {
                 val noGrant = client.get(path) { header(HttpHeaders.Authorization, "Bearer run-token") }
                 assertEquals(HttpStatusCode.Forbidden, noGrant.status, "expected 403 for a no-grant token on $path")
+                assertContains(noGrant.bodyAsText(), "Read grant on * required", message = "the gate's own body on $path")
                 val noGrantBody = noGrant.bodyAsText()
                 assertFalse(noGrantBody.contains("gpu-box"), "a denial must not leak the runner list")
                 assertFalse(noGrantBody.contains("1.42.0"), "a denial must not leak an instance version")
@@ -575,6 +607,9 @@ class GrantsEnforcementTest {
 
             val adminBody = client.get("/api/v1/runners") { header(HttpHeaders.Authorization, "Bearer admin-token") }.bodyAsText()
             assertTrue(adminBody.contains("\"version\": \"1.42.0\""), "an admin sees the registered version: $adminBody")
+            // Only the admin queue read above reaches the queue: every denial is answered by the gate
+            // before the handler reads the snapshot.
+            coVerify(exactly = 1) { queue.pendingSnapshot() }
         }
 
     @Test

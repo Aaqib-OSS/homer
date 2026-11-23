@@ -10,6 +10,7 @@ import homer.app.executors.ProcessFactory
 import homer.app.fixtures.AgentFixtures
 import homer.app.fixtures.PersistenceTestSupport
 import homer.app.fixtures.SqlStatementRecorder
+import homer.app.fixtures.assertStreamedProcessFrames
 import homer.app.fixtures.authorizerFor
 import homer.app.fixtures.installGrantsApp
 import homer.app.infra.AgentInputResolver
@@ -2022,63 +2023,12 @@ class ProcessVisibilityTest {
 
     @Test
     fun `SSE stream processes forwards events only for visible processes`() =
-        testApplication {
-            val broadcaster = ProcessEventBroadcaster()
-            val tokens = mapOf("reader" to readToken)
-            val pm = mockk<ProcessManager>(relaxed = true)
-            coEvery { pm.getProcessInfo(1) } returns
-                ProcessInfo(id = 1, status = ProcessStatus.WORKING, agentName = "deploy", owner = null)
-            coEvery { pm.getProcessInfo(2) } returns
-                ProcessInfo(id = 2, status = ProcessStatus.WORKING, agentName = "other", owner = "mallory")
-            application {
-                installGrantsApp(
-                    tokens,
-                    deps(authorizerFor(tokens), processManagerOverride = pm, processEventBroadcaster = broadcaster),
-                )
-            }
-
-            client
-                .prepareGet("/api/v1/stream/processes") {
-                    header(HttpHeaders.Authorization, "Bearer read-token")
-                }.execute { response ->
-                    coroutineScope {
-                        val trigger =
-                            launch {
-                                delay(300)
-                                broadcaster.emit(
-                                    ProcessEvent.StatusChanged(
-                                        processId = 1,
-                                        status = ProcessStatus.WORKING,
-                                        agentName = "deploy",
-                                    ),
-                                )
-                                broadcaster.emit(
-                                    ProcessEvent.StatusChanged(
-                                        processId = 2,
-                                        status = ProcessStatus.WORKING,
-                                        agentName = "other",
-                                    ),
-                                )
-                                // Sentinel on the visible process so the reader loop below can stop deterministically.
-                                broadcaster.emit(
-                                    ProcessEvent.QuestionAsked(processId = 1, questionId = "done-marker", agentName = "deploy"),
-                                )
-                            }
-                        val channel = response.bodyAsChannel()
-                        val dataLines = mutableListOf<String>()
-                        withTimeout(10_000) {
-                            while (true) {
-                                val line = channel.readLine() ?: break
-                                if (line.startsWith("data: ")) dataLines += line
-                                if ("done-marker" in line) break
-                            }
-                        }
-                        trigger.join()
-                        assertTrue(dataLines.any { "\"processId\":1" in it }, "expected pid 1 event in $dataLines")
-                        assertTrue(dataLines.none { "\"processId\":2" in it }, "pid 2 event must be filtered out: $dataLines")
-                    }
-                }
-        }
+        assertStreamedProcessFrames(
+            tokens = mapOf("reader" to readToken),
+            bearer = "read-token",
+            delivered = setOf(1),
+            skipped = setOf(2),
+        )
 
     // ---------- SSE /stream/agents (agent-reload diff filtered by grant) ----------
 
