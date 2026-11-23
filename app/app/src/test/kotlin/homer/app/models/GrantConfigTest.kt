@@ -87,6 +87,42 @@ class GrantConfigTest {
     }
 
     @Test
+    fun `token config with a role other than admin is refused`() {
+        val ex =
+            assertFailsWith<IllegalArgumentException> {
+                TokenConfig(token = "fake-tok", role = "reader")
+            }
+        assertTrue(
+            ex.message!!.contains("TokenConfig.role must be 'admin'"),
+            "expected the role guard message, got: ${ex.message}",
+        )
+    }
+
+    @Test
+    fun `token config with role admin or no role is accepted`() {
+        assertEquals("admin", TokenConfig(token = "fake-tok", role = "admin").role)
+        assertNull(TokenConfig(token = "fake-tok").role)
+    }
+
+    @Test
+    fun `hmac key config with a role other than admin is refused`() {
+        val ex =
+            assertFailsWith<IllegalArgumentException> {
+                HmacKeyConfig(secret = "fake-hmac", role = "reader")
+            }
+        assertTrue(
+            ex.message!!.contains("HmacKeyConfig.role must be 'admin'"),
+            "expected the role guard message, got: ${ex.message}",
+        )
+    }
+
+    @Test
+    fun `hmac key config with role admin or no role is accepted`() {
+        assertEquals("admin", HmacKeyConfig(secret = "fake-hmac", role = "admin").role)
+        assertNull(HmacKeyConfig(secret = "fake-hmac").role)
+    }
+
+    @Test
     fun `legacy endpoints field still deserializes into the sentinel for rejection`() {
         val yaml =
             """

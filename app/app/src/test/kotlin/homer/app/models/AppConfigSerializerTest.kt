@@ -234,11 +234,39 @@ class AppConfigSerializerTest {
     }
 
     @Test
+    fun `redactSecret masks a non-empty value and blanks null and empty`() {
+        assertEquals("", redactSecret(null))
+        assertEquals("", redactSecret(""))
+        assertEquals("***", redactSecret("fake-secret"))
+        assertFalse("fake-secret" in redactSecret("fake-secret"))
+    }
+
+    @Test
     fun `secret-bearing configs redact secrets in toString`() {
-        assertFalse("topsecret" in HmacKeyConfig(secret = "topsecret").toString())
-        assertFalse("tok-abc" in TokenConfig(token = "tok-abc").toString())
-        assertFalse("sk-xyz" in LangfuseConfig(secretKey = "sk-xyz").toString())
-        assertFalse("hash-123" in PasswordUserConfig(passwordHash = "hash-123").toString())
+        val token = TokenConfig(token = "fake-tok", role = "admin").toString()
+        assertTrue(token.isNotEmpty())
+        assertTrue("***" in token)
+        assertFalse("fake-tok" in token)
+        assertTrue("role=admin" in token)
+
+        val hmac = HmacKeyConfig(secret = "fake-hmac", role = "admin").toString()
+        assertTrue(hmac.isNotEmpty())
+        assertTrue("***" in hmac)
+        assertFalse("fake-hmac" in hmac)
+        assertTrue("role=admin" in hmac)
+
+        val passwordUser = PasswordUserConfig(passwordHash = "fake-hash", role = "admin").toString()
+        assertTrue(passwordUser.isNotEmpty())
+        assertTrue("***" in passwordUser)
+        assertFalse("fake-hash" in passwordUser)
+        assertTrue("role=admin" in passwordUser)
+
+        val langfuse = LangfuseConfig(serverUrl = "https://lf.example", secretKey = "fake-sk").toString()
+        assertTrue(langfuse.isNotEmpty())
+        assertTrue("***" in langfuse)
+        assertFalse("fake-sk" in langfuse)
+        assertTrue("serverUrl=https://lf.example" in langfuse)
+
         val password =
             AuthConfig.Password(
                 users = mapOf("alice" to PasswordUserConfig(passwordHash = "hash-123")),
