@@ -8,7 +8,9 @@ import homer.app.infra.ProcessJobRegistry
 import homer.app.models.NewRunRecord
 import homer.app.models.ProcessStatus
 import homer.app.services.persistence.DefaultProcessRetentionRecords
+import homer.app.services.persistence.HeldWorkspaceDelete
 import homer.app.services.persistence.ProcessRepository
+import homer.app.services.persistence.WorkspaceDeleteClaim
 import homer.app.services.persistence.getWorkspacePurgeableProcesses
 import homer.app.services.persistence.pendingWorkspaceDeleteCount
 import homer.app.services.persistence.setArtifactsDir
@@ -185,6 +187,33 @@ class EvictedWorkspaceCleanupTest {
         cleanup.retryPending()
 
         assertTrue(Files.exists(root.resolve("shared")))
+        assertEquals(0, cleanup.pendingCount())
+    }
+
+    @Test
+    fun `a claim a crash left in flight is released at boot and the next sweep retries it`(
+        @TempDir root: Path,
+    ) = runTest {
+        val artifacts = workspace(root, "run1")
+        // A delete interrupted mid-attempt leaves its claim in flight; the process that held it is gone.
+        assertEquals(
+            WorkspaceDeleteClaim.CLAIMED,
+            retention.claimWorkspaceDelete(artifacts, evictedProcessId = 7, maxPending = EvictedWorkspaceCleanup.MAX_PENDING),
+        )
+        val cleanup = cleanup(root, FlakyDelete(failures = 0))
+
+        // Boot clears the in-flight mark: no delete survives a restart, so the row is held for the sweep again.
+        retention.resetInFlightWorkspaceDeletes()
+
+        assertEquals(1, cleanup.pendingCount())
+        assertEquals(
+            listOf(HeldWorkspaceDelete(artifacts, 7)),
+            retention.heldWorkspaceDeletes(limit = EvictedWorkspaceCleanup.MAX_PENDING),
+        )
+
+        cleanup.retryPending()
+
+        assertFalse(Files.exists(root.resolve("run1")), "the retried delete removes the interrupted run's directory")
         assertEquals(0, cleanup.pendingCount())
     }
 

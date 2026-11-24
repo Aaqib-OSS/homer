@@ -2918,7 +2918,8 @@ class DatabaseMigrationTest {
                 st.execute("PRAGMA user_version = 35")
             }
         }
-        DatabaseService(dbPath, logger).also { it.migrate() }.close()
+        val recorded = RecordingWriterConnection()
+        DatabaseService(dbPath, logger, wrapWriterConnection = recorded.wrap).also { it.migrate() }.close()
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
                 assertEquals(36, userVersion(st))
@@ -2926,6 +2927,16 @@ class DatabaseMigrationTest {
                     listOf("path", "evicted_process_id", "in_flight", "created_at"),
                     columnNames(st, "workspace_pending_deletes"),
                 )
+            }
+        }
+        // The step's raw SQL, run alone, must define the table `Tables.kt` declares; SchemaUtils.create runs first,
+        // so the step's statement is the last one naming the table.
+        val stepDdl = recorded.matching("CREATE TABLE IF NOT EXISTS workspace_pending_deletes").lastOrNull()
+        assertNotNull(stepDdl, "the v36 step must create the table, ran: ${recorded.statements}")
+        DriverManager.getConnection("jdbc:sqlite::memory:").use { scratch ->
+            scratch.createStatement().use { st ->
+                st.execute(stepDdl)
+                assertModelColumns(st, WorkspacePendingDeletes)
                 // `path` is the primary key, so one path carries at most one claim.
                 st.execute("INSERT INTO workspace_pending_deletes VALUES ('/ws/1/artifacts', 1, 1, 0)")
                 assertFailsWith<SQLException> {
@@ -2933,6 +2944,10 @@ class DatabaseMigrationTest {
                 }
             }
         }
+        // Stamped 36 with the table present, the guard is out of range and SchemaUtils.create skips it: nothing runs.
+        val rerun = RecordingWriterConnection()
+        DatabaseService(dbPath, logger, wrapWriterConnection = rerun.wrap).also { it.migrate() }.close()
+        assertEquals(emptyList(), rerun.matching("workspace_pending_deletes"), "ran: ${rerun.statements}")
     }
 
     // --- Version boundaries ---
