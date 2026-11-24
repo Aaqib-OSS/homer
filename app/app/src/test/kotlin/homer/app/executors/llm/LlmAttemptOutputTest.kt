@@ -76,6 +76,45 @@ class LlmAttemptOutputTest {
         )
     }
 
+    @Test
+    fun `an exit-0 attempt whose first turn succeeds and whose later turn fails is a malformed failure`(
+        @TempDir dir: Path,
+    ) {
+        // Denial path (CWE-754/CWE-636, ADR-0070): the whole stream gates exit 0, so a later failed
+        // turn end sends the attempt to retry or escalation instead of on to the next step.
+        val out = dir.resolve("out").also { it.writeText(mixedCapture()) }
+        val result = TestFixtures.mockCommandResult(exitCode = 0, stdOut = out)
+
+        val failure =
+            assertIs<RetryOutcome.MalformedFailure>(
+                claudeOutput.exitZeroOutcome(command, result, accounting, out, attemptIndex = 0, span = TestFixtures.mockSpan()),
+            )
+        assertContains(failure.exception.reason, "result event is not a successful turn:")
+    }
+
+    @Test
+    fun `the same mixed stream on a non-zero exit keeps the exit's own failure`(
+        @TempDir dir: Path,
+    ) {
+        // The non-zero path is unchanged: without a maxTurnsExitCode opt-in the stream is not read at all.
+        val out = dir.resolve("out").also { it.writeText(mixedCapture()) }
+        val result = TestFixtures.mockCommandResult(exitCode = 1, stdOut = out)
+
+        val failure =
+            assertIs<RetryOutcome.OtherFailure>(
+                claudeOutput.nonZeroOutcome(command, result, accounting, out, TestFixtures.mockSpan()),
+            )
+
+        assertEquals(1, failure.result.exitCode)
+        assertNull(failure.stream)
+    }
+
+    /** The captured Claude stream whose first turn end succeeds and whose later one fails. */
+    private fun mixedCapture(): String =
+        requireNotNull(javaClass.getResourceAsStream("/claude/cli-2.1-background-agent-failed-stream.jsonl")) {
+            "missing test resource /claude/cli-2.1-background-agent-failed-stream.jsonl"
+        }.use { it.readBytes().decodeToString() }
+
     // ========== non-zero exit ==========
     // A turn-cap stop can end on a non-zero exit, so a harness with a terminal stop is read on that path too.
 

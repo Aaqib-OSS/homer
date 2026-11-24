@@ -12,11 +12,12 @@ Every LLM harness attempt (`!<claude>`, `!<codex>`, `!<opencode>`) is cost-accou
 code: `LlmAttemptAccounting` charges what `LlmAttemptPricing` resolves — a lenient stdout scan
 (`scanLlmAccounting`) then `LlmCostResolver` (session-spend endpoint → the harness's own cost
 figure, or `CostSource.NONE` when the harness reports none and the endpoint doesn't answer).
-Success gating (`LlmHarness.inspect`) is separate and strict: exit 0 is parsed fail-closed, except an
-`isErrorExitCode` stop (a `success`-subtype `result` carrying `is_error` returns `Inspection.Terminal`,
-`claude.is_error_stop`), and a non-zero exit is inspected only for the terminal cap its harness opted
-into (`terminalStopConfigured`, Claude's `maxTurnsExitCode`), where only `Inspection.Terminal` is
-honoured. See ADR-0061, ADR-0070.
+Success gating (`LlmHarness.inspect`) is strict: exit 0 judges every `result` turn end — one success
+and no failed or stopped one, the first non-success deciding the mapping — except an `isErrorExitCode`
+stop (a `success`-subtype `result` carrying `is_error` returns `Inspection.Terminal`,
+`claude.is_error_stop`), and a non-zero exit is inspected only for its opted-in cap
+(`terminalStopConfigured`, Claude's `maxTurnsExitCode`), honouring only `Inspection.Terminal`. See
+ADR-0061, ADR-0070.
 
 With `llmPrice.sessionSpend` configured, a finished attempt does not wait for the endpoint:
 `LlmAttemptAccounting.finished` returns the harness figure at once, marked `session figure
