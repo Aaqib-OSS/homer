@@ -3,7 +3,7 @@ status: accepted
 date: 2026-10-27
 deciders: Lukáš Vlk
 consulted: ADR-0020, ADR-0047, ADR-0052, ADR-0058, ADR-0066, ADR-0077, ADR-0101
-amended: 2026-11-12, 2026-11-20
+amended: 2026-11-12, 2026-11-20, 2026-11-24
 ---
 
 # ADR-0098: The stored pre-start failure reason is a fixed-vocabulary sentence
@@ -40,10 +40,11 @@ failure cause extends it, and every reader who can open the run sees it.
 Chosen option: **"Map each typed cause to a fixed-vocabulary sentence built
 from its typed fields, never the exception message."**
 
-Exactly seven causes store a reason: the `SKIP_CURRENT` lock skip, the `REJECT`
+Exactly eight causes store a reason: the `SKIP_CURRENT` lock skip, the `REJECT`
 parallel-run cap, the full parallel-run wait queue, the full lock wait queue,
-the claim timeout, the full claim queue and an unresolved `lockStrategy.key`
-placeholder (the amendment below).
+the claim timeout, the full claim queue, an unresolved `lockStrategy.key`
+placeholder (the amendment below) and a workspace directory an eviction is
+still deleting (the 2026-11-24 amendment).
  Any other exception —
 including one that failed a run mid-flight — stores no reason: its message may
 carry anything, and the reader gains nothing from it that the run's own record
@@ -133,3 +134,16 @@ agent's env and the run's inputs, not in the failure path. `ProcessExecutor`'s f
 workspace config: the config is local to `Process.execute`. Rebuilding it there is no way out
 either, because the one mapped cause raised while the config is built, an unresolved lock-key
 placeholder, would throw again.
+
+## Amendment (2026-11-24): a workspace directory an eviction is deleting is the eighth cause
+
+A run registering an artifacts directory that a capacity eviction is deleting right now used to
+race the delete: `setArtifactsDir` recorded the path, and the recursive delete could still take the
+whole workspace out from under the run (CWE-367). The registration is now refused while the claim
+is in flight, before the run creates its workspace (ADR-0048's 2026-11-24 amendment).
+
+**The decision.** `WorkspacePendingDeleteException` is the eighth mapped cause. Its sentence names
+neither the workspace path nor the evicted run — both are things the failing run's own caller may
+not be allowed to see (ADR-0077, ADR-0058) — so it is built from no fields at all. The refusal
+applies only while an attempt holds the path; a claim no attempt
+holds is stale, and the registering run takes the path over instead of failing.
