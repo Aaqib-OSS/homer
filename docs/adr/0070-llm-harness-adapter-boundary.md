@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-09-27
 deciders: Lukáš Vlk
-amended: 2026-10-09, 2026-10-31, 2026-11-12, 2026-11-19, 2026-11-20, 2026-11-21
+amended: 2026-10-09, 2026-10-31, 2026-11-12, 2026-11-19, 2026-11-20, 2026-11-21, 2026-11-24
 ---
 # ADR-0070: LLM harness adapter boundary and canonical event model
 

@@ -837,6 +837,16 @@ class ClaudeHarnessTest {
     }
 
     @Test
+    fun `the raw and turn-end count mismatch is skipped on a non-zero exit, whose lenient path still applies`() {
+        // A max-turns stop on a non-zero exit whose stream carries one decode-failed result line: the
+        // exit-0 count mismatch guard does not run here, so the lenient non-zero path still honours Terminal.
+        val opted = Command.Claude(prompt = LlmPrompt.Prompt("hi"), options = ClaudeCmdOptions(maxTurnsExitCode = 7))
+        val stopped = listOf(LlmEvent.TurnEnd(TurnStatus.Stopped("error_max_turns")))
+
+        assertEquals(Inspection.Terminal(7, "claude.max_turns_stop"), harness.inspect(stopped, emptyList(), opted, exitCode = 1))
+    }
+
+    @Test
     fun `a mixed stream does not run the version pin, which stays on the success path`() {
         val pinned = ClaudeHarness(requireClaudeCodeVersion = "2.1.318")
         val init = """{"type":"system","subtype":"init","claude_code_version":"9.9.9"}"""
