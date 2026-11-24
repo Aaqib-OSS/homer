@@ -2633,7 +2633,7 @@ curl "http://localhost:8080/api/v1/artifacts?processId=12345&path=output.json" \
 
 **Success Response (200 OK)**:
 
-Returns the complete file contents at the time of the request.
+Returns the file's contents at the time of the request, at most [`server.maxArtifactBytes`](#server-fields) bytes — a file that grows past the cap while it is downloaded is cut off at the cap.
 
 **Security**:
 
