@@ -46,7 +46,9 @@ import io.opentelemetry.context.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeoutOrNull
@@ -1150,29 +1152,41 @@ class ProcessTest {
     fun `three KILL_OLD_RUN_CURRENT runs on one key never execute concurrently (CWE-667)`() =
         runTest(timeout = 10.seconds) {
             val lockManager = DefaultLockManager(mockProcessManager, TestFixtures.mockLogger())
-            val parallelRunsManager = DefaultParallelRunsManager()
+            // Free slots for every run, so the lock alone keeps same-key runs apart; runs 2 and 3
+            // are held at the slot until both have taken the key, which opens the handover window.
+            val slotsOpen = CompletableDeferred<Unit>()
+            val parallelRunsManager = slotGatedAfterFirst(DefaultParallelRunsManager(), slotsOpen)
             val agent =
                 testAgent.copy(
-                    maxParallelRuns = 1,
+                    maxParallelRuns = 3,
                     lockStrategy = LockStrategy(key = "shared", onCollision = OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT),
                 )
             stubSharedLockKey()
             val working = AtomicInteger(0)
             val peak = AtomicInteger(0)
-            val release = CompletableDeferred<Unit>()
             val run1Entered = CompletableDeferred<Unit>()
+            val run1Killed = CompletableDeferred<Unit>()
+            val run1Left = CompletableDeferred<Unit>()
             var first = true
             coEvery { mockExecutorFactory.getExecutor<Command>(any()).execute(any(), any(), any()) } coAnswers {
-                // Every executed command counts, so the peak is observed, not assumed for run 1 alone.
                 working.incrementAndGet()
                 peak.getAndUpdate { maxOf(it, working.get()) }
-                if (first) {
-                    first = false
+                val isRun1 = first
+                first = false
+                if (isRun1) {
                     run1Entered.complete(Unit)
-                    release.await()
+                    run1Killed.await()
+                } else {
+                    // Every command suspends, so two runs on the key would overlap here.
+                    delay(100)
                 }
                 working.decrementAndGet()
+                if (isRun1) run1Left.complete(Unit)
                 TestFixtures.mockCommandResult(exitCode = 0)
+            }
+            coEvery { mockProcessManager.killProcess(1, any()) } coAnswers {
+                run1Killed.complete(Unit)
+                run1Left.await()
             }
 
             val run1 = launch { processFor(agent, emptyMap(), lockManager, parallelRunsManager).execute(1, mockSpan) }
@@ -1192,13 +1206,12 @@ class ProcessTest {
             val run3 = launch { processFor(agent, emptyMap(), lockManager, parallelRunsManager).execute(3, mockSpan) }
             runCurrent()
 
-            // Both wait for the only slot: nothing is killed and no run has started.
             coVerify(exactly = 0) { mockProcessManager.killProcess(any(), any()) }
             coVerify(exactly = 0) {
                 mockProcessManager.compareAndSetStatus(3, setOf(ProcessStatus.CREATED), ProcessStatus.WORKING)
             }
 
-            release.complete(Unit)
+            slotsOpen.complete(Unit)
             run1.join()
             run2.join()
             run3.join()
@@ -1212,8 +1225,27 @@ class ProcessTest {
                 mockProcessManager.killProcess(1, "The new process 3 takes precedence")
                 mockProcessManager.compareAndSetStatus(3, setOf(ProcessStatus.CREATED), ProcessStatus.WORKING)
             }
-            assertTrue(peak.get() <= 1, "same-key runs never execute concurrently, observed ${peak.get()}")
+            assertEquals(1, peak.get(), "same-key runs never execute concurrently")
         }
+
+    /** Grants the first slot at once and holds every later one until [open] completes. */
+    private fun slotGatedAfterFirst(
+        delegate: ParallelRunsManager,
+        open: CompletableDeferred<Unit>,
+    ): ParallelRunsManager {
+        var granted = 0
+        return object : ParallelRunsManager by delegate {
+            override suspend fun acquireSlot(
+                agentName: String,
+                maxParallelRuns: Int,
+                strategy: OnMaxParallelRunsStrategy,
+                maxQueuedRuns: Int,
+            ): Semaphore {
+                if (granted++ > 0) open.await()
+                return delegate.acquireSlot(agentName, maxParallelRuns, strategy, maxQueuedRuns)
+            }
+        }
+    }
 
     @Test
     fun `SKIP_CURRENT fails on the lock before any slot is taken`() =
