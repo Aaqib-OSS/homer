@@ -19,6 +19,7 @@ import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import java.net.InetAddress
 import java.nio.file.Path
+import kotlin.system.exitProcess
 import kotlin.time.Duration.Companion.seconds
 
 // Lazy, so this file's class initialisation touches no logging backend before the JVM is hardened.
@@ -158,4 +159,25 @@ internal fun runnerMain(
     execute(cli, args)
 }
 
-fun main(args: Array<String>) = runnerMain(args)
+fun main(args: Array<String>) {
+    try {
+        runnerMain(args)
+    } catch (e: CliktError) {
+        // The refusal throws before `cli.main(argv)`, Clikt's only handler: print it one line here.
+        printCliktError(e, exit = ::exitProcess)
+    }
+}
+
+/**
+ * Prints a [CliktError] the way Clikt's handler prints an error — one line, no stack trace — and
+ * exits with its status code. The early refusal reaches it before any command or terminal exists
+ * to print through Clikt.
+ */
+internal fun printCliktError(
+    e: CliktError,
+    // Seam for tests: a test asserts the status code instead of exiting its own JVM.
+    exit: (Int) -> Nothing,
+): Nothing {
+    System.err.println("error: ${e.message}")
+    exit(e.statusCode)
+}

@@ -12,6 +12,8 @@ import homer.app.infra.Dumpability
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.io.TempDir
 import org.slf4j.LoggerFactory
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.nio.file.Path
@@ -121,6 +123,63 @@ class MainTest {
         val events = readsWhileHardening(Dumpability.Result.Hardened)
         assertEquals("harden", events.first(), "got: $events")
         assertTrue(events.indexOf("HOMER_RUNNER_TOKEN") > 0, "the token read must follow the hardening; got: $events")
+    }
+
+    @Test
+    fun `a failed hardening through the real main exits non-zero with a one-line refusal and without the token (CWE-526)`() {
+        assumeTrue(System.getProperty("os.name").startsWith("Linux"))
+        val sentinel = "runner-token-sentinel"
+        val handle = ProcessHandle.current()
+        val java = handle.info().command().orElseThrow()
+        // `--illegal-native-access=deny` makes the forked JVM's own prctl call fail, so the refusal
+        // travels the real `fun main` — the path the in-process seams above never reach.
+        val launch =
+            ProcessBuilder(
+                listOf(
+                    java,
+                    "--illegal-native-access=deny",
+                    "-cp",
+                    System.getProperty("java.class.path"),
+                    "homer.runner.MainKt",
+                    "--url",
+                    "http://127.0.0.1:1",
+                ),
+            )
+        launch.environment()["HOMER_RUNNER_TOKEN"] = sentinel
+        launch.redirectOutput(ProcessBuilder.Redirect.DISCARD)
+        val child = launch.start()
+        val exited = child.waitFor(60, TimeUnit.SECONDS)
+        val stderr = child.errorStream.readAllBytes().decodeToString()
+        child.destroy()
+        assertTrue(exited, "a refused start must exit on its own")
+        assertTrue(child.exitValue() != 0, "a refused start must exit non-zero")
+        assertTrue("refuses to start" in stderr, "got: $stderr")
+        assertTrue(sentinel !in stderr, "the refusal must not carry the token; got: $stderr")
+        assertTrue("Exception" !in stderr, "the refusal must be one line, not a stack trace; got: $stderr")
+    }
+
+    @Test
+    fun `the entry point's error printer prints one line without a stack trace and exits with the status code`() {
+        val err = ByteArrayOutputStream()
+        val old = System.err
+        System.setErr(PrintStream(err))
+        try {
+            val exit: (Int) -> Nothing = { status -> fail("exit $status") }
+            printCliktError(
+                CliktError("homer-runner refuses to start: prctl returned -1", statusCode = 3),
+                exit = exit,
+            )
+            fail("the printer must not return")
+        } catch (e: AssertionError) {
+            assertEquals("exit 3", e.message)
+            assertTrue(
+                "error: homer-runner refuses to start: prctl returned -1" in err.toString(),
+                "got: ${err.toString().replace('\n', ' ')}",
+            )
+            assertFalse("Exception" in err.toString(), "got: ${err.toString().replace('\n', ' ')}")
+        } finally {
+            System.setErr(old)
+        }
     }
 
     @Test

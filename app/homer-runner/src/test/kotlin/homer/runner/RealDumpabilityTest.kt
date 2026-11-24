@@ -80,8 +80,8 @@ class RealDumpabilityTest {
                 val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60)
                 while (child.isAlive && System.nanoTime() < deadline) {
                     // The denial is the hardening: only a non-dumpable process refuses a same-uid
-                    // environ read, so the forked `main` must have hardened before it registered.
-                    if (environReadBy(child.pid()).isEmpty()) {
+                    // environ read, and an empty read from a pid that exited meanwhile is not one.
+                    if (environReadBy(child.pid()).isEmpty() && child.isAlive) {
                         denied = true
                         break
                     }
