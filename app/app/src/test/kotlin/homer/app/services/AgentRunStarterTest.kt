@@ -22,6 +22,7 @@ import homer.app.models.Agent
 import homer.app.models.AgentTelemetry
 import homer.app.models.Cooldown
 import homer.app.models.Param
+import homer.app.models.ParamType
 import homer.app.models.ProcessCreationResult
 import homer.app.models.ProcessStatus
 import homer.app.models.RunStartRequest
@@ -1161,6 +1162,26 @@ class AgentRunStarterTest {
                     )
 
             assertFailsWith<RunInputsTooLargeException> { real.start(agent, mapOf("mr" to "1")) }
+
+            assertEquals(0 to 0, real.rowCounts(), "a refused start writes neither row")
+        }
+
+    @Test
+    fun `CWE-770 a start whose legacy ANY input exceeds maxInputBytes is refused with no row`() =
+        runBlocking {
+            val real = RealStart(maxInputBytes = 256)
+            // The legacy ANY type constrains nothing (ADR-0031), so its value is the only thing the cap can measure.
+            val agent =
+                AgentFixtures
+                    .simpleAgent(name = "child")
+                    .copy(
+                        inputs =
+                            listOf(
+                                Param(paramName = "mr", envName = "MR", required = false, type = ParamType.ANY),
+                            ),
+                    )
+
+            assertFailsWith<RunInputsTooLargeException> { real.start(agent, mapOf("mr" to "x".repeat(4096))) }
 
             assertEquals(0 to 0, real.rowCounts(), "a refused start writes neither row")
         }

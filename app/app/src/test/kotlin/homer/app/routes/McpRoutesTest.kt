@@ -1,6 +1,7 @@
 package homer.app.routes
 
 import homer.app.buildBearerProvider
+import homer.app.exceptions.RunInputsTooLargeException
 import homer.app.fixtures.AgentFixtures
 import homer.app.fixtures.TestFixtures
 import homer.app.infra.AgentInputResolver
@@ -43,6 +44,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterEach
@@ -337,6 +339,31 @@ class McpRoutesTest {
             assertEquals(HttpStatusCode.OK, response.status)
             val result = result(response.bodyAsText())
             assertEquals(true, result["isError"]!!.jsonPrimitive.content.toBoolean())
+        }
+
+    @Test
+    fun `CWE-770 a tool call over the input cap surfaces as a tool error naming only the sizes`() =
+        testApplication {
+            val agent =
+                AgentFixtures
+                    .simpleAgent(name = "runnable")
+                    .copy(mcp = AgentMcpConfig(enabled = true))
+            every { agentsService.agents } returns mapOf("runnable" to agent)
+            coEvery { agentRunStarter.start(any(), any(), any(), any()) } throws
+                RunInputsTooLargeException(maxBytes = 64, actualBytes = 512)
+            application { wireMcp() }
+
+            val response = client.mcpPost(toolsCallBody("runnable", "{}"))
+
+            assertEquals(HttpStatusCode.OK, response.status)
+            val result = result(response.bodyAsText())
+            assertEquals(true, result["isError"]!!.jsonPrimitive.content.toBoolean())
+            val content = result["content"]!!.jsonArray.first().jsonObject
+            val text = content["text"]!!.jsonPrimitive.content
+            assertTrue(
+                text.contains("64") && text.contains("512"),
+                "the tool error carries the refusal's sizes: $text",
+            )
         }
 
     private fun toolNames(toolsListResult: JsonObject): List<String> =
