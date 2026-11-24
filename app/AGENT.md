@@ -835,9 +835,12 @@ Note: this is the Claude CLI's own estimate. The cost Homer charges may differ w
 
 #### Claude result judgement
 
-A `!<claude>` step succeeds only when the CLI's `result` event carries `subtype: "success"` **and** no
-`is_error: true`. The CLI reports `is_error: true` together with `subtype: "success"` when the turn ended
-on an error it reported in place of a model response: a model refusal (`stop_reason: "refusal"`), a
+A `!<claude>` step succeeds only when **every** `result` event in its stream carries
+`subtype: "success"` **and** none of them carries `is_error: true` — the CLI can write more than one
+`result` event (a background subagent finishing after the main turn writes a second one), and the
+first non-success one decides the failure. The CLI reports `is_error: true` together with
+`subtype: "success"` when the turn ended on an error it reported in place of a model response: a
+model refusal (`stop_reason: "refusal"`), a
 deferred tool that was unavailable on resume, or a terminal API error (`terminal_reason`,
 `api_error_status`).
 

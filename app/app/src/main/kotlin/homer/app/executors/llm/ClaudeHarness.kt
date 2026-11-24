@@ -99,42 +99,60 @@ class ClaudeHarness(
         command: Command.Claude,
         exitCode: Int,
     ): Inspection {
-        val end =
-            events.firstOrNull { it is LlmEvent.TurnEnd } as LlmEvent.TurnEnd?
-                ?: return Inspection.Malformed("stdout contains no 'result' event")
-        val verdict =
-            when (val s = end.status) {
-                TurnStatus.Success -> {
-                    Inspection.Success
-                }
-
-                is TurnStatus.Stopped -> {
-                    command.options.maxTurnsExitCode?.let { Inspection.Terminal(it, MAX_TURNS_STOP_ATTRIBUTE) }
-                        ?: Inspection.Malformed(notSuccess(s.reason))
-                }
-
-                is TurnStatus.Failed -> {
-                    isErrorStopCode(command, raw, exitCode)?.let { Inspection.Terminal(it, IS_ERROR_STOP_ATTRIBUTE) }
-                        ?: Inspection.Malformed(notSuccess(s.reason))
-                }
-            }
+        val ends = events.filterIsInstance<LlmEvent.TurnEnd>()
+        if (ends.isEmpty()) return Inspection.Malformed("stdout contains no 'result' event")
+        // Every turn end decides the verdict — an earlier success must not hide a later failed or stopped one
+        // (CWE-754/CWE-636, ADR-0070, ADR-0074); more raw `result` lines than ends is a failed decode — fail closed.
+        if (exitCode == 0 && raw.count { it.nonBlankString("type") == "result" } > ends.size) {
+            return Inspection.Malformed("stdout contains a 'result' event that did not decode")
+        }
+        val nonSuccessAt = ends.indexOfFirst { it.status != TurnStatus.Success }
+        // Claude keeps its own rule rather than `inspectTurns`: it treats a Stopped turn end as a
+        // failure and maps it to a terminal stop, which that helper leaves to Codex and opencode.
+        val end = if (nonSuccessAt < 0) ends.first() else ends[nonSuccessAt]
+        val verdict = turnVerdict(end, command, raw, exitCode, nonSuccessAt)
         if (verdict is Inspection.Success) checkVersionPin(raw)
         return verdict
     }
 
+    /** The verdict [end] gives: a Stopped turn end maps to `maxTurnsExitCode`, a Failed one to `isErrorStopCode`. See ADR-0070. */
+    private fun turnVerdict(
+        end: LlmEvent.TurnEnd,
+        command: Command.Claude,
+        raw: List<JsonObject>,
+        exitCode: Int,
+        ordinal: Int,
+    ): Inspection =
+        when (val s = end.status) {
+            TurnStatus.Success -> {
+                Inspection.Success
+            }
+
+            is TurnStatus.Stopped -> {
+                command.options.maxTurnsExitCode?.let { Inspection.Terminal(it, MAX_TURNS_STOP_ATTRIBUTE) }
+                    ?: Inspection.Malformed(notSuccess(s.reason))
+            }
+
+            is TurnStatus.Failed -> {
+                isErrorStopCode(command, raw, exitCode, ordinal)?.let { Inspection.Terminal(it, IS_ERROR_STOP_ATTRIBUTE) }
+                    ?: Inspection.Malformed(notSuccess(s.reason))
+            }
+        }
+
     /**
-     * The opt-in exit code for a result event the CLI wrote as a `success` subtype carrying `is_error`; null leaves the
-     * failure malformed. The pair is read strictly from the raw line, never from the reason text, and only on the exit-0
-     * path: a non-zero exit keeps the verdict its own exit code gives it. See ADR-0070.
+     * The opt-in exit code for the `success`-subtype result carrying `is_error` at [ordinal], the failing turn end's
+     * position among the stream's turn ends; null leaves the failure malformed. Read strictly from that raw line, never
+     * the reason text, and only on the exit-0 path: a non-zero exit keeps the verdict its own exit code gives it. See ADR-0070.
      */
     private fun isErrorStopCode(
         command: Command.Claude,
         raw: List<JsonObject>,
         exitCode: Int,
+        ordinal: Int,
     ): Int? {
         if (exitCode != 0) return null
         val code = command.options.isErrorExitCode ?: return null
-        val result = raw.firstOrNull { it.nonBlankString("type") == "result" } ?: return null
+        val result = raw.filter { it.nonBlankString("type") == "result" }.getOrNull(ordinal) ?: return null
         if (result.nonBlankString("subtype") != "success") return null
         return code.takeIf { (result[IS_ERROR] as? JsonPrimitive)?.contentOrNull == "true" }
     }
