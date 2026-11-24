@@ -17,6 +17,7 @@ This document provides comprehensive documentation for configuring the Homer ser
 - [Cost by tag](#cost-by-tag)
 - [Server Configuration](#server-configuration)
   - [Server Fields](#server-fields)
+  - [`server.maxInputBytes`](#servermaxinputbytes)
   - [`server.shutdownDrainSec`](#servershutdowndrainsec)
   - [Maintenance mode](#maintenance-mode)
   - [`server.requireClaudeCodeVersion`](#serverrequireclaudecodeversion)
@@ -519,6 +520,7 @@ server:
 | `requireClaudeCodeVersion` | `String?` | No | `null` | If set, every successful Claude run must report this exact value in its `system` event's `claude_code_version` field. A mismatch (or a missing field when the pin is set) fails the run with `ClaudeCliVersionMismatchException` and is *not* retried. Leave null to skip the check — see [`server.requireClaudeCodeVersion`](#serverrequireclaudecodeversion). |
 | `claudeDropSystemSubtypes` | `List<String>` | No | `["thinking_tokens"]` | `system`-event subtypes dropped from a Claude step's stdout (`cmd_N.out`) before it is written, so `maxOutputBytes` counts conversation rather than telemetry — see [`server.claudeDropSystemSubtypes`](#serverclaudedropsystemsubtypes). |
 | `maxRequestBodyBytes` | `Long` | No | `10485760` (10 MiB) | Maximum request body size in bytes; requests over the cap get `413 Payload Too Large`. Exempted: `/api/v1/runner/sessions/.../tar`, bounded instead by the `maxTransferBytes` of the domain whose token the request presents (this cap still applies when no domain token matches), `/api/v1/runner/sessions/.../output`, bounded by the 1 MiB output chunk cap, and `/api/v1/runner/sessions/.../next`, bounded at 64 KiB — see [External runners (pull mode)](#external-runners-pull-mode). |
+| `maxInputBytes` | `Long` | No | `1048576` (1 MiB) | Per-run byte cap on the resolved input map a run persists. A start whose inputs exceed it is refused before any row is written — no `processes` row and no stored inputs — and the refusal reports the two sizes only, never an input name or value. The surfaces it reaches are enumerated under [`server.maxInputBytes`](#servermaxinputbytes). The cap is deliberately always on rather than opt-in (`null` = unbounded was considered and rejected): an upgraded deployment gets the bound with no action, and an operator whose legitimate inputs exceed the default raises the key instead of removing the bound. This bounds what the deployment retains: a run's stored inputs are at most this size, so the operator's disk ceiling for them is `maxProcesses` x this value. See [ADR-0047](../docs/adr/0047-security-by-design-and-threat-model.md) rule 4. |
 | `maxArtifactBytes` | `Long` | No | `104857600` (100 MiB) | Maximum size in bytes of a single artifact file served by `GET /api/v1/artifacts`. Files larger than this are rejected with `413 Payload Too Large` — pre-flight when the file is already oversized, and again at open when it grew past the cap after that check — and a file that grows while it is downloaded is cut off at the cap, so a misbehaving agent cannot turn an artifact fetch into a sustained bandwidth/time DoS. Range / partial-download support is not implemented — raise the cap (or split the artifact at the agent) if a use case needs >100 MiB downloads. |
 | `maxRetainedArtifactBytes` | `Long` | No | `16777216` (16 MiB) | Per-run byte cap on artifacts retained past the workspace purge (`workspace.retain.artifacts`). The retained set is agent-written and lives until the record dies, so the operator's disk ceiling is `maxProcesses` x this value. Overflow keeps what fits in declared-glob order and flags the record `retainedTruncated`. See [ADR-0053](../docs/adr/0053-declared-artifacts-ride-the-record-lifetime.md). |
 | `maxConfigFileBytes` | `Long` | No | `1048576` (1 MiB) | Maximum size in bytes of a single agent definition file (`agent.json` / `agent.yaml`) or a file read or written via the agent files API. The top-level config file is not governed by this setting: it is capped at a fixed 1 MiB, checked before the config (and so this value) is read. Files larger than the cap are rejected pre-flight, before kaml / kotlinx.serialization parse them. Real agent definitions are kilobytes; this cap bounds DoS exposure from a pathological YAML (oversized strings, deeply nested structures) regardless of what the underlying parser allows. The kaml parser ships on top of `it.krzeminski:snakeyaml-engine-kmp` 4.0.1 and, in its default configuration, rejects anchors and aliases outright, so a billion-laughs vector cannot be expressed — this cap is the missing piece for total input size. Raise it if your agent definitions legitimately exceed 1 MiB (rare). |
@@ -539,6 +541,27 @@ server:
 | `maintenance.maxQueuedStartsPerPrincipal` | `Int` | No | `50` | Bound on one caller's share of the maintenance queue, so a single caller cannot fill it and lock everyone else out. See [Maintenance mode](#maintenance-mode). |
 | `maintenance.queueWaitSec` | `Int` | No | `600` | How long a start may wait in the maintenance queue before it is dropped and answers `503`. The wait is not replayed once the mode goes off. See [Maintenance mode](#maintenance-mode). |
 | `maintenance.releaseConcurrency` | `Int` | No | `4` | How many queued starts are released at a time when the mode goes off, so the end of maintenance does not resume every waiter in one burst. See [Maintenance mode](#maintenance-mode). |
+
+### `server.maxInputBytes`
+
+Per-run byte cap on the resolved input map a run persists — the UTF-8
+bytes of the JSON the run stores. A start over the cap is refused before
+any row is written, and the refusal reports the two byte sizes only,
+never an input name or value. It reaches the caller as:
+
+- `413 Payload Too Large` on the HTTP endpoints that start a run with
+  inputs resolved from the request — the run-start endpoints, debug, and
+  the callback run and join starts — and on retry and resume, which
+  re-check the source run's stored inputs.
+- A tool error on the MCP tools.
+- Exit 255 for a `!<agent>` hop.
+- A refused dispatch, continuation or hook fire settles its row `FAILED`.
+- A refused cron fire starts nothing and is only logged: a tick has no
+  caller to answer, and `POST /api/v1/agents/{name}/cron-run` still
+  answers `204` with no body, exactly as for any other preflight refusal.
+
+See [ADR-0047](../docs/adr/0047-security-by-design-and-threat-model.md)
+rule 4.
 
 ### `server.shutdownDrainSec`
 

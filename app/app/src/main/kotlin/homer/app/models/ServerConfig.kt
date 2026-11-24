@@ -26,6 +26,9 @@ data class Server(
     val maxProcesses: Int = 10_000,
     /** Maximum accepted HTTP request body size in bytes; over-cap bodies are rejected with 413 before being read into memory. */
     val maxRequestBodyBytes: Long = 10L * 1024 * 1024,
+    /** Per-run byte cap on the resolved input map a run persists; a start over it is refused with 413 before any row
+     * is written, so the operator's ceiling on stored input bytes is `maxProcesses` x this value. See ADR-0047 rule 4. */
+    val maxInputBytes: Long = 1L * 1024 * 1024,
     val shutdownDrainSec: Int = 30,
     /** If set, every successful Claude run must report this exact `claude_code_version`; a mismatch (or a missing
      * field when the pin is set) fails the run and is *not* retried. Leave null to skip the check. */
@@ -61,6 +64,7 @@ data class Server(
 ) {
     init {
         require(maxRequestBodyBytes > 0) { "server.maxRequestBodyBytes must be > 0" }
+        require(maxInputBytes > 0) { "server.maxInputBytes must be > 0; got $maxInputBytes" }
         claudeDropSystemSubtypes.forEach { subtype ->
             require(SYSTEM_SUBTYPE_PATTERN.matches(subtype)) {
                 "server.claudeDropSystemSubtypes entries must match ^[a-zA-Z0-9_]+$; got '$subtype'"

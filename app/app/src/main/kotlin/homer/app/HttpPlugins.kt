@@ -34,6 +34,7 @@ import homer.app.exceptions.QueryParamValidationException
 import homer.app.exceptions.QuestionNotFoundException
 import homer.app.exceptions.QuestionNotOpenException
 import homer.app.exceptions.QuestionsClosedForProcessException
+import homer.app.exceptions.RunInputsTooLargeException
 import homer.app.exceptions.RunNotAcceptingMessagesException
 import homer.app.exceptions.RunnerClaimTimeoutException
 import homer.app.exceptions.RunnerOutputSequenceException
@@ -251,6 +252,7 @@ internal fun homerExceptionStatus(e: HomerException): HttpStatusCode =
 
         is RunnerTransferTimeoutException,
         is RunnerTransferTooLargeException,
+        is RunInputsTooLargeException,
         is MaxParallelRunsExceededException,
         is MaxQueuedRunsExceededException,
         is MaxLockWaitersExceededException,
@@ -343,7 +345,9 @@ private fun transferCapacityOrServerStatus(e: HomerException): HttpStatusCode =
             HttpStatusCode.RequestTimeout
         }
 
-        is RunnerTransferTooLargeException -> {
+        is RunnerTransferTooLargeException,
+        is RunInputsTooLargeException,
+        -> {
             HttpStatusCode.PayloadTooLarge
         }
 

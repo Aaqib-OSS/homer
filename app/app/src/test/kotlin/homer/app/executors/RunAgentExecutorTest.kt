@@ -5,6 +5,7 @@ import ch.qos.logback.core.read.ListAppender
 import homer.app.EnvConstants
 import homer.app.config.ExecutionConfig
 import homer.app.exceptions.InvocationCycleDetectedException
+import homer.app.exceptions.RunInputsTooLargeException
 import homer.app.fixtures.TestFixtures
 import homer.app.infra.AgentInputResolver
 import homer.app.infra.TextCompiler
@@ -172,6 +173,23 @@ class RunAgentExecutorTest {
             assertEquals(255, result.exitCode)
             val stderr = executionContext.stdErr.readText()
             assert(stderr.contains("cycle detected")) { "stderr missing cycle message: $stderr" }
+        }
+
+    // CWE-770: a `!<agent>` hop carries no HTTP body, so the target's per-run input cap is the only bound on it.
+    @Test
+    fun `an oversized hop is refused with exit code 255 and a message naming only the sizes`() =
+        runTest {
+            coEvery {
+                agentRunStarter.start(any(), any(), any(), any())
+            } throws RunInputsTooLargeException(maxBytes = 64, actualBytes = 512)
+
+            val result = executor.execute(Command.RunAgent(agentName = "target_agent"), executionContext, TestFixtures.mockSpan())
+
+            assertEquals(255, result.exitCode)
+            val stderr = executionContext.stdErr.readText()
+            assert(stderr.contains("Run inputs exceed the server limit of 64 bytes (got 512)")) {
+                "stderr missing the refusal: $stderr"
+            }
         }
 
     @Test

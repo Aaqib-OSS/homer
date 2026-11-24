@@ -48,6 +48,10 @@ internal fun decodeExecutions(text: String) = columnJson.decodeFromString(execut
 
 internal fun encodeParams(value: Map<String, String>) = columnJson.encodeToString(stringMapSerializer, value)
 
+// The stored form's UTF-8 size, the number `server.maxInputBytes` bounds: measured on the same encoding
+// the INSERT writes, so the cap and the row cannot drift. See ADR-0047 rule 4.
+internal fun encodedParamsBytes(value: Map<String, String>): Long = encodeParams(value).toByteArray(Charsets.UTF_8).size.toLong()
+
 internal fun decodeParams(text: String) = columnJson.decodeFromString(stringMapSerializer, text)
 
 internal fun encodeRetainArtifacts(value: List<String>) = columnJson.encodeToString(stringListSerializer, value)
