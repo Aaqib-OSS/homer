@@ -186,6 +186,70 @@ class EvictedWorkspaceCleanupTest {
     }
 
     @Test
+    fun `a second attempt of a path another attempt is deleting logs the skip through delete()`(
+        @TempDir root: Path,
+    ) = runTest {
+        val artifacts = workspace(root, "run1")
+        // Drives delete() into the InFlight arm the claim-level test above only reaches at the claim:
+        // the skip is logged, nothing is deleted, and the attempt holding the claim keeps it.
+        assertEquals(
+            WorkspaceDeleteClaim.CLAIMED,
+            retention.claimWorkspaceDelete(
+                artifacts,
+                evictedProcessId = 7,
+                maxPending = EvictedWorkspaceCleanup.MAX_PENDING,
+                attemptToken = "first",
+            ),
+        )
+        val cleanup = cleanup(root, FlakyDelete(failures = 0))
+
+        cleanup.delete(8, artifacts)
+
+        assertTrue(Files.exists(root.resolve("run1")), "the attempt holding the claim is the only one deleting")
+        assertEquals(1, cleanup.pendingCount())
+        verify(exactly = 1) { logger.info(match<String> { "another attempt is already deleting" in it }, 8, artifacts.parent) }
+    }
+
+    @Test
+    fun `a claim that commits and then throws leaves the claim held, not stuck in flight`(
+        @TempDir root: Path,
+    ) = runTest {
+        val artifacts = workspace(root, "run1")
+        // The claim transaction commits and the write handle still throws afterwards (ADR-0020): the release
+        // must already be armed, or the in-flight claim refuses every registering run until the next restart.
+        var firstClaim = true
+        val cleanup =
+            EvictedWorkspaceCleanup(
+                root,
+                logger,
+                { dir, evicted, maxPending, token ->
+                    retention.claimWorkspaceDelete(dir, evicted, maxPending, token)
+                    if (firstClaim) {
+                        firstClaim = false
+                        throw IOException("lost after commit")
+                    }
+                    WorkspaceDeleteClaim.CLAIMED
+                },
+                retention::settleWorkspaceDelete,
+                retention::heldWorkspaceDeletes,
+                retention::pendingWorkspaceDeleteCount,
+            )
+
+        assertFailsWith<IOException> { cleanup.delete(7, artifacts) }
+
+        assertEquals(1, cleanup.pendingCount())
+        assertEquals(
+            listOf(HeldWorkspaceDelete(artifacts, 7)),
+            retention.heldWorkspaceDeletes(limit = EvictedWorkspaceCleanup.MAX_PENDING),
+        )
+
+        cleanup.retryPending()
+
+        assertFalse(Files.exists(root.resolve("run1")), "the next sweep retries the released claim")
+        assertEquals(0, cleanup.pendingCount())
+    }
+
+    @Test
     fun `an attempt cancelled mid-delete releases its claim for the next sweep`(
         @TempDir root: Path,
     ) = runTest {

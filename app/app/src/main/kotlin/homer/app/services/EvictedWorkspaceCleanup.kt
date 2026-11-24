@@ -112,9 +112,9 @@ internal class EvictedWorkspaceCleanup(
     ): Attempt {
         // One token per attempt: settle matches it, so only the attempt holding the claim settles it.
         val attemptToken = UUID.randomUUID().toString()
-        // A cancellation can land while the claim transaction itself runs, after its row is committed, so
-        // the release below covers the whole attempt, not just the delete (CWE-400). See ADR-0048.
-        var released = true
+        // The release below arms before the claim and covers the whole attempt: a claim transaction can commit and
+        // still throw (CWE-400); a skipped attempt's token matches no row, so its release settles nothing. ADR-0048.
+        var released = false
         try {
             when (claimDelete(artifactsDir, evictedId, MAX_PENDING, attemptToken)) {
                 WorkspaceDeleteClaim.SHARED -> return Attempt.Shared
@@ -122,7 +122,6 @@ internal class EvictedWorkspaceCleanup(
                 WorkspaceDeleteClaim.IN_FLIGHT -> return Attempt.InFlight
                 WorkspaceDeleteClaim.CLAIMED -> Unit
             }
-            released = false
             val attempt = deleteAndSettle(evictedId, artifactsDir, attemptToken)
             released = true
             return attempt

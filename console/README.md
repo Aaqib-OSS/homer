@@ -235,7 +235,8 @@ it; hover for the full sentence, which the run's own page shows in full.
 - **Failed before it started**: A run that ended `FAILED` without running a
   single command shows a **Failed before it started** box under the header with
   the stored reason — a claim timeout, a `SKIP_CURRENT` lock collision, a
-  parallel-run cap, a full queue or an unresolved `lockStrategy.key` placeholder.
+  parallel-run cap, a full queue, an unresolved `lockStrategy.key` placeholder
+  or a workspace directory an eviction was still deleting.
   The box appears only when the server stored
   a reason, so a run that failed while it was running shows none
 - The run's cost carries a source label — `proxy` when priced by the

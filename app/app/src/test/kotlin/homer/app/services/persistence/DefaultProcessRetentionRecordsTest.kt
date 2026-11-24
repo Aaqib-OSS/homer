@@ -129,6 +129,29 @@ class DefaultProcessRetentionRecordsTest {
         }
 
     @Test
+    fun `a stale claim at the full bound is taken over, not shed`() =
+        runTest {
+            val stale = Path.of("/ws/stale/artifacts")
+            retention.claimWorkspaceDelete(stale, evictedProcessId = 7, maxPending = 2, attemptToken = "a")
+            // The attempt that held the claim is gone, so the boot reset marks the row held — and the
+            // table is then filled to its bound by other paths.
+            retention.resetInFlightWorkspaceDeletes()
+            retention.claimWorkspaceDelete(
+                Path.of("/ws/other/artifacts"),
+                evictedProcessId = 8,
+                maxPending = 2,
+                attemptToken = "b",
+            )
+
+            // The takeover replaces the stale row inside the bound instead of shedding the retry.
+            assertEquals(
+                WorkspaceDeleteClaim.CLAIMED,
+                retention.claimWorkspaceDelete(stale, evictedProcessId = 9, maxPending = 2, attemptToken = "c"),
+            )
+            assertEquals(2, retention.pendingWorkspaceDeleteCount())
+        }
+
+    @Test
     fun `a stale claim on a shared path is dropped by the shared answer`() =
         runTest {
             val shared = Path.of("/ws/shared/artifacts")
