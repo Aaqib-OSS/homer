@@ -19,9 +19,11 @@ import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import java.net.InetAddress
 import java.nio.file.Path
+import kotlin.system.exitProcess
 import kotlin.time.Duration.Companion.seconds
 
-private val logger = LoggerFactory.getLogger("homer.runner")
+// Lazy, so this file's class initialisation touches no logging backend before the JVM is hardened.
+private val logger by lazy { LoggerFactory.getLogger("homer.runner") }
 
 /**
  * `homer-runner`: registers this machine as a pull-mode runner instance and executes the runs it
@@ -35,6 +37,14 @@ class HomerRunnerCli(
     // Seam for tests; production uses Dumpability.harden's own defaults.
     private val harden: () -> Dumpability.Result = Dumpability::harden,
 ) : CliktCommand(name = "homer-runner") {
+    private val hardening: Dumpability.Result
+
+    init {
+        // Runs as this command is constructed, before Clikt parses the command line or reads any
+        // environment variable: the token is in this process's environment from `execve` onwards. CWE-526, ADR-0078.
+        hardening = harden()
+    }
+
     override fun help(context: Context) =
         """
         Homer external runner — claim runs from a Homer server and execute them here.
@@ -61,7 +71,7 @@ class HomerRunnerCli(
     ).long().default(600)
 
     override fun run() {
-        // Fail closed before the token read; see ADR-0078.
+        // Fail closed before the token read; the hardening itself ran at construction.
         hardenOrRefuse()
         val token =
             currentContext.readEnvvar("HOMER_RUNNER_TOKEN")?.takeIf { it.isNotBlank() }
@@ -99,15 +109,18 @@ class HomerRunnerCli(
         throw ProgramResult(code)
     }
 
-    /** Makes the JVM non-dumpable where it can; a failed attempt refuses to start. */
+    /** Reports the hardening decided at construction; a failed attempt refuses to start. */
     private fun hardenOrRefuse() {
-        when (val result = harden()) {
+        when (val result = hardening) {
             is Dumpability.Result.Hardened -> logger.info("homer-runner JVM is non-dumpable")
             is Dumpability.Result.Skipped -> logger.warn("homer-runner JVM left dumpable: {}", result.reason)
-            is Dumpability.Result.Failed -> throw CliktError("homer-runner refuses to start: ${result.reason}")
+            is Dumpability.Result.Failed -> throw CliktError(hardeningRefusal(result))
         }
     }
 }
+
+/** The message a failed hardening refuses the runner with, at either gate. */
+private fun hardeningRefusal(result: Dumpability.Result.Failed) = "homer-runner refuses to start: ${result.reason}"
 
 /**
  * Default instance name: this host's name shaped to Homer's `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`, so an
@@ -125,4 +138,46 @@ internal fun sanitizeInstanceName(raw: String): String {
     return trimmed.ifEmpty { "homer-runner" }
 }
 
-fun main(args: Array<String>) = HomerRunnerCli().main(args)
+/**
+ * The runner's entry point: hardens the JVM before Clikt parses the command line or reads any
+ * environment variable, because the token is in this process's environment from `execve` onwards.
+ * CWE-526, ADR-0078.
+ */
+internal fun runnerMain(
+    args: Array<String>,
+    harden: () -> Dumpability.Result = Dumpability::harden,
+    // Seam for tests: they drive the parse, so an assertion never reaches Clikt's `exitProcess`.
+    execute: (HomerRunnerCli, Array<String>) -> Unit = { cli, argv -> cli.main(argv) },
+) {
+    val hardening = harden()
+    if (hardening is Dumpability.Result.Failed) {
+        // Fail closed before Clikt parses: `--help` and a usage error end the process before
+        // `run()`'s own gate, so the refusal must happen here, before the command exists. CWE-526, ADR-0078.
+        throw CliktError(hardeningRefusal(hardening))
+    }
+    val cli = HomerRunnerCli(harden = { hardening })
+    execute(cli, args)
+}
+
+fun main(args: Array<String>) {
+    try {
+        runnerMain(args)
+    } catch (e: CliktError) {
+        // The refusal throws before `cli.main(argv)`, Clikt's only handler: print it one line here.
+        printCliktError(e, exit = ::exitProcess)
+    }
+}
+
+/**
+ * Prints a [CliktError] the way Clikt's handler prints an error — one line, no stack trace — and
+ * exits with its status code. The early refusal reaches it before any command or terminal exists
+ * to print through Clikt.
+ */
+internal fun printCliktError(
+    e: CliktError,
+    // Seam for tests: a test asserts the status code instead of exiting its own JVM.
+    exit: (Int) -> Nothing,
+): Nothing {
+    System.err.println("error: ${e.message}")
+    exit(e.statusCode)
+}
