@@ -1,5 +1,6 @@
 package homer.app.services
 
+import homer.app.config.ExecutionConfig
 import homer.app.exceptions.CooldownActiveException
 import homer.app.exceptions.CooldownKeyInvalidException
 import homer.app.exceptions.CostCapExceededException
@@ -8,19 +9,26 @@ import homer.app.exceptions.InvocationCycleDetectedException
 import homer.app.exceptions.InvocationDepthExceededException
 import homer.app.exceptions.MaintenanceQueueFullException
 import homer.app.exceptions.MaintenanceWaitTimeoutException
+import homer.app.exceptions.RunInputsTooLargeException
 import homer.app.exceptions.ServerDrainingException
+import homer.app.executors.ProcessDeps
 import homer.app.executors.ProcessExecutor
 import homer.app.executors.ProcessFactory
 import homer.app.fixtures.AgentFixtures
+import homer.app.fixtures.PersistenceTestSupport
 import homer.app.fixtures.TestFixtures
+import homer.app.infra.AgentInputResolver
 import homer.app.models.Agent
 import homer.app.models.AgentTelemetry
 import homer.app.models.Cooldown
 import homer.app.models.Param
+import homer.app.models.ParamType
 import homer.app.models.ProcessCreationResult
 import homer.app.models.ProcessStatus
 import homer.app.models.RunStartRequest
+import homer.app.services.persistence.ProcessInputs
 import homer.app.services.persistence.ProcessRecordReads
+import homer.app.services.persistence.Processes
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -30,10 +38,14 @@ import io.mockk.verify
 import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.api.common.Attributes
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.yield
+import org.jetbrains.exposed.v1.jdbc.selectAll
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -1041,5 +1053,150 @@ class AgentRunStarterTest {
 
             coVerify(exactly = 0) { gate.awaitRelease(any()) }
             coVerify(exactly = 0) { processExecutor.execute(any(), any()) }
+        }
+
+    /**
+     * The shared start path over a real database and a real [ProcessExecutor], so the input cap is
+     * enforced where the row would be written. Every entry point but a manual retry, resume or debug
+     * — HTTP, MCP, `!<agent>` hops, dispatches, continuations and hook fires — starts through it.
+     */
+    private inner class RealStart(
+        maxInputBytes: Long = 1L * 1024 * 1024,
+    ) {
+        private val db = PersistenceTestSupport.tempDatabase()
+        val processManager: ProcessManager = PersistenceTestSupport.processManager(db = db)
+
+        private val executor =
+            ProcessExecutor(
+                telemetryService = TestFixtures.mockTelemetryService(),
+                processManager = processManager,
+                runInputBytes = processManager,
+                maxInputBytes = maxInputBytes,
+                questionsService = mockk(relaxed = true),
+                runMessages = mockk(relaxed = true),
+                coroutineScope = CoroutineScope(Dispatchers.Default + Job()),
+                logger = TestFixtures.mockLogger(),
+            )
+
+        private val starter =
+            AgentRunStarter(
+                serverId = "test-server",
+                processExecutor = executor,
+                processFactory =
+                    ProcessFactory(
+                        ProcessDeps(
+                            workspaceConfigFactory = mockk(relaxed = true),
+                            executorFactory = mockk(relaxed = true),
+                            telemetryService = TestFixtures.mockTelemetryService(),
+                            lockManager = mockk(relaxed = true),
+                            parallelRunsManager = mockk(relaxed = true),
+                            config = ExecutionConfig(),
+                            processManager = processManager,
+                            runnerRegistry = mockk(relaxed = true),
+                            activeSessions = mockk(relaxed = true),
+                            questionsService = mockk(relaxed = true),
+                            questionsWorkspaceSetup = mockk(relaxed = true),
+                        ),
+                    ),
+                telemetryService = TestFixtures.mockTelemetryService(),
+                costMeter = mockk(relaxed = true),
+                maxInvocationDepth = 5,
+                cooldownGate = mockk(relaxed = true),
+                maintenanceGate = mockk(relaxed = true),
+                processReads = processManager,
+            )
+
+        suspend fun start(
+            agent: Agent,
+            params: Map<String, String>,
+        ): Int =
+            starter.start(
+                RunStartRequest(
+                    agent = agent,
+                    invocationChain = emptyList(),
+                    source = "http",
+                    // The real resolver, so an unconstrained input's value and a declared default
+                    // both reach the map the cap measures.
+                    resolveInputs = { AgentInputResolver().resolveFromParams(params, agent) },
+                ),
+            )
+
+        /** Rows in the two tables a refused start must leave empty. */
+        suspend fun rowCounts(): Pair<Int, Int> =
+            db.read {
+                Processes.selectAll().count().toInt() to ProcessInputs.selectAll().count().toInt()
+            }
+    }
+
+    @Test
+    fun `CWE-770 a start whose unconstrained input exceeds maxInputBytes is refused with no row`() =
+        runBlocking {
+            val real = RealStart(maxInputBytes = 256)
+            val agent =
+                AgentFixtures
+                    .simpleAgent(name = "child")
+                    .copy(inputs = listOf(Param(paramName = "mr", envName = "MR", required = false)))
+
+            val refused =
+                assertFailsWith<RunInputsTooLargeException> {
+                    real.start(agent, mapOf("mr" to "x".repeat(4096)))
+                }
+
+            assertEquals(256, refused.maxBytes)
+            assertEquals(0 to 0, real.rowCounts(), "a refused start writes neither row")
+        }
+
+    @Test
+    fun `CWE-770 a start whose declared default exceeds maxInputBytes is refused with no row`() =
+        runBlocking {
+            val real = RealStart(maxInputBytes = 256)
+            val agent =
+                AgentFixtures
+                    .simpleAgent(name = "child")
+                    .copy(
+                        inputs =
+                            listOf(
+                                Param(paramName = "mr", envName = "MR", required = false),
+                                Param(paramName = "payload", envName = "PAYLOAD", required = false, default = "y".repeat(4096)),
+                            ),
+                    )
+
+            assertFailsWith<RunInputsTooLargeException> { real.start(agent, mapOf("mr" to "1")) }
+
+            assertEquals(0 to 0, real.rowCounts(), "a refused start writes neither row")
+        }
+
+    @Test
+    fun `CWE-770 a start whose legacy ANY input exceeds maxInputBytes is refused with no row`() =
+        runBlocking {
+            val real = RealStart(maxInputBytes = 256)
+            // The legacy ANY type constrains nothing (ADR-0031), so its value is the only thing the cap can measure.
+            val agent =
+                AgentFixtures
+                    .simpleAgent(name = "child")
+                    .copy(
+                        inputs =
+                            listOf(
+                                Param(paramName = "mr", envName = "MR", required = false, type = ParamType.ANY),
+                            ),
+                    )
+
+            assertFailsWith<RunInputsTooLargeException> { real.start(agent, mapOf("mr" to "x".repeat(4096))) }
+
+            assertEquals(0 to 0, real.rowCounts(), "a refused start writes neither row")
+        }
+
+    @Test
+    fun `a start under maxInputBytes still creates its run and its input row`() =
+        runBlocking {
+            val real = RealStart(maxInputBytes = 4096)
+            val agent =
+                AgentFixtures
+                    .simpleAgent(name = "child")
+                    .copy(inputs = listOf(Param(paramName = "mr", envName = "MR", required = false)))
+
+            real.start(agent, mapOf("mr" to "1"))
+
+            assertEquals(1 to 1, real.rowCounts(), "an admitted start writes both rows")
         }
 }

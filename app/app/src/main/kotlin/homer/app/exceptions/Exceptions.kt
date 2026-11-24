@@ -102,6 +102,13 @@ class MaxLockWaitersExceededException(
     val bound: Int,
 ) : HomerException("Agent '$agentName' has reached the maximum of $bound runs waiting for a lock")
 
+// A start over `server.maxInputBytes` is refused before the run's row exists, so retained input bytes
+// are bounded by `maxProcesses` x the cap. Sizes only, never a key or value (CWE-770, ADR-0047 rule 4).
+class RunInputsTooLargeException(
+    val maxBytes: Long,
+    val actualBytes: Long,
+) : HomerException("Run inputs exceed the server limit of $maxBytes bytes (got $actualBytes)")
+
 // Bounds RunAgent chain depth, so recursion cannot burn unbounded tokens. The chain is threaded
 // across HTTP hops via the X-Homer-Invocation-Chain header. See ADR-0008.
 class InvocationDepthExceededException(

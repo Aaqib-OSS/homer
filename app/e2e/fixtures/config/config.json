@@ -17,6 +17,7 @@
       "parent": [{ "agents": ["echo"], "actions": ["run"] }]
     },
     "maxRequestBodyBytes": 262144,
+    "maxInputBytes": 131072,
     "maxArtifactBytes": 65536,
     "shutdownDrainSec": 5,
     "rateLimit": { "limit": 100000, "refillPeriod": 60 },
