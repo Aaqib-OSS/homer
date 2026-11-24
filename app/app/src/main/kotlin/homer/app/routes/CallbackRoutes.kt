@@ -25,7 +25,6 @@ import homer.app.models.TagValidation
 import homer.app.models.TakeRunMessagesResponse
 import homer.app.models.TakenRunMessage
 import homer.app.models.WhoamiResponse
-import homer.app.services.ArtifactTooLargeException
 import homer.app.services.DispatchGroupService
 import homer.app.services.HookEvent
 import homer.app.services.QuestionsService

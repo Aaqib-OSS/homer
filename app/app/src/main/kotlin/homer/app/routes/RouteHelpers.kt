@@ -1,8 +1,8 @@
 package homer.app.routes
 
 import homer.app.exceptions.QueryParamValidationException
+import homer.app.infra.ArtifactTooLargeException
 import homer.app.models.ErrorResponse
-import homer.app.services.ArtifactTooLargeException
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receive

@@ -1,5 +1,6 @@
 package homer.app.services
 
+import homer.app.infra.ArtifactTooLargeException
 import homer.app.infra.FileOperations
 import homer.app.infra.PathSafety
 import homer.app.models.ArtifactEntry
@@ -138,14 +139,15 @@ class ArtifactService(
     }
 
     /**
-     * Copies [artifactPath] to [output] once, up to its end at read time. A file its process still
-     * writes is not followed; the route marks it `X-File-Complete: false`.
+     * Copies [artifactPath] into the stream [respond] opens, at most [maxArtifactBytes] bytes: an over-cap
+     * file is refused with an [ArtifactTooLargeException] before the first write, and a file that grows is
+     * cut off at the cap (CWE-770, ADR-0047 rule 4).
      */
     suspend fun streamArtifact(
         artifactPath: Path,
-        output: OutputStream,
+        respond: suspend (write: suspend (OutputStream) -> Unit) -> Unit,
     ) {
-        streamCompleteFile(artifactPath, output)
+        streamCompleteFile(artifactPath, respond)
     }
 
     /**
@@ -153,10 +155,10 @@ class ArtifactService(
      */
     private suspend fun streamCompleteFile(
         artifactPath: Path,
-        output: OutputStream,
+        respond: suspend (write: suspend (OutputStream) -> Unit) -> Unit,
     ) {
         logger.debug("Streaming complete file: {}", artifactPath)
-        fileOperations.streamFile(artifactPath, output)
+        fileOperations.streamFile(artifactPath, maxArtifactBytes, respond)
     }
 
     companion object {
@@ -166,8 +168,3 @@ class ArtifactService(
         const val MAX_ARTIFACT_LIST_ENTRIES: Int = 10_000
     }
 }
-
-class ArtifactTooLargeException(
-    val size: Long,
-    val maxBytes: Long,
-) : RuntimeException("Artifact size $size exceeds maximum $maxBytes")

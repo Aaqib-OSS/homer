@@ -4,8 +4,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import java.io.IOException
-import java.io.InputStream
 import java.io.OutputStream
+import java.nio.ByteBuffer
+import java.nio.channels.Channels
+import java.nio.channels.SeekableByteChannel
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
@@ -32,11 +34,11 @@ import kotlin.io.path.readText
 class LocalFileOperations internal constructor(
     private val openTimeoutMs: Long,
     private val executor: ExecutorService = OPEN_EXECUTOR,
-    private val openRegular: (Path) -> InputStream = DescriptorOpen::openRegular,
+    private val openRegular: (Path) -> SeekableByteChannel = DescriptorOpen::openRegularChannel,
     private val beforeOpen: (Path) -> Unit,
 ) : FileOperations {
     // Test seams: [beforeOpen] runs on the pool thread before every [openRegular]; [executor] is its pool.
-    constructor() : this(OPEN_TIMEOUT_MS, OPEN_EXECUTOR, DescriptorOpen::openRegular, {})
+    constructor() : this(OPEN_TIMEOUT_MS, OPEN_EXECUTOR, DescriptorOpen::openRegularChannel, {})
 
     private val logger = LoggerFactory.getLogger(LocalFileOperations::class.java)
 
@@ -54,7 +56,7 @@ class LocalFileOperations internal constructor(
         var failure: IOException? = null
         val text =
             try {
-                submitBounded(path, "read") { openChecked(path).use { readWhole(it, maxBytes) } }
+                submitBounded(path, "read") { Channels.newInputStream(openChecked(path)).use { readWhole(it, maxBytes) } }
             } catch (e: IOException) {
                 failure = e
                 null
@@ -63,7 +65,7 @@ class LocalFileOperations internal constructor(
         return text
     }
 
-    private fun openChecked(path: Path): InputStream {
+    private fun openChecked(path: Path): SeekableByteChannel {
         beforeOpen(path)
         return openRegular(path)
     }
@@ -72,19 +74,53 @@ class LocalFileOperations internal constructor(
 
     override suspend fun streamFile(
         path: Path,
-        outputStream: OutputStream,
+        maxBytes: Long,
+        respond: suspend (write: suspend (OutputStream) -> Unit) -> Unit,
         bufferSize: Int,
     ) {
-        withContext(Dispatchers.IO) {
-            submitBounded(path, "open", InputStream::close) { openChecked(path) }.use { input ->
-                val buffer = ByteArray(bufferSize)
-                var bytesRead: Int
-                while (input.read(buffer).also { bytesRead = it } != -1) {
-                    outputStream.write(buffer, 0, bytesRead)
-                    outputStream.flush()
-                }
-            }
+        val open = withContext(Dispatchers.IO) { submitBounded(path, "open", SeekableByteChannel::close) { openChecked(path) } }
+        // The cap is enforced here, where the bytes move: a check that ran before the open cannot see
+        // a file that grows after it (CWE-770, ADR-0047 rule 4).
+        val size = open.size()
+        if (size > maxBytes) {
+            open.close()
+            throw ArtifactTooLargeException(size, maxBytes)
         }
+        // The sink owns the descriptor from here: [respond] only commits the response, and the copy that
+        // closes the descriptor runs after it (ADR-0047 rule 4).
+        respond { output -> withContext(Dispatchers.IO) { open.use { copyCapped(it, output, maxBytes, bufferSize) } } }
+    }
+
+    /** Copies at most [maxBytes] bytes of [source] into [output], logging a file that grew past the cap. */
+    private fun copyCapped(
+        source: SeekableByteChannel,
+        output: OutputStream,
+        maxBytes: Long,
+        bufferSize: Int,
+    ) {
+        val written = copyAtMost(source, output, maxBytes, bufferSize)
+        if (written < maxBytes) return
+        val grown = source.size()
+        if (grown > maxBytes) logger.debug("artifact stream stopped at the {} byte cap; the file grew to {} bytes", maxBytes, grown)
+    }
+
+    /** Copies at most [maxBytes] bytes, so a file that grows while it is copied cannot exceed the cap (CWE-770). */
+    private fun copyAtMost(
+        input: SeekableByteChannel,
+        output: OutputStream,
+        maxBytes: Long,
+        bufferSize: Int,
+    ): Long {
+        val buffer = ByteArray(bufferSize)
+        var written = 0L
+        while (written < maxBytes) {
+            val read = input.read(ByteBuffer.wrap(buffer, 0, minOf(bufferSize.toLong(), maxBytes - written).toInt()))
+            if (read <= 0) break
+            output.write(buffer, 0, read)
+            output.flush()
+            written += read
+        }
+        return written
     }
 
     override fun dirExists(path: Path): Boolean = path.exists() && path.isDirectory()

@@ -2,6 +2,7 @@ package homer.app.routes
 
 import homer.app.HomerHeaders
 import homer.app.exceptions.QueryParamValidationException
+import homer.app.infra.ArtifactTooLargeException
 import homer.app.models.ErrorResponse
 import homer.app.models.ProcessInfo
 import homer.app.models.ProcessListQuery
@@ -207,8 +208,13 @@ private fun Route.artifactRoute(deps: ProcessRouteDeps) {
             call.response.headers.append(HomerHeaders.FILE_COMPLETE, (!isActive).toString())
 
             // Stream file
-            call.respondOutputStream(ContentType.Text.Plain, HttpStatusCode.OK) {
-                artifactService.streamArtifact(artifactPath, this)
+            try {
+                artifactService.streamArtifact(artifactPath) { write ->
+                    call.respondOutputStream(ContentType.Text.Plain, HttpStatusCode.OK) { write(this) }
+                }
+            } catch (e: ArtifactTooLargeException) {
+                // The copy-time bound refused the file before the response was committed, so the 413 fits.
+                respondArtifactSizeFailure(call, e)
             }
         }
     }

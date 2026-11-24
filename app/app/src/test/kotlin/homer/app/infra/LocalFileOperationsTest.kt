@@ -1,5 +1,6 @@
 package homer.app.infra
 
+import homer.app.fixtures.DelegatingChannel
 import homer.app.fixtures.TestFixtures
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.byte
@@ -12,12 +13,12 @@ import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream
-import java.io.FilterInputStream
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.FileTime
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.CyclicBarrier
@@ -65,8 +66,7 @@ class LocalFileOperationsTest {
             val content = "stream me"
             val file = tempDir.resolve("stream.txt")
             file.writeText(content)
-            val out = ByteArrayOutputStream()
-            ops.streamFile(file, out)
+            val out = ops.streamInto(file)
             assertEquals(content, out.toString(Charsets.UTF_8.name()))
         }
 
@@ -75,7 +75,7 @@ class LocalFileOperationsTest {
         runTest {
             val missing = tempDir.resolve("missing.txt")
             val out = ByteArrayOutputStream()
-            assertFailsWith<NoSuchFileException> { ops.streamFile(missing, out) }
+            assertFailsWith<NoSuchFileException> { ops.streamInto(missing, out) }
             assertEquals(0, out.size())
         }
 
@@ -92,7 +92,7 @@ class LocalFileOperationsTest {
                 .createSymbolicLink(link, target)
 
             val out = ByteArrayOutputStream()
-            assertFailsWith<IOException> { ops.streamFile(link, out) }
+            assertFailsWith<IOException> { ops.streamInto(link, out) }
             assertEquals(0, out.size())
 
             outsideDir.toFile().deleteRecursively()
@@ -107,7 +107,7 @@ class LocalFileOperationsTest {
             Files.createLink(linked, original)
 
             val out = ByteArrayOutputStream()
-            assertFailsWith<IOException> { ops.streamFile(linked, out) }
+            assertFailsWith<IOException> { ops.streamInto(linked, out) }
             assertEquals(0, out.size())
         }
 
@@ -120,7 +120,7 @@ class LocalFileOperationsTest {
                 runCatching { ProcessBuilder("mkfifo", fifo.toString()).start().waitFor() == 0 }.getOrDefault(false),
                 "mkfifo unavailable",
             )
-            assertFailsWith<IOException> { ops.streamFile(fifo, ByteArrayOutputStream()) }
+            assertFailsWith<IOException> { ops.streamInto(fifo) }
         }
 
     @Test
@@ -208,7 +208,7 @@ class LocalFileOperationsTest {
                 val swapping = LocalFileOperations(60_000, pool) { path -> swapForFifo(path) }
                 repeat(OPEN_THREADS) { i ->
                     val file = tempDir.resolve("swapped-$i.bin").also { it.writeText("x") }
-                    val refused = assertFailsWith<IOException> { swapping.streamFile(file, ByteArrayOutputStream()) }
+                    val refused = assertFailsWith<IOException> { swapping.streamInto(file) }
                     assertTrue(refused.message!!.contains("non-regular"), "refused at the descriptor, got: ${refused.message}")
                 }
 
@@ -238,7 +238,7 @@ class LocalFileOperationsTest {
                 LocalFileOperations(
                     openTimeoutMs = 100,
                     openRegular = { path ->
-                        object : FilterInputStream(DescriptorOpen.openRegular(path)) {
+                        object : DelegatingChannel(DescriptorOpen.openRegularChannel(path)) {
                             override fun close() {
                                 super.close()
                                 closed.countDown()
@@ -249,7 +249,7 @@ class LocalFileOperationsTest {
                     beforeOpen = { sleepUninterruptibly(500) },
                 )
 
-            val timedOut = assertFailsWith<IOException> { late.streamFile(file, ByteArrayOutputStream()) }
+            val timedOut = assertFailsWith<IOException> { late.streamInto(file) }
 
             assertTrue(timedOut.message!!.contains("Timed out"), "the caller must have given up, got: ${timedOut.message}")
             assertTrue(closed.await(5, TimeUnit.SECONDS), "the late descriptor must be closed")
@@ -296,7 +296,7 @@ class LocalFileOperationsTest {
                     }
 
                 val out = ByteArrayOutputStream()
-                assertFailsWith<IOException> { swapping.streamFile(file, out) }
+                assertFailsWith<IOException> { swapping.streamInto(file, out) }
                 assertEquals(0, out.size())
             } finally {
                 outside.toFile().deleteRecursively()
@@ -310,21 +310,83 @@ class LocalFileOperationsTest {
             val linking = LocalFileOperations(60_000) { path -> Files.createLink(tempDir.resolve("other.txt"), path) }
 
             val out = ByteArrayOutputStream()
-            assertFailsWith<IOException> { linking.streamFile(file, out) }
+            assertFailsWith<IOException> { linking.streamInto(file, out) }
             assertEquals(0, out.size())
             assertEquals(null, LocalFileOperations(60_000) { }.readTextBounded(file, maxBytes = 1024))
         }
 
     @Test
-    fun `streamFile copies a regular file byte-identical whatever its size and the buffer size`() =
+    fun `streamFile copies a regular file byte-identical below the cap, whatever its size and the buffer size`() =
         runTest {
             val file = tempDir.resolve("payload.bin")
             checkAll(40, Arb.byteArray(Arb.int(0..200_000), Arb.byte()), Arb.int(1..100_000)) { content, bufferSize ->
                 Files.write(file, content)
                 val out = ByteArrayOutputStream()
-                ops.streamFile(file, out, bufferSize)
+                ops.streamInto(file, out, maxBytes = content.size + 1L, bufferSize = bufferSize)
                 assertContentEquals(content, out.toByteArray())
             }
+        }
+
+    @Test
+    fun `streamFile refuses a file over the cap at open, before the caller's stream is opened`() =
+        runTest {
+            val file = tempDir.resolve("over.bin").also { Files.write(it, ByteArray(64)) }
+            val out = ByteArrayOutputStream()
+            var opened = false
+
+            val refused =
+                assertFailsWith<ArtifactTooLargeException> {
+                    ops.streamFile(
+                        file,
+                        maxBytes = 16,
+                        respond = { write ->
+                            opened = true
+                            write(out)
+                        },
+                    )
+                }
+
+            assertEquals(64L, refused.size)
+            assertEquals(16L, refused.maxBytes)
+            assertFalse(opened, "the response must not be committed for a file over the cap")
+            assertEquals(0, out.size())
+        }
+
+    @Test
+    fun `streamFile copies a file exactly at the cap in full`() =
+        runTest {
+            val file = tempDir.resolve("exact.bin").also { Files.write(it, ByteArray(16) { 'x'.code.toByte() }) }
+
+            val out = ops.streamInto(file, maxBytes = 16)
+
+            assertEquals("x".repeat(16), out.toString(Charsets.UTF_8.name()))
+        }
+
+    @Test
+    fun `streamFile stops at the cap when the file grows during the copy`() =
+        runTest {
+            val file = tempDir.resolve("growing.bin").also { it.writeText("start") }
+            val out =
+                object : ByteArrayOutputStream() {
+                    private var grown = false
+
+                    override fun write(
+                        b: ByteArray,
+                        off: Int,
+                        len: Int,
+                    ) {
+                        super.write(b, off, len)
+                        if (!grown) {
+                            grown = true
+                            Files.write(file, ByteArray(4096), StandardOpenOption.APPEND)
+                        }
+                    }
+                }
+
+            ops.streamFile(file, maxBytes = 8, respond = { write -> write(out) })
+
+            assertEquals(8, out.size(), "the copy must stop at the cap, not follow the growth")
+            assertContentEquals("start".toByteArray(), out.toByteArray().copyOf(5), "the copy starts at the file's first bytes")
         }
 
     @Test
@@ -411,6 +473,17 @@ class LocalFileOperationsTest {
         }
         assertTrue(parkedRead.isDone, "no read may stay blocked")
         assertEquals("{}", ops.readTextBounded(file, maxBytes = 1024))
+    }
+
+    /** Streams [path] into [out] under the [maxBytes] cap, returning that buffer once the copy ran. */
+    private suspend fun LocalFileOperations.streamInto(
+        path: Path,
+        out: ByteArrayOutputStream = ByteArrayOutputStream(),
+        maxBytes: Long = Long.MAX_VALUE,
+        bufferSize: Int = 8192,
+    ): ByteArrayOutputStream {
+        streamFile(path, maxBytes, respond = { write -> write(out) }, bufferSize = bufferSize)
+        return out
     }
 
     private fun sleepUninterruptibly(millis: Long) {

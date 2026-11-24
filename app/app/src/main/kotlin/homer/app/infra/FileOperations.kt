@@ -33,11 +33,14 @@ interface FileOperations {
     fun fileExists(path: Path): Boolean
 
     /**
-     * Stream a file's contents to an output stream
+     * Streams [path] into the stream [respond] opens, never more than [maxBytes] bytes: the open and the
+     * descriptor-size check run before [respond], so an over-cap file is refused with an
+     * [ArtifactTooLargeException] while the caller can still answer `413`, and the copy stops at the bound.
      */
     suspend fun streamFile(
         path: Path,
-        outputStream: OutputStream,
+        maxBytes: Long,
+        respond: suspend (write: suspend (OutputStream) -> Unit) -> Unit,
         bufferSize: Int = 8192,
     )
 

@@ -11,6 +11,7 @@ import homer.app.exceptions.ValidationException
 import homer.app.fixtures.PersistenceTestSupport
 import homer.app.fixtures.TestFixtures
 import homer.app.fixtures.mountCallbackRoutes
+import homer.app.infra.ArtifactTooLargeException
 import homer.app.infra.LocalFileOperations
 import homer.app.infra.SecretRedactor
 import homer.app.models.AskQuestionResponse
@@ -31,7 +32,6 @@ import homer.app.models.SrcType
 import homer.app.models.TagValidation
 import homer.app.models.TakeRunMessagesResponse
 import homer.app.models.TakenRunMessage
-import homer.app.services.ArtifactTooLargeException
 import homer.app.services.DispatchGroupService
 import homer.app.services.HookEvent
 import homer.app.services.ProcessEventBroadcaster
