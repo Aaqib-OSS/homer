@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-24
 deciders: Lukáš Vlk
-amended: 2026-10-01, 2026-10-06, 2026-10-09, 2026-10-14, 2026-11-20
+amended: 2026-10-01, 2026-10-06, 2026-10-09, 2026-10-14, 2026-11-20, 2026-11-24
 superseded-by: ADR-0053
 ---
 # ADR-0048: A run's record outlives its workspace
@@ -266,3 +266,40 @@ when the server stops is left on disk, as every failed eviction delete was
 before this amendment. A durable record of a pending delete would need a table of
 its own, with its own retention path, for a failure that needs the filesystem to
 refuse the same delete for the whole uptime.
+
+## Amendment (2026-11-24): the claim is durable, and a run registering the path is refused
+
+The 2026-11-20 hold was in memory and the delete it guarded was still a
+check-then-act: `EvictedWorkspaceCleanup` asked whether another row referenced
+the directory and then deleted the directory, with nothing claiming the path in
+between. A run registering that artifacts dir inside the window lost its whole
+workspace to the delete (CWE-367), and the held deletes themselves did not
+survive a restart.
+
+The claim is now a row in `workspace_pending_deletes` (schema v36), keyed by the
+exact `artifacts_dir` string a registering run stores, so the two compare equal.
+`setArtifactsDir` reads the claim and writes the row in one `BEGIN IMMEDIATE`
+transaction: while an attempt holds the path (`in_flight`), the run is refused
+with a fixed pre-start reason that names neither the path nor the evicted run
+(ADR-0098), instead of being handed a directory that is being deleted. A claim
+no attempt holds is stale — the attempt failed, or the server stopped — so a
+registering run takes the path over and drops the held delete with it, which is
+what "another row owns the directory now" already meant. The sweep claims the
+path before each attempt and re-claims it after a failure, so a retry is guarded
+exactly as the first attempt was; `in_flight` is cleared once at boot by
+`StartupReconciliation`, where no attempt can be running.
+
+The bound moved with the state: `MAX_PENDING` (256) is counted inside the claim
+transaction (ADR-0051), so concurrent evictions cannot exceed it, and a claim
+past it is logged at ERROR and left on disk. The claim row replaces the probe —
+the shared-dir check and the claim are one step, so the check cannot be overtaken
+— and it replaces the in-memory hold, so the 2026-11-20 amendment's "Residual,
+accepted" no longer applies: a delete a restart interrupts is retried by the next
+sweep. The table is bounded and drained by those sweeps, so it needs no retention
+path of its own.
+
+**Residual, accepted:** a run hitting an in-flight claim fails rather than waits,
+so a start can be refused for the length of one directory delete; and the claim
+compares the stored path string exactly, like the shared-dir check it replaces, so
+a run whose `artifacts_dir` spells the same directory differently is not refused
+by it.

@@ -21,6 +21,7 @@ internal fun upgradeSchema(
     migrateToV33(st, current)
     migrateToV34(st, current)
     migrateToV35(st, current)
+    migrateToV36(st, current)
 }
 
 private fun columnNames(
@@ -359,5 +360,19 @@ private fun migrateToV35(
                 "UPDATE $table SET expires_at = created_at + 604800 WHERE status = 'PENDING' AND expires_at IS NULL",
             )
         }
+    }
+}
+
+/** v35→v36 adds the `workspace_pending_deletes` table an eviction claims a workspace dir with; name and columns match `Tables.kt`. See ADR-0048 (2026-11-24 amendment). */
+private fun migrateToV36(
+    st: Statement,
+    current: Int,
+) {
+    if (current in 1 until 36) {
+        st.execute(
+            "CREATE TABLE IF NOT EXISTS workspace_pending_deletes (" +
+                "path TEXT PRIMARY KEY, evicted_process_id INTEGER NOT NULL, " +
+                "in_flight INTEGER NOT NULL, created_at INTEGER NOT NULL)",
+        )
     }
 }

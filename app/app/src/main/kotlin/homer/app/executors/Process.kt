@@ -237,8 +237,8 @@ class Process(
             throw CancellationException("Process $processId was killed before it started")
         }
         processSpan.setAttribute(SpanAttributes.PROCESS_STATUS, ProcessStatus.CREATED.name)
-        // Register the artifacts dir before creating it: the purge sweep's shared-dir
-        // check must be able to see this run as an owner of the directory.
+        // Register the artifacts dir before creating it: the purge sweep's shared-dir check must be able
+        // to see this run as an owner, and a delete claim on the path refuses the run here (CWE-367). See ADR-0048.
         deps.processManager.setArtifactsDir(processId, workspace.config.artifacts)
         workspace.create()
         // Screens runtime tag values against every secret the run holds, the token included: it joins

@@ -10,6 +10,7 @@ import java.nio.file.Path
 interface RunWorkRecords :
     StepRecords,
     GuardedStatusWrite {
+    /** Records this run's artifacts dir; refused while a capacity eviction is deleting that path (ADR-0048). */
     suspend fun setArtifactsDir(
         processId: Int,
         artifactsDir: Path,

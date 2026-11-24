@@ -66,6 +66,47 @@ class DefaultProcessRetentionRecordsTest {
         }
 
     @Test
+    fun `a delete claim runs from claim to settle to boot reset through the port`() =
+        runTest {
+            val dir = Path.of("/ws/1/artifacts")
+
+            assertEquals(WorkspaceDeleteClaim.CLAIMED, retention.claimWorkspaceDelete(dir, evictedProcessId = 7, maxPending = 8))
+            // An attempt is in flight, so the sweep has nothing to retry yet.
+            assertEquals(emptyList(), retention.heldWorkspaceDeletes(limit = 8))
+            assertEquals(1, retention.pendingWorkspaceDeleteCount())
+
+            retention.resetInFlightWorkspaceDeletes()
+
+            assertEquals(listOf(HeldWorkspaceDelete(dir, 7)), retention.heldWorkspaceDeletes(limit = 8))
+
+            retention.settleWorkspaceDelete(dir, deleted = false)
+            assertEquals(1, retention.pendingWorkspaceDeleteCount())
+
+            retention.settleWorkspaceDelete(dir, deleted = true)
+            assertEquals(0, retention.pendingWorkspaceDeleteCount())
+        }
+
+    @Test
+    fun `the claim reports a shared path and a full bound through the port`() =
+        runTest {
+            val shared = Path.of("/ws/shared/artifacts")
+            finishedRun(shared)
+
+            assertEquals(
+                WorkspaceDeleteClaim.SHARED,
+                retention.claimWorkspaceDelete(shared, evictedProcessId = 7, maxPending = 8),
+            )
+            assertEquals(
+                WorkspaceDeleteClaim.CLAIMED,
+                retention.claimWorkspaceDelete(Path.of("/ws/other/artifacts"), evictedProcessId = 7, maxPending = 1),
+            )
+            assertEquals(
+                WorkspaceDeleteClaim.FULL,
+                retention.claimWorkspaceDelete(Path.of("/ws/third/artifacts"), evictedProcessId = 7, maxPending = 1),
+            )
+        }
+
+    @Test
     fun `a shared dir counts every other row, the active-run check only live ones`() =
         runTest {
             val dir = Path.of("/ws/shared/artifacts")

@@ -55,7 +55,8 @@ See ADR-0020.
   concern — `ProcessQueries.kt` (the list page, cost by tag, batched id reads),
   `ProcessCooldown.kt` (the cooldown windows' transaction-local lookups and the
   subject filter they share), `ProcessRetention.kt` (purge times, both sweeps,
-  the shared-dir guard, record purge, eviction), `ProcessStepRecords.kt` (step
+  the shared-dir guard, the eviction's delete claim, record purge, eviction),
+  `ProcessStepRecords.kt` (step
   boundaries, runner state, cost), `ProcessRunTags.kt` (run-time tags) — over
   the row mapping and column codecs in `ProcessRows.kt`. Those extensions reach the database only
   through `ProcessRepository.query { }` / `read { }`, the class's pass-throughs to
@@ -65,6 +66,10 @@ See ADR-0020.
   finds every caller. The part of `ProcessManager`'s API that emits no
   event is these records as stored, exposed by interface delegation from here:
   `ProcessRecordReads`, `ProcessRetentionRecords`, `ProcessRunRecords`.
+  `ProcessRepository` owns the `workspace_pending_deletes` table (schema v36),
+  an eviction's claim on a workspace directory it is deleting: a run registering
+  a claimed path is refused while the delete is in flight, and a claim no attempt
+  holds is retried by the sweep. See ADR-0048.
   `DispatchRepository` owns the `dispatches` table
   (schema v2) and enforces the `dispatch_bound` caveat: question teardown
   paths (`expireForProcess`, `removeForProcess`, startup reconciliation) skip
@@ -116,7 +121,8 @@ See ADR-0020.
   get the same treatment (ADR-0107): the `UNKNOWN` writes record the hooks their
   transitions declare, any hook left `DISPATCHING` fails, and the recorded rows
   plus whatever is still PENDING fire or replay — the claim CAS stops a replay
-  double-firing a live row.
+  double-firing a live row. A claim an interrupted eviction delete left in flight
+  is released to the sweep (ADR-0048).
 
 ### Planner statistics
 
@@ -188,6 +194,7 @@ so a fresh database would carry one an upgraded one lacks (`SchemaEquivalenceTes
 | 33 | `result_tokens` rebuilt without the transitional `DEFAULT ''` | [0025](../../../../../../../../../docs/adr/0025-capability-token-result-read.md) |
 | 34 | `result_tokens_expires_at` index (the token TTL sweep) | — |
 | 35 | default `expires_at` for PENDING `dispatches`/`continuations` rows | [0021](../../../../../../../../../docs/adr/0021-ask-and-dispatch.md) |
+| 36 | `workspace_pending_deletes` table (an eviction's claim on a workspace dir) | [0048](../../../../../../../../../docs/adr/0048-split-record-retention-from-workspace-purge.md) |
 
 ### Schema constraints
 

@@ -417,3 +417,17 @@ internal object ServerMeta : Table("server_meta") {
 
     override val primaryKey = PrimaryKey(key)
 }
+
+// A capacity eviction's claim on the workspace dir it is deleting: a run registering that path is refused
+// while the claim is in flight, and a claim no attempt holds is taken over by one. See ADR-0048 (2026-11-24 amendment).
+internal object WorkspacePendingDeletes : Table("workspace_pending_deletes") {
+    // The exact `artifacts_dir` string a registering run stores, so the two compare equal.
+    val path = text("path")
+    val evictedProcessId = integer("evicted_process_id")
+
+    // True while a delete attempt is running; a row left set is one a crash interrupted, cleared at boot.
+    val inFlight = registerColumn("in_flight", IntegerBooleanColumnType())
+    val createdAt = long("created_at")
+
+    override val primaryKey = PrimaryKey(path)
+}

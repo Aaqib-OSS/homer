@@ -7,6 +7,7 @@ import homer.app.exceptions.MaxParallelRunsExceededException
 import homer.app.exceptions.MaxQueuedRunsExceededException
 import homer.app.exceptions.RunnerClaimTimeoutException
 import homer.app.exceptions.UnresolvedLockKeyPlaceholderException
+import homer.app.exceptions.WorkspacePendingDeleteException
 import homer.app.models.MAX_FAILURE_REASON_LENGTH
 import homer.app.models.RunnerFilter
 import io.kotest.property.Arb
@@ -121,6 +122,17 @@ class PreStartFailureReasonTest {
             "Lock key placeholders {{A}}, {{B}} have no value (lockStrategy.key), so this run never started.",
             failure.reason,
         )
+    }
+
+    @Test
+    fun `a workspace pending-delete refusal names neither the path nor the evicted run`() {
+        val failure = PreStartFailureReason.of(WorkspacePendingDeleteException(7))!!
+
+        assertEquals(
+            "Workspace directory was still being deleted for an evicted run, so this run never started.",
+            failure.reason,
+        )
+        assertNull(failure.holderRunId)
     }
 
     @Test

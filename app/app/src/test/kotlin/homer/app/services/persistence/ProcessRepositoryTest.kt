@@ -2,6 +2,7 @@ package homer.app.services.persistence
 
 import homer.app.EnvConstants
 import homer.app.exceptions.CooldownActiveException
+import homer.app.exceptions.WorkspacePendingDeleteException
 import homer.app.fixtures.PersistenceTestSupport
 import homer.app.fixtures.SqlStatementRecorder
 import homer.app.fixtures.TestFixtures
@@ -1729,6 +1730,87 @@ class ProcessRepositoryTest {
             repo.setArtifactsDir(unrelated, "/srv/runs/42/artifacts")
             repo.transitionStatus(unrelated, ProcessStatus.WORKING, 1, null)
             assertFalse(repo.isWorkspaceSharedWithActiveRun("/srv/runs/42/artifacts", excludeProcessId = unrelated))
+        }
+
+    @Test
+    fun `setArtifactsDir refuses a path a capacity eviction is deleting (CWE-367)`() =
+        runTest {
+            val repo = repo()
+            val dir = "/srv/runs/evicted/artifacts"
+            val run = repo.obtainProcessId(NewRunRecord("a"), 100).processId
+            assertEquals(WorkspaceDeleteClaim.CLAIMED, repo.claimWorkspaceDelete(dir, evictedProcessId = 7, maxPending = 256))
+
+            assertFailsWith<WorkspacePendingDeleteException> { repo.setArtifactsDir(run, dir) }
+
+            // The refusal wrote nothing, and the delete still holds the path.
+            assertNull(repo.getProcessInfo(run)?.artifactsDir)
+            assertEquals(1, repo.pendingWorkspaceDeleteCount())
+        }
+
+    @Test
+    fun `setArtifactsDir takes over a claim no delete is in flight on and drops it`() =
+        runTest {
+            val repo = repo()
+            val dir = "/srv/runs/evicted/artifacts"
+            val run = repo.obtainProcessId(NewRunRecord("a"), 100).processId
+            repo.claimWorkspaceDelete(dir, evictedProcessId = 7, maxPending = 256)
+            repo.settleWorkspaceDelete(dir, deleted = false)
+
+            repo.setArtifactsDir(run, dir)
+
+            assertEquals(Paths.get(dir), repo.getProcessInfo(run)?.artifactsDir)
+            assertEquals(0, repo.pendingWorkspaceDeleteCount())
+        }
+
+    @Test
+    fun `a claim on a path another row references is refused and holds nothing`() =
+        runTest {
+            val repo = repo()
+            val dir = "/srv/runs/shared/artifacts"
+            val owner = repo.obtainProcessId(NewRunRecord("a"), 100).processId
+            repo.setArtifactsDir(owner, dir)
+
+            assertEquals(WorkspaceDeleteClaim.SHARED, repo.claimWorkspaceDelete(dir, evictedProcessId = 7, maxPending = 256))
+
+            assertEquals(0, repo.pendingWorkspaceDeleteCount())
+        }
+
+    @Test
+    fun `a claim past the bound is shed, and a path already claimed is not`() =
+        runTest {
+            val repo = repo()
+            assertEquals(WorkspaceDeleteClaim.CLAIMED, repo.claimWorkspaceDelete("/srv/runs/1/artifacts", 1, maxPending = 1))
+
+            assertEquals(WorkspaceDeleteClaim.FULL, repo.claimWorkspaceDelete("/srv/runs/2/artifacts", 2, maxPending = 1))
+            assertEquals(1, repo.pendingWorkspaceDeleteCount())
+
+            // A retry re-claims a path the table already holds: the bound counts rows, not attempts.
+            repo.settleWorkspaceDelete("/srv/runs/1/artifacts", deleted = false)
+            assertEquals(WorkspaceDeleteClaim.CLAIMED, repo.claimWorkspaceDelete("/srv/runs/1/artifacts", 1, maxPending = 1))
+        }
+
+    @Test
+    fun `held deletes list the claims no attempt holds, and a boot reset releases the rest`() =
+        runTest {
+            val repo = repo()
+            repo.claimWorkspaceDelete("/srv/runs/1/artifacts", 1, maxPending = 8)
+            repo.claimWorkspaceDelete("/srv/runs/2/artifacts", 2, maxPending = 8)
+            repo.settleWorkspaceDelete("/srv/runs/1/artifacts", deleted = false)
+            repo.settleWorkspaceDelete("/srv/runs/2/artifacts", deleted = false)
+
+            assertEquals(
+                listOf(Paths.get("/srv/runs/1/artifacts"), Paths.get("/srv/runs/2/artifacts")),
+                repo.heldWorkspaceDeletes(limit = 8).map { it.artifactsDir },
+            )
+            assertEquals(listOf(1), repo.heldWorkspaceDeletes(limit = 1).map { it.evictedProcessId })
+
+            // A claim still marked in flight after a restart is one the crash interrupted, so boot
+            // hands it to the sweep rather than leaving the directory deleted by nobody.
+            assertEquals(WorkspaceDeleteClaim.CLAIMED, repo.claimWorkspaceDelete("/srv/runs/1/artifacts", 1, maxPending = 8))
+            assertEquals(listOf(2), repo.heldWorkspaceDeletes(limit = 8).map { it.evictedProcessId })
+            repo.resetInFlightWorkspaceDeletes()
+
+            assertEquals(listOf(1, 2), repo.heldWorkspaceDeletes(limit = 8).map { it.evictedProcessId })
         }
 
     @Test

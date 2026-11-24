@@ -54,7 +54,7 @@ class DefaultExpiryMigrationTest {
         DriverManager.getConnection("jdbc:sqlite:$dbPath").use { c ->
             c.createStatement().use { st ->
                 assertEquals(
-                    35,
+                    36,
                     st.executeQuery("PRAGMA user_version").use {
                         it.next()
                         it.getInt(1)

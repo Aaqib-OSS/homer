@@ -111,6 +111,7 @@ class DatabaseService(
                 ResultTokens,
                 CostEntries,
                 ServerMeta,
+                WorkspacePendingDeletes,
             )
             rawStatement { st ->
                 val current = st.executeQuery("PRAGMA user_version").use { rs -> if (rs.next()) rs.getInt(1) else 0 }
@@ -230,7 +231,7 @@ class DatabaseService(
     }
 
     companion object {
-        const val SCHEMA_VERSION = 35
+        const val SCHEMA_VERSION = 36
         const val OPTIMIZE_INTERVAL_MS = 60 * 60 * 1000L
         private const val BUSY_TIMEOUT_MS = 5000
 

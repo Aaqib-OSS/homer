@@ -47,6 +47,7 @@ import homer.app.exceptions.TooManySessionPollsException
 import homer.app.exceptions.UnresolvedLockKeyPlaceholderException
 import homer.app.exceptions.ValidationException
 import homer.app.exceptions.WorkspaceException
+import homer.app.exceptions.WorkspacePendingDeleteException
 import homer.app.models.RunnerFilter
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
@@ -161,6 +162,7 @@ class StatusPagesTest {
                 AgentException("bad", "a") to HttpStatusCode.InternalServerError,
                 WorkspaceException("bad") to HttpStatusCode.InternalServerError,
                 UnresolvedLockKeyPlaceholderException(listOf("TICKET_ID")) to HttpStatusCode.InternalServerError,
+                WorkspacePendingDeleteException(1) to HttpStatusCode.ServiceUnavailable,
             )
         for ((exception, expected) in cases) {
             assertEquals(expected, homerExceptionStatus(exception), exception::class.simpleName)

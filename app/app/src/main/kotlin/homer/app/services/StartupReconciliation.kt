@@ -3,11 +3,12 @@ package homer.app.services
 import homer.app.executors.RunMessageExpiry
 import homer.app.infra.PurgeSchedule
 import homer.app.services.persistence.ProcessRepository
+import homer.app.services.persistence.resetInFlightWorkspaceDeletes
 import org.slf4j.Logger
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
-/** Boot-time reconciliation of state left by an unclean shutdown: `CREATED`/`WORKING` runs become `UNKNOWN`, their OPEN questions expire, their QUEUED messages become UNDELIVERED (ADR-0097), and every `UNKNOWN` row still missing purge times is stamped from its agent's current `workspace`. Runs once before traffic. See ADR-0020, ADR-0048. */
+/** Boot-time reconciliation of state left by an unclean shutdown: `CREATED`/`WORKING` runs become `UNKNOWN`, their OPEN questions expire, their QUEUED messages become UNDELIVERED (ADR-0097), every `UNKNOWN` row still missing purge times is stamped from its agent's current `workspace`, and an evicted-workspace delete claim left in flight is released to the sweep. Runs once before traffic. See ADR-0020, ADR-0048. */
 @OptIn(ExperimentalTime::class)
 internal class StartupReconciliation(
     private val processRepository: ProcessRepository,
@@ -22,6 +23,9 @@ internal class StartupReconciliation(
 ) {
     suspend fun reconcile() {
         val now = clock()
+        // No delete attempt is running in a process that just started, so a claim still marked in flight is
+        // one the crash interrupted: releasing it hands the directory to the purge sweep (ADR-0048).
+        processRepository.resetInFlightWorkspaceDeletes()
         // UNKNOWN records hooks through ProcessManager's per-transition lookup, so a hook
         // declared for UNKNOWN fires for a restart-interrupted run too. See ADR-0107.
         val interrupted = processRepository.markInterruptedAsUnknown(now, hookService.recording())
