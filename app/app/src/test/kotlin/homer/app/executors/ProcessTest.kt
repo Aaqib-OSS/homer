@@ -1147,6 +1147,75 @@ class ProcessTest {
         }
 
     @Test
+    fun `three KILL_OLD_RUN_CURRENT runs on one key never execute concurrently (CWE-667)`() =
+        runTest(timeout = 10.seconds) {
+            val lockManager = DefaultLockManager(mockProcessManager, TestFixtures.mockLogger())
+            val parallelRunsManager = DefaultParallelRunsManager()
+            val agent =
+                testAgent.copy(
+                    maxParallelRuns = 1,
+                    lockStrategy = LockStrategy(key = "shared", onCollision = OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT),
+                )
+            stubSharedLockKey()
+            val working = AtomicInteger(0)
+            val peak = AtomicInteger(0)
+            val release = CompletableDeferred<Unit>()
+            val run1Entered = CompletableDeferred<Unit>()
+            var first = true
+            coEvery { mockExecutorFactory.getExecutor<Command>(any()).execute(any(), any(), any()) } coAnswers {
+                // Every executed command counts, so the peak is observed, not assumed for run 1 alone.
+                working.incrementAndGet()
+                peak.getAndUpdate { maxOf(it, working.get()) }
+                if (first) {
+                    first = false
+                    run1Entered.complete(Unit)
+                    release.await()
+                }
+                working.decrementAndGet()
+                TestFixtures.mockCommandResult(exitCode = 0)
+            }
+
+            val run1 = launch { processFor(agent, emptyMap(), lockManager, parallelRunsManager).execute(1, mockSpan) }
+            run1Entered.await()
+
+            // Run 2 takes the key as the pending replacement; run 3 supersedes it, both before a slot.
+            var run2Failure: Throwable? = null
+            val run2 =
+                launch {
+                    try {
+                        processFor(agent, emptyMap(), lockManager, parallelRunsManager).execute(2, mockSpan)
+                    } catch (e: AnotherProcessStillActive) {
+                        run2Failure = e
+                    }
+                }
+            runCurrent()
+            val run3 = launch { processFor(agent, emptyMap(), lockManager, parallelRunsManager).execute(3, mockSpan) }
+            runCurrent()
+
+            // Both wait for the only slot: nothing is killed and no run has started.
+            coVerify(exactly = 0) { mockProcessManager.killProcess(any(), any()) }
+            coVerify(exactly = 0) {
+                mockProcessManager.compareAndSetStatus(3, setOf(ProcessStatus.CREATED), ProcessStatus.WORKING)
+            }
+
+            release.complete(Unit)
+            run1.join()
+            run2.join()
+            run3.join()
+
+            // The superseded run 2 never started, and run 3 started only once run 1 was killed.
+            assertTrue(run2Failure is AnotherProcessStillActive)
+            coVerify(exactly = 0) {
+                mockProcessManager.compareAndSetStatus(2, setOf(ProcessStatus.CREATED), ProcessStatus.WORKING)
+            }
+            coVerifyOrder {
+                mockProcessManager.killProcess(1, "The new process 3 takes precedence")
+                mockProcessManager.compareAndSetStatus(3, setOf(ProcessStatus.CREATED), ProcessStatus.WORKING)
+            }
+            assertTrue(peak.get() <= 1, "same-key runs never execute concurrently, observed ${peak.get()}")
+        }
+
+    @Test
     fun `SKIP_CURRENT fails on the lock before any slot is taken`() =
         runTest {
             val lockManager = DefaultLockManager(mockProcessManager, TestFixtures.mockLogger())

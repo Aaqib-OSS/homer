@@ -3016,7 +3016,10 @@ Every collision is decided at the lock, before the run holds a slot — so a
 key rather than in the agent's slot queue. `KILL_OLD_RUN_CURRENT` is the one
 strategy whose *kill* is deferred: the previous holder is killed only once the
 new run has a slot, so a new run refused a slot (a `REJECT` cap, a full wait
-queue, a kill) leaves the old run alive and releases the lock again.
+queue, a kill) leaves the previous holder alive and releases the lock again. The key
+carries at most one pending replacement: a second `KILL_OLD_RUN_CURRENT` run
+arriving before the deferred kill supersedes the pending one, and the superseded
+run ends `FAILED` with `AnotherProcessStillActive` without killing anyone.
 
 ### Lock Examples
 

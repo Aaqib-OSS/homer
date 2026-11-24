@@ -17,14 +17,20 @@ class DefaultLockManager(
     private val processManager: RunKiller,
     private val logger: Logger,
 ) : LockManager {
-    // A holder a promotion adds is released on every end of acquireLock — granted, cancelled or
-    // killed — or the key wedges with no holder left to release it (CWE-667, CWE-772, ADR-0104).
+    // CWE-667, CWE-362: a key has one holder and at most one pending replacement, which the
+    // deferred kill installs, so two same-key runs never execute at once. See ADR-0104.
     private data class LockEntry(
-        val holders: MutableSet<Int> = mutableSetOf(),
+        var holder: Int? = null,
+        var pending: Int? = null,
+        val superseded: MutableSet<Int> = mutableSetOf(),
         val waitQueue: ArrayDeque<Pair<Int, CompletableDeferred<Unit>>> = ArrayDeque(),
     )
 
     private val locks = mutableMapOf<String, LockEntry>()
+
+    // A pending replacement indexed by its process id, so the deferred kill resolves its entry
+    // without scanning every active key. Guarded by the mutex, like the entries it points to.
+    private val pendingEntries = mutableMapOf<Int, LockEntry>()
 
     private val mutex = Mutex()
 
@@ -40,23 +46,30 @@ class DefaultLockManager(
 
         val victim: Int? =
             mutex.withLock {
-                val entry = locks[lockName]
+                val entry = locks.getOrPut(lockName) { LockEntry() }
+                // The key is held by its holder, or by the replacement a deferred kill has not
+                // installed yet: a collision is decided against that one run (ADR-0104).
+                val activeProcessID = entry.holder ?: entry.pending
 
-                if (entry == null || entry.holders.isEmpty()) {
-                    locks.getOrPut(lockName) { LockEntry() }.holders.add(processID)
+                if (activeProcessID == null) {
+                    entry.holder = processID
                     return LockGrant()
                 }
 
-                val activeProcessID = entry.holders.first()
                 when (onKeyCollisionStrategy) {
                     SKIP_CURRENT -> {
                         throw AnotherProcessStillActive(activeProcessID)
                     }
 
                     KILL_OLD_RUN_CURRENT -> {
-                        // The victim is registered against the key here and returned to be killed
-                        // later: the kill must not land before the new run holds a slot (ADR-0104).
-                        entry.holders.add(processID)
+                        // The replacement is registered here and installed and killed later: neither
+                        // may land before the new run holds a slot, and a later KILL supersedes it.
+                        entry.pending?.let { superseded ->
+                            pendingEntries.remove(superseded)
+                            entry.superseded.add(superseded)
+                        }
+                        entry.pending = processID
+                        pendingEntries[processID] = entry
                         activeProcessID
                     }
 
@@ -86,13 +99,42 @@ class DefaultLockManager(
         return LockGrant()
     }
 
+    /**
+     * Releases what a cancelled wait still holds: its queue entry, and the holdership a promotion
+     * may have granted it just before the cancellation landed (CWE-667, CWE-772, ADR-0104).
+     */
+    private fun abandonWait(
+        lockName: String,
+        processID: Int,
+    ) {
+        val entry = locks[lockName] ?: return
+        entry.waitQueue.removeAll { it.first == processID }
+        releaseHolder(lockName, entry, processID)
+    }
+
     override suspend fun killDisplaced(
         grant: LockGrant,
         processID: Int,
     ) {
         val victim = grant.displacedProcessId ?: return
-        // killProcess writes to the database, so it runs after the mutex is released.
-        processManager.killProcess(victim, "The new process $processID takes precedence")
+        // CWE-667: the handover is the moment the replacement becomes the key's holder, and the only
+        // one. A later KILL leaves no entry holding this run, which refuses it instead (ADR-0104).
+        val installed =
+            mutex.withLock {
+                val entry = pendingEntries[processID]?.takeIf { it.pending == processID } ?: return@withLock false
+                // The victim still releases the key it held: that release is expected, not a stray one.
+                if (entry.holder == victim) entry.superseded.add(victim)
+                entry.holder = processID
+                entry.pending = null
+                pendingEntries.remove(processID)
+                true
+            }
+        if (!installed) throw AnotherProcessStillActive(victim)
+        // NonCancellable: a replacement cancelled between installing itself and the kill must still
+        // kill the victim it displaced. killProcess writes to the database, so this is outside the mutex.
+        withContext(NonCancellable) {
+            processManager.killProcess(victim, "The new process $processID takes precedence")
+        }
     }
 
     override suspend fun releaseLock(
@@ -117,37 +159,47 @@ class DefaultLockManager(
         }
 
     /**
-     * Releases what a cancelled wait still holds: its queue entry, and the holdership a promotion
-     * may have granted it just before the cancellation landed (CWE-667, CWE-772, ADR-0104).
-     */
-    private fun abandonWait(
-        lockName: String,
-        processID: Int,
-    ) {
-        val entry = locks[lockName] ?: return
-        entry.waitQueue.removeAll { it.first == processID }
-        releaseHolder(lockName, entry, processID)
-    }
-
-    /**
-     * Removes [processID] from [entry] and, when it was the last holder, promotes the next waiter
-     * or drops the key. Returns whether [processID] held it (ADR-0104).
+     * Removes [processID] from [entry] and settles the key it may have freed: the next queued
+     * waiter is promoted, or the key is dropped. Returns whether [processID] held it (ADR-0104).
      */
     private fun releaseHolder(
         lockName: String,
         entry: LockEntry,
         processID: Int,
     ): Boolean {
-        if (!entry.holders.remove(processID)) return false
-        if (entry.holders.isNotEmpty()) return true
+        val holder = entry.holder
+        val pending = entry.pending
+        if (holder == processID) {
+            entry.holder = null
+        } else if (pending == processID) {
+            // A replacement refused its slot gives the key back, its victim left untouched.
+            entry.pending = null
+            pendingEntries.remove(processID)
+        } else if (!entry.superseded.remove(processID)) {
+            return false
+        }
+        settleReleasedEntry(lockName, entry)
+        return true
+    }
+
+    /**
+     * The key is free: hand it to the next queued waiter, or drop the entry once no superseded or
+     * displaced run is left to release it. Called under the mutex.
+     */
+    private fun settleReleasedEntry(
+        lockName: String,
+        entry: LockEntry,
+    ) {
+        // A pending handover holds the key for the replacement the deferred kill installs:
+        // promoting a waiter now would put two runs on it (CWE-667). See ADR-0104.
+        if (entry.holder != null || entry.pending != null) return
 
         val next = entry.waitQueue.removeFirstOrNull()
-        if (next == null) {
+        if (next != null) {
+            entry.holder = next.first
+            next.second.complete(Unit)
+        } else if (entry.superseded.isEmpty()) {
             locks.remove(lockName)
-            return true
         }
-        entry.holders.add(next.first)
-        next.second.complete(Unit)
-        return true
     }
 }

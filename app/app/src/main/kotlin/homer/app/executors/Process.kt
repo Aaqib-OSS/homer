@@ -164,8 +164,8 @@ class Process(
 
     /**
      * Takes the run's subject lock, then a parallel-run slot, then the kill a `KILL_OLD_RUN_CURRENT`
-     * collision deferred, recording each in [admission]. A refused slot leaves the displaced run
-     * alive, and `tearDown` releases the lock. See ADR-0104.
+     * collision deferred, recording each in [admission]. The key keeps one holder: this run becomes it
+     * when `killDisplaced` runs, so a refused slot leaves the displaced run alive. See ADR-0104.
      */
     private suspend fun admit(
         processId: Int,
