@@ -783,11 +783,15 @@ curl "$HOMER/api/v1/artifacts?processId=12345&amp;path=report.md"</code></pre>
             in place in the artifacts directory, served by the unchanged artifact routes, until the record dies —
             bounded per run by <code>server.maxRetainedArtifactBytes</code>, with overflow keeping what fits in
             declared-glob order and flagging <code>retainedTruncated</code> on the status API. It needs a per-run
-            <code>workspace.path</code> containing <code>{{HMR_PROCESS_ID}}</code> (rejected at agent load otherwise).</p>
+            <code>workspace.path</code> containing <code>{{HMR_PROCESS_ID}}</code> (rejected at agent load otherwise).
+            A single run's inputs are bounded too: <code>server.maxInputBytes</code> caps the resolved input map a run
+            persists, so a start over it is refused with <code>413</code> before any row exists — no
+            <code>processes</code> row and nothing stored — and the refusal reports the two sizes only. That makes the
+            deployment's ceiling on retained input bytes <code>maxProcesses</code> x <code>maxInputBytes</code>.</p>
           <pre><code>workspace:
   purgeAfter: 2h
   retain: { recordFor: 30d, artifacts: ["decision.json"] }
-server:    { maxProcesses: 10000, maxRetainedArtifactBytes: 16777216 }</code></pre>
+server:    { maxProcesses: 10000, maxRetainedArtifactBytes: 16777216, maxInputBytes: 1048576 }</code></pre>
         </article>
 
         <article class="f">

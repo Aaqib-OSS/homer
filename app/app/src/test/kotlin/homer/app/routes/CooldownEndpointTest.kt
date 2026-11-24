@@ -49,6 +49,7 @@ import kotlinx.coroutines.Job
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * Denial test for the manual-recovery cooldown (ADR-0051): retry, resume and debug get `429` inside `minInterval`.
@@ -68,6 +69,7 @@ class CooldownEndpointTest {
     private inner class Deps(
         val agent: Agent,
         val source: ProcessInfo,
+        maxInputBytes: Long = 1L * 1024 * 1024,
     ) {
         val processManager: ProcessManager = PersistenceTestSupport.processManager()
 
@@ -75,6 +77,8 @@ class CooldownEndpointTest {
             ProcessExecutor(
                 telemetryService = TestFixtures.mockTelemetryService(),
                 processManager = processManager,
+                runInputBytes = processManager,
+                maxInputBytes = maxInputBytes,
                 questionsService = mockk<QuestionsService>(relaxed = true),
                 runMessages = mockk<RunMessageExpiry>(relaxed = true),
                 coroutineScope = CoroutineScope(Dispatchers.Default + Job()),
@@ -120,9 +124,10 @@ class CooldownEndpointTest {
         agent: Agent,
         source: ProcessInfo,
         mount: Route.(Deps) -> Unit,
+        maxInputBytes: Long = 1L * 1024 * 1024,
         requests: suspend ApplicationTestBuilder.(Deps) -> Unit,
     ) = testApplication {
-        val deps = Deps(agent, source)
+        val deps = Deps(agent, source, maxInputBytes)
         application {
             install(ContentNegotiation) { json(apiJson) }
             configureStatusPages()
@@ -445,5 +450,30 @@ class CooldownEndpointTest {
             val body = response.bodyAsText()
             assertFalse(body.contains("s3cret-mr-value"), "the 400 must not carry the stored input value")
             assertFalse(body.contains("mr-s3cret-mr-value"), "the 400 must not carry the rendered key")
+        }
+
+    // ===== the per-run input cap refuses an oversized start before any row (CWE-770) =====
+
+    @Test
+    fun `CWE-770 a start whose resolved inputs exceed maxInputBytes is refused with 413 and writes no row`() =
+        scenario(
+            agent = AgentFixtures.simpleAgent(name = "watcher").copy(inputs = listOf(mrInput)),
+            source = failedSource(),
+            mount = { deps -> mountDebug(deps) },
+            maxInputBytes = 128,
+        ) { deps ->
+            val secret = "s3cret-".repeat(64)
+            val response = postDebug(queryParams = """{"mr":"$secret"}""")
+
+            assertEquals(
+                HttpStatusCode.PayloadTooLarge,
+                response.status,
+                "a start over the input cap must be refused before it runs",
+            )
+            assertEquals(-1, deps.processCount(), "the refused start must create no run")
+            val body = response.bodyAsText()
+            assertFalse(body.contains(secret), "the 413 must not carry the input value")
+            assertFalse(body.contains("MR"), "the 413 must not name the input")
+            assertTrue(body.contains("128"), "the 413 names the bound: $body")
         }
 }

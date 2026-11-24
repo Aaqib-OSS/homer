@@ -57,6 +57,15 @@ class ServerConfigTest {
     }
 
     @Test
+    fun `maxInputBytes defaults to 1 MiB and rejects non-positive values`() {
+        assertEquals(1_048_576L, Server().maxInputBytes)
+        for (bad in listOf(0L, -1L)) {
+            val ex = assertThrows<IllegalArgumentException>("maxInputBytes=$bad") { Server(maxInputBytes = bad) }
+            assertTrue(ex.message!!.contains("server.maxInputBytes"), ex.message)
+        }
+    }
+
+    @Test
     fun `maintenance settings default to 500 queued starts, 600 s wait and 4 releases`() {
         val maintenance = Server().maintenance
         assertEquals(500, maintenance.maxQueuedStarts)

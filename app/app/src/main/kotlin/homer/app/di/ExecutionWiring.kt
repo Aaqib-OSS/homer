@@ -133,6 +133,10 @@ internal val executionModule =
             ProcessExecutor(
                 telemetryService = get<TelemetryService>(),
                 processManager = get<ProcessManager>(),
+                // The stored form's size comes from the manager that writes the row, so the cap
+                // and the persisted bytes are one measurement. See ADR-0047 rule 4.
+                runInputBytes = get<ProcessManager>(),
+                maxInputBytes = get<AppConfig>().server.maxInputBytes,
                 questionsService = get<QuestionsService>(),
                 runMessages = get<RunMessagesService>(),
                 coroutineScope = get<CoroutineScope>(named("applicationScope")),
