@@ -256,6 +256,56 @@ class LocalFileOperationsTest {
         }
 
     @Test
+    fun `streamFile closes the descriptor when the sink never runs the copy`() =
+        runTest {
+            val file = tempDir.resolve("unwritten.txt").also { it.writeText("unwritten") }
+            val closed = CountDownLatch(1)
+            val tracked =
+                LocalFileOperations(
+                    openTimeoutMs = 60_000,
+                    openRegular = { path ->
+                        object : DelegatingChannel(DescriptorOpen.openRegularChannel(path)) {
+                            override fun close() {
+                                super.close()
+                                closed.countDown()
+                            }
+                        }
+                    },
+                    beforeOpen = {},
+                )
+
+            tracked.streamFile(file, maxBytes = 1024, respond = { /* a sink that never runs the copy */ })
+
+            assertTrue(closed.await(5, TimeUnit.SECONDS), "the descriptor must be closed even when the copy never ran")
+        }
+
+    @Test
+    fun `streamFile closes the descriptor when the sink throws before the copy`() =
+        runTest {
+            val file = tempDir.resolve("throwing.txt").also { it.writeText("throwing") }
+            val closed = CountDownLatch(1)
+            val tracked =
+                LocalFileOperations(
+                    openTimeoutMs = 60_000,
+                    openRegular = { path ->
+                        object : DelegatingChannel(DescriptorOpen.openRegularChannel(path)) {
+                            override fun close() {
+                                super.close()
+                                closed.countDown()
+                            }
+                        }
+                    },
+                    beforeOpen = {},
+                )
+
+            assertFailsWith<IllegalStateException> {
+                tracked.streamFile(file, maxBytes = 1024, respond = { throw IllegalStateException("no response") })
+            }
+
+            assertTrue(closed.await(5, TimeUnit.SECONDS), "the descriptor must be closed when the sink throws")
+        }
+
+    @Test
     fun `an interrupted wait refuses the read and keeps the interrupt flag`() {
         val file = tempDir.resolve("slow.txt").also { it.writeText("slow") }
         val opening = CountDownLatch(1)

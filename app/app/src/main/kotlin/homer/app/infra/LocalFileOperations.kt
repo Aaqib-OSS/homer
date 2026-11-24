@@ -78,17 +78,16 @@ class LocalFileOperations internal constructor(
         respond: suspend (write: suspend (OutputStream) -> Unit) -> Unit,
         bufferSize: Int,
     ) {
-        val open = withContext(Dispatchers.IO) { submitBounded(path, "open", SeekableByteChannel::close) { openChecked(path) } }
-        // The cap is enforced here, where the bytes move: a check that ran before the open cannot see
-        // a file that grows after it (CWE-770, ADR-0047 rule 4).
-        val size = open.size()
-        if (size > maxBytes) {
-            open.close()
-            throw ArtifactTooLargeException(size, maxBytes)
+        // The cap is enforced where the bytes move, not by a check that ran before the open (CWE-770,
+        // ADR-0047 rule 4). This descriptor closes before [respond]; the copy inside [write] opens its own.
+        val size = withContext(Dispatchers.IO) { submitBounded(path, "open") { openChecked(path).use { it.size() } } }
+        if (size > maxBytes) throw ArtifactTooLargeException(size, maxBytes)
+        respond { output ->
+            withContext(Dispatchers.IO) {
+                submitBounded(path, "open", SeekableByteChannel::close) { openChecked(path) }
+                    .use { copyCapped(it, output, maxBytes, bufferSize) }
+            }
         }
-        // The sink owns the descriptor from here: [respond] only commits the response, and the copy that
-        // closes the descriptor runs after it (ADR-0047 rule 4).
-        respond { output -> withContext(Dispatchers.IO) { open.use { copyCapped(it, output, maxBytes, bufferSize) } } }
     }
 
     /** Copies at most [maxBytes] bytes of [source] into [output], logging a file that grew past the cap. */
