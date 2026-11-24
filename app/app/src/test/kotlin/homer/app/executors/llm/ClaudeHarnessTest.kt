@@ -760,6 +760,100 @@ class ClaudeHarnessTest {
         )
     }
 
+    // ========== denial: every turn end decides the verdict (CWE-754/CWE-636, ADR-0070) ==========
+
+    @Test
+    fun `CWE-754 CWE-636 denial — a success turn end followed by a failed one is not a success`() {
+        val success = """{"type":"result","subtype":"success","is_error":false,"result":"done"}"""
+        val failed = """{"type":"result","subtype":"error_during_execution"}"""
+        val all = events(success) + events(failed)
+
+        val malformed =
+            assertIs<Inspection.Malformed>(harness.inspect(all, listOf(line(success), line(failed)), command, exitCode = 0))
+        assertEquals("result event is not a successful turn: error_during_execution", malformed.reason)
+    }
+
+    @Test
+    fun `CWE-754 denial — a later is_error turn end maps to the is_error stop, not the first result line`() {
+        val success = """{"type":"result","subtype":"success","is_error":false}"""
+        val isError = """{"type":"result","subtype":"success","is_error":true,"stop_reason":"refusal"}"""
+        val all = events(success) + events(isError)
+        val raw = listOf(line(success), line(isError))
+        val opted = Command.Claude(prompt = LlmPrompt.Prompt("hi"), options = ClaudeCmdOptions(isErrorExitCode = 76))
+
+        assertIs<Inspection.Malformed>(harness.inspect(all, raw, command, exitCode = 0))
+        // The pair is read from the failing turn end's own result line, so the earlier success cannot mask it.
+        assertEquals(Inspection.Terminal(76, "claude.is_error_stop"), harness.inspect(all, raw, opted, exitCode = 0))
+    }
+
+    @Test
+    fun `CWE-754 denial — a success turn end followed by a Stopped one is Malformed or the max-turns terminal`() {
+        val success = """{"type":"result","subtype":"success","is_error":false}"""
+        val stopped = """{"type":"result","subtype":"error_max_turns"}"""
+        val all = events(success) + events(stopped)
+        val raw = listOf(line(success), line(stopped))
+        val opted = Command.Claude(prompt = LlmPrompt.Prompt("hi"), options = ClaudeCmdOptions(maxTurnsExitCode = 7))
+
+        val malformed = assertIs<Inspection.Malformed>(harness.inspect(all, raw, command, exitCode = 0))
+        assertEquals("result event is not a successful turn: error_max_turns", malformed.reason)
+        assertEquals(Inspection.Terminal(7, "claude.max_turns_stop"), harness.inspect(all, raw, opted, exitCode = 0))
+    }
+
+    @Test
+    fun `CWE-636 denial — a stream whose turn ends all fail is not a success`() {
+        val stopped = """{"type":"result","subtype":"error_max_turns"}"""
+        val failed = """{"type":"result","subtype":"error_during_execution"}"""
+        val all = events(stopped) + events(failed)
+        val raw = listOf(line(stopped), line(failed))
+
+        assertIs<Inspection.Malformed>(harness.inspect(all, raw, command, exitCode = 0))
+        // The first non-success turn end decides the mapping, so the Stopped one still caps the attempt.
+        val opted = Command.Claude(prompt = LlmPrompt.Prompt("hi"), options = ClaudeCmdOptions(maxTurnsExitCode = 7))
+        assertEquals(Inspection.Terminal(7, "claude.max_turns_stop"), harness.inspect(all, raw, opted, exitCode = 0))
+    }
+
+    @Test
+    fun `a mixed stream does not run the version pin, which stays on the success path`() {
+        val pinned = ClaudeHarness(requireClaudeCodeVersion = "2.1.318")
+        val init = """{"type":"system","subtype":"init","claude_code_version":"9.9.9"}"""
+        val success = """{"type":"result","subtype":"success","is_error":false}"""
+        val failed = """{"type":"result","subtype":"error_during_execution"}"""
+        val all = events(success) + events(failed)
+
+        // The pin would throw on the mismatching init line; a non-success verdict never consults it.
+        assertIs<Inspection.Malformed>(
+            pinned.inspect(all, listOf(line(init), line(success), line(failed)), command, exitCode = 0),
+        )
+    }
+
+    @Test
+    fun `a capture whose later result fails is not a success and never quotes the result text`() {
+        val text = capture("cli-2.1-background-agent-failed-stream.jsonl")
+
+        val malformed = assertIs<Inspection.Malformed>(harness.inspect(eventsOf(text), rawOf(text), command, exitCode = 0))
+        assertContains(malformed.reason, "result event is not a successful turn:")
+        // The result text may echo an API response, so it never reaches the reason (ADR-0047 rule 7).
+        assertFalse(malformed.reason.contains("API Error"), malformed.reason)
+    }
+
+    @Test
+    fun `the failing later turn's own result line decides the is_error stop`() {
+        val text = capture("cli-2.1-background-agent-failed-stream.jsonl")
+        val opted = Command.Claude(prompt = LlmPrompt.Prompt("hi"), options = ClaudeCmdOptions(isErrorExitCode = 76))
+
+        assertEquals(
+            Inspection.Terminal(76, "claude.is_error_stop"),
+            harness.inspect(eventsOf(text), rawOf(text), opted, exitCode = 0),
+        )
+    }
+
+    @Test
+    fun `the background-agent capture whose two results both succeed is still a success`() {
+        val text = capture("cli-2.1-background-agent-stream.jsonl")
+
+        assertEquals(Inspection.Success, harness.inspect(eventsOf(text), rawOf(text), command, exitCode = 0))
+    }
+
     @Test
     fun `version pin reads the raw init line`() {
         val pinned = ClaudeHarness(requireClaudeCodeVersion = "2.1.0")
