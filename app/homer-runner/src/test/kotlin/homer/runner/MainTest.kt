@@ -126,7 +126,7 @@ class MainTest {
     }
 
     @Test
-    fun `a failed hardening through the real main exits non-zero with a one-line refusal and without the token (CWE-526)`() {
+    fun `a failed hardening through the real main exits 1 with a one-line refusal and without the token (CWE-526)`() {
         assumeTrue(System.getProperty("os.name").startsWith("Linux"))
         val sentinel = "runner-token-sentinel"
         val handle = ProcessHandle.current()
@@ -152,7 +152,8 @@ class MainTest {
         val stderr = child.errorStream.readAllBytes().decodeToString()
         child.destroy()
         assertTrue(exited, "a refused start must exit on its own")
-        assertTrue(child.exitValue() != 0, "a refused start must exit non-zero")
+        // SERVER.md documents a failed hardening as fatal at exit 1: pin the code, not just non-zero.
+        assertEquals(1, child.exitValue(), "a refused start must exit 1")
         assertTrue("refuses to start" in stderr, "got: $stderr")
         assertTrue(sentinel !in stderr, "the refusal must not carry the token; got: $stderr")
         assertTrue("Exception" !in stderr, "the refusal must be one line, not a stack trace; got: $stderr")
