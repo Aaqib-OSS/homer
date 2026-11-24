@@ -70,7 +70,10 @@ class DefaultProcessRetentionRecordsTest {
         runTest {
             val dir = Path.of("/ws/1/artifacts")
 
-            assertEquals(WorkspaceDeleteClaim.CLAIMED, retention.claimWorkspaceDelete(dir, evictedProcessId = 7, maxPending = 8))
+            assertEquals(
+                WorkspaceDeleteClaim.CLAIMED,
+                retention.claimWorkspaceDelete(dir, evictedProcessId = 7, maxPending = 8, attemptToken = "a"),
+            )
             // An attempt is in flight, so the sweep has nothing to retry yet.
             assertEquals(emptyList(), retention.heldWorkspaceDeletes(limit = 8))
             assertEquals(1, retention.pendingWorkspaceDeleteCount())
@@ -79,11 +82,25 @@ class DefaultProcessRetentionRecordsTest {
 
             assertEquals(listOf(HeldWorkspaceDelete(dir, 7)), retention.heldWorkspaceDeletes(limit = 8))
 
-            retention.settleWorkspaceDelete(dir, deleted = false)
+            retention.settleWorkspaceDelete(dir, attemptToken = "a", deleted = false)
             assertEquals(1, retention.pendingWorkspaceDeleteCount())
 
-            retention.settleWorkspaceDelete(dir, deleted = true)
+            retention.settleWorkspaceDelete(dir, attemptToken = "a", deleted = true)
             assertEquals(0, retention.pendingWorkspaceDeleteCount())
+        }
+
+    @Test
+    fun `a settle from a superseded attempt leaves the claim the port reports in flight`() =
+        runTest {
+            val dir = Path.of("/ws/1/artifacts")
+            retention.claimWorkspaceDelete(dir, evictedProcessId = 7, maxPending = 8, attemptToken = "a")
+            retention.claimWorkspaceDelete(dir, evictedProcessId = 8, maxPending = 8, attemptToken = "b")
+
+            retention.settleWorkspaceDelete(dir, attemptToken = "a", deleted = true)
+
+            // Only the attempt holding the claim settles it: the sweep still has nothing to retry.
+            assertEquals(emptyList(), retention.heldWorkspaceDeletes(limit = 8))
+            assertEquals(1, retention.pendingWorkspaceDeleteCount())
         }
 
     @Test
@@ -94,15 +111,25 @@ class DefaultProcessRetentionRecordsTest {
 
             assertEquals(
                 WorkspaceDeleteClaim.SHARED,
-                retention.claimWorkspaceDelete(shared, evictedProcessId = 7, maxPending = 8),
+                retention.claimWorkspaceDelete(shared, evictedProcessId = 7, maxPending = 8, attemptToken = "a"),
             )
             assertEquals(
                 WorkspaceDeleteClaim.CLAIMED,
-                retention.claimWorkspaceDelete(Path.of("/ws/other/artifacts"), evictedProcessId = 7, maxPending = 1),
+                retention.claimWorkspaceDelete(
+                    Path.of("/ws/other/artifacts"),
+                    evictedProcessId = 7,
+                    maxPending = 1,
+                    attemptToken = "b",
+                ),
             )
             assertEquals(
                 WorkspaceDeleteClaim.FULL,
-                retention.claimWorkspaceDelete(Path.of("/ws/third/artifacts"), evictedProcessId = 7, maxPending = 1),
+                retention.claimWorkspaceDelete(
+                    Path.of("/ws/third/artifacts"),
+                    evictedProcessId = 7,
+                    maxPending = 1,
+                    attemptToken = "c",
+                ),
             )
         }
 

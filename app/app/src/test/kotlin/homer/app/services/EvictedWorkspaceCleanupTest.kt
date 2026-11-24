@@ -148,6 +148,40 @@ class EvictedWorkspaceCleanupTest {
     }
 
     @Test
+    fun `a superseded attempt's settle leaves the surviving attempt's claim in flight (CWE-367)`(
+        @TempDir root: Path,
+    ) = runTest {
+        val artifacts = workspace(root, "run1")
+        // A first attempt claimed this path and is superseded by the delete below; when it finishes, its
+        // settle must not drop the claim the surviving attempt holds while that one still deletes.
+        assertEquals(
+            WorkspaceDeleteClaim.CLAIMED,
+            retention.claimWorkspaceDelete(
+                artifacts,
+                evictedProcessId = 7,
+                maxPending = EvictedWorkspaceCleanup.MAX_PENDING,
+                attemptToken = "superseded",
+            ),
+        )
+        val refused = mutableListOf<Throwable>()
+        val delete =
+            FlakyDelete(failures = 0) { _, _ ->
+                retention.settleWorkspaceDelete(artifacts, attemptToken = "superseded", deleted = true)
+                refused +=
+                    assertFailsWith<WorkspacePendingDeleteException> {
+                        repository.setArtifactsDir(runOwning(artifacts), artifacts.toString())
+                    }
+            }
+        val cleanup = cleanup(root, delete)
+
+        cleanup.delete(8, artifacts)
+
+        assertEquals(1, refused.size)
+        assertFalse(Files.exists(root.resolve("run1")))
+        assertEquals(0, cleanup.pendingCount())
+    }
+
+    @Test
     fun `the delete holds no write transaction while it runs (CWE-367)`(
         @TempDir root: Path,
     ) = runTest {
@@ -198,7 +232,12 @@ class EvictedWorkspaceCleanupTest {
         // A delete interrupted mid-attempt leaves its claim in flight; the process that held it is gone.
         assertEquals(
             WorkspaceDeleteClaim.CLAIMED,
-            retention.claimWorkspaceDelete(artifacts, evictedProcessId = 7, maxPending = EvictedWorkspaceCleanup.MAX_PENDING),
+            retention.claimWorkspaceDelete(
+                artifacts,
+                evictedProcessId = 7,
+                maxPending = EvictedWorkspaceCleanup.MAX_PENDING,
+                attemptToken = "interrupted",
+            ),
         )
         val cleanup = cleanup(root, FlakyDelete(failures = 0))
 

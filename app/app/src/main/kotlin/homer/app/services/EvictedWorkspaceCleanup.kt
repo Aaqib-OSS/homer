@@ -6,6 +6,7 @@ import homer.app.services.persistence.WorkspaceDeleteClaim
 import kotlinx.coroutines.CancellationException
 import org.slf4j.Logger
 import java.nio.file.Path
+import java.util.UUID
 
 /**
  * Deletes the workspace of a run evicted at capacity, whose row is already gone. The claim on the directory
@@ -15,8 +16,13 @@ import java.nio.file.Path
 internal class EvictedWorkspaceCleanup(
     private val workspaceRoot: Path,
     private val logger: Logger,
-    private val claimDelete: suspend (artifactsDir: Path, evictedProcessId: Int, maxPending: Int) -> WorkspaceDeleteClaim,
-    private val settleDelete: suspend (artifactsDir: Path, deleted: Boolean) -> Unit,
+    private val claimDelete: suspend (
+        artifactsDir: Path,
+        evictedProcessId: Int,
+        maxPending: Int,
+        attemptToken: String,
+    ) -> WorkspaceDeleteClaim,
+    private val settleDelete: suspend (artifactsDir: Path, attemptToken: String, deleted: Boolean) -> Unit,
     private val heldDeletes: suspend (limit: Int) -> List<HeldWorkspaceDelete>,
     private val countDeletes: suspend () -> Int,
     private val deleteContained: suspend (root: Path, dir: Path) -> Unit = { root, dir ->
@@ -92,13 +98,16 @@ internal class EvictedWorkspaceCleanup(
         evictedId: Int,
         artifactsDir: Path,
     ): Attempt {
-        when (claimDelete(artifactsDir, evictedId, MAX_PENDING)) {
+        // One token per attempt: an attempt that takes this claim over stamps its own, so this one's settle
+        // leaves the claim in flight while that attempt still deletes the directory (CWE-367).
+        val attemptToken = UUID.randomUUID().toString()
+        when (claimDelete(artifactsDir, evictedId, MAX_PENDING, attemptToken)) {
             WorkspaceDeleteClaim.SHARED -> return Attempt.Shared
             WorkspaceDeleteClaim.FULL -> return Attempt.Full
             WorkspaceDeleteClaim.CLAIMED -> Unit
         }
         val failure = deleteFailure(evictedId, artifactsDir)
-        settleDelete(artifactsDir, failure == null)
+        settleDelete(artifactsDir, attemptToken, failure == null)
         return if (failure == null) Attempt.Done else Attempt.Failed(failure)
     }
 

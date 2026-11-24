@@ -62,19 +62,24 @@ interface ProcessRetentionRecords {
     ): Boolean
 
     /**
-     * Claims [artifactsDir] for deletion by [evictedProcessId] in one write transaction, so a run
-     * registering that path cannot slip between the sharing check and the delete (CWE-367);
+     * Claims [artifactsDir] for deletion by [evictedProcessId] in one write transaction, so a run registering that path
+     * cannot slip between the sharing check and the delete (CWE-367); [attemptToken] marks this attempt's claim.
      * [maxPending] bounds the claim table. See ADR-0048 (2026-11-24 amendment).
      */
     suspend fun claimWorkspaceDelete(
         artifactsDir: Path,
         evictedProcessId: Int,
         maxPending: Int,
+        attemptToken: String,
     ): WorkspaceDeleteClaim
 
-    /** Settles the claim on [artifactsDir]: [deleted] drops it, else it stays for the next sweep. */
+    /**
+     * Settles [attemptToken]'s claim on [artifactsDir]: [deleted] drops it, else it stays for the next
+     * sweep. A claim another attempt took over is left untouched.
+     */
     suspend fun settleWorkspaceDelete(
         artifactsDir: Path,
+        attemptToken: String,
         deleted: Boolean,
     )
 
@@ -139,13 +144,15 @@ internal class DefaultProcessRetentionRecords(
         artifactsDir: Path,
         evictedProcessId: Int,
         maxPending: Int,
-    ): WorkspaceDeleteClaim = repository.claimWorkspaceDelete(artifactsDir.toString(), evictedProcessId, maxPending)
+        attemptToken: String,
+    ): WorkspaceDeleteClaim = repository.claimWorkspaceDelete(artifactsDir.toString(), evictedProcessId, maxPending, attemptToken)
 
     override suspend fun settleWorkspaceDelete(
         artifactsDir: Path,
+        attemptToken: String,
         deleted: Boolean,
     ) {
-        repository.settleWorkspaceDelete(artifactsDir.toString(), deleted)
+        repository.settleWorkspaceDelete(artifactsDir.toString(), attemptToken, deleted)
     }
 
     override suspend fun heldWorkspaceDeletes(limit: Int): List<HeldWorkspaceDelete> = repository.heldWorkspaceDeletes(limit)

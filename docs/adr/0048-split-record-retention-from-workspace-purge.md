@@ -298,6 +298,17 @@ accepted" no longer applies: a delete a restart interrupts is retried by the nex
 sweep. The table is bounded and drained by those sweeps, so it needs no retention
 path of its own.
 
+The claim is held per attempt, not per path. Two attempts can want the same
+directory at once — an eviction and a sweep retry, or two evictions of runs
+sharing a fixed `workspace.path` — and the later one takes the row over. Each
+attempt mints a token and stamps it into the row it claims, and `settle` matches
+that token: the superseded attempt's settle then leaves the row alone, so the
+claim stays in flight while the surviving attempt is still deleting. Without the
+token the first attempt's settle dropped the row mid-delete, and a run could
+register the path in exactly the window this amendment exists to close
+(CWE-367). A claim the sweep picks up is stamped with the retry's own token, so
+the two legs need no shared state beyond the row.
+
 **Residual, accepted:** a run hitting an in-flight claim fails rather than waits,
 so a start can be refused for the length of one directory delete; and the claim
 compares the stored path string exactly, like the shared-dir check it replaces, so

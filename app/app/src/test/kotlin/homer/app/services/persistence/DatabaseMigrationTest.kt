@@ -2924,7 +2924,7 @@ class DatabaseMigrationTest {
             c.createStatement().use { st ->
                 assertEquals(36, userVersion(st))
                 assertEquals(
-                    listOf("path", "evicted_process_id", "in_flight", "created_at"),
+                    listOf("path", "evicted_process_id", "in_flight", "attempt_token", "created_at"),
                     columnNames(st, "workspace_pending_deletes"),
                 )
             }
@@ -2938,9 +2938,9 @@ class DatabaseMigrationTest {
                 st.execute(stepDdl)
                 assertModelColumns(st, WorkspacePendingDeletes)
                 // `path` is the primary key, so one path carries at most one claim.
-                st.execute("INSERT INTO workspace_pending_deletes VALUES ('/ws/1/artifacts', 1, 1, 0)")
+                st.execute("INSERT INTO workspace_pending_deletes VALUES ('/ws/1/artifacts', 1, 1, 'a', 0)")
                 assertFailsWith<SQLException> {
-                    st.execute("INSERT INTO workspace_pending_deletes VALUES ('/ws/1/artifacts', 2, 1, 0)")
+                    st.execute("INSERT INTO workspace_pending_deletes VALUES ('/ws/1/artifacts', 2, 1, 'b', 0)")
                 }
             }
         }

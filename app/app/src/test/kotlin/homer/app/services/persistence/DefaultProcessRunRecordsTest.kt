@@ -80,7 +80,7 @@ class DefaultProcessRunRecordsTest {
     fun `a registration refused by an in-flight delete claim throws through the port`() =
         runTest {
             val artifacts = Path.of("/ws/9/artifacts")
-            repository.claimWorkspaceDelete(artifacts.toString(), evictedProcessId = 9, maxPending = 4)
+            repository.claimWorkspaceDelete(artifacts.toString(), evictedProcessId = 9, maxPending = 4, attemptToken = "a")
             val id = repository.obtainProcessId(NewRunRecord("a"), 100).processId
 
             val refused = assertFailsWith<WorkspacePendingDeleteException> { records.setArtifactsDir(id, artifacts) }

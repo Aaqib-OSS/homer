@@ -427,6 +427,10 @@ internal object WorkspacePendingDeletes : Table("workspace_pending_deletes") {
 
     // True while a delete attempt is running; a row left set is one a crash interrupted, cleared at boot.
     val inFlight = registerColumn("in_flight", IntegerBooleanColumnType())
+
+    // The token of the attempt holding the claim, one per attempt: a claim a later attempt took over carries
+    // that attempt's token, so the superseded one settles nothing (CWE-367).
+    val attemptToken = text("attempt_token")
     val createdAt = long("created_at")
 
     override val primaryKey = PrimaryKey(path)

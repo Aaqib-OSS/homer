@@ -372,7 +372,7 @@ private fun migrateToV36(
         st.execute(
             "CREATE TABLE IF NOT EXISTS workspace_pending_deletes (" +
                 "path TEXT PRIMARY KEY, evicted_process_id INTEGER NOT NULL, " +
-                "in_flight INTEGER NOT NULL, created_at INTEGER NOT NULL)",
+                "in_flight INTEGER NOT NULL, attempt_token TEXT NOT NULL, created_at INTEGER NOT NULL)",
         )
     }
 }

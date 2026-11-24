@@ -106,7 +106,7 @@ class StartupReconciliationTest {
         runTest {
             val h = Harness()
             val dir = "/srv/runs/evicted/artifacts"
-            h.processRepository.claimWorkspaceDelete(dir, evictedProcessId = 7, maxPending = 256)
+            h.processRepository.claimWorkspaceDelete(dir, evictedProcessId = 7, maxPending = 256, attemptToken = "a")
 
             h.reconciliation.reconcile()
 

@@ -174,14 +174,15 @@ data class HeldWorkspaceDelete(
 )
 
 /**
- * Claims [artifactsDir] for deletion by [evictedProcessId] in one write transaction: the shared-dir check and the claim are one
- * step, so a run registering that path cannot slip between them (CWE-367). A claim no attempt holds is taken over by this one.
+ * Claims [artifactsDir] for deletion by [evictedProcessId] in one write transaction, so a run registering that path cannot slip
+ * between the sharing check and the claim (CWE-367); [attemptToken] marks the claim as this attempt's to settle.
  * [maxPending] bounds the table, counted inside this transaction (ADR-0051). See ADR-0048 (2026-11-24 amendment).
  */
 suspend fun ProcessRepository.claimWorkspaceDelete(
     artifactsDir: String,
     evictedProcessId: Int,
     maxPending: Int,
+    attemptToken: String,
 ): WorkspaceDeleteClaim =
     query {
         val held = workspaceDeleteIsClaimed(artifactsDir)
@@ -195,12 +196,14 @@ suspend fun ProcessRepository.claimWorkspaceDelete(
             WorkspacePendingDeletes.update({ WorkspacePendingDeletes.path eq artifactsDir }) {
                 it[inFlight] = true
                 it[WorkspacePendingDeletes.evictedProcessId] = evictedProcessId
+                it[WorkspacePendingDeletes.attemptToken] = attemptToken
             }
         } else {
             WorkspacePendingDeletes.insert {
                 it[path] = artifactsDir
                 it[WorkspacePendingDeletes.evictedProcessId] = evictedProcessId
                 it[inFlight] = true
+                it[WorkspacePendingDeletes.attemptToken] = attemptToken
                 it[createdAt] = System.currentTimeMillis() / 1000
             }
         }
@@ -208,19 +211,26 @@ suspend fun ProcessRepository.claimWorkspaceDelete(
     }
 
 /**
- * Settles the claim on [artifactsDir] after an attempt: [deleted] drops the row (the directory is gone, or
- * the path is refused for good), else the row stays for the next sweep with its attempt no longer in
- * flight. See ADR-0048 (2026-11-24 amendment).
+ * Settles [attemptToken]'s claim on [artifactsDir]: [deleted] drops the row, else it stays for the next sweep with its attempt
+ * no longer in flight. A claim a later attempt took over carries that attempt's token and is left untouched (CWE-367).
+ * See ADR-0048 (2026-11-24 amendment).
  */
 suspend fun ProcessRepository.settleWorkspaceDelete(
     artifactsDir: String,
+    attemptToken: String,
     deleted: Boolean,
 ) {
     query {
         if (deleted) {
-            WorkspacePendingDeletes.deleteWhere { WorkspacePendingDeletes.path eq artifactsDir }
+            WorkspacePendingDeletes.deleteWhere {
+                (WorkspacePendingDeletes.path eq artifactsDir) and
+                    (WorkspacePendingDeletes.attemptToken eq attemptToken)
+            }
         } else {
-            WorkspacePendingDeletes.update({ WorkspacePendingDeletes.path eq artifactsDir }) {
+            WorkspacePendingDeletes.update({
+                (WorkspacePendingDeletes.path eq artifactsDir) and
+                    (WorkspacePendingDeletes.attemptToken eq attemptToken)
+            }) {
                 it[inFlight] = false
             }
         }
