@@ -30,6 +30,7 @@ import homer.app.exceptions.QueryParamValidationException
 import homer.app.exceptions.QuestionNotFoundException
 import homer.app.exceptions.QuestionNotOpenException
 import homer.app.exceptions.QuestionsClosedForProcessException
+import homer.app.exceptions.RunInputsTooLargeException
 import homer.app.exceptions.RunnerClaimTimeoutException
 import homer.app.exceptions.RunnerOutputSequenceException
 import homer.app.exceptions.RunnerRegistrationRejectedException
@@ -98,6 +99,22 @@ class StatusPagesTest {
         }
 
     @Test
+    fun `CWE-770 an oversized run start answers 413 with the sizes and no input value`() =
+        testApplication {
+            application {
+                configureStatusPages()
+                routing {
+                    get("/too-large") { throw RunInputsTooLargeException(maxBytes = 1048576, actualBytes = 2000000) }
+                }
+            }
+            val resp = client.get("/too-large")
+            assertEquals(HttpStatusCode.PayloadTooLarge, resp.status)
+            val body = resp.bodyAsText()
+            assertTrue(body.contains("1048576"), "the refusal names the bound: $body")
+            assertTrue(body.contains("2000000"), "the refusal names the size it measured: $body")
+        }
+
+    @Test
     fun `DispatchAgentNotFoundException maps to 404`() =
         testApplication {
             application {
@@ -156,6 +173,7 @@ class StatusPagesTest {
                 TooManyRunnerTransfersException("i") to HttpStatusCode.TooManyRequests,
                 RunnerOutputSequenceException(1, 2) to HttpStatusCode.Conflict,
                 RunnerTransferTooLargeException(1) to HttpStatusCode.PayloadTooLarge,
+                RunInputsTooLargeException(1, 2) to HttpStatusCode.PayloadTooLarge,
                 RunnerTransferTimeoutException("d", 1) to HttpStatusCode.RequestTimeout,
                 ConfigurationException("bad") to HttpStatusCode.InternalServerError,
                 CommandExecutionException("bad", 1, "cmd") to HttpStatusCode.InternalServerError,

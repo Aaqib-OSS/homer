@@ -1,14 +1,18 @@
 package homer.app.services
 
+import homer.app.exceptions.RunInputsTooLargeException
 import homer.app.fixtures.AgentFixtures
 import homer.app.fixtures.HookChainFixture
 import homer.app.models.Agent
 import homer.app.models.AgentHook
 import homer.app.models.NewRunRecord
 import homer.app.models.ProcessStatus
+import homer.app.services.persistence.HookRepository
+import io.mockk.coEvery
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * The status-hook chain end to end over a real database, with no stand-in for any link: a status write
@@ -118,5 +122,29 @@ class ProcessHookChainTest {
             f.processManager.compareAndSetStatus(id, setOf(ProcessStatus.WORKING), ProcessStatus.FINISHED)
 
             assertEquals(emptyList(), f.started)
+        }
+
+    // CWE-770: a hook fire starts a run, so the target's per-run input cap refuses it like any other start.
+    @Test
+    fun `a hook fire refused over the input cap settles the hook and leaves the status write intact`() =
+        runTest {
+            val f = chain(ProcessStatus.FINISHED to "notifier-finished")
+            coEvery { f.runStarter.start(any(), any(), any(), any()) } throws
+                RunInputsTooLargeException(maxBytes = 64, actualBytes = 512)
+
+            val id = f.processManager.obtainProcessId(NewRunRecord("declarer", owner = "alice"))
+            f.processManager.setProcessStatus(id, ProcessStatus.WORKING)
+            f.processManager.compareAndSetStatus(id, setOf(ProcessStatus.WORKING), ProcessStatus.FINISHED)
+
+            assertEquals(ProcessStatus.FINISHED, f.processManager.getProcessStatus(id), "the status write still landed")
+            assertEquals(emptyList(), f.started, "a refused fire starts nothing")
+            val failed = HookRepository(f.db).list(HookStatus.FAILED)
+            assertEquals(1, failed.size, "the refused hook settles FAILED, never retried")
+            val hook = failed.single()
+            val reason = hook.error.orEmpty()
+            assertTrue(
+                reason.contains("Run inputs exceed the server limit of 64 bytes"),
+                "the hook names only the sizes: $reason",
+            )
         }
 }

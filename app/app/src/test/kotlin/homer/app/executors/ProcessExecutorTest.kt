@@ -5,6 +5,7 @@ import homer.app.exceptions.ClaimQueueFullException
 import homer.app.exceptions.MaxLockWaitersExceededException
 import homer.app.exceptions.MaxParallelRunsExceededException
 import homer.app.exceptions.MaxQueuedRunsExceededException
+import homer.app.exceptions.RunInputsTooLargeException
 import homer.app.exceptions.RunnerClaimTimeoutException
 import homer.app.exceptions.UnresolvedLockKeyPlaceholderException
 import homer.app.exceptions.WorkspacePendingDeleteException
@@ -17,6 +18,13 @@ import homer.app.models.ProcessStatus
 import homer.app.models.RunnerFilter
 import homer.app.services.ProcessManager
 import homer.app.services.QuestionsService
+import homer.app.services.persistence.encodedParamsBytes
+import io.kotest.property.Arb
+import io.kotest.property.arbitrary.Codepoint
+import io.kotest.property.arbitrary.element
+import io.kotest.property.arbitrary.map
+import io.kotest.property.arbitrary.string
+import io.kotest.property.checkAll
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -36,10 +44,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
@@ -60,6 +71,9 @@ class ProcessExecutorTest {
 
     private val testContext = Context.current()
 
+    /** A cap the small maps these tests build never reach, so they exercise the paths under the bound. */
+    private val defaultMaxInputBytes = 1L * 1024 * 1024
+
     @BeforeEach
     fun setup() {
         mockProcessManager = mockk(relaxed = true)
@@ -73,9 +87,13 @@ class ProcessExecutorTest {
 
         // Setup default behavior
         every { mockProcess.name } returns "test-agent"
+        every { mockProcess.queryParams } returns emptyMap()
         // Relaxed mocks answer an Int? property with 0, never null; pin the real default so
         // the NewRunRecord handed to obtainProcessId describes a rootless run.
         every { mockProcess.rootProcessId } returns null
+        // The mock manager answers the input size with the encoder the row write uses, so a test
+        // exercising the cap measures exactly what would be persisted.
+        every { mockProcessManager.storedInputBytes(any()) } answers { encodedParamsBytes(firstArg()) }
         coEvery { mockProcessManager.obtainProcessId(any()) } returns 1
         coEvery { mockProcessManager.setProcessStatus(any(), any()) } just Runs
         coEvery { mockProcessManager.compareAndSetStatus(any(), any(), any()) } returns true
@@ -86,6 +104,8 @@ class ProcessExecutorTest {
             ProcessExecutor(
                 telemetryService = mockTelemetryService,
                 processManager = mockProcessManager,
+                runInputBytes = mockProcessManager,
+                maxInputBytes = defaultMaxInputBytes,
                 questionsService = mockQuestionsService,
                 runMessages = mockRunMessages,
                 coroutineScope = testScope,
@@ -121,6 +141,67 @@ class ProcessExecutorTest {
             val result = processExecutor.execute(mockProcess, testContext)
 
             assertEquals(123, result.processId)
+        }
+
+    // ========== Per-run input cap (CWE-770) ==========
+
+    @Test
+    fun `CWE-770 inputs over maxInputBytes are refused before any row is written`() =
+        runBlocking {
+            val secret = "s3cr3t-".repeat(64)
+            every { mockProcess.queryParams } returns mapOf("TOKEN" to secret)
+            val overCap = executorWithMaxInputBytes(64)
+
+            val refused = assertFailsWith<RunInputsTooLargeException> { overCap.execute(mockProcess, testContext) }
+
+            assertEquals(64, refused.maxBytes)
+            assertEquals(encodedParamsBytes(mapOf("TOKEN" to secret)), refused.actualBytes)
+            assertFalse(refused.message!!.contains(secret), refused.message)
+            assertFalse(refused.message!!.contains("TOKEN"), refused.message)
+            coVerify(exactly = 0) { mockProcessManager.obtainProcessId(any()) }
+            coVerify(exactly = 0) { mockProcessManager.assignJob(any(), any()) }
+        }
+
+    @Test
+    fun `a start exactly at maxInputBytes is accepted and one byte over is refused`() =
+        runBlocking {
+            val params = mapOf("KEY" to "a value")
+            every { mockProcess.queryParams } returns params
+            coEvery { mockProcess.execute(any(), any()) } just Runs
+            val exact = encodedParamsBytes(params)
+
+            assertEquals(1, executorWithMaxInputBytes(exact).execute(mockProcess, testContext).processId)
+            assertFailsWith<RunInputsTooLargeException> {
+                executorWithMaxInputBytes(exact - 1).execute(mockProcess, testContext)
+            }
+        }
+
+    @Test
+    fun `CWE-770 a start is refused exactly when the stored inputs exceed the cap`() =
+        runTest {
+            val cap = 256L
+            val executor = executorWithMaxInputBytes(cap)
+            val multiByte = Arb.element(listOf('a', 'b', 'é', 'ř', '中', '€').map { Codepoint(it.code) })
+            val params =
+                Arb.map(
+                    Arb.string(0..12, multiByte),
+                    Arb.string(0..120, multiByte),
+                    minSize = 0,
+                    maxSize = 4,
+                )
+            checkAll(300, params) { inputs ->
+                every { mockProcess.queryParams } returns inputs
+                coEvery { mockProcess.execute(any(), any()) } just Runs
+
+                val thrown = runCatching { executor.execute(mockProcess, testContext) }.exceptionOrNull()
+
+                val stored = encodedParamsBytes(inputs)
+                assertEquals(
+                    stored > cap,
+                    thrown is RunInputsTooLargeException,
+                    "stored $stored bytes against a $cap-byte cap: $inputs",
+                )
+            }
         }
 
     @Test
@@ -1315,11 +1396,26 @@ class ProcessExecutorTest {
         ProcessExecutor(
             telemetryService = mockTelemetryService,
             processManager = mockProcessManager,
+            runInputBytes = mockProcessManager,
+            maxInputBytes = defaultMaxInputBytes,
             questionsService = mockQuestionsService,
             runMessages = mockRunMessages,
             coroutineScope = testScope,
             logger = mockLogger,
             onTerminal = onTerminal,
+        )
+
+    /** The executor under a given per-run input cap, for the CWE-770 denial cases. */
+    private fun executorWithMaxInputBytes(maxInputBytes: Long) =
+        ProcessExecutor(
+            telemetryService = mockTelemetryService,
+            processManager = mockProcessManager,
+            runInputBytes = mockProcessManager,
+            maxInputBytes = maxInputBytes,
+            questionsService = mockQuestionsService,
+            runMessages = mockRunMessages,
+            coroutineScope = testScope,
+            logger = mockLogger,
         )
 
     @Test

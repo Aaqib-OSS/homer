@@ -3,6 +3,7 @@ package homer.app.executors
 import homer.app.SpanAttributes
 import homer.app.exceptions.AnotherProcessStillActive
 import homer.app.exceptions.MaxParallelRunsExceededException
+import homer.app.exceptions.RunInputsTooLargeException
 import homer.app.exceptions.UnresolvedLockKeyPlaceholderException
 import homer.app.infra.TelemetryService
 import homer.app.models.NewRunRecord
@@ -20,6 +21,10 @@ import org.slf4j.Logger
 class ProcessExecutor(
     private val telemetryService: TelemetryService,
     private val processManager: RunRecords,
+    // The per-run input cap and the size of the inputs as the row stores them, measured by the
+    // encoder that writes it. See ADR-0047 rule 4.
+    private val runInputBytes: RunInputBytes,
+    private val maxInputBytes: Long,
     private val questionsService: QuestionExpiry,
     private val runMessages: RunMessageExpiry,
     private val coroutineScope: CoroutineScope,
@@ -32,6 +37,12 @@ class ProcessExecutor(
         process: Process,
         parentContext: Context,
     ): ProcessCreationResult {
+        // Bounded here, the funnel every start path passes through, so a refused start writes no row at all:
+        // neither `processes` nor its `process_inputs`. CWE-770, ADR-0047 rule 4.
+        val inputBytes = runInputBytes.storedInputBytes(process.queryParams)
+        if (inputBytes > maxInputBytes) {
+            throw RunInputsTooLargeException(maxInputBytes, inputBytes)
+        }
         // cooldown goes through obtainProcessId so the check is atomic with the row
         // INSERT; AgentRunStarter's pre-flight check cannot bind on its own. ADR-0051.
         val processId =

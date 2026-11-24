@@ -2,6 +2,7 @@ package homer.app.routes
 
 import homer.app.apiJson
 import homer.app.exceptions.CooldownActiveException
+import homer.app.exceptions.RunInputsTooLargeException
 import homer.app.exceptions.ValidationException
 import homer.app.fixtures.PersistenceTestSupport
 import homer.app.fixtures.mountApiV1Routes
@@ -286,6 +287,43 @@ class ContinuationRoutesTest {
             // The race close fired it immediately rather than leaving it PENDING.
             assertEquals("DISPATCHED", continuation.status.name)
             assertEquals(99, continuation.firedProcessId)
+        }
+
+    @Test
+    fun `a continuation fire refused over the input cap settles FAILED and starts no run`() =
+        testApplication {
+            // CWE-770: the continuation's target goes through the same per-run input cap as any other start.
+            val h = Harness()
+            val subId =
+                runBlocking {
+                    val pid = h.processManager.obtainProcessId(NewRunRecord("handler"))
+                    h.processManager.setProcessStatus(pid, ProcessStatus.FINISHED)
+                    pid
+                }
+            coEvery { h.runStarter.start(match { it.source == "dispatch" }, any(), any(), any()) } returns subId
+            coEvery { h.runStarter.start(match { it.source == "continuation" }, any(), any(), any()) } throws
+                RunInputsTooLargeException(maxBytes = 64, actualBytes = 512)
+            val token = runBlocking { h.questions.registerProcess(7, "asker") }
+            mountCallbackRoutes {
+                every { questionsService } returns h.questions
+                every { dispatchService } returns h.dispatches
+                every { continuationService } returns h.continuations
+                every { processManager } returns h.processManager
+            }
+
+            val resp =
+                client.post("/api/v1/callback/runs") {
+                    header(HttpHeaders.Authorization, "Bearer $token")
+                    contentType(ContentType.Application.Json)
+                    setBody("""{"agent":"handler","continueAgent":"handler"}""")
+                }
+
+            assertEquals(HttpStatusCode.OK, resp.status)
+            val created = apiJson.decodeFromString<CreateRunResponse>(resp.bodyAsText())
+            val continuation = runBlocking { h.continuations.get(assertNotNull(created.continuationId)) }
+            assertNotNull(continuation)
+            assertEquals("FAILED", continuation.status.name)
+            assertEquals(subId, runBlocking { h.processManager.lastProcessId() }, "the refused fire writes no run row")
         }
 
     @Test

@@ -2,6 +2,7 @@ package homer.app.services
 
 import homer.app.exceptions.ProcessManagerAtCapacityException
 import homer.app.executors.CommandArtifactPaths
+import homer.app.executors.RunInputBytes
 import homer.app.executors.RunKiller
 import homer.app.executors.RunRecords
 import homer.app.executors.RunWorkRecords
@@ -24,6 +25,7 @@ import homer.app.services.persistence.ProcessRunRecords
 import homer.app.services.persistence.RecordedHooks
 import homer.app.services.persistence.SettlementSwap
 import homer.app.services.persistence.completeStep
+import homer.app.services.persistence.encodedParamsBytes
 import homer.app.services.persistence.remove
 import homer.app.services.persistence.setCurrentCommand
 import homer.app.services.persistence.settleAccounting
@@ -64,6 +66,7 @@ class ProcessManager(
     ProcessRunRecords by DefaultProcessRunRecords(repository),
     RunRecords,
     RunWorkRecords,
+    RunInputBytes,
     RunKiller,
     ActiveRunIds {
     @OptIn(ExperimentalTime::class)
@@ -127,6 +130,8 @@ class ProcessManager(
         }
         onHooksRecorded(killed.hooks)
     }
+
+    override fun storedInputBytes(params: Map<String, String>): Long = encodedParamsBytes(params)
 
     override suspend fun obtainProcessId(record: NewRunRecord): Int {
         val result =

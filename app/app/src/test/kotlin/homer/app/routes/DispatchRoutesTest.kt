@@ -1,6 +1,7 @@
 package homer.app.routes
 
 import homer.app.apiJson
+import homer.app.exceptions.RunInputsTooLargeException
 import homer.app.fixtures.PersistenceTestSupport
 import homer.app.fixtures.mountApiV1Routes
 import homer.app.fixtures.mountCallbackRoutes
@@ -50,6 +51,9 @@ class DispatchRoutesTest {
         val agents = mockk<AgentsService>()
         val runStarter = mockk<AgentRunStarter>()
         val inputResolver = mockk<AgentInputResolver>(relaxed = true)
+
+        /** The real process table the fire writes to, so a refused fire can be shown to add no run. */
+        val processManager = PersistenceTestSupport.processManager(db = db)
         val dispatches =
             PersistenceTestSupport.dispatchService(
                 db = db,
@@ -57,6 +61,7 @@ class DispatchRoutesTest {
                 agentsService = agents,
                 runStarter = runStarter,
                 inputResolver = inputResolver,
+                processManager = processManager,
             )
 
         /** The group create path over the same database, wired as the callback route wires it. */
@@ -66,6 +71,7 @@ class DispatchRoutesTest {
                 questionsService = questions,
                 agentsService = agents,
                 inputResolver = inputResolver,
+                processManager = processManager,
             )
 
         init {
@@ -216,6 +222,39 @@ class DispatchRoutesTest {
             assertEquals(HttpStatusCode.OK, getResp.status)
             val dispatch = apiJson.decodeFromString<DispatchResponse>(getResp.bodyAsText())
             assertEquals("FAILED", dispatch.status)
+        }
+
+    @Test
+    fun `a dispatch fire refused over the input cap settles FAILED and starts no run`() =
+        testApplication {
+            // CWE-770: the fired target goes through the same per-run input cap as any other start.
+            val h = Harness()
+            coEvery { h.runStarter.start(match { it.source == "dispatch" }, any(), any(), any()) } throws
+                RunInputsTooLargeException(maxBytes = 64, actualBytes = 512)
+
+            runBlocking { h.questions.registerProcess(7, "asker") }
+            val created =
+                runBlocking {
+                    h.dispatches.create(7, "Which region?", listOf("us", "eu"), "handler", "answer", emptyMap(), null)
+                }
+
+            mountApiV1Routes {
+                every { questionsService } returns h.questions
+                every { dispatchService } returns h.dispatches
+            }
+
+            val answerResp =
+                client.post("/api/v1/questions/${created.questionId}/answer") {
+                    contentType(ContentType.Application.Json)
+                    setBody("""{"answer":"eu"}""")
+                }
+            assertEquals(HttpStatusCode.OK, answerResp.status)
+
+            val getResp = client.get("/api/v1/dispatches/${created.dispatchId}")
+            assertEquals(HttpStatusCode.OK, getResp.status)
+            val dispatch = apiJson.decodeFromString<DispatchResponse>(getResp.bodyAsText())
+            assertEquals("FAILED", dispatch.status)
+            assertEquals(-1, runBlocking { h.processManager.lastProcessId() }, "the refused fire writes no run row")
         }
 
     @Test

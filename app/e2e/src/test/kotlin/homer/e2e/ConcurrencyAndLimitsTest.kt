@@ -230,6 +230,33 @@ class ConcurrencyAndLimitsTest : E2eTestBase() {
             assertEquals(HttpStatusCode.PayloadTooLarge, response.status)
         }
 
+    @Test
+    fun `run inputs over the configured cap are rejected with 413 and store no run`() =
+        runBlocking {
+            // The body passes maxRequestBodyBytes (262144); the resolved input map then exceeds
+            // maxInputBytes (131072), so the executor refuses the start before any row is written.
+            val totalBefore =
+                E2e.json
+                    .decodeFromString<ProcessList>(HomerApi.statusAll(mapOf("agentName" to "inputs")).bodyAsText())
+                    .total
+            val oversized = "x".repeat(200 * 1024)
+            val response =
+                E2e.client.post("/api/v1/agent/inputs") {
+                    parameter("n", "1")
+                    setBody(TextContent("""{"service":{"id":"$oversized"}}""", ContentType.Application.Json))
+                }
+
+            assertEquals(HttpStatusCode.PayloadTooLarge, response.status)
+            // The refusal carries the two sizes only — never the input value — and no run exists for the agent.
+            val body = response.bodyAsText()
+            assertFalse(body.contains(oversized), "the 413 must not echo the oversized input")
+            val totalAfter =
+                E2e.json
+                    .decodeFromString<ProcessList>(HomerApi.statusAll(mapOf("agentName" to "inputs")).bodyAsText())
+                    .total
+            assertEquals(totalBefore, totalAfter, "the refused start must not store a run row")
+        }
+
     // Debug endpoint cooldown (ADR-0051 amendment): `minInterval` paces every start, `afterFailure` does not.
 
     @Test

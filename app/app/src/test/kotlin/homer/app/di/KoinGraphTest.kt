@@ -2,6 +2,7 @@ package homer.app.di
 
 import homer.app.executors.QuestionExpiry
 import homer.app.executors.QuestionRegistration
+import homer.app.executors.RunInputBytes
 import homer.app.executors.RunMessageExpiry
 import homer.app.executors.RunRecords
 import homer.app.executors.RunWorkRecords
@@ -76,13 +77,14 @@ class KoinGraphTest {
                 CostRecorder::class,
                 LlmStepTelemetry::class,
                 // Ports implemented by a service registered under its own type: `ProcessManager` (run, question,
-                // message and step records), `RunnerRegistry` (runners, runner lookup), `AgentSubRunStarter`.
+                // message, input-byte and step records), `RunnerRegistry` (runners, runner lookup), `AgentSubRunStarter`.
                 ActiveRunIds::class,
                 ConfiguredRunners::class,
                 ProcessRecordReads::class,
                 QuestionExpiry::class,
                 QuestionRegistration::class,
                 RegisteredRunner::class,
+                RunInputBytes::class,
                 RunMessageExpiry::class,
                 RunnerLookup::class,
                 RunRecords::class,
