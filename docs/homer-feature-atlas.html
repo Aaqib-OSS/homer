@@ -1011,7 +1011,7 @@ curl -X GET "$HOMER/api/v1/agents/load-errors"
         <article class="f">
           <h3><code>!&lt;claude&gt;</code> — Claude Code CLI <span class="where">command</span></h3>
           <p>Pipes a prompt into the <code>claude</code> CLI headlessly and captures its NDJSON event stream. Validated
-            fail-closed by default: needs a <code>result</code> event with <code>subtype: "success"</code> and no
+            fail-closed by default: every <code>result</code> event must be a success, with no
             <code>is_error</code> — unless <code>isErrorExitCode</code> maps an <code>is_error</code> result to an exit
             code instead. Cost is metered per attempt — one charge, split across its generations when it ends more than one turn — from
             your spend API when <code>llmPrice.sessionSpend</code> is configured, else from the CLI's own estimate.</p>

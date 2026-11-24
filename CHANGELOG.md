@@ -8,6 +8,7 @@
 - **Security: `KILL_OLD_RUN_CURRENT` keeps a single holder per lock key** — A run the newest same-key run superseded now fails instead of executing beside it. See [ADR-0104](docs/adr/0104-lock-before-slot-admission-order.md).
 - **Security: a cancelled waiting run no longer wedges its lock key** — A run cancelled while the lock was being handed over to it now gives that holder back, so later runs on the same key are admitted instead of waiting forever.
 - **Security: an artifact download stops at `server.maxArtifactBytes` even while the file grows** — A file an agent grows past the cap after the size check is refused with `413`, and one that grows while it is downloaded is cut off at the cap instead of streaming unbounded bytes.
+- **Security: a later failed or stopped Claude `result` fails the attempt** — Exit 0 now judges every `result` turn end, so an earlier success no longer hides a later failure from retry or escalation. See [ADR-0070](docs/adr/0070-llm-harness-adapter-boundary.md).
 
 ## [1.44.0] - 2026-11-22
 
