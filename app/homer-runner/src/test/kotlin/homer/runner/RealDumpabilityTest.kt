@@ -3,6 +3,9 @@ package homer.runner
 import homer.app.infra.Dumpability
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import java.net.InetAddress
+import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
@@ -42,5 +45,52 @@ class RealDumpabilityTest {
         val read = child.inputStream.readAllBytes().decodeToString()
         assertTrue(child.waitFor(10, TimeUnit.SECONDS), "the reader must finish")
         return if (child.exitValue() == 0) read else ""
+    }
+
+    @Test
+    fun `the real main entry hardens the JVM before it reaches the server (CWE-526)`(
+        @TempDir root: Path,
+    ) {
+        assumeTrue(System.getProperty("os.name").startsWith("Linux"))
+        // Root reads a non-dumpable process's environ whatever its uid, so this proves nothing there.
+        assumeTrue(Files.getAttribute(Path.of("/proc/self"), "unix:uid") as Int != 0)
+        // A listener that accepts the registration connection and never answers holds the forked
+        // runner there — past the hardening and the token read — while this test inspects it.
+        ServerSocket(0, 1, InetAddress.getLoopbackAddress()).use { blocker ->
+            val handle = ProcessHandle.current()
+            val java = handle.info().command().orElseThrow()
+            val command =
+                listOf(
+                    java,
+                    "-cp",
+                    System.getProperty("java.class.path"),
+                    "homer.runner.MainKt",
+                    "--url",
+                    "http://127.0.0.1:${blocker.localPort}",
+                    "--root",
+                    root.toString(),
+                )
+            val launch = ProcessBuilder(command)
+            launch.environment()["HOMER_RUNNER_TOKEN"] = "t".repeat(32)
+            launch.redirectOutput(ProcessBuilder.Redirect.DISCARD)
+            launch.redirectError(ProcessBuilder.Redirect.DISCARD)
+            val child = launch.start()
+            var denied = false
+            try {
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60)
+                while (child.isAlive && System.nanoTime() < deadline) {
+                    // The denial is the hardening: only a non-dumpable process refuses a same-uid
+                    // environ read, so the forked `main` must have hardened before it registered.
+                    if (environReadBy(child.pid()).isEmpty()) {
+                        denied = true
+                        break
+                    }
+                    Thread.sleep(200)
+                }
+            } finally {
+                child.destroy()
+            }
+            assertTrue(denied, "the forked runner's environ must be denied before it registers")
+        }
     }
 }

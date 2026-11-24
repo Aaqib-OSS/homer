@@ -113,10 +113,13 @@ class HomerRunnerCli(
         when (val result = hardening) {
             is Dumpability.Result.Hardened -> logger.info("homer-runner JVM is non-dumpable")
             is Dumpability.Result.Skipped -> logger.warn("homer-runner JVM left dumpable: {}", result.reason)
-            is Dumpability.Result.Failed -> throw CliktError("homer-runner refuses to start: ${result.reason}")
+            is Dumpability.Result.Failed -> throw CliktError(hardeningRefusal(result))
         }
     }
 }
+
+/** The message a failed hardening refuses the runner with, at either gate. */
+private fun hardeningRefusal(result: Dumpability.Result.Failed) = "homer-runner refuses to start: ${result.reason}"
 
 /**
  * Default instance name: this host's name shaped to Homer's `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`, so an
@@ -146,6 +149,11 @@ internal fun runnerMain(
     execute: (HomerRunnerCli, Array<String>) -> Unit = { cli, argv -> cli.main(argv) },
 ) {
     val hardening = harden()
+    if (hardening is Dumpability.Result.Failed) {
+        // Fail closed before Clikt parses: `--help` and a usage error end the process before
+        // `run()`'s own gate, so the refusal must happen here, before the command exists. CWE-526, ADR-0078.
+        throw CliktError(hardeningRefusal(hardening))
+    }
     val cli = HomerRunnerCli(harden = { hardening })
     execute(cli, args)
 }

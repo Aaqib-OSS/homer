@@ -123,9 +123,15 @@ dumpable environment. The call now happens as the first statement of the entry p
 option or environment variable is read, and with the logger `by lazy` so no logging backend is
 initialised either.
 
-- `hardenOrRefuse()` stays the single fail-closed gate. The entry point only evaluates the result
-  and hands it to the command; `run()` still refuses with the same `CliktError`, before it reads
-  the token, and a `Skipped` result still only warns.
+- `hardenOrRefuse()` stays the single fail-closed gate, and the entry point applies it itself: a
+  `Failed` result refuses there with the same `CliktError`, before the command is even constructed,
+  because `--help` and a usage error end the process before `run()`'s own gate and must not turn a
+  failed hardening into a healthy exit. `run()` still refuses with the same error, before it reads
+  the token, for a command built without the entry point, and a `Skipped` result still only warns.
+- The command's `init` block also evaluates the hardening when `HomerRunnerCli` is constructed bare,
+  defence in depth for code that builds the command without the entry point; the entry-point call is
+  the authoritative one for the launch paths this amendment describes, and it hands the command the
+  result it already evaluated, so the two sites never disagree.
 - The exposure left is the one no code inside the process can reach: the launcher shell's own
   environment, the JVM bootstrap and `MainKt`'s class initialisation all run before the `prctl` call
   lands, so a same-uid process racing the startup can read the token. The fd or credential-file

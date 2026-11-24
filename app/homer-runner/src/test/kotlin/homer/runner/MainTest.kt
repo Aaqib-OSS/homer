@@ -27,6 +27,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.test.fail
 import ch.qos.logback.classic.Logger as LogbackLogger
 
 class MainTest {
@@ -82,14 +83,37 @@ class MainTest {
     @Test
     fun `a failed hardening refuses to start with its reason and without the token (CWE-526)`() {
         val sentinel = "runner-token-sentinel"
-        val result =
-            runnerMainResult(
-                harden = { Dumpability.Result.Failed("prctl(PR_SET_DUMPABLE, 0) returned -1") },
-                envvars = mapOf("HOMER_RUNNER_TOKEN" to sentinel),
+        val refusal =
+            assertFailsWith<CliktError> {
+                runnerMain(
+                    arrayOf("--url", "https://homer.internal"),
+                    harden = { Dumpability.Result.Failed("prctl(PR_SET_DUMPABLE, 0) returned -1") },
+                    execute = { _, _ -> fail("a refused start must never build or run the command") },
+                )
+            }
+        assertEquals(
+            "homer-runner refuses to start: prctl(PR_SET_DUMPABLE, 0) returned -1",
+            refusal.message,
+            "HOMER_RUNNER_TOKEN holds $sentinel: the refusal must not carry it",
+        )
+    }
+
+    @Test
+    fun `a failed hardening refuses --help and a usage error before the parse (CWE-526)`() {
+        for (argv in listOf(arrayOf("--help"), arrayOf("--no-such-option"))) {
+            val refusal =
+                assertFailsWith<CliktError> {
+                    runnerMain(
+                        argv,
+                        harden = { Dumpability.Result.Failed("prctl(PR_SET_DUMPABLE, 0) returned -1") },
+                        execute = { _, _ -> fail("the command must never be built or run on a failed hardening") },
+                    )
+                }
+            assertTrue(
+                "refuses to start" in refusal.message!!,
+                "a refused start must refuse ${argv.contentToString()} too, got: ${refusal.message}",
             )
-        assertEquals(1, result.statusCode, "stderr: ${result.stderr}")
-        assertTrue("refuses to start" in result.stderr, "got: ${result.stderr}")
-        assertFalse(sentinel in result.stdout + result.stderr, "a refused start must not echo the token")
+        }
     }
 
     @Test
@@ -102,30 +126,32 @@ class MainTest {
     @Test
     fun `a failed hardening never reads the token`() {
         val events = readsWhileHardening(Dumpability.Result.Failed("prctl(PR_SET_DUMPABLE, 0) returned -1"))
-        assertEquals("harden", events.first(), "got: $events")
-        assertFalse("HOMER_RUNNER_TOKEN" in events, "a refused start must not read the token; got: $events")
+        assertEquals(listOf("harden"), events, "a refused start must not read the token; got: $events")
     }
 
     /** What the entry point reads, in order, when hardening answers [hardening]: `harden`, then each env var name. */
     private fun readsWhileHardening(hardening: Dumpability.Result): List<String> {
         val events = mutableListOf<String>()
         val argv = arrayOf("--url", "https://homer.internal")
-        runnerMain(
-            argv,
-            harden = {
-                events += "harden"
-                hardening
-            },
-            execute = { cli, args ->
-                cli.configureContext {
-                    readEnvvar = { name ->
-                        events += name
-                        null
-                    }
+        val record: () -> Dumpability.Result = {
+            events += "harden"
+            hardening
+        }
+        val execute: (HomerRunnerCli, Array<String>) -> Unit = { cli, args ->
+            cli.configureContext {
+                readEnvvar = { name ->
+                    events += name
+                    null
                 }
-                assertFailsWith<CliktError> { cli.parse(args) }
-            },
-        )
+            }
+            assertFailsWith<CliktError> { cli.parse(args) }
+        }
+        // A failed hardening refuses before the command exists; anything else parses and reads its env.
+        if (hardening is Dumpability.Result.Failed) {
+            assertFailsWith<CliktError> { runnerMain(argv, harden = record, execute = execute) }
+        } else {
+            runnerMain(argv, harden = record, execute = execute)
+        }
         return events
     }
 
@@ -145,6 +171,30 @@ class MainTest {
             runnerMain(argv, harden = harden, execute = execute)
         }
         return result
+    }
+
+    @Test
+    fun `--help prints help and exits 0 after the hardening ran`() {
+        val events = mutableListOf<String>()
+        val result =
+            runnerMainResult(
+                argv = arrayOf("--help"),
+                harden = {
+                    events += "harden"
+                    Dumpability.Result.Hardened
+                },
+            )
+        assertEquals(0, result.statusCode, "stderr: ${result.stderr}")
+        assertEquals("harden", events.first(), "the hardening must run even when only help is asked for")
+    }
+
+    @Test
+    fun `a command built without the entry point still refuses a failed hardening at run`() {
+        val result =
+            HomerRunnerCli(harden = { Dumpability.Result.Failed("prctl(PR_SET_DUMPABLE, 0) returned -1") })
+                .test("--url https://homer.internal", envvars = mapOf("HOMER_RUNNER_TOKEN" to "t".repeat(32)))
+        assertEquals(1, result.statusCode, "stderr: ${result.stderr}")
+        assertTrue("refuses to start" in result.stderr, "got: ${result.stderr}")
     }
 
     @Test
