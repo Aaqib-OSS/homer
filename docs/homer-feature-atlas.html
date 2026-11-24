@@ -785,8 +785,11 @@ curl "$HOMER/api/v1/artifacts?processId=12345&amp;path=report.md"</code></pre>
             declared-glob order and flagging <code>retainedTruncated</code> on the status API. It needs a per-run
             <code>workspace.path</code> containing <code>{{HMR_PROCESS_ID}}</code> (rejected at agent load otherwise).
             A single run's inputs are bounded too: <code>server.maxInputBytes</code> caps the resolved input map a run
-            persists, so a start over it is refused with <code>413</code> before any row exists — no
-            <code>processes</code> row and nothing stored — and the refusal reports the two sizes only. That makes the
+            persists, so a start over it is refused before any row exists — no
+            <code>processes</code> row and nothing stored. The refusal reports the two sizes only, and reaches the
+            caller as <code>413</code> on the HTTP start endpoints, a tool error on MCP, exit 255 for a
+            <code>!&lt;agent&gt;</code> hop, and a settled <code>FAILED</code> row for a dispatch, continuation or hook
+            fire. That makes the
             deployment's ceiling on retained input bytes <code>maxProcesses</code> x <code>maxInputBytes</code>.</p>
           <pre><code>workspace:
   purgeAfter: 2h

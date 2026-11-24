@@ -1128,4 +1128,81 @@ class RetryTraceAttributesTest {
             assertFalse(body.contains(secret), "the 413 must not carry the stored input value")
             assertFalse(body.contains("MR_IID"), "the 413 must not name the input")
         }
+
+    /**
+     * CWE-770: resume replays the source run's stored inputs and builds its process directly, like retry —
+     * it is the only path that replays inputs stored under an older, larger cap, so the bound is the
+     * executor's, not the HTTP body limit. The start path is real, so the refusal shows in the table.
+     */
+    @Test
+    fun `a resume whose stored inputs exceed maxInputBytes is refused with 413 and writes no row`() =
+        testApplication {
+            val agent =
+                AgentFixtures
+                    .simpleAgent(name = "triage-decision")
+                    .copy(
+                        inputs = listOf(Param(paramName = "mr", envName = "MR_IID", type = ParamType.STR, required = false)),
+                    )
+            val secret = "s3cret-".repeat(64)
+            val sourceProcess =
+                ProcessInfo(
+                    id = 42,
+                    status = ProcessStatus.FAILED,
+                    agentName = "triage-decision",
+                    inputParams = mapOf("MR_IID" to secret),
+                    owner = "alice",
+                )
+            val processManager = PersistenceTestSupport.processManager()
+            val processExecutor =
+                ProcessExecutor(
+                    telemetryService = TestFixtures.mockTelemetryService(),
+                    processManager = processManager,
+                    runInputBytes = processManager,
+                    maxInputBytes = 128,
+                    questionsService = mockk<QuestionsService>(relaxed = true),
+                    runMessages = mockk<RunMessageExpiry>(relaxed = true),
+                    coroutineScope = CoroutineScope(Dispatchers.Default + Job()),
+                    logger = TestFixtures.mockLogger(),
+                )
+            // The factory is stubbed only to hand the executor the oversized stored map the resume resolved;
+            // the executor, its cap and the process table are real, so the refusal is the one under test.
+            val oversizedProcess = mockk<Process>(relaxed = true)
+            every { oversizedProcess.queryParams } returns mapOf("MR_IID" to secret)
+            val processFactory = mockk<ProcessFactory>(relaxed = true)
+            every {
+                processFactory.create(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+            } returns oversizedProcess
+
+            application {
+                install(ContentNegotiation) { json(apiJson) }
+                configureStatusPages()
+                routing {
+                    post("/api/v1/processes/{id}/resume") {
+                        handleResume(
+                            serverId = "test-server",
+                            call = call,
+                            sourceProcess = sourceProcess,
+                            agent = agent,
+                            threadId = "thread-1",
+                            authorizer = Authorizer(emptyMap(), emptyMap(), enabled = false),
+                            processManager = processManager,
+                            processExecutor = processExecutor,
+                            processFactory = processFactory,
+                            telemetryService = TestFixtures.mockTelemetryService(),
+                            costMeter = mockk(relaxed = true),
+                            agentInputResolver = AgentInputResolver(),
+                            maintenanceGate = mockk(relaxed = true),
+                        )
+                    }
+                }
+            }
+
+            val response = client.post("/api/v1/processes/42/resume")
+
+            assertEquals(HttpStatusCode.PayloadTooLarge, response.status)
+            assertEquals(-1, runBlocking { processManager.lastProcessId() }, "the refused resume writes no run row")
+            val body = response.bodyAsText()
+            assertFalse(body.contains(secret), "the 413 must not carry the stored input value")
+            assertFalse(body.contains("MR_IID"), "the 413 must not name the input")
+        }
 }
