@@ -118,22 +118,23 @@ Consequences:
 The runner called this ADR's mechanism from `run()`, so Clikt had already built the command, parsed
 the command line and registered its options, and `MainKt`'s class initialisation had already
 configured the logging backend — all of it while the JVM still held `HOMER_RUNNER_TOKEN` in a
-dumpable environment. The call now happens as the command is constructed, which is the first work
-the runner's entry point does: before Clikt parses anything, before any option or environment
-variable is read, and with the logger `by lazy` so no logging backend is initialised either.
+dumpable environment. The call now happens as the first statement of the entry point
+(`runnerMain`), before the command is even constructed: before Clikt parses anything, before any
+option or environment variable is read, and with the logger `by lazy` so no logging backend is
+initialised either.
 
-- `hardenOrRefuse()` stays the single fail-closed gate. The construction only evaluates the result;
-  `run()` still refuses with the same `CliktError`, before it reads the token, and a `Skipped`
-  result still only warns.
+- `hardenOrRefuse()` stays the single fail-closed gate. The entry point only evaluates the result
+  and hands it to the command; `run()` still refuses with the same `CliktError`, before it reads
+  the token, and a `Skipped` result still only warns.
 - The exposure left is the one no code inside the process can reach: the launcher shell's own
   environment, the JVM bootstrap and `MainKt`'s class initialisation all run before the `prctl` call
   lands, so a same-uid process racing the startup can read the token. The fd or credential-file
   delivery rejected above would narrow that window rather than close it — a same-uid process reads a
   `0600` file as readily as it reads `/proc/<pid>/environ`. Recorded as AR-17 in
   [`SECURITY.md`](../../SECURITY.md).
-- The denial tests move with the call: one asserts the hardening is the first thing the command
-  does, before any environment variable is read, and one asserts a same-uid reader is refused the
-  JVM's environ once it has run.
+- The denial tests move with the call: one drives the entry point and asserts the hardening is its
+  first act, before any environment variable is read, and one asserts a same-uid reader is refused
+  the JVM's environ once it has run.
 
 Consequences:
 

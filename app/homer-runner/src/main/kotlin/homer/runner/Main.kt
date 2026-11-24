@@ -134,4 +134,20 @@ internal fun sanitizeInstanceName(raw: String): String {
     return trimmed.ifEmpty { "homer-runner" }
 }
 
-fun main(args: Array<String>) = HomerRunnerCli().main(args)
+/**
+ * The runner's entry point: hardens the JVM before Clikt parses the command line or reads any
+ * environment variable, because the token is in this process's environment from `execve` onwards.
+ * CWE-526, ADR-0078.
+ */
+internal fun runnerMain(
+    args: Array<String>,
+    harden: () -> Dumpability.Result = Dumpability::harden,
+    // Seam for tests: they drive the parse, so an assertion never reaches Clikt's `exitProcess`.
+    execute: (HomerRunnerCli, Array<String>) -> Unit = { cli, argv -> cli.main(argv) },
+) {
+    val hardening = harden()
+    val cli = HomerRunnerCli(harden = { hardening })
+    execute(cli, args)
+}
+
+fun main(args: Array<String>) = runnerMain(args)
