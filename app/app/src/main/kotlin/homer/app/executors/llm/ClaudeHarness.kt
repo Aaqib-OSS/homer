@@ -101,8 +101,11 @@ class ClaudeHarness(
     ): Inspection {
         val ends = events.filterIsInstance<LlmEvent.TurnEnd>()
         if (ends.isEmpty()) return Inspection.Malformed("stdout contains no 'result' event")
-        // The whole stream decides the verdict, not its first turn end: an earlier success must not
-        // hide a later failed or stopped result (CWE-754/CWE-636, ADR-0070, ADR-0074).
+        // Every turn end decides the verdict — an earlier success must not hide a later failed or stopped one
+        // (CWE-754/CWE-636, ADR-0070, ADR-0074); a `result` line that fails decode yields no end, so a count mismatch fails closed.
+        if (exitCode == 0 && raw.count { it.nonBlankString("type") == "result" } != ends.size) {
+            return Inspection.Malformed("stdout contains a 'result' event that did not decode")
+        }
         val nonSuccessAt = ends.indexOfFirst { it.status != TurnStatus.Success }
         // Claude keeps its own rule rather than `inspectTurns`: it treats a Stopped turn end as a
         // failure and maps it to a terminal stop, which that helper leaves to Codex and opencode.

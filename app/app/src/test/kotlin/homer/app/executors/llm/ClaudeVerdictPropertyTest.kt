@@ -1,5 +1,6 @@
 package homer.app.executors.llm
 
+import homer.app.infra.LlmOutputJson
 import homer.app.models.ClaudeCmdOptions
 import homer.app.models.Command
 import homer.app.models.LlmEvent
@@ -11,6 +12,8 @@ import io.kotest.property.arbitrary.list
 import io.kotest.property.arbitrary.map
 import io.kotest.property.checkAll
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Test
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
@@ -33,11 +36,23 @@ class ClaudeVerdictPropertyTest {
             }
         }
 
+    /** The raw `result` line a decoded turn end of [status] came from, so events and raw stay co-derived as in production. */
+    private fun rawFor(status: TurnStatus): JsonObject =
+        when (status) {
+            is TurnStatus.Failed -> line("""{"type":"result","subtype":"${status.reason}"}""")
+            is TurnStatus.Stopped -> line("""{"type":"result","subtype":"${status.reason}"}""")
+            TurnStatus.Success -> line("""{"type":"result","subtype":"success","is_error":false}""")
+        }
+
+    private fun line(json: String) = LlmOutputJson.parseToJsonElement(json).jsonObject
+
     @Test
     fun `a stream succeeds only when every one of its turn ends succeeds`() =
         runTest {
             checkAll(Arb.list(turnStatus, 0..6)) { statuses ->
-                val verdict = harness.inspect(statuses.map { LlmEvent.TurnEnd(it) }, emptyList(), command, exitCode = 0)
+                val ends = statuses.map { LlmEvent.TurnEnd(it) }
+                val raw = statuses.map { rawFor(it) }
+                val verdict = harness.inspect(ends, raw, command, exitCode = 0)
 
                 if (statuses.isNotEmpty() && statuses.all { it == TurnStatus.Success }) {
                     assertIs<Inspection.Success>(verdict)

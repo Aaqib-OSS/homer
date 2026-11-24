@@ -549,25 +549,23 @@ class ClaudeHarnessTest {
 
     @Test
     fun `a success result with is_error fails the turn and names the refusal`() {
-        val e =
-            events(
-                """{"type":"result","subtype":"success","is_error":true,"stop_reason":"refusal","result":"I cannot help with that."}""",
-            ).single() as LlmEvent.TurnEnd
+        val json =
+            """{"type":"result","subtype":"success","is_error":true,"stop_reason":"refusal","result":"I cannot help with that."}"""
+        val e = events(json).single() as LlmEvent.TurnEnd
         assertEquals(TurnStatus.Failed("is_error (stop_reason=refusal)"), e.status)
 
-        val malformed = assertIs<Inspection.Malformed>(harness.inspect(listOf(e), emptyList(), command, exitCode = 0))
+        val malformed = assertIs<Inspection.Malformed>(harness.inspect(listOf(e), listOf(line(json)), command, exitCode = 0))
         assertContains(malformed.reason, "is_error (stop_reason=refusal)")
     }
 
     @Test
     fun `a success result with is_error on an API error names the terminal reason and status`() {
-        val e =
-            events(
-                """{"type":"result","subtype":"success","is_error":true,"terminal_reason":"api_error","api_error_status":529}""",
-            ).single() as LlmEvent.TurnEnd
+        val json =
+            """{"type":"result","subtype":"success","is_error":true,"terminal_reason":"api_error","api_error_status":529}"""
+        val e = events(json).single() as LlmEvent.TurnEnd
         assertEquals(TurnStatus.Failed("is_error (terminal_reason=api_error, api_error_status=529)"), e.status)
 
-        val malformed = assertIs<Inspection.Malformed>(harness.inspect(listOf(e), emptyList(), command, exitCode = 0))
+        val malformed = assertIs<Inspection.Malformed>(harness.inspect(listOf(e), listOf(line(json)), command, exitCode = 0))
         assertContains(malformed.reason, "is_error (terminal_reason=api_error, api_error_status=529)")
     }
 
@@ -655,7 +653,8 @@ class ClaudeHarnessTest {
 
     @Test
     fun `inspect accepts one successful turn end`() {
-        assertEquals(Inspection.Success, harness.inspect(listOf(LlmEvent.TurnEnd(TurnStatus.Success)), emptyList(), command, exitCode = 0))
+        val json = """{"type":"result","subtype":"success","is_error":false}"""
+        assertEquals(Inspection.Success, harness.inspect(events(json), listOf(line(json)), command, exitCode = 0))
     }
 
     @Test
@@ -669,10 +668,11 @@ class ClaudeHarnessTest {
     @Test
     fun `a Stopped turn end is Terminal only when maxTurnsExitCode is set`() {
         val stopped = listOf(LlmEvent.TurnEnd(TurnStatus.Stopped("error_max_turns")))
-        val malformed = assertIs<Inspection.Malformed>(harness.inspect(stopped, emptyList(), command, exitCode = 0))
+        val raw = listOf(line("""{"type":"result","subtype":"error_max_turns"}"""))
+        val malformed = assertIs<Inspection.Malformed>(harness.inspect(stopped, raw, command, exitCode = 0))
         assertEquals("result event is not a successful turn: error_max_turns", malformed.reason)
         val opted = Command.Claude(prompt = LlmPrompt.Prompt("hi"), options = ClaudeCmdOptions(maxTurnsExitCode = 7))
-        assertEquals(Inspection.Terminal(7, "claude.max_turns_stop"), harness.inspect(stopped, emptyList(), opted, exitCode = 0))
+        assertEquals(Inspection.Terminal(7, "claude.max_turns_stop"), harness.inspect(stopped, raw, opted, exitCode = 0))
     }
 
     @Test
@@ -689,15 +689,17 @@ class ClaudeHarnessTest {
     fun `a result with a missing subtype translates to a Failed turn end and is Malformed`() {
         val e = events("""{"type":"result"}""").single() as LlmEvent.TurnEnd
         assertEquals(TurnStatus.Failed("<missing>"), e.status)
-        val malformed = assertIs<Inspection.Malformed>(harness.inspect(listOf(e), emptyList(), command, exitCode = 0))
+        val malformed =
+            assertIs<Inspection.Malformed>(harness.inspect(listOf(e), listOf(line("""{"type":"result"}""")), command, exitCode = 0))
         assertEquals("result event is not a successful turn: <missing>", malformed.reason)
     }
 
     @Test
     fun `a Failed turn end is Malformed even when maxTurnsExitCode is set — only Stopped becomes Terminal`() {
         val failed = listOf(LlmEvent.TurnEnd(TurnStatus.Failed("error_during_execution")))
+        val raw = listOf(line("""{"type":"result","subtype":"error_during_execution"}"""))
         val opted = Command.Claude(prompt = LlmPrompt.Prompt("hi"), options = ClaudeCmdOptions(maxTurnsExitCode = 7))
-        val malformed = assertIs<Inspection.Malformed>(harness.inspect(failed, emptyList(), opted, exitCode = 0))
+        val malformed = assertIs<Inspection.Malformed>(harness.inspect(failed, raw, opted, exitCode = 0))
         assertEquals("result event is not a successful turn: error_during_execution", malformed.reason)
     }
 
@@ -813,6 +815,28 @@ class ClaudeHarnessTest {
     }
 
     @Test
+    fun `CWE-754 denial — a result event that fails to decode is not a success`() {
+        val success = """{"type":"result","subtype":"success","is_error":false}"""
+        // A retyped declared field fails the typed decode: the raw line stays in the stream, its turn end does not.
+        val retyped = """{"type":"result","subtype":"success","is_error":true,"usage":"zero"}"""
+
+        val malformed =
+            assertIs<Inspection.Malformed>(
+                harness.inspect(events(success), listOf(line(success), line(retyped)), command, exitCode = 0),
+            )
+        assertEquals("stdout contains a 'result' event that did not decode", malformed.reason)
+    }
+
+    @Test
+    fun `CWE-754 denial — a failing turn end with no raw result line at its ordinal is never the is_error stop`() {
+        val opted = Command.Claude(prompt = LlmPrompt.Prompt("hi"), options = ClaudeCmdOptions(isErrorExitCode = 76))
+        val failed = listOf(LlmEvent.TurnEnd(TurnStatus.Failed("error_during_execution")))
+
+        // Raw holds fewer result lines than turn ends: fail closed as Malformed, never Terminal(claude.is_error_stop).
+        assertIs<Inspection.Malformed>(harness.inspect(failed, emptyList(), opted, exitCode = 0))
+    }
+
+    @Test
     fun `a mixed stream does not run the version pin, which stays on the success path`() {
         val pinned = ClaudeHarness(requireClaudeCodeVersion = "2.1.318")
         val init = """{"type":"system","subtype":"init","claude_code_version":"9.9.9"}"""
@@ -857,9 +881,10 @@ class ClaudeHarnessTest {
     @Test
     fun `version pin reads the raw init line`() {
         val pinned = ClaudeHarness(requireClaudeCodeVersion = "2.1.0")
-        val ok = listOf(line("""{"type":"system","subtype":"init","claude_code_version":"2.1.0"}"""))
+        val success = listOf(line("""{"type":"result","subtype":"success","is_error":false}"""))
+        val ok = listOf(line("""{"type":"system","subtype":"init","claude_code_version":"2.1.0"}""")) + success
         assertEquals(Inspection.Success, pinned.inspect(listOf(LlmEvent.TurnEnd(TurnStatus.Success)), ok, command, exitCode = 0))
-        val bad = listOf(line("""{"type":"system","subtype":"init","claude_code_version":"2.0.9"}"""))
+        val bad = listOf(line("""{"type":"system","subtype":"init","claude_code_version":"2.0.9"}""")) + success
         assertThrows<ClaudeCliVersionMismatchException> {
             pinned.inspect(
                 listOf(LlmEvent.TurnEnd(TurnStatus.Success)),
@@ -871,7 +896,7 @@ class ClaudeHarnessTest {
         assertThrows<ClaudeCliVersionMismatchException> {
             pinned.inspect(
                 listOf(LlmEvent.TurnEnd(TurnStatus.Success)),
-                emptyList(),
+                success,
                 command,
                 exitCode = 0,
             )
