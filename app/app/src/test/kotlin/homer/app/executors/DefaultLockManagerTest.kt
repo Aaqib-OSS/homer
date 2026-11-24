@@ -303,6 +303,50 @@ class DefaultLockManagerTest {
         }
 
     @Test
+    fun `a displaced holder releases after the handover without the not-a-holder warning`() =
+        runTest {
+            coEvery { mockProcessManager.killProcess(any(), any()) } returns Unit
+            lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT, 1)
+            lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT, 2)
+
+            lockManager.releaseLock("test-lock", 1)
+
+            verify(exactly = 0) { mockLogger.warn(match<String> { it.contains("not a holder") }, any(), any()) }
+            assertEquals("The process 2 is still active, stopping current", lockManager.holderOf("test-lock", 3))
+        }
+
+    @Test
+    fun `a displaced holder releasing after its replacement finished leaves the key free without a warning`() =
+        runTest {
+            coEvery { mockProcessManager.killProcess(any(), any()) } returns Unit
+            lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT, 1)
+            lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT, 2)
+            lockManager.releaseLock("test-lock", 2)
+
+            lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.SKIP_CURRENT, 3)
+            lockManager.releaseLock("test-lock", 3)
+            lockManager.releaseLock("test-lock", 1)
+
+            verify(exactly = 0) { mockLogger.warn(any<String>(), any(), any()) }
+            lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.SKIP_CURRENT, 4)
+        }
+
+    @Test
+    fun `a holder that released before the handover is not remembered as displaced`() =
+        runTest {
+            coEvery { mockProcessManager.killProcess(any(), any()) } returns Unit
+            lockManager.acquireThenDisplace("test-lock", OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT, 1)
+            val grant = lockManager.acquireLock("test-lock", OnKeyCollisionStrategy.KILL_OLD_RUN_CURRENT, 2, noOpGate)
+            lockManager.releaseLock("test-lock", 1)
+            lockManager.killDisplaced(grant, 2)
+
+            // Run 1 already gave the key back: a second release of it is a real non-holder release.
+            lockManager.releaseLock("test-lock", 1)
+
+            verify(exactly = 1) { mockLogger.warn(match<String> { it.contains("not a holder") }, 1, "test-lock") }
+        }
+
+    @Test
     fun `the handover kill lands even when the replacing run is cancelled while it runs`() =
         runTest {
             val killEntered = CompletableDeferred<Unit>()

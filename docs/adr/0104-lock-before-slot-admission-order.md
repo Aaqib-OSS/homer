@@ -263,7 +263,9 @@ the derived bound — is unchanged.
 - **`releaseLock` respects the handover.** A pending replacement that a refused slot gives back is
   cleared through the same release path, leaving the victim running and the key grantable by the
   next run; while a replacement is pending, the release promotes no queued `WAIT` waiter — the
-  handover owns the key, not the queue.
+  handover owns the key, not the queue. A superseded replacement, and a victim the handover took the
+  key from, still release it once; the entry remembers them until they do, so neither release reads
+  as a stray one.
 
 The cost is one visible behaviour change: a run superseded while it waits for a slot now ends
 `FAILED` where it would previously have executed beside the newest run. That is the point — the
@@ -277,6 +279,9 @@ alternative is two runs under one key.
   superseded pending run is refused by `killDisplaced` and kills nobody (`DefaultLockManagerTest`);
 - `releaseLock` by the victim during a pending handover promotes no `WAIT` waiter, and by a refused
   pending run leaves the victim holding and the key grantable next (`DefaultLockManagerTest`);
+- a superseded replacement, and a victim releasing after the handover — even after its replacement
+  finished — release without a warning, and a holder that released before the handover is not
+  remembered (`DefaultLockManagerTest`);
 - a stale or foreign id in `killDisplaced` or `releaseLock` removes and installs nothing, and a
   mixed `WAIT`/`KILL` sequence on one key keeps at most one holder (`DefaultLockManagerTest`);
 - three `KILL_OLD_RUN_CURRENT` runs on one key never execute concurrently: the middle run fails

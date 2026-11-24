@@ -122,6 +122,8 @@ class DefaultLockManager(
         val installed =
             mutex.withLock {
                 val entry = pendingEntries[processID]?.takeIf { it.pending == processID } ?: return@withLock false
+                // The victim still releases the key it held: that release is expected, not a stray one.
+                if (entry.holder == victim) entry.superseded.add(victim)
                 entry.holder = processID
                 entry.pending = null
                 pendingEntries.remove(processID)
@@ -180,7 +182,10 @@ class DefaultLockManager(
         return true
     }
 
-    /** The key is free: hand it to the next queued waiter, or drop the entry. Called under the mutex. */
+    /**
+     * The key is free: hand it to the next queued waiter, or drop the entry once no superseded or
+     * displaced run is left to release it. Called under the mutex.
+     */
     private fun settleReleasedEntry(
         lockName: String,
         entry: LockEntry,
@@ -193,7 +198,7 @@ class DefaultLockManager(
         if (next != null) {
             entry.holder = next.first
             next.second.complete(Unit)
-        } else {
+        } else if (entry.superseded.isEmpty()) {
             locks.remove(lockName)
         }
     }
