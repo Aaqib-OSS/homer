@@ -613,9 +613,13 @@ class ProcessTest {
             // never creates its directory, so the delete cannot take it (CWE-367).
             stubWorkspaceConfig()
             coEvery { mockProcessManager.setArtifactsDir(1, any()) } throws WorkspacePendingDeleteException(1)
+            val workspace = TestFixtures.mockWorkspace()
 
-            assertFailsWith<WorkspacePendingDeleteException> { process.execute(1, mockSpan) }
+            assertFailsWith<WorkspacePendingDeleteException> {
+                processWithWorkspace { _, _, _ -> workspace }.execute(1, mockSpan)
+            }
 
+            coVerify(exactly = 0) { workspace.create() }
             coVerify(exactly = 0) { mockExecutorFactory.getExecutor<Command>(any()).execute(any(), any(), any()) }
         }
 

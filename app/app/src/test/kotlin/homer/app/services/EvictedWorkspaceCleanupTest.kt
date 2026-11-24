@@ -6,10 +6,13 @@ import homer.app.fixtures.TestFixtures
 import homer.app.infra.PathSafety
 import homer.app.infra.ProcessJobRegistry
 import homer.app.models.NewRunRecord
+import homer.app.models.ProcessStatus
 import homer.app.services.persistence.DefaultProcessRetentionRecords
 import homer.app.services.persistence.ProcessRepository
+import homer.app.services.persistence.getWorkspacePurgeableProcesses
 import homer.app.services.persistence.pendingWorkspaceDeleteCount
 import homer.app.services.persistence.setArtifactsDir
+import homer.app.services.persistence.setPurgeAt
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -139,6 +142,30 @@ class EvictedWorkspaceCleanupTest {
 
         assertEquals(1, refused.size)
         assertFalse(Files.exists(root.resolve("run1")), "the evicted run's directory is still deleted")
+        assertEquals(0, cleanup.pendingCount())
+    }
+
+    @Test
+    fun `the delete holds no write transaction while it runs (CWE-367)`(
+        @TempDir root: Path,
+    ) = runTest {
+        val artifacts = workspace(root, "run1")
+        val purgeAt = 1_800_000_000L
+        val terminal = repository.obtainProcessId(NewRunRecord("b"), 100).processId
+        repository.transitionStatus(terminal, ProcessStatus.FINISHED, 1, null)
+        repository.setArtifactsDir(terminal, root.resolve("other/artifacts").toString())
+        // A write landing mid-delete must commit: the claim's transaction is settled before the
+        // filesystem delete, so nothing holds the write lock across it (SQLite rule 3, CWE-367).
+        val delete = FlakyDelete(failures = 0) { _, _ -> repository.setPurgeAt(terminal, purgeAt) }
+        val cleanup = cleanup(root, delete)
+
+        cleanup.delete(7, artifacts)
+
+        assertEquals(
+            listOf(terminal),
+            repository.getWorkspacePurgeableProcesses(setOf(ProcessStatus.FINISHED), purgeAt).map { it.id },
+        )
+        assertFalse(Files.exists(root.resolve("run1")))
         assertEquals(0, cleanup.pendingCount())
     }
 
