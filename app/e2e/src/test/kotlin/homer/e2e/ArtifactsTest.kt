@@ -55,10 +55,12 @@ class ArtifactsTest : E2eTestBase() {
         runBlocking {
             val processId = HomerApi.startRun("artifact-grower")
 
-            // staged.txt appears once growing.txt holds its staged 32 KiB (under the 64 KiB cap);
-            // the fixture appends past the cap only later, so the download opens it under the cap (CWE-770).
+            // staged.txt appears once growing.txt holds its staged 32 KiB; the fixture appends past the cap only
+            // later (CWE-770). The artifacts dir exists only once the workspace is prepared: a 404 means not yet.
             Awaits.awaitNotNull("staged.txt to appear in the artifact listing") {
-                val listing: ArtifactListing = HomerApi.decode(HomerApi.artifactsList(processId))
+                val response = HomerApi.artifactsList(processId)
+                if (response.status != HttpStatusCode.OK) return@awaitNotNull null
+                val listing: ArtifactListing = HomerApi.decode(response)
                 listing.files.find { it.path == "staged.txt" }
             }
 
