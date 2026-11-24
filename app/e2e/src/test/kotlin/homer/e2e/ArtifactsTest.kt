@@ -86,8 +86,8 @@ class ArtifactsTest : E2eTestBase() {
                 assertTrue(total <= 65_536, "served $total bytes; the fixture config caps artifacts at 64 KiB")
             }
 
-            // The fixture appended ~64 MiB after the staged 32 KiB, so the bound held while the file grew far past it.
-            assertEquals("FINISHED", Awaits.awaitTerminal(processId, timeoutMs = 60_000).status)
+            // The fixture appended ~5 MiB after the staged 32 KiB, so the bound held while the file grew past it.
+            assertEquals("FINISHED", Awaits.awaitTerminal(processId, timeoutMs = 120_000).status)
             val finalListing: ArtifactListing = HomerApi.decode(HomerApi.artifactsList(processId))
             val grown = finalListing.files.first { it.path == "growing.txt" }
             assertTrue(grown.size > 4_000_000, "fixture must append well past the cap; grew only to ${grown.size} bytes")

@@ -11,6 +11,9 @@ commands:
       # A pause after the marker: a download that starts on it opens growing.txt while
       # it is still under the cap, so the fetch exercises the copy-time bound.
       sleep 2
-      for _ in $(seq 1 1000); do
-        head -c 65536 /dev/zero | tr '\0' 'b' >> "$HMR_ARTIFACTS_DIR/growing.txt"
+      # ~5 MiB over ~20 s: appends well past the cap so the fetch sees a growing file, yet the
+      # run finishes long before the test's terminal wait even on a loaded CI runner.
+      for _ in $(seq 1 20); do
+        head -c 262144 /dev/zero | tr '\0' 'b' >> "$HMR_ARTIFACTS_DIR/growing.txt"
+        sleep 1
       done
