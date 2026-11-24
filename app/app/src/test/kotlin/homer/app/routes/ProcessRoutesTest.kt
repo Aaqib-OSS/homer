@@ -757,7 +757,7 @@ class ProcessRoutesTest : ApiRouteTestBase() {
     }
 
     @Test
-    fun `GET artifacts answers 413 when the artifact grows past the cap between the size check and the open`(
+    fun `CWE-770 artifact grown past the cap between size check and open answers 413`(
         @TempDir dir: java.nio.file.Path,
     ) = testApplication {
         val artifact = dir.resolve("cmd_0.out")
@@ -779,7 +779,7 @@ class ProcessRoutesTest : ApiRouteTestBase() {
     }
 
     @Test
-    fun `GET artifacts stops at the cap when the artifact grows while it is streamed`(
+    fun `CWE-770 artifact growing during the copy streams at most maxArtifactBytes`(
         @TempDir dir: java.nio.file.Path,
     ) = testApplication {
         val artifact = dir.resolve("cmd_0.out")

@@ -13,6 +13,7 @@ import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.api.Test
@@ -252,10 +253,13 @@ class ArtifactServiceTest {
             val artifactPath = Path("/tmp/homer/workspace-123/artifacts/cmd_0.out")
             val output = ByteArrayOutputStream()
             val fileContent = "Hello, World!".toByteArray()
-            val respond = slot<suspend (suspend (OutputStream) -> Unit) -> Unit>()
+            val respond = slot<suspend (suspend (OutputStream) -> Long) -> Unit>()
 
             coEvery { fileOperations.streamFile(artifactPath, any(), capture(respond), any()) } coAnswers {
-                respond.captured { it.write(fileContent) }
+                respond.captured {
+                    it.write(fileContent)
+                    fileContent.size.toLong()
+                }
             }
 
             coEvery { processManager.getProcessInfo(123) } returns
@@ -266,7 +270,7 @@ class ArtifactServiceTest {
                     artifactsDir = Path("/tmp/homer/workspace-123/artifacts"),
                 )
 
-            artifactService.streamArtifact(artifactPath) { write -> write(output) }
+            val reachedCap = artifactService.streamArtifact(artifactPath) { write -> write(output) }
 
             coVerify {
                 fileOperations.streamFile(
@@ -277,6 +281,25 @@ class ArtifactServiceTest {
                 )
             }
             assertEquals("Hello, World!", output.toString())
+            assertFalse(reachedCap, "a copy below the cap did not reach it")
+        }
+
+    @Test
+    fun `streamArtifact - reports a copy that reached the cap`() =
+        runTest {
+            val artifactPath = Path("/tmp/homer/workspace-123/artifacts/cmd_0.out")
+            val capped = ArtifactService(processManager, fileOperations, logger, maxArtifactBytes = 8)
+            val respond = slot<suspend (suspend (OutputStream) -> Long) -> Unit>()
+            coEvery { fileOperations.streamFile(artifactPath, 8L, capture(respond), any()) } coAnswers {
+                respond.captured {
+                    it.write(ByteArray(8))
+                    8L
+                }
+            }
+
+            val reachedCap = capped.streamArtifact(artifactPath) { write -> write(ByteArrayOutputStream()) }
+
+            assertTrue(reachedCap, "a copy that stopped at the cap must say so")
         }
 
     @Test

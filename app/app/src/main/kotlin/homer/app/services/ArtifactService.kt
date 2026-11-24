@@ -139,26 +139,26 @@ class ArtifactService(
     }
 
     /**
-     * Copies [artifactPath] into the stream [respond] opens, at most [maxArtifactBytes] bytes: an over-cap
-     * file is refused with an [ArtifactTooLargeException] before the first write, and a file that grows is
-     * cut off at the cap (CWE-770, ADR-0047 rule 4).
+     * Copies [artifactPath] into the stream [respond] opens, at most [maxArtifactBytes] bytes: an over-cap file
+     * is refused with an [ArtifactTooLargeException] before the first write and a growing one is cut off at the
+     * cap, returning whether the copy reached it (CWE-770, ADR-0047 rule 4).
      */
     suspend fun streamArtifact(
         artifactPath: Path,
-        respond: suspend (write: suspend (OutputStream) -> Unit) -> Unit,
-    ) {
-        streamCompleteFile(artifactPath, respond)
-    }
+        respond: suspend (write: suspend (OutputStream) -> Long) -> Unit,
+    ): Boolean = streamCompleteFile(artifactPath, respond)
 
-    /**
-     * Streams a complete file in chunks
-     */
+    /** Streams a complete file in chunks; the result is whether the copy reached [maxArtifactBytes]. */
     private suspend fun streamCompleteFile(
         artifactPath: Path,
-        respond: suspend (write: suspend (OutputStream) -> Unit) -> Unit,
-    ) {
+        respond: suspend (write: suspend (OutputStream) -> Long) -> Unit,
+    ): Boolean {
         logger.debug("Streaming complete file: {}", artifactPath)
-        fileOperations.streamFile(artifactPath, maxArtifactBytes, respond)
+        var written = 0L
+        fileOperations.streamFile(artifactPath, maxArtifactBytes, respond = { write ->
+            respond { output -> write(output).also { written = it } }
+        })
+        return written >= maxArtifactBytes
     }
 
     companion object {

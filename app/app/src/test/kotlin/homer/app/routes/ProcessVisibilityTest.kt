@@ -554,13 +554,17 @@ class ProcessVisibilityTest {
     // ---------- GET /artifacts, GET /artifacts/list ----------
 
     private fun readyArtifactService(): ArtifactService {
-        val respond = slot<suspend (suspend (OutputStream) -> Unit) -> Unit>()
+        val respond = slot<suspend (suspend (OutputStream) -> Long) -> Unit>()
         return mockk(relaxed = true) {
             every { validateRelativePath(any()) } returns Result.success("cmd_0.out")
             coEvery { resolveArtifactPath(any(), any()) } returns Result.success(Path("/tmp/nonexistent-artifact.out"))
             every { checkArtifactSize(any()) } returns Result.success(0L)
             coEvery { streamArtifact(any(), capture(respond)) } coAnswers {
-                respond.captured { it.write("artifact body".toByteArray()) }
+                respond.captured {
+                    it.write("artifact body".toByteArray())
+                    "artifact body".length.toLong()
+                }
+                false
             }
             coEvery { listArtifacts(any()) } returns
                 Result.success(ArtifactListingResponse(processId = 42, artifactsDir = "/tmp", files = emptyList()))

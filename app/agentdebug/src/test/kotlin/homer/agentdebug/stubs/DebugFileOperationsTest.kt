@@ -52,13 +52,20 @@ class DebugFileOperationsTest {
     }
 
     @Test
-    fun `streamFile copies through the local operations, so a file over the cap is refused`(
+    fun `streamFile copies through the local operations, so a file over the cap is refused (CWE-770)`(
         @TempDir dir: Path,
     ) = runTest {
         val file = dir.resolve("f.txt").also { it.writeText("abcd") }
         val out = ByteArrayOutputStream()
 
-        ops.streamFile(file, maxBytes = 4, respond = { write -> write(out) })
+        ops.streamFile(
+            file,
+            maxBytes = 4,
+            respond = { write ->
+                write(out)
+                out.size().toLong()
+            },
+        )
 
         assertEquals("abcd", out.toString(Charsets.UTF_8.name()))
 
@@ -70,6 +77,7 @@ class DebugFileOperationsTest {
                 respond = { write ->
                     opened = true
                     write(out)
+                    out.size().toLong()
                 },
             )
         }

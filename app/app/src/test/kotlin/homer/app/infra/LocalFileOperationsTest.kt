@@ -274,7 +274,8 @@ class LocalFileOperationsTest {
                     beforeOpen = {},
                 )
 
-            tracked.streamFile(file, maxBytes = 1024, respond = { /* a sink that never runs the copy */ })
+            // A sink that never runs the copy.
+            tracked.streamFile(file, maxBytes = 1024, respond = { })
 
             assertTrue(closed.await(5, TimeUnit.SECONDS), "the descriptor must be closed even when the copy never ran")
         }
@@ -378,7 +379,7 @@ class LocalFileOperationsTest {
         }
 
     @Test
-    fun `streamFile refuses a file over the cap at open, before the caller's stream is opened`() =
+    fun `streamFile refuses a file over the cap at open, before the caller's stream is opened (CWE-770)`() =
         runTest {
             val file = tempDir.resolve("over.bin").also { Files.write(it, ByteArray(64)) }
             val out = ByteArrayOutputStream()
@@ -392,6 +393,7 @@ class LocalFileOperationsTest {
                         respond = { write ->
                             opened = true
                             write(out)
+                            out.size().toLong()
                         },
                     )
                 }
@@ -413,7 +415,7 @@ class LocalFileOperationsTest {
         }
 
     @Test
-    fun `streamFile stops at the cap when the file grows during the copy`() =
+    fun `streamFile stops at the cap when the file grows during the copy (CWE-770)`() =
         runTest {
             val file = tempDir.resolve("growing.bin").also { it.writeText("start") }
             val out =
@@ -433,7 +435,14 @@ class LocalFileOperationsTest {
                     }
                 }
 
-            ops.streamFile(file, maxBytes = 8, respond = { write -> write(out) })
+            ops.streamFile(
+                file,
+                maxBytes = 8,
+                respond = { write ->
+                    write(out)
+                    out.size().toLong()
+                },
+            )
 
             assertEquals(8, out.size(), "the copy must stop at the cap, not follow the growth")
             assertContentEquals("start".toByteArray(), out.toByteArray().copyOf(5), "the copy starts at the file's first bytes")
@@ -532,7 +541,15 @@ class LocalFileOperationsTest {
         maxBytes: Long = Long.MAX_VALUE,
         bufferSize: Int = 8192,
     ): ByteArrayOutputStream {
-        streamFile(path, maxBytes, respond = { write -> write(out) }, bufferSize = bufferSize)
+        streamFile(
+            path,
+            maxBytes,
+            respond = { write ->
+                write(out)
+                out.size().toLong()
+            },
+            bufferSize = bufferSize,
+        )
         return out
     }
 

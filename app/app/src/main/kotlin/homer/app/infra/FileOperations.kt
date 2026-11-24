@@ -34,13 +34,13 @@ interface FileOperations {
 
     /**
      * Streams [path] into the stream [respond] opens, never more than [maxBytes] bytes: the descriptor-size
-     * check runs before [respond], so an over-cap file is refused with an [ArtifactTooLargeException] while
-     * the caller can still answer `413`, and the copy stops at the bound wherever [respond] runs it.
+     * check runs before [respond], so an over-cap file is refused with an [ArtifactTooLargeException] while the
+     * caller can still answer `413`. The [write] sink it hands out returns the bytes it copied.
      */
     suspend fun streamFile(
         path: Path,
         maxBytes: Long,
-        respond: suspend (write: suspend (OutputStream) -> Unit) -> Unit,
+        respond: suspend (write: suspend (OutputStream) -> Long) -> Unit,
         bufferSize: Int = 8192,
     )
 

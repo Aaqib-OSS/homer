@@ -75,7 +75,7 @@ class LocalFileOperations internal constructor(
     override suspend fun streamFile(
         path: Path,
         maxBytes: Long,
-        respond: suspend (write: suspend (OutputStream) -> Unit) -> Unit,
+        respond: suspend (write: suspend (OutputStream) -> Long) -> Unit,
         bufferSize: Int,
     ) {
         // The cap is enforced where the bytes move, not by a check that ran before the open (CWE-770,
@@ -90,17 +90,21 @@ class LocalFileOperations internal constructor(
         }
     }
 
-    /** Copies at most [maxBytes] bytes of [source] into [output], logging a file that grew past the cap. */
+    /**
+     * Copies at most [maxBytes] bytes of [source] into [output] and returns the count written; a copy that
+     * stopped at the cap with the file still growing is logged (CWE-770).
+     */
     private fun copyCapped(
         source: SeekableByteChannel,
         output: OutputStream,
         maxBytes: Long,
         bufferSize: Int,
-    ) {
+    ): Long {
         val written = copyAtMost(source, output, maxBytes, bufferSize)
-        if (written < maxBytes) return
+        if (written < maxBytes) return written
         val grown = source.size()
         if (grown > maxBytes) logger.debug("artifact stream stopped at the {} byte cap; the file grew to {} bytes", maxBytes, grown)
+        return written
     }
 
     /** Copies at most [maxBytes] bytes, so a file that grows while it is copied cannot exceed the cap (CWE-770). */
