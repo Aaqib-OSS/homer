@@ -4,6 +4,7 @@
 
 ### Homer
 
+- **Security: the runner hardens itself before it reads anything** — `homer-runner` makes its JVM non-dumpable before it parses its command line, so `HOMER_RUNNER_TOKEN` is unreadable to a same-uid process from the earliest point the runner controls. See [ADR-0078](docs/adr/0078-runner-jvm-is-non-dumpable.md).
 - **Security: `KILL_OLD_RUN_CURRENT` keeps a single holder per lock key** — A run the newest same-key run superseded now fails instead of executing beside it. See [ADR-0104](docs/adr/0104-lock-before-slot-admission-order.md).
 - **Security: a cancelled waiting run no longer wedges its lock key** — A run cancelled while the lock was being handed over to it now gives that holder back, so later runs on the same key are admitted instead of waiting forever.
 

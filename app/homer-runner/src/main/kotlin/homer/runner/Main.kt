@@ -21,7 +21,8 @@ import java.net.InetAddress
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
-private val logger = LoggerFactory.getLogger("homer.runner")
+// Lazy, so this file's class initialisation touches no logging backend before the JVM is hardened.
+private val logger by lazy { LoggerFactory.getLogger("homer.runner") }
 
 /**
  * `homer-runner`: registers this machine as a pull-mode runner instance and executes the runs it
@@ -35,6 +36,14 @@ class HomerRunnerCli(
     // Seam for tests; production uses Dumpability.harden's own defaults.
     private val harden: () -> Dumpability.Result = Dumpability::harden,
 ) : CliktCommand(name = "homer-runner") {
+    private val hardening: Dumpability.Result
+
+    init {
+        // Runs as this command is constructed, before Clikt parses the command line or reads any
+        // environment variable: the token is in this process's environment from `execve` onwards. CWE-526, ADR-0078.
+        hardening = harden()
+    }
+
     override fun help(context: Context) =
         """
         Homer external runner — claim runs from a Homer server and execute them here.
@@ -61,7 +70,7 @@ class HomerRunnerCli(
     ).long().default(600)
 
     override fun run() {
-        // Fail closed before the token read; see ADR-0078.
+        // Fail closed before the token read; the hardening itself ran at construction.
         hardenOrRefuse()
         val token =
             currentContext.readEnvvar("HOMER_RUNNER_TOKEN")?.takeIf { it.isNotBlank() }
@@ -99,9 +108,9 @@ class HomerRunnerCli(
         throw ProgramResult(code)
     }
 
-    /** Makes the JVM non-dumpable where it can; a failed attempt refuses to start. */
+    /** Reports the hardening decided at construction; a failed attempt refuses to start. */
     private fun hardenOrRefuse() {
-        when (val result = harden()) {
+        when (val result = hardening) {
             is Dumpability.Result.Hardened -> logger.info("homer-runner JVM is non-dumpable")
             is Dumpability.Result.Skipped -> logger.warn("homer-runner JVM left dumpable: {}", result.reason)
             is Dumpability.Result.Failed -> throw CliktError("homer-runner refuses to start: ${result.reason}")

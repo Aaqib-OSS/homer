@@ -3972,13 +3972,18 @@ homer-runner --url https://homer.internal \
 credentials: every request carries the domain token, so `homer-runner` refuses
 any other URL at startup with exit code `2`.
 
-Before it reads the token or claims anything, the runner JVM calls
-`prctl(PR_SET_DUMPABLE, 0)` and verifies it. Every run executes as the runner's
-own user, so without this a run could read `HOMER_RUNNER_TOKEN` from
-`/proc/<jvm pid>/environ` or ptrace the runner; a non-dumpable process denies
-both to same-user processes. Spawned runs are unaffected — `execve` resets the
-flag for the child. On Linux a failed call is fatal (exit `1`); on a host
-without `prctl` the runner logs a warning and continues.
+The first thing the runner does — before it parses its command line, before it
+reads any option or environment variable — is call `prctl(PR_SET_DUMPABLE, 0)`
+and verify it. Every run executes as the runner's own user, so without this a run
+could read `HOMER_RUNNER_TOKEN` from `/proc/<jvm pid>/environ` or ptrace the
+runner; a non-dumpable process denies both to same-user processes. Spawned runs
+are unaffected — `execve` resets the flag for the child. On Linux a failed call is
+fatal (exit `1`); on a host without `prctl` the runner logs a warning and
+continues. The launcher shell, the JVM bootstrap and the entry class's own
+initialisation run before the call lands, so a same-uid process racing the startup
+can still read the token — accepted as `AR-17` in
+[`SECURITY.md`](../SECURITY.md#accepted-risks)
+([ADR-0078](../docs/adr/0078-runner-jvm-is-non-dumpable.md)).
 
 Before registering and before every claim the runner also checks that it can
 start a process (a `/bin/sh -c "exit 0"` probe with an empty environment, so the

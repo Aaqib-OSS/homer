@@ -1,5 +1,9 @@
 package homer.runner
 
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
+import com.github.ajalt.clikt.core.CliktError
+import com.github.ajalt.clikt.core.parse
 import com.github.ajalt.clikt.testing.CliktCommandTestResult
 import com.github.ajalt.clikt.testing.test
 import com.sun.net.httpserver.HttpExchange
@@ -7,6 +11,7 @@ import com.sun.net.httpserver.HttpServer
 import homer.app.infra.Dumpability
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.io.TempDir
+import org.slf4j.LoggerFactory
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.nio.file.Path
@@ -18,9 +23,11 @@ import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import ch.qos.logback.classic.Logger as LogbackLogger
 
 class MainTest {
     // Homer rejects a registration whose name does not match this, so the default name —
@@ -73,29 +80,75 @@ class MainTest {
     }
 
     @Test
-    fun `a failed hardening refuses to start before the token is read`() {
+    fun `a failed hardening refuses to start with its reason and without the token (CWE-526)`() {
+        val sentinel = "runner-token-sentinel"
         val result =
-            HomerRunnerCli { Dumpability.Result.Failed("prctl(PR_SET_DUMPABLE, 0) returned -1") }
-                .test("--url https://homer.internal")
-        assertFalse(result.statusCode == 0, "the runner must not start when it cannot harden itself")
-        assertTrue("non-dumpable" in result.stderr || "refuses to start" in result.stderr, "got: ${result.stderr}")
-        assertFalse("HOMER_RUNNER_TOKEN" in result.stderr, "hardening must run before the token is read")
+            HomerRunnerCli(harden = { Dumpability.Result.Failed("prctl(PR_SET_DUMPABLE, 0) returned -1") })
+                .test("--url https://homer.internal", envvars = mapOf("HOMER_RUNNER_TOKEN" to sentinel))
+        assertEquals(1, result.statusCode, "stderr: ${result.stderr}")
+        assertTrue("refuses to start" in result.stderr, "got: ${result.stderr}")
+        assertFalse(sentinel in result.stdout + result.stderr, "a refused start must not echo the token")
+    }
+
+    @Test
+    fun `hardening runs before the first environment variable is read`() {
+        val events = readsWhileHardening(Dumpability.Result.Hardened)
+        assertEquals("harden", events.first(), "got: $events")
+        assertTrue(events.indexOf("HOMER_RUNNER_TOKEN") > 0, "the token read must follow the hardening; got: $events")
+    }
+
+    @Test
+    fun `a failed hardening never reads the token`() {
+        val events = readsWhileHardening(Dumpability.Result.Failed("prctl(PR_SET_DUMPABLE, 0) returned -1"))
+        assertEquals("harden", events.first(), "got: $events")
+        assertFalse("HOMER_RUNNER_TOKEN" in events, "a refused start must not read the token; got: $events")
+    }
+
+    /** What the command reads, in order, when hardening answers [hardening]: `harden`, then each env var name. */
+    private fun readsWhileHardening(hardening: Dumpability.Result): List<String> {
+        val events = mutableListOf<String>()
+        val cli =
+            HomerRunnerCli(
+                harden = {
+                    events += "harden"
+                    hardening
+                },
+            )
+        cli.configureContext {
+            readEnvvar = { name ->
+                events += name
+                null
+            }
+        }
+        assertFailsWith<CliktError> { cli.parse(arrayOf("--url", "https://homer.internal")) }
+        return events
     }
 
     @Test
     fun `a non-Linux host warns and continues to the token check`() {
-        val result =
-            HomerRunnerCli { Dumpability.Result.Skipped("prctl(PR_SET_DUMPABLE, 0) is Linux-only; running on Mac OS X") }
-                .test("--url https://homer.internal")
-        assertEquals(1, result.statusCode)
-        assertTrue("HOMER_RUNNER_TOKEN" in result.stderr, "a skipped hardening must not stop the runner; got: ${result.stderr}")
+        val appender = ListAppender<ILoggingEvent>().also { it.start() }
+        val logback = LoggerFactory.getLogger("homer.runner") as LogbackLogger
+        logback.addAppender(appender)
+        try {
+            val result =
+                HomerRunnerCli(harden = { Dumpability.Result.Skipped("prctl(PR_SET_DUMPABLE, 0) is Linux-only; running on Mac OS X") })
+                    .test("--url https://homer.internal")
+            assertEquals(1, result.statusCode)
+            assertTrue("HOMER_RUNNER_TOKEN" in result.stderr, "a skipped hardening must not stop the runner; got: ${result.stderr}")
+            assertTrue(
+                appender.list.any { "left dumpable" in it.formattedMessage },
+                "got: ${appender.list.map { it.formattedMessage }}",
+            )
+        } finally {
+            logback.detachAppender(appender)
+        }
     }
 
     @Test
-    fun `on Linux run hardens the JVM before it refuses a plaintext non-loopback url`() {
+    fun `on Linux the command hardens the JVM even when the run is refused`() {
         assumeTrue(System.getProperty("os.name").startsWith("Linux"))
-        // The plaintext URL is refused with exit 2 before any network call, so run()
-        // reaches the hardening and stops there without registering.
+        // The plaintext URL is refused with exit 2 before any network call, so the run stops
+        // there without registering — the JVM is hardened all the same.
         val result =
             HomerRunnerCli().test(
                 "--url http://homer.internal",
