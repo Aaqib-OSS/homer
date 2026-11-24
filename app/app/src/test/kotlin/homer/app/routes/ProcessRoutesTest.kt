@@ -707,6 +707,25 @@ class ProcessRoutesTest : ApiRouteTestBase() {
     }
 
     @Test
+    fun `GET artifacts should return 404 when a symlinked subdirectory escapes the artifacts directory`(
+        @TempDir dir: java.nio.file.Path,
+        @TempDir outside: java.nio.file.Path,
+    ) = testApplication {
+        // `sub/secret.txt` passes the path validation (no `..`), so only the containment check
+        // at resolve time can refuse it — the realpath view lands outside the artifacts directory.
+        val targetDir = Files.createDirectories(outside.resolve("etc"))
+        Files.writeString(targetDir.resolve("secret.txt"), "host secret")
+        Files.createSymbolicLink(dir.resolve("sub"), targetDir)
+        mountArtifactRoutes(finishedProcessWithArtifacts(123, dir))
+
+        val response = client.get("/api/v1/artifacts?processId=123&path=sub/secret.txt")
+
+        assertEquals(HttpStatusCode.NotFound, response.status)
+        assertEquals("Artifact not found", response.errorMsg())
+        assertFalse(response.bodyAsText().contains("host secret"))
+    }
+
+    @Test
     fun `GET artifacts streams a terminal process's artifact and marks it complete`(
         @TempDir dir: java.nio.file.Path,
     ) = testApplication {
