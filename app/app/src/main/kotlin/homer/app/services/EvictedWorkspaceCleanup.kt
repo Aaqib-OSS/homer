@@ -4,6 +4,8 @@ import homer.app.infra.PathSafety
 import homer.app.services.persistence.HeldWorkspaceDelete
 import homer.app.services.persistence.WorkspaceDeleteClaim
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import org.slf4j.Logger
 import java.nio.file.Path
 import java.util.UUID
@@ -38,6 +40,14 @@ internal class EvictedWorkspaceCleanup(
     ) {
         when (val attempt = claimAndDelete(evictedId, artifactsDir)) {
             Attempt.Done -> {}
+
+            Attempt.InFlight -> {
+                logger.info(
+                    "Skipping workspace deletion for evicted process {}: another attempt is already deleting {}",
+                    evictedId,
+                    artifactsDir.parent,
+                )
+            }
 
             Attempt.Shared -> {
                 logger.info(
@@ -87,25 +97,48 @@ internal class EvictedWorkspaceCleanup(
             val failure: Throwable,
         ) : Attempt
 
+        data object InFlight : Attempt
+
         data object Shared : Attempt
 
         data object Full : Attempt
     }
 
-    // Re-claiming is what makes a retry safe: the claim and the sharing check are one transaction, so a run
-    // registering this path is refused for as long as the delete runs (CWE-367). See ADR-0048.
+    // The claim and the sharing check are one transaction, so a run registering this path is refused for as
+    // long as the delete runs; an arriving attempt skips, it never takes the claim over (CWE-367, ADR-0048).
     private suspend fun claimAndDelete(
         evictedId: Int,
         artifactsDir: Path,
     ): Attempt {
-        // One token per attempt: an attempt that takes this claim over stamps its own, so this one's settle
-        // leaves the claim in flight while that attempt still deletes the directory (CWE-367).
+        // One token per attempt: settle matches it, so only the attempt holding the claim settles it.
         val attemptToken = UUID.randomUUID().toString()
-        when (claimDelete(artifactsDir, evictedId, MAX_PENDING, attemptToken)) {
-            WorkspaceDeleteClaim.SHARED -> return Attempt.Shared
-            WorkspaceDeleteClaim.FULL -> return Attempt.Full
-            WorkspaceDeleteClaim.CLAIMED -> Unit
+        // A cancellation can land while the claim transaction itself runs, after its row is committed, so
+        // the release below covers the whole attempt, not just the delete (CWE-400). See ADR-0048.
+        var released = true
+        try {
+            when (claimDelete(artifactsDir, evictedId, MAX_PENDING, attemptToken)) {
+                WorkspaceDeleteClaim.SHARED -> return Attempt.Shared
+                WorkspaceDeleteClaim.FULL -> return Attempt.Full
+                WorkspaceDeleteClaim.IN_FLIGHT -> return Attempt.InFlight
+                WorkspaceDeleteClaim.CLAIMED -> Unit
+            }
+            released = false
+            val attempt = deleteAndSettle(evictedId, artifactsDir, attemptToken)
+            released = true
+            return attempt
+        } finally {
+            // An attempt that does not finish never reaches the settle: release its claim, or the in-flight
+            // row refuses every run registering the path until the next restart (CWE-400). See ADR-0048.
+            if (!released) withContext(NonCancellable) { settleDelete(artifactsDir, attemptToken, false) }
         }
+    }
+
+    /** Deletes the directory, then settles the claim. */
+    private suspend fun deleteAndSettle(
+        evictedId: Int,
+        artifactsDir: Path,
+        attemptToken: String,
+    ): Attempt {
         val failure = deleteFailure(evictedId, artifactsDir)
         settleDelete(artifactsDir, attemptToken, failure == null)
         return if (failure == null) Attempt.Done else Attempt.Failed(failure)

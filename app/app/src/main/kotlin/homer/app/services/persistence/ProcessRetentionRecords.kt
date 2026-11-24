@@ -75,7 +75,7 @@ interface ProcessRetentionRecords {
 
     /**
      * Settles [attemptToken]'s claim on [artifactsDir]: [deleted] drops it, else it stays for the next
-     * sweep. A claim another attempt took over is left untouched.
+     * sweep. Only the attempt holding the claim settles it.
      */
     suspend fun settleWorkspaceDelete(
         artifactsDir: Path,

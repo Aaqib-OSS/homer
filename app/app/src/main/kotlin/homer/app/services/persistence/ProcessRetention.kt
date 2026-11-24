@@ -160,6 +160,9 @@ enum class WorkspaceDeleteClaim {
     /** The path is claimed for this attempt: delete the directory, then settle the claim. */
     CLAIMED,
 
+    /** Another attempt is deleting the path and holds the claim: no claim is held, and nothing may be deleted. */
+    IN_FLIGHT,
+
     /** Another process row references the path: no claim is held, and nothing may be deleted. */
     SHARED,
 
@@ -185,14 +188,25 @@ suspend fun ProcessRepository.claimWorkspaceDelete(
     attemptToken: String,
 ): WorkspaceDeleteClaim =
     query {
-        val held = workspaceDeleteIsClaimed(artifactsDir)
-        if (!held && workspaceDeleteCountTx() >= maxPending.toLong()) return@query WorkspaceDeleteClaim.FULL
+        val claimed =
+            WorkspacePendingDeletes
+                .select(WorkspacePendingDeletes.inFlight)
+                .where { WorkspacePendingDeletes.path eq artifactsDir }
+                .limit(1)
+                .singleOrNull()
+        if (claimed != null && claimed[WorkspacePendingDeletes.inFlight]) {
+            // The attempt in flight owns the claim: taking it over would end it while that attempt is still
+            // walking the directory, so this attempt skips (CWE-367).
+            return@query WorkspaceDeleteClaim.IN_FLIGHT
+        }
+        if (claimed == null && workspaceDeleteCountTx() >= maxPending.toLong()) return@query WorkspaceDeleteClaim.FULL
         if (artifactsDirIsShared(artifactsDir, evictedProcessId, activeOnly = false)) {
             // Another run owns the path now: nothing is left to delete, and a held claim is stale.
             WorkspacePendingDeletes.deleteWhere { WorkspacePendingDeletes.path eq artifactsDir }
             return@query WorkspaceDeleteClaim.SHARED
         }
-        if (held) {
+        if (claimed != null) {
+            // A claim no attempt holds is stale: this attempt takes the path over.
             WorkspacePendingDeletes.update({ WorkspacePendingDeletes.path eq artifactsDir }) {
                 it[inFlight] = true
                 it[WorkspacePendingDeletes.evictedProcessId] = evictedProcessId
@@ -212,7 +226,7 @@ suspend fun ProcessRepository.claimWorkspaceDelete(
 
 /**
  * Settles [attemptToken]'s claim on [artifactsDir]: [deleted] drops the row, else it stays for the next sweep with its attempt
- * no longer in flight. A claim a later attempt took over carries that attempt's token and is left untouched (CWE-367).
+ * no longer in flight. Only the attempt holding the claim settles it — a skipped attempt's token matches no row (CWE-367).
  * See ADR-0048 (2026-11-24 amendment).
  */
 suspend fun ProcessRepository.settleWorkspaceDelete(
@@ -270,14 +284,6 @@ suspend fun ProcessRepository.resetInFlightWorkspaceDeletes() {
         }
     }
 }
-
-// The claim row for one path inside a transaction: `path` is the primary key, so this is one seek.
-private fun JdbcTransaction.workspaceDeleteIsClaimed(artifactsDir: String): Boolean =
-    WorkspacePendingDeletes
-        .select(WorkspacePendingDeletes.path)
-        .where { WorkspacePendingDeletes.path eq artifactsDir }
-        .limit(1)
-        .any()
 
 // The claim table's size inside a transaction; the table is bounded by the claim's own count check.
 private fun JdbcTransaction.workspaceDeleteCountTx(): Long = WorkspacePendingDeletes.selectAll().count()

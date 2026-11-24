@@ -300,14 +300,16 @@ path of its own.
 
 The claim is held per attempt, not per path. Two attempts can want the same
 directory at once — an eviction and a sweep retry, or two evictions of runs
-sharing a fixed `workspace.path` — and the later one takes the row over. Each
-attempt mints a token and stamps it into the row it claims, and `settle` matches
-that token: the superseded attempt's settle then leaves the row alone, so the
-claim stays in flight while the surviving attempt is still deleting. Without the
-token the first attempt's settle dropped the row mid-delete, and a run could
-register the path in exactly the window this amendment exists to close
-(CWE-367). A claim the sweep picks up is stamped with the retry's own token, so
-the two legs need no shared state beyond the row.
+sharing a fixed `workspace.path` — and a second attempt never takes a claim
+another attempt holds: the claim stays with the attempt in flight for as long as
+it runs, and the later attempt skips the path, since the first one deletes the
+shared directory anyway. Taking an in-flight claim over would end it while the
+surviving attempt is still walking the directory — the survivor's settle, or the
+registering run's takeover of the then-held row, would drop it mid-delete, and a
+run could register the path in exactly the window this amendment exists to close
+(CWE-367). Each attempt still mints a token and `settle` matches it, so only the
+attempt holding the claim settles it, and a claim the sweep picks up is stamped
+with the retry's own token.
 
 **Residual, accepted:** a run hitting an in-flight claim fails rather than waits,
 so a start can be refused for the length of one directory delete; and the claim

@@ -90,17 +90,57 @@ class DefaultProcessRetentionRecordsTest {
         }
 
     @Test
-    fun `a settle from a superseded attempt leaves the claim the port reports in flight`() =
+    fun `a claim an attempt already holds is not taken over by a second attempt`() =
         runTest {
             val dir = Path.of("/ws/1/artifacts")
             retention.claimWorkspaceDelete(dir, evictedProcessId = 7, maxPending = 8, attemptToken = "a")
-            retention.claimWorkspaceDelete(dir, evictedProcessId = 8, maxPending = 8, attemptToken = "b")
 
-            retention.settleWorkspaceDelete(dir, attemptToken = "a", deleted = true)
+            assertEquals(
+                WorkspaceDeleteClaim.IN_FLIGHT,
+                retention.claimWorkspaceDelete(dir, evictedProcessId = 8, maxPending = 8, attemptToken = "b"),
+            )
 
-            // Only the attempt holding the claim settles it: the sweep still has nothing to retry.
-            assertEquals(emptyList(), retention.heldWorkspaceDeletes(limit = 8))
+            // Only the attempt holding the claim settles it: the skipped attempt's token matches no row.
+            retention.settleWorkspaceDelete(dir, attemptToken = "b", deleted = true)
             assertEquals(1, retention.pendingWorkspaceDeleteCount())
+            retention.settleWorkspaceDelete(dir, attemptToken = "a", deleted = true)
+            assertEquals(0, retention.pendingWorkspaceDeleteCount())
+        }
+
+    @Test
+    fun `a shared path at the full bound answers FULL and leaves every claim untouched`() =
+        runTest {
+            val shared = Path.of("/ws/shared/artifacts")
+            finishedRun(shared)
+            retention.claimWorkspaceDelete(
+                Path.of("/ws/other/artifacts"),
+                evictedProcessId = 7,
+                maxPending = 1,
+                attemptToken = "a",
+            )
+
+            // The bound check runs before the shared check, so the answer is FULL, not SHARED — and no
+            // claim row is dropped by the shared branch's stale-claim delete.
+            assertEquals(
+                WorkspaceDeleteClaim.FULL,
+                retention.claimWorkspaceDelete(shared, evictedProcessId = 8, maxPending = 1, attemptToken = "b"),
+            )
+            assertEquals(1, retention.pendingWorkspaceDeleteCount())
+        }
+
+    @Test
+    fun `a stale claim on a shared path is dropped by the shared answer`() =
+        runTest {
+            val shared = Path.of("/ws/shared/artifacts")
+            finishedRun(shared)
+            retention.claimWorkspaceDelete(shared, evictedProcessId = 7, maxPending = 8, attemptToken = "stale")
+            retention.resetInFlightWorkspaceDeletes()
+
+            assertEquals(
+                WorkspaceDeleteClaim.SHARED,
+                retention.claimWorkspaceDelete(shared, evictedProcessId = 8, maxPending = 8, attemptToken = "b"),
+            )
+            assertEquals(0, retention.pendingWorkspaceDeleteCount())
         }
 
     @Test

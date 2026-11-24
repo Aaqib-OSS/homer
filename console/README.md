@@ -206,8 +206,8 @@ active tag appears as a removable badge in the filter row, cleared
 individually or via **Clear**.
 
 A run that **failed before it started** — a claim timeout, a `SKIP_CURRENT` lock
-collision, a parallel-run cap, a full queue or an unresolved `lockStrategy.key`
-placeholder — shows a short reason beside its
+collision, a parallel-run cap, a full queue, an unresolved `lockStrategy.key`
+placeholder or a workspace directory an eviction was still deleting — shows a short reason beside its
 failed status icon, so the list says why without opening the run. The row truncates
 it; hover for the full sentence, which the run's own page shows in full.
 

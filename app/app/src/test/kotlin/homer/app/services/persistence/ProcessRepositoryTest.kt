@@ -1748,41 +1748,39 @@ class ProcessRepositoryTest {
         }
 
     @Test
-    fun `a superseded attempt settles nothing, so the claim stays in flight (CWE-367)`() =
+    fun `a second attempt skips an in-flight claim and settles nothing (CWE-367)`() =
         runTest {
             val repo = repo()
             val dir = "/srv/runs/evicted/artifacts"
             val run = repo.obtainProcessId(NewRunRecord("a"), 100).processId
-            // Two attempts race for one path: the second takes the claim over, and the first finishes
-            // while it is still deleting the directory.
+            // Two attempts race for one path: the second never takes the claim over, so only the first
+            // attempt's settle decides when the path is free again.
             repo.claimWorkspaceDelete(dir, 7, maxPending = 256, attemptToken = "a")
-            assertEquals(WorkspaceDeleteClaim.CLAIMED, repo.claimWorkspaceDelete(dir, 8, maxPending = 256, attemptToken = "b"))
+            assertEquals(WorkspaceDeleteClaim.IN_FLIGHT, repo.claimWorkspaceDelete(dir, 8, maxPending = 256, attemptToken = "b"))
 
-            repo.settleWorkspaceDelete(dir, attemptToken = "a", deleted = true)
-
-            // The row the surviving attempt holds is untouched: the path is still refused to a run.
+            // The skipped attempt settles nothing: the path is still refused to a run.
+            repo.settleWorkspaceDelete(dir, attemptToken = "b", deleted = true)
             assertEquals(1, repo.pendingWorkspaceDeleteCount())
             assertFailsWith<WorkspacePendingDeleteException> { repo.setArtifactsDir(run, dir) }
             assertNull(repo.getProcessInfo(run)?.artifactsDir)
 
-            repo.settleWorkspaceDelete(dir, attemptToken = "b", deleted = true)
+            repo.settleWorkspaceDelete(dir, attemptToken = "a", deleted = true)
             assertEquals(0, repo.pendingWorkspaceDeleteCount())
             repo.setArtifactsDir(run, dir)
             assertEquals(Paths.get(dir), repo.getProcessInfo(run)?.artifactsDir)
         }
 
     @Test
-    fun `a superseded attempt cannot clear the surviving attempt's in-flight mark`() =
+    fun `a skipped attempt cannot release the claim another attempt holds`() =
         runTest {
             val repo = repo()
             val dir = "/srv/runs/evicted/artifacts"
             repo.claimWorkspaceDelete(dir, 7, maxPending = 256, attemptToken = "a")
-            repo.claimWorkspaceDelete(dir, 8, maxPending = 256, attemptToken = "b")
+            assertEquals(WorkspaceDeleteClaim.IN_FLIGHT, repo.claimWorkspaceDelete(dir, 8, maxPending = 256, attemptToken = "b"))
 
-            repo.settleWorkspaceDelete(dir, attemptToken = "a", deleted = false)
+            repo.settleWorkspaceDelete(dir, attemptToken = "b", deleted = false)
 
-            // Held for the sweep by the attempt that no longer owns the claim would hand the directory
-            // to a retry while the surviving attempt is still deleting it.
+            // Only the attempt holding the claim can hand the directory to a retry.
             assertEquals(emptyList(), repo.heldWorkspaceDeletes(limit = 8))
             assertEquals(1, repo.pendingWorkspaceDeleteCount())
         }

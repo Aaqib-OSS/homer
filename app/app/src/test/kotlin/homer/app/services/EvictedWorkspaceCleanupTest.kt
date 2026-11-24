@@ -16,9 +16,13 @@ import homer.app.services.persistence.pendingWorkspaceDeleteCount
 import homer.app.services.persistence.setArtifactsDir
 import homer.app.services.persistence.setPurgeAt
 import io.mockk.verify
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Test
@@ -148,25 +152,23 @@ class EvictedWorkspaceCleanupTest {
     }
 
     @Test
-    fun `a superseded attempt's settle leaves the surviving attempt's claim in flight (CWE-367)`(
+    fun `a second attempt of a path another attempt is deleting skips and holds no claim (CWE-367)`(
         @TempDir root: Path,
     ) = runTest {
         val artifacts = workspace(root, "run1")
-        // A first attempt claimed this path and is superseded by the delete below; when it finishes, its
-        // settle must not drop the claim the surviving attempt holds while that one still deletes.
-        assertEquals(
-            WorkspaceDeleteClaim.CLAIMED,
-            retention.claimWorkspaceDelete(
-                artifacts,
-                evictedProcessId = 7,
-                maxPending = EvictedWorkspaceCleanup.MAX_PENDING,
-                attemptToken = "superseded",
-            ),
-        )
+        // Two evictions of runs sharing a fixed workspace.path: the second attempt must not take the first
+        // one's claim over — its settle would end it while the first attempt is still walking the directory.
+        val skipped = mutableListOf<WorkspaceDeleteClaim>()
         val refused = mutableListOf<Throwable>()
         val delete =
             FlakyDelete(failures = 0) { _, _ ->
-                retention.settleWorkspaceDelete(artifacts, attemptToken = "superseded", deleted = true)
+                skipped +=
+                    retention.claimWorkspaceDelete(
+                        artifacts,
+                        evictedProcessId = 8,
+                        maxPending = EvictedWorkspaceCleanup.MAX_PENDING,
+                        attemptToken = "second",
+                    )
                 refused +=
                     assertFailsWith<WorkspacePendingDeleteException> {
                         repository.setArtifactsDir(runOwning(artifacts), artifacts.toString())
@@ -174,10 +176,42 @@ class EvictedWorkspaceCleanupTest {
             }
         val cleanup = cleanup(root, delete)
 
-        cleanup.delete(8, artifacts)
+        cleanup.delete(7, artifacts)
 
+        assertEquals(listOf(WorkspaceDeleteClaim.IN_FLIGHT), skipped)
         assertEquals(1, refused.size)
-        assertFalse(Files.exists(root.resolve("run1")))
+        assertFalse(Files.exists(root.resolve("run1")), "the surviving attempt still deletes the directory")
+        // The surviving attempt's settle drops the claim; the skipped attempt settles nothing.
+        assertEquals(0, cleanup.pendingCount())
+    }
+
+    @Test
+    fun `an attempt cancelled mid-delete releases its claim for the next sweep`(
+        @TempDir root: Path,
+    ) = runTest {
+        val artifacts = workspace(root, "run1")
+        // The delete suspends until the test cancels the attempt there — the shape a shutdown or a
+        // cancelled sweep leaves behind. A later call (the retry below) deletes for real.
+        val midDelete = CompletableDeferred<Unit>()
+        val delete =
+            FlakyDelete(failures = 0) { _, _ ->
+                if (midDelete.complete(Unit)) awaitCancellation()
+            }
+        val cleanup = cleanup(root, delete)
+        val attempt = launch { cleanup.delete(7, artifacts) }
+        midDelete.await()
+        attempt.cancelAndJoin()
+
+        // The claim is released — held for the next sweep, not stuck in flight refusing every registering run.
+        assertEquals(1, cleanup.pendingCount())
+        assertEquals(
+            listOf(HeldWorkspaceDelete(artifacts, 7)),
+            retention.heldWorkspaceDeletes(limit = EvictedWorkspaceCleanup.MAX_PENDING),
+        )
+
+        cleanup.retryPending()
+
+        assertFalse(Files.exists(root.resolve("run1")), "the next sweep deletes the released directory")
         assertEquals(0, cleanup.pendingCount())
     }
 
