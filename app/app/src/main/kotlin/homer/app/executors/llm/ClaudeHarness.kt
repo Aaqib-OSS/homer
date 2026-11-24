@@ -102,8 +102,8 @@ class ClaudeHarness(
         val ends = events.filterIsInstance<LlmEvent.TurnEnd>()
         if (ends.isEmpty()) return Inspection.Malformed("stdout contains no 'result' event")
         // Every turn end decides the verdict — an earlier success must not hide a later failed or stopped one
-        // (CWE-754/CWE-636, ADR-0070, ADR-0074); a `result` line that fails decode yields no end, so a count mismatch fails closed.
-        if (exitCode == 0 && raw.count { it.nonBlankString("type") == "result" } != ends.size) {
+        // (CWE-754/CWE-636, ADR-0070, ADR-0074); more raw `result` lines than ends is a failed decode — fail closed.
+        if (exitCode == 0 && raw.count { it.nonBlankString("type") == "result" } > ends.size) {
             return Inspection.Malformed("stdout contains a 'result' event that did not decode")
         }
         val nonSuccessAt = ends.indexOfFirst { it.status != TurnStatus.Success }

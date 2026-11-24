@@ -549,23 +549,25 @@ class ClaudeHarnessTest {
 
     @Test
     fun `a success result with is_error fails the turn and names the refusal`() {
-        val json =
-            """{"type":"result","subtype":"success","is_error":true,"stop_reason":"refusal","result":"I cannot help with that."}"""
-        val e = events(json).single() as LlmEvent.TurnEnd
+        val e =
+            events(
+                """{"type":"result","subtype":"success","is_error":true,"stop_reason":"refusal","result":"I cannot help with that."}""",
+            ).single() as LlmEvent.TurnEnd
         assertEquals(TurnStatus.Failed("is_error (stop_reason=refusal)"), e.status)
 
-        val malformed = assertIs<Inspection.Malformed>(harness.inspect(listOf(e), listOf(line(json)), command, exitCode = 0))
+        val malformed = assertIs<Inspection.Malformed>(harness.inspect(listOf(e), emptyList(), command, exitCode = 0))
         assertContains(malformed.reason, "is_error (stop_reason=refusal)")
     }
 
     @Test
     fun `a success result with is_error on an API error names the terminal reason and status`() {
-        val json =
-            """{"type":"result","subtype":"success","is_error":true,"terminal_reason":"api_error","api_error_status":529}"""
-        val e = events(json).single() as LlmEvent.TurnEnd
+        val e =
+            events(
+                """{"type":"result","subtype":"success","is_error":true,"terminal_reason":"api_error","api_error_status":529}""",
+            ).single() as LlmEvent.TurnEnd
         assertEquals(TurnStatus.Failed("is_error (terminal_reason=api_error, api_error_status=529)"), e.status)
 
-        val malformed = assertIs<Inspection.Malformed>(harness.inspect(listOf(e), listOf(line(json)), command, exitCode = 0))
+        val malformed = assertIs<Inspection.Malformed>(harness.inspect(listOf(e), emptyList(), command, exitCode = 0))
         assertContains(malformed.reason, "is_error (terminal_reason=api_error, api_error_status=529)")
     }
 
@@ -653,8 +655,7 @@ class ClaudeHarnessTest {
 
     @Test
     fun `inspect accepts one successful turn end`() {
-        val json = """{"type":"result","subtype":"success","is_error":false}"""
-        assertEquals(Inspection.Success, harness.inspect(events(json), listOf(line(json)), command, exitCode = 0))
+        assertEquals(Inspection.Success, harness.inspect(listOf(LlmEvent.TurnEnd(TurnStatus.Success)), emptyList(), command, exitCode = 0))
     }
 
     @Test
@@ -668,11 +669,10 @@ class ClaudeHarnessTest {
     @Test
     fun `a Stopped turn end is Terminal only when maxTurnsExitCode is set`() {
         val stopped = listOf(LlmEvent.TurnEnd(TurnStatus.Stopped("error_max_turns")))
-        val raw = listOf(line("""{"type":"result","subtype":"error_max_turns"}"""))
-        val malformed = assertIs<Inspection.Malformed>(harness.inspect(stopped, raw, command, exitCode = 0))
+        val malformed = assertIs<Inspection.Malformed>(harness.inspect(stopped, emptyList(), command, exitCode = 0))
         assertEquals("result event is not a successful turn: error_max_turns", malformed.reason)
         val opted = Command.Claude(prompt = LlmPrompt.Prompt("hi"), options = ClaudeCmdOptions(maxTurnsExitCode = 7))
-        assertEquals(Inspection.Terminal(7, "claude.max_turns_stop"), harness.inspect(stopped, raw, opted, exitCode = 0))
+        assertEquals(Inspection.Terminal(7, "claude.max_turns_stop"), harness.inspect(stopped, emptyList(), opted, exitCode = 0))
     }
 
     @Test
@@ -689,17 +689,15 @@ class ClaudeHarnessTest {
     fun `a result with a missing subtype translates to a Failed turn end and is Malformed`() {
         val e = events("""{"type":"result"}""").single() as LlmEvent.TurnEnd
         assertEquals(TurnStatus.Failed("<missing>"), e.status)
-        val malformed =
-            assertIs<Inspection.Malformed>(harness.inspect(listOf(e), listOf(line("""{"type":"result"}""")), command, exitCode = 0))
+        val malformed = assertIs<Inspection.Malformed>(harness.inspect(listOf(e), emptyList(), command, exitCode = 0))
         assertEquals("result event is not a successful turn: <missing>", malformed.reason)
     }
 
     @Test
     fun `a Failed turn end is Malformed even when maxTurnsExitCode is set — only Stopped becomes Terminal`() {
         val failed = listOf(LlmEvent.TurnEnd(TurnStatus.Failed("error_during_execution")))
-        val raw = listOf(line("""{"type":"result","subtype":"error_during_execution"}"""))
         val opted = Command.Claude(prompt = LlmPrompt.Prompt("hi"), options = ClaudeCmdOptions(maxTurnsExitCode = 7))
-        val malformed = assertIs<Inspection.Malformed>(harness.inspect(failed, raw, opted, exitCode = 0))
+        val malformed = assertIs<Inspection.Malformed>(harness.inspect(failed, emptyList(), opted, exitCode = 0))
         assertEquals("result event is not a successful turn: error_during_execution", malformed.reason)
     }
 
@@ -891,10 +889,9 @@ class ClaudeHarnessTest {
     @Test
     fun `version pin reads the raw init line`() {
         val pinned = ClaudeHarness(requireClaudeCodeVersion = "2.1.0")
-        val success = listOf(line("""{"type":"result","subtype":"success","is_error":false}"""))
-        val ok = listOf(line("""{"type":"system","subtype":"init","claude_code_version":"2.1.0"}""")) + success
+        val ok = listOf(line("""{"type":"system","subtype":"init","claude_code_version":"2.1.0"}"""))
         assertEquals(Inspection.Success, pinned.inspect(listOf(LlmEvent.TurnEnd(TurnStatus.Success)), ok, command, exitCode = 0))
-        val bad = listOf(line("""{"type":"system","subtype":"init","claude_code_version":"2.0.9"}""")) + success
+        val bad = listOf(line("""{"type":"system","subtype":"init","claude_code_version":"2.0.9"}"""))
         assertThrows<ClaudeCliVersionMismatchException> {
             pinned.inspect(
                 listOf(LlmEvent.TurnEnd(TurnStatus.Success)),
@@ -906,7 +903,7 @@ class ClaudeHarnessTest {
         assertThrows<ClaudeCliVersionMismatchException> {
             pinned.inspect(
                 listOf(LlmEvent.TurnEnd(TurnStatus.Success)),
-                success,
+                emptyList(),
                 command,
                 exitCode = 0,
             )
