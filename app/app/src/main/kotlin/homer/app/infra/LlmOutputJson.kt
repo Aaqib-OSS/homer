@@ -69,7 +69,10 @@ class BoundedLines(
     }
 }
 
-/** Ends after [maxBytes] bytes of [inner]; [cut] is true once a read past them found more. */
+/**
+ * Ends after [maxBytes] bytes of [inner]; [cut] is true once a read past them found more. Truncates for a
+ * lenient reader, where the runners' `BoundedInputStream` fails a transfer instead.
+ */
 private class CappedInputStream(
     private val inner: InputStream,
     maxBytes: Long,

@@ -160,14 +160,22 @@ class LlmOutputJsonTest {
     }
 
     @Test
+    fun `BoundedLines bounds bytes, not chars, and decodes a split character as a replacement`() {
+        val file = Files.writeString(tempDir.resolve("multibyte.ndjson"), "日日日\n")
+        val read = BoundedLines(file, maxBytes = 4).use { it.lines.toList() to it.cut }
+        assertEquals(listOf("日\uFFFD") to true, read)
+    }
+
+    @Test
     fun `BoundedLines reads the file as it is up to the bound, and marks a cut exactly when it holds more`() =
         runTest {
-            checkAll(Arb.pattern("[a-z{}\":,\\n]{0,300}"), Arb.int(0..400)) { content, maxBytes ->
-                val file = Files.writeString(tempDir.resolve("prop.ndjson"), content)
+            checkAll(Arb.pattern("[a-z{}\":,é日\\n]{0,300}"), Arb.int(0..400)) { content, maxBytes ->
+                val bytes = content.toByteArray()
+                val file = Files.write(tempDir.resolve("prop.ndjson"), bytes)
                 BoundedLines(file, maxBytes.toLong()).use { bounded ->
                     val lines = bounded.lines.toList()
-                    assertEquals(content.take(maxBytes).reader().readLines(), lines)
-                    assertEquals(content.length > maxBytes, bounded.cut)
+                    assertEquals(String(bytes.copyOf(minOf(bytes.size, maxBytes)), Charsets.UTF_8).reader().readLines(), lines)
+                    assertEquals(bytes.size > maxBytes, bounded.cut)
                 }
             }
         }
