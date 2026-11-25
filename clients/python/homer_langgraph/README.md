@@ -21,6 +21,14 @@ or parks on a pending `interrupt()`:
 State survives across segments via a SQLite checkpointer (`SqliteSaver`) opened
 at `$HOMER_LG_STATE_DIR/checkpoints.sqlite`, keyed by the LangGraph thread id.
 
+`state` reads that agent-written store on the server host, so it opens it with
+LangGraph's strict serializer: only LangGraph's built-in safe types (`Send`,
+`Interrupt`, `Command`, datetimes, UUIDs, LangChain messages, …) are revived, and
+any other typed value stays in its plain stored form, never imported or called.
+`state` reports no state values, so its output is unaffected. `run` keeps
+LangGraph's default serializer, so an enum, dataclass or pydantic model in the
+graph's state resumes as itself. See [ADR-0044](../../../docs/adr/0044-langgraph-resume-and-run-introspection.md).
+
 ## The one rule: gates are pure, side effects are runtime-owned
 
 Homer resumes a parked thread by **re-running the agent from the top**, carrying

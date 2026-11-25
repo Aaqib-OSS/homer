@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END
 from langgraph.graph.state import StateGraph
@@ -170,7 +171,8 @@ def thread_state(module: str, thread_id: str) -> dict[str, Any]:
     except sqlite3.OperationalError as e:
         raise _no_checkpoint(thread_id) from e
     try:
-        saver = SqliteSaver(conn)
+        # This host-local reader must never revive agent-written types (CWE-502, ADR-0044).
+        saver = SqliteSaver(conn, serde=JsonPlusSerializer(allowed_msgpack_modules=None))
         graph = _compile(_load_graph(module), saver)
         config = {"configurable": {"thread_id": thread_id}}
         latest = graph.get_state(config)
