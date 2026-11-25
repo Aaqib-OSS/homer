@@ -4,6 +4,7 @@
 
 ### Homer
 
+- **Security: a captured result can no longer choose an LLM command's executable** — An agent whose `!<claude>`, `!<codex>` or `!<opencode>` `cmd` references a `resultEnvParam` name fails to load, as one referencing an input already did (CWE-78). See [ADR-0047](docs/adr/0047-security-by-design-and-threat-model.md).
 - **Security: an evicted run's workspace delete can no longer remove a just-started run's directory** — A run registering a workspace directory an eviction is deleting is refused before it starts, instead of racing the delete (CWE-367). See [ADR-0048](docs/adr/0048-split-record-retention-from-workspace-purge.md).
 - **Security: the runner hardens itself before it reads anything** — `homer-runner` makes its JVM non-dumpable before it parses its command line, so `HOMER_RUNNER_TOKEN` is unreadable to a same-uid process from the earliest point the runner controls. See [ADR-0078](docs/adr/0078-runner-jvm-is-non-dumpable.md).
 - **Security: `KILL_OLD_RUN_CURRENT` keeps a single holder per lock key** — A run the newest same-key run superseded now fails instead of executing beside it. See [ADR-0104](docs/adr/0104-lock-before-slot-admission-order.md).

@@ -2511,7 +2511,9 @@ responsibility:
   templated too, and templating it on an input would let the caller pick the
   executable Homer runs. This is rejected, not warned: an agent whose `cmd`
   references an input's `envName` fails to load, with an error naming the
-  command label and the input. References to agent `env`, `globalEnv` or
+  command label and the input. The same holds for a `resultEnvParam` `envName`
+  captured by any step, `onStop:` included, since captured output can carry
+  caller-influenced text. References to agent `env`, `globalEnv` or
   `@SYSENV` values stay allowed.
 
 Homer logs a load-time warning for the lock-key, workspace-path, cooldown-key,
