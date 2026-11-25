@@ -1,11 +1,13 @@
 package homer.app.runners.kubernetes
 
+import homer.app.infra.readHead
 import homer.app.runners.DownloadMode
 import homer.app.runners.TarStreams
-import java.io.ByteArrayOutputStream
 import java.io.InputStream
+import java.io.OutputStream
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.io.path.isDirectory
 import kotlin.io.path.isRegularFile
 import kotlin.time.Duration
@@ -47,7 +49,7 @@ class KubernetesWorkspaceSync(
         } catch (e: Exception) {
             val exited = proc.waitFor(5, TimeUnit.SECONDS)
             stderr.thread.join(2_000)
-            val diag = stderr.output.toString(Charsets.UTF_8).trim()
+            val diag = stderr.text
             val exitPart = if (exited) describeExit(proc.exitValue()) else "still running"
             proc.destroyForcibly()
             throw IllegalStateException(
@@ -132,7 +134,7 @@ class KubernetesWorkspaceSync(
     private fun runToExit(argv: List<String>) {
         val proc = execClient.start(namespace, podName, argv, stdin = false)
         val stderr = drain(proc.errorStream)
-        proc.inputStream.use { it.readAllBytes() }
+        drain(proc.inputStream)
         awaitZeroExit(proc, stderr, argv.joinToString(" "))
     }
 
@@ -143,7 +145,7 @@ class KubernetesWorkspaceSync(
     private fun probe(argv: List<String>): Boolean {
         val proc = execClient.start(namespace, podName, argv, stdin = false)
         val stderr = drain(proc.errorStream)
-        proc.inputStream.use { it.readAllBytes() }
+        drain(proc.inputStream)
         if (!proc.waitFor(EXIT_STATUS_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
             proc.destroyForcibly()
             throw IllegalStateException(
@@ -162,7 +164,7 @@ class KubernetesWorkspaceSync(
 
             else -> {
                 throw IllegalStateException(
-                    "${argv.joinToString(" ")} failed (${describeExit(exit)}): ${stderr.output.toString(Charsets.UTF_8).trim()}",
+                    "${argv.joinToString(" ")} failed (${describeExit(exit)}): ${stderr.text}",
                 )
             }
         }
@@ -181,7 +183,7 @@ class KubernetesWorkspaceSync(
         stderr.thread.join(2_000)
         val exit = proc.exitValue()
         if (exit != 0) {
-            throw IllegalStateException("$what failed (${describeExit(exit)}): ${stderr.output.toString(Charsets.UTF_8).trim()}")
+            throw IllegalStateException("$what failed (${describeExit(exit)}): ${stderr.text}")
         }
     }
 
@@ -189,28 +191,40 @@ class KubernetesWorkspaceSync(
     private fun describeExit(exit: Int): String =
         if (isNoExitStatus(exit)) "no exit status (exec channel failed or ended without one)" else "exit $exit"
 
-    /** Concurrently drains stderr so a full pipe can't stall the transfer. */
+    /** Concurrently drains [source] to EOF so a full pipe can't stall the transfer, keeping only its head. */
     private fun drain(source: InputStream): Drained {
-        val sink = ByteArrayOutputStream()
+        val head = AtomicReference("")
         val thread =
             Thread {
-                runCatching { source.use { it.copyTo(sink) } }
+                runCatching {
+                    source.use {
+                        // The pod writes this stream: keep a capped head, discard the rest (CWE-770, ADR-0047 rule 4).
+                        head.set(readHead(it, MAX_RETAINED_OUTPUT_BYTES))
+                        it.copyTo(OutputStream.nullOutputStream())
+                    }
+                }
             }.apply {
                 isDaemon = true
                 start()
             }
-        return Drained(thread, sink)
+        return Drained(thread, head)
     }
 
-    /** A stderr/stdout drain thread paired with the buffer it fills; join before reading it. */
+    /** A stderr/stdout drain thread paired with the head it keeps; join before reading [text]. */
     private class Drained(
         val thread: Thread,
-        val output: ByteArrayOutputStream,
-    )
+        private val head: AtomicReference<String>,
+    ) {
+        /** At most [MAX_RETAINED_OUTPUT_BYTES] of the stream, trimmed and marked when cut. */
+        val text: String get() = head.get().trim()
+    }
 
     companion object {
         /** Bounded wait for the pod exec channel to report an exit status (websocket can wedge). */
         private const val EXIT_STATUS_TIMEOUT_SECONDS = 60L
+
+        /** Most bytes of one exec stream the backend keeps for a failure message. */
+        internal const val MAX_RETAINED_OUTPUT_BYTES = 16 * 1024
 
         /** `$0` of the private-file upload's shell. */
         internal const val PRIVATE_EXTRACT_NAME = "homer-env"
