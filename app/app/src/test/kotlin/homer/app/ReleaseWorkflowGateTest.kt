@@ -29,6 +29,17 @@ class ReleaseWorkflowGateTest {
             .takeWhile { it.isBlank() || it.startsWith("    ") || it.trimStart().startsWith("#") }
     }
 
+    /** The `permissions:` entries of job [job] in [workflow], trimmed. */
+    private fun jobPermissions(
+        workflow: String,
+        job: String,
+    ): List<String> =
+        jobLines(workflow, job)
+            .dropWhile { it != "    permissions:" }
+            .drop(1)
+            .takeWhile { it.startsWith("      ") }
+            .map { it.trim() }
+
     /** Each step of [lines] that has an `if:`, by its first line (`name:` or `uses:`), to that `if:` line. */
     private fun stepConditions(lines: List<String>): Map<String, String> =
         lines
@@ -408,11 +419,7 @@ class ReleaseWorkflowGateTest {
         val deps = jobLines(release, "gradle-deps")
         assertEquals(
             listOf("contents: read"),
-            deps
-                .dropWhile { it != "    permissions:" }
-                .drop(1)
-                .takeWhile { it.startsWith("      ") }
-                .map { it.trim() },
+            jobPermissions(release, "gradle-deps"),
             "$release job `gradle-deps` must hold `contents: read` only: it builds, it never pushes or signs.",
         )
         val builds = jobLines(release, "image-builds").map { it.trim() }
@@ -482,16 +489,20 @@ class ReleaseWorkflowGateTest {
 
     @Test
     fun `pages build job holds no write permission`() {
-        val permissions =
-            jobLines(pages, "build")
-                .dropWhile { it != "    permissions:" }
-                .drop(1)
-                .takeWhile { it.startsWith("      ") }
-                .map { it.trim() }
         assertEquals(
             listOf("contents: read", "pages: read"),
-            permissions,
+            jobPermissions(pages, "build"),
             "$pages job `build` runs `npm ci`; only job `deploy` may hold `pages: write` and `id-token: write`.",
+        )
+    }
+
+    @Test
+    fun `pages deploys only after the build job`() {
+        val needs = jobLines(pages, "deploy").firstOrNull { it.startsWith("    needs:") }.orEmpty()
+        assertTrue(
+            Regex("""\bbuild\b""").containsMatchIn(needs),
+            "$pages job `deploy` no longer needs `build`. Deploying in or beside the uploading job races the " +
+                "artifact listing, which can still miss the `github-pages` artifact.",
         )
     }
 }
