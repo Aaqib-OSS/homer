@@ -23,6 +23,7 @@ import kotlin.io.path.writeText
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class LlmAttemptPricingTest {
     private val logger = LoggerFactory.getLogger(LlmAttemptPricingTest::class.java)
@@ -114,6 +115,25 @@ class LlmAttemptPricingTest {
         val scan = LlmAttemptPricing(FakeHarness(), resolver(), logger).scan(out, span)
 
         assertEquals(LlmAccountingScan(sessionId = null, cliCostUsd = null, resultSeen = false, modelCalls = 0, usage = null), scan)
+        verify { span.setAttribute("llm.cost.scan_truncated", true) }
+    }
+
+    @Test
+    fun `a turn end after a skipped over-long line is still priced, and the span says a line was skipped`(
+        @TempDir dir: Path,
+    ) {
+        val padding = "x".repeat(4 * 1024 * 1024)
+        val out =
+            dir.resolve("out").also {
+                it.writeText("{\"t\":\"start\",\"sid\":\"s\",\"pad\":\"$padding\"}\n{\"t\":\"end\",\"ok\":true,\"cost\":0.25}\n")
+            }
+        val span = TestFixtures.mockSpan()
+
+        val scan = LlmAttemptPricing(FakeHarness(), resolver(), logger).scan(out, span)
+
+        assertNull(scan.sessionId)
+        assertEquals(0.25, scan.cliCostUsd)
+        assertTrue(scan.resultSeen)
         verify { span.setAttribute("llm.cost.scan_truncated", true) }
     }
 
