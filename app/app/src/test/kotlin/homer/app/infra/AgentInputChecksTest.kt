@@ -20,6 +20,7 @@ import io.kotest.property.checkAll
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
+import org.slf4j.helpers.NOPLogger
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -240,13 +241,15 @@ class AgentInputChecksTest {
                 Arb.pattern("[a-z/ .-]{0,8}"),
                 Arb.boolean(),
             ) { captured, prefix, suffix, inStop ->
+                val quiet = AgentInputChecks(NOPLogger.NOP_LOGGER, ParamValidator())
+
                 fun agentWithCmd(name: String) =
                     claudeAgent(claudeCommand(ClaudeCmdOptions(), label = "run").copy(cmd = "$prefix{{$name}}$suffix")).let {
                         val capture = capturingStep(label = "fetch", envName = captured)
                         if (inStop) it.copy(onStop = listOf(capture)) else it.copy(commands = listOf(capture) + it.commands)
                     }
-                assertFalse(checks.checkCommandBindings(agentWithCmd(captured), mutableListOf()), "cmd '$prefix{{$captured}}$suffix'")
-                assertTrue(checks.checkCommandBindings(agentWithCmd("OTHER"), mutableListOf()), "cmd '$prefix{{OTHER}}$suffix'")
+                assertFalse(quiet.checkCommandBindings(agentWithCmd(captured), mutableListOf()), "cmd '$prefix{{$captured}}$suffix'")
+                assertTrue(quiet.checkCommandBindings(agentWithCmd("OTHER"), mutableListOf()), "cmd '$prefix{{OTHER}}$suffix'")
             }
         }
 
