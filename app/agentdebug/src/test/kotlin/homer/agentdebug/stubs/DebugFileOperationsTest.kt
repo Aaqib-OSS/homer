@@ -1,11 +1,16 @@
 package homer.agentdebug.stubs
 
+import homer.app.infra.ArtifactTooLargeException
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.io.ByteArrayOutputStream
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 
 class DebugFileOperationsTest {
@@ -44,5 +49,38 @@ class DebugFileOperationsTest {
 
         assertEquals("abcd", ops.readTextBounded(file, maxBytes = 4))
         assertNull(ops.readTextBounded(file, maxBytes = 3))
+    }
+
+    @Test
+    fun `streamFile copies through the local operations, so a file over the cap is refused (CWE-770)`(
+        @TempDir dir: Path,
+    ) = runTest {
+        val file = dir.resolve("f.txt").also { it.writeText("abcd") }
+        val out = ByteArrayOutputStream()
+
+        ops.streamFile(
+            file,
+            maxBytes = 4,
+            respond = { write ->
+                write(out)
+                out.size().toLong()
+            },
+        )
+
+        assertEquals("abcd", out.toString(Charsets.UTF_8.name()))
+
+        var opened = false
+        assertFailsWith<ArtifactTooLargeException> {
+            ops.streamFile(
+                file,
+                maxBytes = 3,
+                respond = { write ->
+                    opened = true
+                    write(out)
+                    out.size().toLong()
+                },
+            )
+        }
+        assertFalse(opened, "the caller's stream must not open for a file over the cap")
     }
 }

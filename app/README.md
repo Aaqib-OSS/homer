@@ -564,7 +564,10 @@ directory; path traversal is rejected with `400`); `404` if the process or
 file does not exist, the artifacts directory is a symlink, or the resolved path is not a regular file (a
 FIFO/device/directory/symlink is treated as not found) or is a hard link (more than one
 link, also treated as not found). Returns `413` if the artifact exceeds
-`server.maxArtifactBytes`. The response carries `X-Process-Status` (the
+`server.maxArtifactBytes`. The size is checked again at open (`413` for a
+file that grew past the cap after the first check), and a file that grows
+while it is downloaded is cut off at the cap. The response carries
+`X-Process-Status` (the
 process's current status) and `X-File-Complete` (`false` while the process
 is still `WORKING`/`CREATED` and may still append to the file, `true`
 otherwise) headers.

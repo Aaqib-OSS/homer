@@ -4,8 +4,10 @@ import homer.app.apiJson
 import homer.app.executors.Process
 import homer.app.fixtures.AgentFixtures
 import homer.app.fixtures.ApiRouteTestBase
+import homer.app.fixtures.DelegatingChannel
 import homer.app.fixtures.PersistenceTestSupport
 import homer.app.fixtures.mountApiV1Routes
+import homer.app.infra.DescriptorOpen
 import homer.app.infra.LocalFileOperations
 import homer.app.models.AgentDispatchConfig
 import homer.app.models.ArtifactListingResponse
@@ -36,7 +38,11 @@ import io.mockk.every
 import io.mockk.mockk
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.nio.ByteBuffer
+import java.nio.file.Files
+import java.nio.file.StandardOpenOption
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -590,14 +596,17 @@ class ProcessRoutesTest : ApiRouteTestBase() {
     // ========== GET /artifacts Tests ==========
 
     /**
-     * Mounts the real routes with a real [ArtifactService] over [LocalFileOperations];
-     * every process lookup answers [processInfo].
+     * Mounts the real routes with a real [ArtifactService] over [files]; every process lookup
+     * answers [processInfo], and the service streams at most [maxArtifactBytes].
      */
-    private fun ApplicationTestBuilder.mountArtifactRoutes(processInfo: ProcessInfo? = null) {
+    private fun ApplicationTestBuilder.mountArtifactRoutes(
+        processInfo: ProcessInfo? = null,
+        files: LocalFileOperations = LocalFileOperations(),
+        maxArtifactBytes: Long = ArtifactService.DEFAULT_MAX_ARTIFACT_BYTES,
+    ) {
         coEvery { mockProcessManager.getProcessInfo(any()) } returns processInfo
-        val files = LocalFileOperations()
         mountWithServiceMocks {
-            every { artifactService } returns ArtifactService(mockProcessManager, files, logger)
+            every { artifactService } returns ArtifactService(mockProcessManager, files, logger, maxArtifactBytes)
             every { fileOperations } returns files
         }
     }
@@ -682,6 +691,41 @@ class ProcessRoutesTest : ApiRouteTestBase() {
     }
 
     @Test
+    fun `GET artifacts should return 404 for a symlinked artifact`(
+        @TempDir dir: java.nio.file.Path,
+        @TempDir outside: java.nio.file.Path,
+    ) = testApplication {
+        val target = Files.writeString(outside.resolve("secret.txt"), "host secret")
+        Files.createSymbolicLink(dir.resolve("cmd_0.out"), target)
+        mountArtifactRoutes(finishedProcessWithArtifacts(123, dir))
+
+        val response = client.get("/api/v1/artifacts?processId=123&path=cmd_0.out")
+
+        assertEquals(HttpStatusCode.NotFound, response.status)
+        assertEquals("Artifact not found", response.errorMsg())
+        assertFalse(response.bodyAsText().contains("host secret"))
+    }
+
+    @Test
+    fun `GET artifacts should return 404 when a symlinked subdirectory escapes the artifacts directory`(
+        @TempDir dir: java.nio.file.Path,
+        @TempDir outside: java.nio.file.Path,
+    ) = testApplication {
+        // `sub/secret.txt` passes the path validation (no `..`), so only the containment check
+        // at resolve time can refuse it — the realpath view lands outside the artifacts directory.
+        val targetDir = Files.createDirectories(outside.resolve("etc"))
+        Files.writeString(targetDir.resolve("secret.txt"), "host secret")
+        Files.createSymbolicLink(dir.resolve("sub"), targetDir)
+        mountArtifactRoutes(finishedProcessWithArtifacts(123, dir))
+
+        val response = client.get("/api/v1/artifacts?processId=123&path=sub/secret.txt")
+
+        assertEquals(HttpStatusCode.NotFound, response.status)
+        assertEquals("Artifact not found", response.errorMsg())
+        assertFalse(response.bodyAsText().contains("host secret"))
+    }
+
+    @Test
     fun `GET artifacts streams a terminal process's artifact and marks it complete`(
         @TempDir dir: java.nio.file.Path,
     ) = testApplication {
@@ -728,6 +772,68 @@ class ProcessRoutesTest : ApiRouteTestBase() {
 
         assertEquals(HttpStatusCode.OK, response.status)
         assertEquals("CREATED", response.headers["X-Process-Status"])
+        assertEquals("false", response.headers["X-File-Complete"])
+    }
+
+    @Test
+    fun `CWE-770 artifact grown past the cap between size check and open answers 413`(
+        @TempDir dir: java.nio.file.Path,
+    ) = testApplication {
+        val artifact = dir.resolve("cmd_0.out")
+        Files.writeString(artifact, "small")
+        // The pre-flight check sees the small file; the growth lands before the copy's own open, so only the
+        // copy-time bound can refuse it (CWE-770, ADR-0047 rule 4).
+        val growing =
+            LocalFileOperations(
+                openTimeoutMs = 60_000,
+                beforeOpen = { path -> Files.write(path, ByteArray(4096), StandardOpenOption.APPEND) },
+            )
+        mountArtifactRoutes(finishedProcessWithArtifacts(123, dir), files = growing, maxArtifactBytes = 1024)
+
+        val response = client.get("/api/v1/artifacts?processId=123&path=cmd_0.out")
+
+        assertEquals(HttpStatusCode.PayloadTooLarge, response.status)
+        assertEquals("Artifact exceeds server.maxArtifactBytes (4101 > 1024)", response.errorMsg())
+        assertFalse(response.bodyAsText().contains("small"), "no artifact byte may reach the client")
+    }
+
+    @Test
+    fun `CWE-770 artifact growing during the copy streams at most maxArtifactBytes`(
+        @TempDir dir: java.nio.file.Path,
+    ) = testApplication {
+        val artifact = dir.resolve("cmd_0.out")
+        Files.writeString(artifact, "0123456789")
+        // 4096 bytes land right after the copy's first read, so a copy that stopped only at EOF would send them
+        // (CWE-770, ADR-0047 rule 4).
+        val growing =
+            LocalFileOperations(
+                openTimeoutMs = 60_000,
+                openRegular = { path ->
+                    object : DelegatingChannel(DescriptorOpen.openRegularChannel(path)) {
+                        private var grown = false
+
+                        override fun read(dst: ByteBuffer): Int =
+                            super.read(dst).also {
+                                if (!grown) {
+                                    grown = true
+                                    Files.write(path, ByteArray(4096), StandardOpenOption.APPEND)
+                                }
+                            }
+                    }
+                },
+                beforeOpen = {},
+            )
+        coEvery { mockProcessManager.getProcessStatus(123) } returns ProcessStatus.WORKING
+        mountArtifactRoutes(
+            finishedProcessWithArtifacts(123, dir).copy(status = ProcessStatus.WORKING),
+            files = growing,
+            maxArtifactBytes = 10,
+        )
+
+        val response = client.get("/api/v1/artifacts?processId=123&path=cmd_0.out")
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertEquals("0123456789", response.bodyAsText(), "the copy must stop at the cap, not follow the growth")
         assertEquals("false", response.headers["X-File-Complete"])
     }
 

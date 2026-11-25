@@ -1,6 +1,7 @@
 package homer.app.services
 
 import homer.app.fixtures.TestFixtures
+import homer.app.infra.ArtifactTooLargeException
 import homer.app.infra.FileOperations
 import homer.app.models.ArtifactEntry
 import homer.app.models.ProcessInfo
@@ -9,14 +10,17 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.slf4j.Logger
 import java.io.ByteArrayOutputStream
+import java.io.OutputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.Path
@@ -249,9 +253,13 @@ class ArtifactServiceTest {
             val artifactPath = Path("/tmp/homer/workspace-123/artifacts/cmd_0.out")
             val output = ByteArrayOutputStream()
             val fileContent = "Hello, World!".toByteArray()
+            val respond = slot<suspend (suspend (OutputStream) -> Long) -> Unit>()
 
-            coEvery { fileOperations.streamFile(artifactPath, output, any()) } coAnswers {
-                output.write(fileContent)
+            coEvery { fileOperations.streamFile(artifactPath, any(), capture(respond), any()) } coAnswers {
+                respond.captured {
+                    it.write(fileContent)
+                    fileContent.size.toLong()
+                }
             }
 
             coEvery { processManager.getProcessInfo(123) } returns
@@ -262,10 +270,36 @@ class ArtifactServiceTest {
                     artifactsDir = Path("/tmp/homer/workspace-123/artifacts"),
                 )
 
-            artifactService.streamArtifact(artifactPath, output)
+            val reachedCap = artifactService.streamArtifact(artifactPath) { write -> write(output) }
 
-            coVerify { fileOperations.streamFile(artifactPath, output, any()) }
+            coVerify {
+                fileOperations.streamFile(
+                    artifactPath,
+                    ArtifactService.DEFAULT_MAX_ARTIFACT_BYTES,
+                    any(),
+                    any(),
+                )
+            }
             assertEquals("Hello, World!", output.toString())
+            assertFalse(reachedCap, "a copy below the cap did not reach it")
+        }
+
+    @Test
+    fun `streamArtifact - reports a copy that reached the cap`() =
+        runTest {
+            val artifactPath = Path("/tmp/homer/workspace-123/artifacts/cmd_0.out")
+            val capped = ArtifactService(processManager, fileOperations, logger, maxArtifactBytes = 8)
+            val respond = slot<suspend (suspend (OutputStream) -> Long) -> Unit>()
+            coEvery { fileOperations.streamFile(artifactPath, 8L, capture(respond), any()) } coAnswers {
+                respond.captured {
+                    it.write(ByteArray(8))
+                    8L
+                }
+            }
+
+            val reachedCap = capped.streamArtifact(artifactPath) { write -> write(ByteArrayOutputStream()) }
+
+            assertTrue(reachedCap, "a copy that stopped at the cap must say so")
         }
 
     @Test

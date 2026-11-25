@@ -110,6 +110,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Test
+import java.io.OutputStream
 import java.nio.file.Files
 import kotlin.io.path.Path
 import kotlin.test.assertEquals
@@ -552,15 +553,23 @@ class ProcessVisibilityTest {
 
     // ---------- GET /artifacts, GET /artifacts/list ----------
 
-    private fun readyArtifactService(): ArtifactService =
-        mockk(relaxed = true) {
+    private fun readyArtifactService(): ArtifactService {
+        val respond = slot<suspend (suspend (OutputStream) -> Long) -> Unit>()
+        return mockk(relaxed = true) {
             every { validateRelativePath(any()) } returns Result.success("cmd_0.out")
             coEvery { resolveArtifactPath(any(), any()) } returns Result.success(Path("/tmp/nonexistent-artifact.out"))
             every { checkArtifactSize(any()) } returns Result.success(0L)
-            coEvery { streamArtifact(any(), any()) } returns Unit
+            coEvery { streamArtifact(any(), capture(respond)) } coAnswers {
+                respond.captured {
+                    it.write("artifact body".toByteArray())
+                    "artifact body".length.toLong()
+                }
+                false
+            }
             coEvery { listArtifacts(any()) } returns
                 Result.success(ArtifactListingResponse(processId = 42, artifactsDir = "/tmp", files = emptyList()))
         }
+    }
 
     @Test
     fun `artifacts read-granted principal passes the visibility gate and streams the file`() =
@@ -607,7 +616,7 @@ class ProcessVisibilityTest {
     @Test
     fun `artifacts over server maxArtifactBytes answer 413 naming both sizes`() =
         testApplication {
-            mountArtifactsFor(Result.failure(homer.app.services.ArtifactTooLargeException(size = 200, maxBytes = 100)))
+            mountArtifactsFor(Result.failure(homer.app.infra.ArtifactTooLargeException(size = 200, maxBytes = 100)))
 
             val res =
                 client.get("/api/v1/artifacts?processId=42&path=cmd_0.out") {

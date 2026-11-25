@@ -1,5 +1,6 @@
 package homer.app.services
 
+import homer.app.infra.ArtifactTooLargeException
 import homer.app.infra.FileOperations
 import homer.app.infra.PathSafety
 import homer.app.models.ArtifactEntry
@@ -138,25 +139,26 @@ class ArtifactService(
     }
 
     /**
-     * Copies [artifactPath] to [output] once, up to its end at read time. A file its process still
-     * writes is not followed; the route marks it `X-File-Complete: false`.
+     * Copies [artifactPath] into the stream [respond] opens, at most [maxArtifactBytes] bytes: an over-cap file
+     * is refused with an [ArtifactTooLargeException] before the first write and a growing one is cut off at the
+     * cap, returning whether the copy reached it (CWE-770, ADR-0047 rule 4).
      */
     suspend fun streamArtifact(
         artifactPath: Path,
-        output: OutputStream,
-    ) {
-        streamCompleteFile(artifactPath, output)
-    }
+        respond: suspend (write: suspend (OutputStream) -> Long) -> Unit,
+    ): Boolean = streamCompleteFile(artifactPath, respond)
 
-    /**
-     * Streams a complete file in chunks
-     */
+    /** Streams a complete file in chunks; the result is whether the copy reached [maxArtifactBytes]. */
     private suspend fun streamCompleteFile(
         artifactPath: Path,
-        output: OutputStream,
-    ) {
+        respond: suspend (write: suspend (OutputStream) -> Long) -> Unit,
+    ): Boolean {
         logger.debug("Streaming complete file: {}", artifactPath)
-        fileOperations.streamFile(artifactPath, output)
+        var written = 0L
+        fileOperations.streamFile(artifactPath, maxArtifactBytes, respond = { write ->
+            respond { output -> write(output).also { written = it } }
+        })
+        return written >= maxArtifactBytes
     }
 
     companion object {
@@ -166,8 +168,3 @@ class ArtifactService(
         const val MAX_ARTIFACT_LIST_ENTRIES: Int = 10_000
     }
 }
-
-class ArtifactTooLargeException(
-    val size: Long,
-    val maxBytes: Long,
-) : RuntimeException("Artifact size $size exceeds maximum $maxBytes")

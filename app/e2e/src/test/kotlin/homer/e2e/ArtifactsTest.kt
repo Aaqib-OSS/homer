@@ -4,8 +4,11 @@ import homer.e2e.support.ArtifactListing
 import homer.e2e.support.Awaits
 import homer.e2e.support.E2eTestBase
 import homer.e2e.support.HomerApi
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
+import io.ktor.utils.io.readAvailable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -45,6 +48,51 @@ class ArtifactsTest : E2eTestBase() {
             // big.txt is 128 KiB; the fixture config caps artifacts at 64 KiB.
             val response = HomerApi.artifact(processId, "big.txt")
             assertEquals(HttpStatusCode.PayloadTooLarge, response.status)
+        }
+
+    @Test
+    fun `artifact growing past the cap while downloaded never serves more than the cap`() =
+        runBlocking {
+            val processId = HomerApi.startRun("artifact-grower")
+
+            // staged.txt appears once growing.txt holds its staged 32 KiB; the fixture appends past the cap only
+            // later (CWE-770). The artifacts dir exists only once the workspace is prepared: a 404 means not yet.
+            Awaits.awaitNotNull("staged.txt to appear in the artifact listing") {
+                val response = HomerApi.artifactsList(processId)
+                if (response.status == HttpStatusCode.NotFound) return@awaitNotNull null
+                val listing: ArtifactListing = HomerApi.decode(response)
+                listing.files.find { it.path == "staged.txt" }
+            }
+
+            val response = HomerApi.artifact(processId, "growing.txt")
+
+            // Drain the body slower than the fixture appends, so the copy runs while the file grows.
+            val channel = response.bodyAsChannel()
+            val buffer = ByteArray(4096)
+            var total = 0
+            while (!channel.isClosedForRead) {
+                val read = channel.readAvailable(buffer, 0, buffer.size)
+                if (read < 0) break
+                total += read
+                delay(100)
+            }
+
+            // Still appending, so the body must be bounded: cut off at the cap (or a 413 if the file
+            // already passed the cap at open), never the file's full multi-cap size.
+            assertTrue(
+                response.status == HttpStatusCode.OK || response.status == HttpStatusCode.PayloadTooLarge,
+                "expected 200 or 413 for a growing artifact, got ${response.status}",
+            )
+            if (response.status == HttpStatusCode.OK) {
+                assertEquals("false", response.headers["X-File-Complete"], "the run must still be appending during the download")
+                assertTrue(total <= 65_536, "served $total bytes; the fixture config caps artifacts at 64 KiB")
+            }
+
+            // The fixture appended ~5 MiB after the staged 32 KiB, so the bound held while the file grew past it.
+            assertEquals("FINISHED", Awaits.awaitTerminal(processId, timeoutMs = 120_000).status)
+            val finalListing: ArtifactListing = HomerApi.decode(HomerApi.artifactsList(processId))
+            val grown = finalListing.files.first { it.path == "growing.txt" }
+            assertTrue(grown.size > 4_000_000, "fixture must append well past the cap; grew only to ${grown.size} bytes")
         }
 
     @Test
