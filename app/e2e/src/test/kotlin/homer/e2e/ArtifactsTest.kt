@@ -59,7 +59,7 @@ class ArtifactsTest : E2eTestBase() {
             // later (CWE-770). The artifacts dir exists only once the workspace is prepared: a 404 means not yet.
             Awaits.awaitNotNull("staged.txt to appear in the artifact listing") {
                 val response = HomerApi.artifactsList(processId)
-                if (response.status != HttpStatusCode.OK) return@awaitNotNull null
+                if (response.status == HttpStatusCode.NotFound) return@awaitNotNull null
                 val listing: ArtifactListing = HomerApi.decode(response)
                 listing.files.find { it.path == "staged.txt" }
             }
