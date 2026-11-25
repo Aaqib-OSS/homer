@@ -29,6 +29,17 @@ class ReleaseWorkflowGateTest {
             .takeWhile { it.isBlank() || it.startsWith("    ") || it.trimStart().startsWith("#") }
     }
 
+    /** The `permissions:` entries of job [job] in [workflow], trimmed. */
+    private fun jobPermissions(
+        workflow: String,
+        job: String,
+    ): List<String> =
+        jobLines(workflow, job)
+            .dropWhile { it != "    permissions:" }
+            .drop(1)
+            .takeWhile { it.startsWith("      ") }
+            .map { it.trim() }
+
     /** Each step of [lines] that has an `if:`, by its first line (`name:` or `uses:`), to that `if:` line. */
     private fun stepConditions(lines: List<String>): Map<String, String> =
         lines
@@ -408,11 +419,7 @@ class ReleaseWorkflowGateTest {
         val deps = jobLines(release, "gradle-deps")
         assertEquals(
             listOf("contents: read"),
-            deps
-                .dropWhile { it != "    permissions:" }
-                .drop(1)
-                .takeWhile { it.startsWith("      ") }
-                .map { it.trim() },
+            jobPermissions(release, "gradle-deps"),
             "$release job `gradle-deps` must hold `contents: read` only: it builds, it never pushes or signs.",
         )
         val builds = jobLines(release, "image-builds").map { it.trim() }
@@ -468,11 +475,34 @@ class ReleaseWorkflowGateTest {
 
     @Test
     fun `pages deploys only from the default branch`() {
-        val condition = jobCondition(pages, "deploy")
+        val jobs = jobNames(pages)
+        assertTrue(jobs.containsAll(listOf("build", "deploy")), "$pages defines jobs $jobs; a renamed job must keep this guard.")
+        for (job in jobs) {
+            val condition = jobCondition(pages, job)
+            assertTrue(
+                condition != null && condition.contains("github.event.repository.default_branch"),
+                "$pages job `$job` is not limited to the default branch (got: $condition). A manual run from " +
+                    "another branch could then publish arbitrary HTML on the organization's Pages site (CWE-285).",
+            )
+        }
+    }
+
+    @Test
+    fun `pages build job holds no write permission`() {
+        assertEquals(
+            listOf("contents: read", "pages: read"),
+            jobPermissions(pages, "build"),
+            "$pages job `build` runs `npm ci`; only job `deploy` may hold `pages: write` and `id-token: write`.",
+        )
+    }
+
+    @Test
+    fun `pages deploys only after the build job`() {
+        val needs = jobLines(pages, "deploy").firstOrNull { it.startsWith("    needs:") }.orEmpty()
         assertTrue(
-            condition != null && condition.contains("github.event.repository.default_branch"),
-            "$pages job `deploy` is not limited to the default branch (got: $condition). A manual run from " +
-                "another branch could then publish arbitrary HTML on the organization's Pages site (CWE-285).",
+            Regex("""\bbuild\b""").containsMatchIn(needs),
+            "$pages job `deploy` no longer needs `build`. Deploying in or beside the uploading job races the " +
+                "artifact listing, which can still miss the `github-pages` artifact.",
         )
     }
 }
