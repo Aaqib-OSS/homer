@@ -11,6 +11,7 @@
 - **Security: an artifact download stops at `server.maxArtifactBytes` even while the file grows** — A file an agent grows past the cap after the size check is refused with `413`, and one that grows while it is downloaded is cut off at the cap instead of streaming unbounded bytes.
 - **Security: a run's stored inputs are bounded per run** — `server.maxInputBytes` (1 MiB default) caps the resolved input map a run persists: a start over it is refused before any row is written — `413` on the HTTP start endpoints (start, debug and the callback run and join starts; retry and resume re-check the stored inputs), a tool error on MCP, exit 255 for a `!<agent>` hop, a failed run for a dispatch, continuation or hook fire, and a logged-only refusal answering `204` for a cron fire — so retained input bytes are bounded by `maxProcesses` x the cap (CWE-770). See [ADR-0047](docs/adr/0047-security-by-design-and-threat-model.md).
 - **Security: a later failed or stopped Claude `result` fails the attempt** — Exit 0 now judges every `result` turn end, so an earlier success no longer hides a later failure from retry or escalation. See [ADR-0070](docs/adr/0070-llm-harness-adapter-boundary.md).
+- **Security: an LLM attempt's cost scan reads its stdout within its own bounds** — A stdout line over 4 MiB is skipped without being buffered, and the scan stops after 32 MiB, pricing the attempt from what it read (CWE-400). See [ADR-0047](docs/adr/0047-security-by-design-and-threat-model.md).
 
 ## [1.44.0] - 2026-11-22
 

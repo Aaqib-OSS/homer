@@ -1,6 +1,7 @@
 package homer.app.executors.llm
 
 import homer.app.fixtures.TestFixtures
+import homer.app.infra.LlmAccountingScan
 import homer.app.infra.LlmCostResolver
 import homer.app.models.CostSource
 import homer.app.models.FALLBACK_REASON_NO_RESULT_EVENT
@@ -16,8 +17,10 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.slf4j.LoggerFactory
 import java.nio.file.Path
+import kotlin.io.path.bufferedWriter
 import kotlin.io.path.writeText
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 
 class LlmAttemptPricingTest {
@@ -94,6 +97,37 @@ class LlmAttemptPricingTest {
         assertNull(priced.fallbackReason)
         assertNull(telemetryCostUsd(LlmAccounting(null, 0.0, CostSource.NONE)))
         assertEquals(0.5, telemetryCostUsd(LlmAccounting(null, 0.5, CostSource.CLI)))
+    }
+
+    @Test
+    fun `a turn end on a stdout line over the line bound is skipped unread and prices nothing (CWE-400)`(
+        @TempDir dir: Path,
+    ) {
+        val padding = "x".repeat(4 * 1024 * 1024)
+        val out = dir.resolve("out").also { it.writeText("{\"t\":\"end\",\"ok\":true,\"cost\":0.25,\"pad\":\"$padding\"}\n") }
+
+        val scan = LlmAttemptPricing(FakeHarness(), resolver(), logger).scan(out, TestFixtures.mockSpan())
+
+        assertEquals(LlmAccountingScan(sessionId = null, cliCostUsd = null, resultSeen = false, modelCalls = 0, usage = null), scan)
+    }
+
+    @Test
+    fun `a stdout stream past the byte bound is priced from its head only (CWE-770)`(
+        @TempDir dir: Path,
+    ) {
+        val out = dir.resolve("out")
+        out.bufferedWriter().use { w ->
+            w.write("{\"t\":\"start\",\"sid\":\"s\"}\n")
+            val filler = " ".repeat(1023) + "\n"
+            repeat(32 * 1024) { w.write(filler) }
+            w.write("{\"t\":\"end\",\"ok\":true,\"cost\":0.25}\n")
+        }
+
+        val scan = LlmAttemptPricing(FakeHarness(), resolver(), logger).scan(out, TestFixtures.mockSpan())
+
+        assertEquals("s", scan.sessionId)
+        assertNull(scan.cliCostUsd)
+        assertFalse(scan.resultSeen)
     }
 
     @Test
