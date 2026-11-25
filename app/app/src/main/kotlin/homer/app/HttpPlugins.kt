@@ -54,6 +54,7 @@ import homer.app.exceptions.TooManySessionPollsException
 import homer.app.exceptions.UnresolvedLockKeyPlaceholderException
 import homer.app.exceptions.ValidationException
 import homer.app.exceptions.WorkspaceException
+import homer.app.exceptions.WorkspacePendingDeleteException
 import homer.app.models.ErrorResponse
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -276,6 +277,7 @@ internal fun homerExceptionStatus(e: HomerException): HttpStatusCode =
         is WorkspaceException,
         is MalformedLlmOutputException,
         is ProcessManagerAtCapacityException,
+        is WorkspacePendingDeleteException,
         is RunnerClaimTimeoutException,
         is MaintenanceWaitTimeoutException,
         is ServerDrainingException,
@@ -376,6 +378,7 @@ private fun transferCapacityOrServerStatus(e: HomerException): HttpStatusCode =
         }
 
         is ProcessManagerAtCapacityException,
+        is WorkspacePendingDeleteException,
         is RunnerClaimTimeoutException,
         is MaintenanceWaitTimeoutException,
         is ServerDrainingException,

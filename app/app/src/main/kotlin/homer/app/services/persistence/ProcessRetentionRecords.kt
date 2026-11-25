@@ -60,6 +60,37 @@ interface ProcessRetentionRecords {
         artifactsDir: Path,
         excludeProcessId: Int,
     ): Boolean
+
+    /**
+     * Claims [artifactsDir] for deletion by [evictedProcessId] in one write transaction, so a run registering that path
+     * cannot slip between the sharing check and the delete (CWE-367); [attemptToken] marks this attempt's claim.
+     * [maxPending] bounds the claim table. See ADR-0048 (2026-11-24 amendment).
+     */
+    suspend fun claimWorkspaceDelete(
+        artifactsDir: Path,
+        evictedProcessId: Int,
+        maxPending: Int,
+        attemptToken: String,
+    ): WorkspaceDeleteClaim
+
+    /**
+     * Settles [attemptToken]'s claim on [artifactsDir]: [deleted] drops it, else it stays for the next
+     * sweep. Only the attempt holding the claim settles it.
+     */
+    suspend fun settleWorkspaceDelete(
+        artifactsDir: Path,
+        attemptToken: String,
+        deleted: Boolean,
+    )
+
+    /** The claims no attempt holds, oldest first, at most [limit]: what the sweep retries. */
+    suspend fun heldWorkspaceDeletes(limit: Int): List<HeldWorkspaceDelete>
+
+    /** How many claims the claim table holds, in flight or not. */
+    suspend fun pendingWorkspaceDeleteCount(): Int
+
+    /** Clears the in-flight mark on every claim; no delete survives a restart, so this runs once at boot. */
+    suspend fun resetInFlightWorkspaceDeletes()
 }
 
 /** [ProcessRetentionRecords] straight from [repository]. */
@@ -108,4 +139,27 @@ internal class DefaultProcessRetentionRecords(
         artifactsDir: Path,
         excludeProcessId: Int,
     ): Boolean = repository.isWorkspaceSharedWithActiveRun(artifactsDir.toString(), excludeProcessId)
+
+    override suspend fun claimWorkspaceDelete(
+        artifactsDir: Path,
+        evictedProcessId: Int,
+        maxPending: Int,
+        attemptToken: String,
+    ): WorkspaceDeleteClaim = repository.claimWorkspaceDelete(artifactsDir.toString(), evictedProcessId, maxPending, attemptToken)
+
+    override suspend fun settleWorkspaceDelete(
+        artifactsDir: Path,
+        attemptToken: String,
+        deleted: Boolean,
+    ) {
+        repository.settleWorkspaceDelete(artifactsDir.toString(), attemptToken, deleted)
+    }
+
+    override suspend fun heldWorkspaceDeletes(limit: Int): List<HeldWorkspaceDelete> = repository.heldWorkspaceDeletes(limit)
+
+    override suspend fun pendingWorkspaceDeleteCount(): Int = repository.pendingWorkspaceDeleteCount()
+
+    override suspend fun resetInFlightWorkspaceDeletes() {
+        repository.resetInFlightWorkspaceDeletes()
+    }
 }

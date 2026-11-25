@@ -1,5 +1,6 @@
 package homer.app.services.persistence
 
+import homer.app.exceptions.WorkspacePendingDeleteException
 import homer.app.models.CostSource
 import homer.app.models.ExecutionInfo
 import homer.app.models.LlmAccounting
@@ -9,6 +10,7 @@ import homer.app.models.RunnerState
 import homer.app.models.truncateFailureReason
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.plus
+import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.update
 
@@ -197,11 +199,25 @@ suspend fun ProcessRepository.addCost(
     }
 }
 
+/**
+ * Records [processId]'s artifacts dir, refusing a path a capacity eviction is deleting right now; a claim
+ * no attempt is in flight on is stale, so the run takes that path over and the held delete is dropped.
+ * See ADR-0048 (2026-11-24 amendment).
+ */
 suspend fun ProcessRepository.setArtifactsDir(
     processId: Int,
     artifactsDir: String,
 ) {
     query {
+        // The claim and this write serialize on the write lock, so a run cannot register the directory
+        // between the sweep's sharing check and its delete (CWE-367).
+        val claim =
+            WorkspacePendingDeletes
+                .select(WorkspacePendingDeletes.inFlight)
+                .where { WorkspacePendingDeletes.path eq artifactsDir }
+                .singleOrNull()
+        if (claim != null && claim[WorkspacePendingDeletes.inFlight]) throw WorkspacePendingDeleteException(processId)
+        WorkspacePendingDeletes.deleteWhere { WorkspacePendingDeletes.path eq artifactsDir }
         Processes.update({ Processes.id eq processId }) { it[Processes.artifactsDir] = artifactsDir }
     }
 }

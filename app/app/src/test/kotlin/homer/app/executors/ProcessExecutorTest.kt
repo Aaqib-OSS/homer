@@ -8,6 +8,7 @@ import homer.app.exceptions.MaxQueuedRunsExceededException
 import homer.app.exceptions.RunInputsTooLargeException
 import homer.app.exceptions.RunnerClaimTimeoutException
 import homer.app.exceptions.UnresolvedLockKeyPlaceholderException
+import homer.app.exceptions.WorkspacePendingDeleteException
 import homer.app.fixtures.TestFixtures
 import homer.app.fixtures.eventually
 import homer.app.infra.SecretRedactor
@@ -1250,6 +1251,18 @@ class ProcessExecutorTest {
                 reason,
             )
             assertTrue(!reason.contains("s3cr3t-value"), "reason=$reason")
+        }
+
+    @Test
+    fun `a workspace pending-delete refusal is stored`() =
+        runBlocking {
+            val reason = storedReasonFor(WorkspacePendingDeleteException(1))!!
+
+            assertEquals(
+                "Workspace directory was still being deleted for an evicted run, so this run never started.",
+                reason,
+            )
+            coVerify { mockProcessManager.setFailureReason(1, reason, null) }
         }
 
     @Test

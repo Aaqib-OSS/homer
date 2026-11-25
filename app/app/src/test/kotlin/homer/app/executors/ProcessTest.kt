@@ -6,6 +6,7 @@ import homer.app.exceptions.MaxLockWaitersExceededException
 import homer.app.exceptions.MaxParallelRunsExceededException
 import homer.app.exceptions.MaxQueuedRunsExceededException
 import homer.app.exceptions.UnresolvedLockKeyPlaceholderException
+import homer.app.exceptions.WorkspacePendingDeleteException
 import homer.app.fixtures.AgentFixtures
 import homer.app.fixtures.PersistenceTestSupport
 import homer.app.fixtures.TestFixtures
@@ -602,6 +603,23 @@ class ProcessTest {
             assertFailsWith<CancellationException> { process.execute(1, mockSpan) }
 
             coVerify(exactly = 0) { mockProcessManager.setProcessStatus(1, ProcessStatus.WORKING) }
+            coVerify(exactly = 0) { mockExecutorFactory.getExecutor<Command>(any()).execute(any(), any(), any()) }
+        }
+
+    @Test
+    fun `execute fails a run whose workspace directory an eviction is deleting`() =
+        runTest {
+            // The refusal must reach the executor, which stores it as a pre-start reason: the run
+            // never creates its directory, so the delete cannot take it (CWE-367).
+            stubWorkspaceConfig()
+            coEvery { mockProcessManager.setArtifactsDir(1, any()) } throws WorkspacePendingDeleteException(1)
+            val workspace = TestFixtures.mockWorkspace()
+
+            assertFailsWith<WorkspacePendingDeleteException> {
+                processWithWorkspace { _, _, _ -> workspace }.execute(1, mockSpan)
+            }
+
+            coVerify(exactly = 0) { workspace.create() }
             coVerify(exactly = 0) { mockExecutorFactory.getExecutor<Command>(any()).execute(any(), any(), any()) }
         }
 

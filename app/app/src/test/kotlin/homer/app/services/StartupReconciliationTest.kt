@@ -24,7 +24,10 @@ import homer.app.services.persistence.Processes
 import homer.app.services.persistence.QuestionsRepository
 import homer.app.services.persistence.RecordedHooks
 import homer.app.services.persistence.RunMessagesRepository
+import homer.app.services.persistence.claimWorkspaceDelete
+import homer.app.services.persistence.heldWorkspaceDeletes
 import homer.app.services.persistence.insertPendingHooksTx
+import homer.app.services.persistence.pendingWorkspaceDeleteCount
 import homer.app.services.persistence.setPurgeAt
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -96,6 +99,21 @@ class StartupReconciliationTest {
 
             assertEquals(ProcessStatus.UNKNOWN, h.processRepository.getProcessStatus(interrupted))
             assertEquals(Triple(999L + day, 999L + 7 * day, "[\"decision.json\"]"), h.purgeColumns(interrupted))
+        }
+
+    @Test
+    fun `reconcile releases a workspace delete claim the crash left in flight`() =
+        runTest {
+            val h = Harness()
+            val dir = "/srv/runs/evicted/artifacts"
+            h.processRepository.claimWorkspaceDelete(dir, evictedProcessId = 7, maxPending = 256, attemptToken = "a")
+
+            h.reconciliation.reconcile()
+
+            // No delete is running in a process that just started, so the sweep must retry this one
+            // instead of leaving the directory deleted by nobody.
+            assertEquals(1, h.processRepository.pendingWorkspaceDeleteCount())
+            assertEquals(listOf(7), h.processRepository.heldWorkspaceDeletes(limit = 8).map { it.evictedProcessId })
         }
 
     @Test

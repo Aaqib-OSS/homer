@@ -38,6 +38,10 @@ interface ProcessRunRecords {
         source: CostSource,
     )
 
+    /**
+     * Records the run's artifacts dir; refused, and propagated rather than swallowed, while a capacity
+     * eviction is deleting that path, so the run fails before its workspace is created. See ADR-0048 (2026-11-24 amendment).
+     */
     suspend fun setArtifactsDir(
         processId: Int,
         artifactsDir: Path,

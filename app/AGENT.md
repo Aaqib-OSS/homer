@@ -3112,7 +3112,7 @@ commands:
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `minInterval` | `String?` | No | `null` | Minimum time since the previous run of this agent **started**. Spaces out every run, healthy or not. |
-| `afterFailure` | `String?` | No | `null` | Minimum time since the previous run **ended**, applied only when that run `FAILED` while executing a command. A run refused before it started — a `SKIP_CURRENT` lock skip, a `REJECT`, a full wait queue, a claim timeout, a full claim queue, an unresolved `lockStrategy.key` placeholder — ends `FAILED` without arming the window. Backs off a failing agent without slowing down a healthy one. |
+| `afterFailure` | `String?` | No | `null` | Minimum time since the previous run **ended**, applied only when that run `FAILED` while executing a command. A run refused before it started — a `SKIP_CURRENT` lock skip, a `REJECT`, a full wait queue, a claim timeout, a full claim queue, an unresolved `lockStrategy.key` placeholder, a workspace directory an eviction was still deleting — ends `FAILED` without arming the window. Backs off a failing agent without slowing down a healthy one. |
 | `key` | `String?` | No | `null` | Template selecting the **subject** both windows are counted per, rendered once per run from the agent's `env` and the run's resolved inputs (e.g. `"mr-{{MR}}"`). Without it the windows count every run of the agent; with it they count only runs of the same rendered subject. See [Cooldown Subjects](#cooldown-subjects). |
 
 Durations use the same grammar as `workspace.purgeAfter`: an integer plus

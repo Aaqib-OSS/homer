@@ -7,6 +7,7 @@ import homer.app.exceptions.MaxParallelRunsExceededException
 import homer.app.exceptions.MaxQueuedRunsExceededException
 import homer.app.exceptions.RunnerClaimTimeoutException
 import homer.app.exceptions.UnresolvedLockKeyPlaceholderException
+import homer.app.exceptions.WorkspacePendingDeleteException
 import homer.app.exceptions.placeholderSentence
 import homer.app.models.RunnerFilter
 import homer.app.models.truncateFailureReason
@@ -39,6 +40,33 @@ object PreStartFailureReason {
                 )
             }
 
+            is RunnerClaimTimeoutException -> {
+                PreStartFailure(
+                    "No runner claimed this run within ${e.timeout.inWholeSeconds} s (${describeFilter(e.filter)}): " +
+                        "${e.publicReason}.",
+                )
+            }
+
+            is UnresolvedLockKeyPlaceholderException -> {
+                PreStartFailure(
+                    "Lock key ${placeholderSentence(e.placeholders)} (lockStrategy.key), so this run never started.",
+                )
+            }
+
+            is WorkspacePendingDeleteException -> {
+                PreStartFailure(
+                    "Workspace directory was still being deleted for an evicted run, so this run never started.",
+                )
+            }
+
+            else -> {
+                boundRefusal(e)
+            }
+        }
+
+    /** The refusals whose reason names the bound that was already full, split off `describe` (ADR-0081). */
+    private fun boundRefusal(e: Exception): PreStartFailure? =
+        when (e) {
             is MaxParallelRunsExceededException -> {
                 PreStartFailure(
                     "Parallel-run cap (maxParallelRuns: ${e.maxParallelRuns}, onMaxParallelRuns: REJECT): agent " +
@@ -60,23 +88,10 @@ object PreStartFailureReason {
                 )
             }
 
-            is RunnerClaimTimeoutException -> {
-                PreStartFailure(
-                    "No runner claimed this run within ${e.timeout.inWholeSeconds} s (${describeFilter(e.filter)}): " +
-                        "${e.publicReason}.",
-                )
-            }
-
             is ClaimQueueFullException -> {
                 PreStartFailure(
                     "Runner claim queue full (maxPendingRunnerClaims: ${e.maxPending}): that many runs were " +
                         "already waiting to be claimed, so this run never started.",
-                )
-            }
-
-            is UnresolvedLockKeyPlaceholderException -> {
-                PreStartFailure(
-                    "Lock key ${placeholderSentence(e.placeholders)} (lockStrategy.key), so this run never started.",
                 )
             }
 

@@ -1,5 +1,6 @@
 package homer.app.services.persistence
 
+import homer.app.exceptions.WorkspacePendingDeleteException
 import homer.app.fixtures.PersistenceTestSupport
 import homer.app.infra.ProcessJobRegistry
 import homer.app.models.CostSource
@@ -14,6 +15,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import java.nio.file.Path
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -72,6 +74,19 @@ class DefaultProcessRunRecordsTest {
             val info = repository.getProcessInfo(id)
             assertEquals("Lock skip (SKIP_CURRENT)", info?.failureReason)
             assertEquals(999, info?.failureReasonRunId)
+        }
+
+    @Test
+    fun `a registration refused by an in-flight delete claim throws through the port`() =
+        runTest {
+            val artifacts = Path.of("/ws/9/artifacts")
+            repository.claimWorkspaceDelete(artifacts.toString(), evictedProcessId = 9, maxPending = 4, attemptToken = "a")
+            val id = repository.obtainProcessId(NewRunRecord("a"), 100).processId
+
+            val refused = assertFailsWith<WorkspacePendingDeleteException> { records.setArtifactsDir(id, artifacts) }
+
+            assertEquals(id, refused.processId)
+            assertNull(repository.getProcessInfo(id)?.artifactsDir)
         }
 
     @Test

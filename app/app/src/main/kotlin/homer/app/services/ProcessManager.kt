@@ -84,7 +84,15 @@ class ProcessManager(
     // No mutex, so a settlement can buffer unapplied, as ADR-0089 accepts. Cleared with the process.
     private val unappliedSettlements = ConcurrentHashMap<Int, MutableMap<LlmAccounting, LlmAccounting>>()
 
-    private val evictedWorkspaceCleanup = EvictedWorkspaceCleanup(workspaceRoot, logger, ::isArtifactsDirShared)
+    private val evictedWorkspaceCleanup =
+        EvictedWorkspaceCleanup(
+            workspaceRoot,
+            logger,
+            ::claimWorkspaceDelete,
+            ::settleWorkspaceDelete,
+            ::heldWorkspaceDeletes,
+            ::pendingWorkspaceDeleteCount,
+        )
 
     override suspend fun setCommandArtifacts(
         processId: Int,

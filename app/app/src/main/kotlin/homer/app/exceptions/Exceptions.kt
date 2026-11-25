@@ -139,6 +139,14 @@ class ProcessManagerAtCapacityException(
             "processes are available for eviction; refusing new process",
     )
 
+// A run registering a workspace dir a capacity eviction is deleting right now is refused before it
+// writes, so the delete cannot take its directory (CWE-367). See ADR-0048 (2026-11-24 amendment).
+class WorkspacePendingDeleteException(
+    val processId: Int,
+) : HomerException(
+        "Process $processId cannot start: its workspace directory is still being deleted for an evicted run",
+    )
+
 // A harness command that exited 0 but whose stdout is not its documented JSON event stream.
 // Fail-closed: the surrounding process is marked FAILED rather than treated as success.
 class MalformedLlmOutputException(

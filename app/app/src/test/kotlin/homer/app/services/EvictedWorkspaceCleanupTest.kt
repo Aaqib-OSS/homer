@@ -1,11 +1,28 @@
 package homer.app.services
 
+import homer.app.exceptions.WorkspacePendingDeleteException
+import homer.app.fixtures.PersistenceTestSupport
 import homer.app.fixtures.TestFixtures
 import homer.app.infra.PathSafety
+import homer.app.infra.ProcessJobRegistry
+import homer.app.models.NewRunRecord
+import homer.app.models.ProcessStatus
+import homer.app.services.persistence.DefaultProcessRetentionRecords
+import homer.app.services.persistence.HeldWorkspaceDelete
+import homer.app.services.persistence.ProcessRepository
+import homer.app.services.persistence.WorkspaceDeleteClaim
+import homer.app.services.persistence.getWorkspacePurgeableProcesses
+import homer.app.services.persistence.pendingWorkspaceDeleteCount
+import homer.app.services.persistence.setArtifactsDir
+import homer.app.services.persistence.setPurgeAt
 import io.mockk.verify
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Test
@@ -14,21 +31,28 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class EvictedWorkspaceCleanupTest {
+    private val logger = TestFixtures.mockLogger()
+    private val repository = ProcessRepository(PersistenceTestSupport.tempDatabase(), ProcessJobRegistry())
+    private val retention = DefaultProcessRetentionRecords(repository)
+
     /** A delete that fails with an IO error for its first [failures] calls, then deletes for real. */
     private class FlakyDelete(
         private var failures: Int,
+        private val whileDeleting: suspend (Path, Path) -> Unit = { _, _ -> },
     ) {
         var calls = 0
 
-        fun delete(
+        suspend fun delete(
             root: Path,
             dir: Path,
         ) {
             calls++
+            whileDeleting(root, dir)
             if (failures-- > 0) throw IOException("busy")
             PathSafety.deleteContainedRecursively(root, dir)
         }
@@ -43,13 +67,24 @@ class EvictedWorkspaceCleanupTest {
             Files.writeString(it.resolve("cmd_0.out"), "x")
         }
 
-    private val logger = TestFixtures.mockLogger()
-
     private fun cleanup(
         root: Path,
         delete: FlakyDelete,
-        shared: suspend (Path, Int) -> Boolean = { _, _ -> false },
-    ) = EvictedWorkspaceCleanup(root, logger, shared, delete::delete)
+    ) = EvictedWorkspaceCleanup(
+        root,
+        logger,
+        retention::claimWorkspaceDelete,
+        retention::settleWorkspaceDelete,
+        retention::heldWorkspaceDeletes,
+        retention::pendingWorkspaceDeleteCount,
+        delete::delete,
+    )
+
+    /** A live run row referencing [artifacts], the shape a shared fixed-path workspace takes. */
+    private suspend fun runOwning(artifacts: Path): Int =
+        repository.obtainProcessId(NewRunRecord("a"), 100).processId.also {
+            repository.setArtifactsDir(it, artifacts.toString())
+        }
 
     @Test
     fun `a failed delete is held and the next sweep deletes the directory`(
@@ -62,12 +97,12 @@ class EvictedWorkspaceCleanupTest {
         cleanup.delete(1, artifacts)
 
         assertTrue(Files.exists(root.resolve("run1")))
-        assertEquals(1, cleanup.pendingCount)
+        assertEquals(1, cleanup.pendingCount())
 
         cleanup.retryPending()
 
         assertFalse(Files.exists(root.resolve("run1")), "the retried delete must not leave the directory orphaned")
-        assertEquals(0, cleanup.pendingCount)
+        assertEquals(0, cleanup.pendingCount())
         cleanup.retryPending()
         assertEquals(2, delete.calls, "a delete that succeeded is not retried again")
     }
@@ -82,7 +117,7 @@ class EvictedWorkspaceCleanupTest {
         cleanup.delete(1, artifacts)
         cleanup.retryPending()
 
-        assertEquals(1, cleanup.pendingCount)
+        assertEquals(1, cleanup.pendingCount())
         cleanup.retryPending()
         assertFalse(Files.exists(root.resolve("run1")))
         verify(exactly = 1) { logger.warn(match<String> { "retrying on every sweep" in it }, 1, "busy") }
@@ -90,19 +125,248 @@ class EvictedWorkspaceCleanupTest {
     }
 
     @Test
+    fun `a run registering the directory while the delete runs is refused (CWE-367)`(
+        @TempDir root: Path,
+    ) = runTest {
+        val artifacts = workspace(root, "run1")
+        val refused = mutableListOf<Throwable>()
+        // The delete stands in for the window the sweep's sharing check used to leave open: a run
+        // registering the same path while the delete is running.
+        val delete =
+            FlakyDelete(failures = 0) { _, _ ->
+                // The claim is committed before the directory is touched, so another connection sees it
+                // and the registering run is refused rather than handed a directory being deleted.
+                assertEquals(1, repository.pendingWorkspaceDeleteCount())
+                refused +=
+                    assertFailsWith<WorkspacePendingDeleteException> {
+                        repository.setArtifactsDir(runOwning(artifacts), artifacts.toString())
+                    }
+            }
+        val cleanup = cleanup(root, delete)
+
+        cleanup.delete(7, artifacts)
+
+        assertEquals(1, refused.size)
+        assertFalse(Files.exists(root.resolve("run1")), "the evicted run's directory is still deleted")
+        assertEquals(0, cleanup.pendingCount())
+    }
+
+    @Test
+    fun `a second attempt of a path another attempt is deleting skips and holds no claim (CWE-367)`(
+        @TempDir root: Path,
+    ) = runTest {
+        val artifacts = workspace(root, "run1")
+        // Two evictions of runs sharing a fixed workspace.path: the second attempt must not take the first
+        // one's claim over — its settle would end it while the first attempt is still walking the directory.
+        val skipped = mutableListOf<WorkspaceDeleteClaim>()
+        val refused = mutableListOf<Throwable>()
+        val delete =
+            FlakyDelete(failures = 0) { _, _ ->
+                skipped +=
+                    retention.claimWorkspaceDelete(
+                        artifacts,
+                        evictedProcessId = 8,
+                        maxPending = EvictedWorkspaceCleanup.MAX_PENDING,
+                        attemptToken = "second",
+                    )
+                refused +=
+                    assertFailsWith<WorkspacePendingDeleteException> {
+                        repository.setArtifactsDir(runOwning(artifacts), artifacts.toString())
+                    }
+            }
+        val cleanup = cleanup(root, delete)
+
+        cleanup.delete(7, artifacts)
+
+        assertEquals(listOf(WorkspaceDeleteClaim.IN_FLIGHT), skipped)
+        assertEquals(1, refused.size)
+        assertFalse(Files.exists(root.resolve("run1")), "the surviving attempt still deletes the directory")
+        // The surviving attempt's settle drops the claim; the skipped attempt settles nothing.
+        assertEquals(0, cleanup.pendingCount())
+    }
+
+    @Test
+    fun `a second attempt of a path another attempt is deleting logs the skip through delete()`(
+        @TempDir root: Path,
+    ) = runTest {
+        val artifacts = workspace(root, "run1")
+        // Drives delete() into the InFlight arm the claim-level test above only reaches at the claim:
+        // the skip is logged, nothing is deleted, and the attempt holding the claim keeps it.
+        assertEquals(
+            WorkspaceDeleteClaim.CLAIMED,
+            retention.claimWorkspaceDelete(
+                artifacts,
+                evictedProcessId = 7,
+                maxPending = EvictedWorkspaceCleanup.MAX_PENDING,
+                attemptToken = "first",
+            ),
+        )
+        val cleanup = cleanup(root, FlakyDelete(failures = 0))
+
+        cleanup.delete(8, artifacts)
+
+        assertTrue(Files.exists(root.resolve("run1")), "the attempt holding the claim is the only one deleting")
+        assertEquals(1, cleanup.pendingCount())
+        verify(exactly = 1) { logger.info(match<String> { "another attempt is already deleting" in it }, 8, artifacts.parent) }
+    }
+
+    @Test
+    fun `a claim that commits and then throws leaves the claim held, not stuck in flight`(
+        @TempDir root: Path,
+    ) = runTest {
+        val artifacts = workspace(root, "run1")
+        // The claim transaction commits and the write handle still throws afterwards (ADR-0020): the release
+        // must already be armed, or the in-flight claim refuses every registering run until the next restart.
+        var firstClaim = true
+        val cleanup =
+            EvictedWorkspaceCleanup(
+                root,
+                logger,
+                { dir, evicted, maxPending, token ->
+                    retention.claimWorkspaceDelete(dir, evicted, maxPending, token)
+                    if (firstClaim) {
+                        firstClaim = false
+                        throw IOException("lost after commit")
+                    }
+                    WorkspaceDeleteClaim.CLAIMED
+                },
+                retention::settleWorkspaceDelete,
+                retention::heldWorkspaceDeletes,
+                retention::pendingWorkspaceDeleteCount,
+            )
+
+        assertFailsWith<IOException> { cleanup.delete(7, artifacts) }
+
+        assertEquals(1, cleanup.pendingCount())
+        assertEquals(
+            listOf(HeldWorkspaceDelete(artifacts, 7)),
+            retention.heldWorkspaceDeletes(limit = EvictedWorkspaceCleanup.MAX_PENDING),
+        )
+
+        cleanup.retryPending()
+
+        assertFalse(Files.exists(root.resolve("run1")), "the next sweep retries the released claim")
+        assertEquals(0, cleanup.pendingCount())
+    }
+
+    @Test
+    fun `an attempt cancelled mid-delete releases its claim for the next sweep`(
+        @TempDir root: Path,
+    ) = runTest {
+        val artifacts = workspace(root, "run1")
+        // The delete suspends until the test cancels the attempt there — the shape a shutdown or a
+        // cancelled sweep leaves behind. A later call (the retry below) deletes for real.
+        val midDelete = CompletableDeferred<Unit>()
+        val delete =
+            FlakyDelete(failures = 0) { _, _ ->
+                if (midDelete.complete(Unit)) awaitCancellation()
+            }
+        val cleanup = cleanup(root, delete)
+        val attempt = launch { cleanup.delete(7, artifacts) }
+        midDelete.await()
+        attempt.cancelAndJoin()
+
+        // The claim is released — held for the next sweep, not stuck in flight refusing every registering run.
+        assertEquals(1, cleanup.pendingCount())
+        assertEquals(
+            listOf(HeldWorkspaceDelete(artifacts, 7)),
+            retention.heldWorkspaceDeletes(limit = EvictedWorkspaceCleanup.MAX_PENDING),
+        )
+
+        cleanup.retryPending()
+
+        assertFalse(Files.exists(root.resolve("run1")), "the next sweep deletes the released directory")
+        assertEquals(0, cleanup.pendingCount())
+    }
+
+    @Test
+    fun `the delete holds no write transaction while it runs (CWE-367)`(
+        @TempDir root: Path,
+    ) = runTest {
+        val artifacts = workspace(root, "run1")
+        val purgeAt = 1_800_000_000L
+        val terminal = repository.obtainProcessId(NewRunRecord("b"), 100).processId
+        repository.transitionStatus(terminal, ProcessStatus.FINISHED, 1, null)
+        repository.setArtifactsDir(terminal, root.resolve("other/artifacts").toString())
+        // A write landing mid-delete must commit: the claim's transaction is settled before the
+        // filesystem delete, so nothing holds the write lock across it (SQLite rule 3, CWE-367).
+        val delete = FlakyDelete(failures = 0) { _, _ -> repository.setPurgeAt(terminal, purgeAt) }
+        val cleanup = cleanup(root, delete)
+
+        cleanup.delete(7, artifacts)
+
+        assertEquals(
+            listOf(terminal),
+            repository.getWorkspacePurgeableProcesses(setOf(ProcessStatus.FINISHED), purgeAt).map { it.id },
+        )
+        assertFalse(Files.exists(root.resolve("run1")))
+        assertEquals(0, cleanup.pendingCount())
+    }
+
+    @Test
     fun `a held delete whose directory another run took up is dropped without deleting it`(
         @TempDir root: Path,
     ) = runTest {
         val artifacts = workspace(root, "shared")
-        var sharedNow = false
-        val cleanup = cleanup(root, FlakyDelete(failures = 1)) { _, _ -> sharedNow }
+        val cleanup = cleanup(root, FlakyDelete(failures = 1))
 
         cleanup.delete(1, artifacts)
-        sharedNow = true
+        assertEquals(1, cleanup.pendingCount())
+
+        // Registering the path takes the held claim over and drops it: the run owns the directory now.
+        runOwning(artifacts)
+
         cleanup.retryPending()
 
         assertTrue(Files.exists(root.resolve("shared")))
-        assertEquals(0, cleanup.pendingCount)
+        assertEquals(0, cleanup.pendingCount())
+    }
+
+    @Test
+    fun `a claim a crash left in flight is released at boot and the next sweep retries it`(
+        @TempDir root: Path,
+    ) = runTest {
+        val artifacts = workspace(root, "run1")
+        // A delete interrupted mid-attempt leaves its claim in flight; the process that held it is gone.
+        assertEquals(
+            WorkspaceDeleteClaim.CLAIMED,
+            retention.claimWorkspaceDelete(
+                artifacts,
+                evictedProcessId = 7,
+                maxPending = EvictedWorkspaceCleanup.MAX_PENDING,
+                attemptToken = "interrupted",
+            ),
+        )
+        val cleanup = cleanup(root, FlakyDelete(failures = 0))
+
+        // Boot clears the in-flight mark: no delete survives a restart, so the row is held for the sweep again.
+        retention.resetInFlightWorkspaceDeletes()
+
+        assertEquals(1, cleanup.pendingCount())
+        assertEquals(
+            listOf(HeldWorkspaceDelete(artifacts, 7)),
+            retention.heldWorkspaceDeletes(limit = EvictedWorkspaceCleanup.MAX_PENDING),
+        )
+
+        cleanup.retryPending()
+
+        assertFalse(Files.exists(root.resolve("run1")), "the retried delete removes the interrupted run's directory")
+        assertEquals(0, cleanup.pendingCount())
+    }
+
+    @Test
+    fun `a directory another live run references is skipped and never held`(
+        @TempDir root: Path,
+    ) = runTest {
+        val artifacts = workspace(root, "shared")
+        runOwning(artifacts)
+        val cleanup = cleanup(root, FlakyDelete(failures = 0))
+
+        cleanup.delete(9, artifacts)
+
+        assertTrue(Files.exists(root.resolve("shared")))
+        assertEquals(0, cleanup.pendingCount())
+        verify(exactly = 1) { logger.info(match<String> { "still referenced by another process" in it }, 9, artifacts.parent) }
     }
 
     @Test
@@ -116,7 +380,7 @@ class EvictedWorkspaceCleanupTest {
         cleanup.delete(1, outside)
 
         assertTrue(Files.exists(tmp.resolve("outside")))
-        assertEquals(0, cleanup.pendingCount)
+        assertEquals(0, cleanup.pendingCount())
     }
 
     @Test
@@ -125,10 +389,11 @@ class EvictedWorkspaceCleanupTest {
     ) = runTest {
         val cleanup = cleanup(root, FlakyDelete(failures = Int.MAX_VALUE))
 
-        repeat(EvictedWorkspaceCleanup.MAX_PENDING + 1) { cleanup.delete(it, root.resolve("run$it/artifacts")) }
+        repeat(EvictedWorkspaceCleanup.MAX_PENDING + 1) { cleanup.delete(it, workspace(root, "run$it")) }
 
-        assertEquals(EvictedWorkspaceCleanup.MAX_PENDING, cleanup.pendingCount)
+        assertEquals(EvictedWorkspaceCleanup.MAX_PENDING, cleanup.pendingCount())
         val shed = EvictedWorkspaceCleanup.MAX_PENDING
+        assertTrue(Files.exists(root.resolve("run$shed")), "the delete past the bound is shed, leaving its directory on disk")
         verify(exactly = 1) { logger.error(match<String> { "left on disk" in it }, shed, EvictedWorkspaceCleanup.MAX_PENDING) }
     }
 
@@ -144,6 +409,6 @@ class EvictedWorkspaceCleanupTest {
                 .awaitAll()
         }
 
-        assertEquals(EvictedWorkspaceCleanup.MAX_PENDING, cleanup.pendingCount)
+        assertEquals(EvictedWorkspaceCleanup.MAX_PENDING, cleanup.pendingCount())
     }
 }
