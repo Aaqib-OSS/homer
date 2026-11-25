@@ -9,8 +9,9 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import java.io.Closeable
+import java.io.InputStream
 import java.nio.file.Path
-import kotlin.io.path.bufferedReader
+import kotlin.io.path.inputStream
 
 /**
  * Shared lenient JSON reader for LLM harness output, used by every harness adapter's typed decode
@@ -53,33 +54,58 @@ class BoundedLines(
     path: Path,
     maxBytes: Long,
 ) : Closeable {
-    private val reader = path.bufferedReader()
-    private var budget = maxBytes
-    private var cutMarker = false
+    // CWE-400: the bound sits under the decoder, so no line is buffered past it (ADR-0047 rule 4).
+    private val capped = CappedInputStream(path.inputStream(), maxBytes)
+    private val reader = capped.bufferedReader()
 
     /** True once the read stopped at the bound; read after consuming [lines]. */
     val cut: Boolean
-        get() = cutMarker
+        get() = capped.cut
 
-    val lines: Sequence<String> =
-        generateSequence {
-            if (budget < 0) {
-                cutMarker = true
-                null
-            } else {
-                val line = reader.readLine()
-                if (line == null) {
-                    null
-                } else {
-                    budget -= line.length + 1
-                    line
-                }
-            }
-        }
+    val lines: Sequence<String> = generateSequence { reader.readLine() }
 
     override fun close() {
         reader.close()
     }
+}
+
+/** Ends after [maxBytes] bytes of [inner]; [cut] is true once a read past them found more. */
+private class CappedInputStream(
+    private val inner: InputStream,
+    maxBytes: Long,
+) : InputStream() {
+    private var remaining = maxBytes
+    private var probed = false
+
+    var cut = false
+        private set
+
+    override fun read(): Int {
+        val one = ByteArray(1)
+        return if (read(one, 0, 1) < 0) -1 else one[0].toInt() and 0xFF
+    }
+
+    override fun read(
+        b: ByteArray,
+        off: Int,
+        len: Int,
+    ): Int {
+        if (len == 0) return 0
+        if (remaining <= 0) return probeEnd()
+        val n = inner.read(b, off, minOf(len.toLong(), remaining).toInt())
+        if (n > 0) remaining -= n
+        return n
+    }
+
+    private fun probeEnd(): Int {
+        if (!probed) {
+            probed = true
+            cut = inner.read() >= 0
+        }
+        return -1
+    }
+
+    override fun close() = inner.close()
 }
 
 /**
