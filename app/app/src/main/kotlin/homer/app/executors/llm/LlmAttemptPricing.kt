@@ -50,7 +50,7 @@ internal class LlmAttemptPricing(
         span: Span,
     ): LlmAccountingScan {
         val scan =
-            runCatching { ByteBoundedLines(stdoutFile, SCAN_MAX_LINE_BYTES, SCAN_MAX_BYTES).use { scanBounded(it) } }
+            runCatching { ByteBoundedLines(stdoutFile, SCAN_MAX_LINE_BYTES, SCAN_MAX_BYTES).use { scanBounded(it, span) } }
                 .getOrElse { LlmAccountingScan(sessionId = null, cliCostUsd = null, resultSeen = false, modelCalls = 0, usage = null) }
         if (harness.reportsCost && scan.resultSeen && scan.cliCostUsd == null) {
             // Gated on resultSeen: a missing result event (kill, crash, timeout) is no schema drift,
@@ -61,8 +61,11 @@ internal class LlmAttemptPricing(
         return scan
     }
 
-    /** The scan of [bounded]'s lines, logging any line or byte bound it tripped. */
-    private fun scanBounded(bounded: ByteBoundedLines): LlmAccountingScan {
+    /** The scan of [bounded]'s lines; a tripped line or byte bound is logged and marks [span]. */
+    private fun scanBounded(
+        bounded: ByteBoundedLines,
+        span: Span,
+    ): LlmAccountingScan {
         val scan = scanLlmAccounting(bounded.lines, harness.translator())
         if (bounded.skippedLines > 0 || bounded.cut) {
             logger.warn(
@@ -71,6 +74,7 @@ internal class LlmAttemptPricing(
                 bounded.skippedLines,
                 bounded.cut,
             )
+            span.setAttribute("llm.cost.scan_truncated", true)
         }
         return scan
     }
@@ -149,7 +153,7 @@ internal class LlmAttemptPricing(
         const val MAX_EXPECTED_CALLS_FOR_POLLING = 1_000
 
         // CWE-400: the scan's own bounds (ADR-0047 rule 4), fixed as the default output cap keeps real streams far below
-        // them. An over-long line is skipped unbuffered; a stream past the byte cap is priced from its head.
+        // them. An over-long line is never buffered past its bound; a stream past the byte cap is priced from its head.
         const val SCAN_MAX_LINE_BYTES = 4 * 1024 * 1024
         const val SCAN_MAX_BYTES = 32L * 1024 * 1024
     }

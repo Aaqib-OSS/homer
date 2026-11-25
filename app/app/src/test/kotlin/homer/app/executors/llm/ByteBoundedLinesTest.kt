@@ -22,13 +22,15 @@ import kotlin.test.assertTrue
 class ByteBoundedLinesTest {
     private val lineArb = Arb.choice(Arb.pattern("[a-z{}\":, ]{0,12}"), Arb.element("", "é", "€€ ", "😀x"))
     private val linesArb = Arb.list(lineArb, 0..8)
+    private val chunks = Arb.int(1..9)
 
     private fun read(
         path: Path,
         maxLineBytes: Int,
         maxBytes: Long,
+        chunkBytes: Int = 8,
     ): Triple<List<String>, Int, Boolean> =
-        ByteBoundedLines(path, maxLineBytes, maxBytes).use { Triple(it.lines.toList(), it.skippedLines, it.cut) }
+        ByteBoundedLines(path, maxLineBytes, maxBytes, chunkBytes).use { Triple(it.lines.toList(), it.skippedLines, it.cut) }
 
     private fun bounded(
         lines: List<String>,
@@ -40,10 +42,10 @@ class ByteBoundedLinesTest {
         runTest {
             val file = Files.createTempFile("bounded-lines", ".txt")
             try {
-                checkAll(linesArb, Arb.int(0..16)) { lines, maxLineBytes ->
+                checkAll(linesArb, Arb.int(0..16), chunks) { lines, maxLineBytes, chunkBytes ->
                     file.writeText(lines.joinToString("") { "$it\n" })
 
-                    val (read, skipped, cut) = read(file, maxLineBytes, Long.MAX_VALUE)
+                    val (read, skipped, cut) = read(file, maxLineBytes, Long.MAX_VALUE, chunkBytes)
 
                     assertEquals(bounded(lines, maxLineBytes), read)
                     assertEquals(lines.count { it.toByteArray().size > maxLineBytes }, skipped)
@@ -59,11 +61,11 @@ class ByteBoundedLinesTest {
         runTest {
             val file = Files.createTempFile("bounded-lines", ".txt")
             try {
-                checkAll(linesArb, Arb.int(0..16), Arb.long(0L..80L)) { lines, maxLineBytes, maxBytes ->
+                checkAll(linesArb, Arb.int(0..16), Arb.long(0L..80L), chunks) { lines, maxLineBytes, maxBytes, chunkBytes ->
                     val content = lines.joinToString("") { "$it\n" }.toByteArray()
                     file.writeBytes(content)
 
-                    val (read, _, cut) = read(file, maxLineBytes, maxBytes)
+                    val (read, _, cut) = read(file, maxLineBytes, maxBytes, chunkBytes)
 
                     assertEquals(content.size > maxBytes, cut)
                     assertEquals(bounded(lines, maxLineBytes).let { if (cut) it.take(read.size) else it }, read)

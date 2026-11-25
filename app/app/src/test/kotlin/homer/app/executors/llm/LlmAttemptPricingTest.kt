@@ -12,6 +12,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -38,13 +39,15 @@ class LlmAttemptPricingTest {
     ) = runTest {
         val out = dir.resolve("out").also { it.writeText("{\"t\":\"start\",\"sid\":\"s\"}\n{\"t\":\"end\",\"ok\":true,\"cost\":0.25}\n") }
         val resolver = resolver()
+        val span = TestFixtures.mockSpan()
 
-        val priced = LlmAttemptPricing(FakeHarness(), resolver, logger).price(out, TestFixtures.mockSpan(), true, 10L, 20L)
+        val priced = LlmAttemptPricing(FakeHarness(), resolver, logger).price(out, span, true, 10L, 20L)
 
         assertEquals(0.25, priced.costUsd)
         assertEquals(CostSource.CLI, priced.source)
         assertNull(priced.fallbackReason)
         coVerify { resolver.resolve("s", 0.25, any(), 10L, 20L) }
+        verify(exactly = 0) { span.setAttribute("llm.cost.scan_truncated", any<Boolean>()) }
     }
 
     @Test
@@ -106,9 +109,12 @@ class LlmAttemptPricingTest {
         val padding = "x".repeat(4 * 1024 * 1024)
         val out = dir.resolve("out").also { it.writeText("{\"t\":\"end\",\"ok\":true,\"cost\":0.25,\"pad\":\"$padding\"}\n") }
 
-        val scan = LlmAttemptPricing(FakeHarness(), resolver(), logger).scan(out, TestFixtures.mockSpan())
+        val span = TestFixtures.mockSpan()
+
+        val scan = LlmAttemptPricing(FakeHarness(), resolver(), logger).scan(out, span)
 
         assertEquals(LlmAccountingScan(sessionId = null, cliCostUsd = null, resultSeen = false, modelCalls = 0, usage = null), scan)
+        verify { span.setAttribute("llm.cost.scan_truncated", true) }
     }
 
     @Test
@@ -123,11 +129,14 @@ class LlmAttemptPricingTest {
             w.write("{\"t\":\"end\",\"ok\":true,\"cost\":0.25}\n")
         }
 
-        val scan = LlmAttemptPricing(FakeHarness(), resolver(), logger).scan(out, TestFixtures.mockSpan())
+        val span = TestFixtures.mockSpan()
+
+        val scan = LlmAttemptPricing(FakeHarness(), resolver(), logger).scan(out, span)
 
         assertEquals("s", scan.sessionId)
         assertNull(scan.cliCostUsd)
         assertFalse(scan.resultSeen)
+        verify { span.setAttribute("llm.cost.scan_truncated", true) }
     }
 
     @Test
