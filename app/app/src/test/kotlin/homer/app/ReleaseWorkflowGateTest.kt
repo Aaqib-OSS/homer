@@ -468,11 +468,30 @@ class ReleaseWorkflowGateTest {
 
     @Test
     fun `pages deploys only from the default branch`() {
-        val condition = jobCondition(pages, "deploy")
-        assertTrue(
-            condition != null && condition.contains("github.event.repository.default_branch"),
-            "$pages job `deploy` is not limited to the default branch (got: $condition). A manual run from " +
-                "another branch could then publish arbitrary HTML on the organization's Pages site (CWE-285).",
+        val jobs = jobNames(pages)
+        assertTrue(jobs.containsAll(listOf("build", "deploy")), "$pages defines jobs $jobs; a renamed job must keep this guard.")
+        for (job in jobs) {
+            val condition = jobCondition(pages, job)
+            assertTrue(
+                condition != null && condition.contains("github.event.repository.default_branch"),
+                "$pages job `$job` is not limited to the default branch (got: $condition). A manual run from " +
+                    "another branch could then publish arbitrary HTML on the organization's Pages site (CWE-285).",
+            )
+        }
+    }
+
+    @Test
+    fun `pages build job holds no write permission`() {
+        val permissions =
+            jobLines(pages, "build")
+                .dropWhile { it != "    permissions:" }
+                .drop(1)
+                .takeWhile { it.startsWith("      ") }
+                .map { it.trim() }
+        assertEquals(
+            listOf("contents: read", "pages: read"),
+            permissions,
+            "$pages job `build` runs `npm ci`; only job `deploy` may hold `pages: write` and `id-token: write`.",
         )
     }
 }
