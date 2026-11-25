@@ -3950,7 +3950,8 @@ Every wait is bounded: an instance silent for `heartbeatTimeoutSec` is
 dropped and its runs fail; a command result is awaited for its `timeout` plus
 `heartbeatTimeoutSec`; each transfer request (a tar either way, an output
 chunk) for `transferTimeoutSec`; a tar the instance posts for at most
-`maxTransferBytes`, compressed and decompressed; a domain holds at most
+`maxTransferBytes`, compressed, decompressed and as the bytes its entries
+expand to (sparse holes included); a domain holds at most
 `maxInstances` instances, an instance at most its `concurrency` claim polls;
 a transfer is served one request at a time (per op for a tar, per op and
 stream for output), and a concurrent duplicate is `429`. A domain token is
@@ -4089,7 +4090,7 @@ rate-limited by its domain's bucket, not the global one (see
 | `POST /api/v1/runner/instances/{id}/claim` | Long-poll up to `pollSec` (30 s). `200 {sessionId, processId, agentName, tags}` or `204`. At most `concurrency` concurrent polls per instance, the next is `429`. Also a heartbeat. |
 | `POST /api/v1/runner/sessions/{sid}/next` | Body optionally `{completed: <result>}`, at most 64 KiB (`413` over it). Long-poll up to `pollSec`; `200 <op>` or `204`. Also a heartbeat. A result for an op that already has one is ignored. At most 3 concurrent polls per session, a further one is `429` — the refused call still records the result it carried, so only the wait is refused. |
 | `GET /api/v1/runner/sessions/{sid}/ops/{opId}/tar` | Streams the gzip'd tar for an `upload` op, for at most `transferTimeoutSec`; past it the stream is cut. `429` while another fetch of the same op is in flight. |
-| `POST /api/v1/runner/sessions/{sid}/ops/{opId}/tar?kind=dir\|file` | The instance posts the gzip'd tar for a `download` op, at most `maxTransferBytes` compressed **and** decompressed; `202`, `413` over either bound, `408` past `transferTimeoutSec`, `422` if an entry is refused (it escapes the target, or its mode cannot be normalized) — extraction streams entries, so a refused tar may leave already-contained entries on disk, never outside the target. `429` while another post for the same op is in flight. |
+| `POST /api/v1/runner/sessions/{sid}/ops/{opId}/tar?kind=dir\|file` | The instance posts the gzip'd tar for a `download` op, at most `maxTransferBytes` compressed, decompressed **and** as the bytes its entries expand to (sparse holes included); `202`, `413` over any of the three, `408` past `transferTimeoutSec`, `422` if an entry is refused (it escapes the target, or its mode cannot be normalized) — extraction streams entries, so a refused tar may leave already-contained entries on disk, never outside the target. `429` while another post for the same op is in flight. |
 | `POST /api/v1/runner/sessions/{sid}/ops/{opId}/output?stream=stdout\|stderr&seq=N` | Raw chunk body, at most 1 MiB and at most `transferTimeoutSec`. Appended in `seq` order per stream; a gap or repeat is `409`. `429` while another chunk of the same op and stream is in flight; the other stream is unaffected. |
 
 A claim poll is refused with `429` when `openPolls + activeSessions >=

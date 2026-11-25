@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-21
 deciders: Lukáš Vlk
-amended: 2026-09-23, 2026-09-30, 2026-10-06, 2026-10-16, 2026-11-05, 2026-11-20, 2026-11-21
+amended: 2026-09-23, 2026-09-30, 2026-10-06, 2026-10-16, 2026-11-05, 2026-11-20, 2026-11-21, 2026-11-25
 ---
 # ADR-0047: Security is a design input, and these are the boundaries it defends
 
@@ -463,6 +463,18 @@ the operator allowed (`agentSysEnvAllowlist` plus those `globalEnv` references),
 reference is resolved, at load, and again at the agent-file write. The refusal names the variable,
 never its value, and is decided before anything is read, so it does not reveal whether the variable
 exists either. The decision and its residual are in ADR-0037's amendment of the same date.
+
+## Amendment (2026-11-25): a sparse tar entry is capped, not refused
+
+Rule 4's transfer ceiling bounded only the decompressed tar stream, but the tar parser synthesizes
+a sparse entry's holes after that bound, so a small tar could write far past it (CWE-409), and
+skipping an unread sparse entry read its holes too. `TarStreams.extract` now also counts every byte
+the parser yields for an entry, written or skipped, against the same ceiling, and refuses the
+transfer past it.
+
+Refusing every sparse entry was rejected. Homer's own pack never writes one, but a pod's or a
+third-party runner's `tar` may (libarchive's bsdtar does for a sparse file by default), so refusal
+would fail a legitimate download, and on its own it would still leave the bytes written uncounted.
 
 ## Pros and Cons of the Options
 
