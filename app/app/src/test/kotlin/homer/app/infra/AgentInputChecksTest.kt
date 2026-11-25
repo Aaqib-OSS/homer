@@ -183,6 +183,26 @@ class AgentInputChecksTest {
     }
 
     @Test
+    fun `a captured result templated into a codex or opencode cmd is refused like a claude one (CWE-78)`() {
+        val prompt = LlmPrompt.Prompt("p")
+        for (llm in listOf(
+            Command.Codex(prompt = prompt, label = "run", cmd = "{{TOOL}}"),
+            Command.Opencode(prompt = prompt, label = "run", cmd = "{{TOOL}}"),
+        )) {
+            val refused = mutableListOf<String>()
+            val agent = Agent(name = "a", commands = listOf(capturingStep(label = "fetch", envName = "TOOL"), llm))
+
+            assertFalse(checks.checkCommandBindings(agent, refused), llm.toString())
+            assertEquals(
+                listOf(
+                    "Agent 'a': command 'run' cmd references captured result '{{TOOL}}'; a captured result must not choose the executable",
+                ),
+                refused,
+            )
+        }
+    }
+
+    @Test
     fun `an onStop capture templated into a command's cmd is refused (CWE-78)`() {
         val agent =
             claudeAgent(claudeCommand(ClaudeCmdOptions(), label = "run").copy(cmd = "/opt/{{SAVED}}/claude"))

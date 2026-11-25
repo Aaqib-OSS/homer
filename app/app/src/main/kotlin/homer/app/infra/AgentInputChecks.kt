@@ -265,9 +265,7 @@ internal class AgentInputChecks(
             steps
                 .mapNotNull { (kind, cmd) -> (cmd as? Command.LlmCommand)?.let { kind to cmd } }
                 .firstNotNullOfOrNull { (kind, cmd) ->
-                    templatePlaceholderPattern
-                        .findAll(cmd.cmd)
-                        .map { it.groupValues[1] }
+                    placeholderNames(cmd.cmd)
                         .firstOrNull { it in runTimeNames }
                         ?.let { Triple(kind, cmd, it) }
                 }
