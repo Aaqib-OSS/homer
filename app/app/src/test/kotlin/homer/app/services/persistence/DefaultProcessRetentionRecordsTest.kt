@@ -149,6 +149,15 @@ class DefaultProcessRetentionRecordsTest {
                 retention.claimWorkspaceDelete(stale, evictedProcessId = 9, maxPending = 2, attemptToken = "c"),
             )
             assertEquals(2, retention.pendingWorkspaceDeleteCount())
+
+            // The takeover holds the row in flight under the new token: a later attempt of the same path
+            // skips instead of taking the live claim over, and only that attempt's settle drops the row.
+            assertEquals(
+                WorkspaceDeleteClaim.IN_FLIGHT,
+                retention.claimWorkspaceDelete(stale, evictedProcessId = 10, maxPending = 2, attemptToken = "d"),
+            )
+            retention.settleWorkspaceDelete(stale, attemptToken = "c", deleted = true)
+            assertEquals(1, retention.pendingWorkspaceDeleteCount())
         }
 
     @Test
