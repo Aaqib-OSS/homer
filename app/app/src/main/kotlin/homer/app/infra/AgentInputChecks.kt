@@ -223,7 +223,7 @@ internal class AgentInputChecks(
         return true
     }
 
-    /** Rejects result captures into invalid envNames and input-chosen LLM executables; `false` = skip the agent. */
+    /** Rejects result captures into invalid envNames and input- or capture-chosen LLM executables; `false` = skip the agent. */
     fun checkCommandBindings(
         agent: Agent,
         errors: MutableList<String>,
@@ -256,27 +256,25 @@ internal class AgentInputChecks(
             return false
         }
 
-        // An input in an LLM command's `cmd` (argv[0]) would let a caller choose the host executable.
-        val inputEnvNames =
-            agent.effectiveInputs
-                .orEmpty()
-                .map { it.envName }
-                .toSet()
-        val inputBoundExecutable =
+        // An input or a captured result in an LLM command's `cmd` (argv[0]) would let a caller choose the
+        // host executable (CWE-78, ADR-0047 rule 2); a capture on any step reaches every later step's env.
+        val runTimeNames =
+            steps.flatMap { (_, cmd) -> cmd.resultEnvParam }.associate { it.envName to "captured result" } +
+                agent.effectiveInputs.orEmpty().associate { it.envName to "input" }
+        val runTimeBoundExecutable =
             steps
                 .mapNotNull { (kind, cmd) -> (cmd as? Command.LlmCommand)?.let { kind to cmd } }
                 .firstNotNullOfOrNull { (kind, cmd) ->
-                    templatePlaceholderPattern
-                        .findAll(cmd.cmd)
-                        .map { it.groupValues[1] }
-                        .firstOrNull { it in inputEnvNames }
+                    placeholderNames(cmd.cmd)
+                        .firstOrNull { it in runTimeNames }
                         ?.let { Triple(kind, cmd, it) }
                 }
-        if (inputBoundExecutable != null) {
-            val (kind, cmd, input) = inputBoundExecutable
+        if (runTimeBoundExecutable != null) {
+            val (kind, cmd, name) = runTimeBoundExecutable
+            val source = runTimeNames.getValue(name)
             val msg =
-                "Agent '${agent.name}': $kind '${cmd.label}' cmd references input '{{$input}}'; " +
-                    "an input must not choose the executable"
+                "Agent '${agent.name}': $kind '${cmd.label}' cmd references $source '{{$name}}'; " +
+                    "${if (source == "input") "an input" else "a captured result"} must not choose the executable"
             logger.error("{}. Skipping.", msg)
             errors.add(msg)
             return false
