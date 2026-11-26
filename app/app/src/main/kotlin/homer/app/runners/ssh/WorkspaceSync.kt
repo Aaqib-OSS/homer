@@ -43,13 +43,7 @@ class WorkspaceSync(
     companion object {
         const val DEFAULT_MAX_DIR_ENTRIES = 100_000
 
-        private val NOFOLLOW_WRITE =
-            arrayOf<OpenOption>(
-                StandardOpenOption.WRITE,
-                StandardOpenOption.CREATE,
-                StandardOpenOption.TRUNCATE_EXISTING,
-                LinkOption.NOFOLLOW_LINKS,
-            )
+        private val NOFOLLOW_WRITE = PathSafety.NOFOLLOW_WRITE.toTypedArray()
 
         /**
          * Resolves a remote-supplied entry name against [localDir], accepting only a plain single-segment child: an
@@ -312,13 +306,12 @@ class WorkspaceSync(
         remote: String,
         local: Path,
     ) {
-        val parent =
-            local.toAbsolutePath().normalize().parent
-                ?: throw SecurityException("Single-file download target '$local' has no parent directory")
-        Files.createDirectories(parent)
-        // CWE-59: as TarExtraction's single-file branch, no link at `local` may steer the write (ADR-0055, ADR-0047).
-        PathSafety.assertContained(parent, local)
-        PathSafety.assertNoSymlinkComponentsBelow(parent, local)
+        local
+            .toAbsolutePath()
+            .normalize()
+            .parent
+            ?.let { Files.createDirectories(it) }
+        PathSafety.assertSingleFileTarget(local)
         beforeLocalOpen(local)
         // CWE-400: bound the transfer so a stalling peer cannot hold resources indefinitely.
         withTransferTimeout { sftp.read(remote).use { input -> Files.newOutputStream(local, *NOFOLLOW_WRITE).use { input.copyTo(it) } } }

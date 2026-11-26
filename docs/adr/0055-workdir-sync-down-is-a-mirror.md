@@ -141,3 +141,8 @@ dangling one, and the write followed it to wherever it pointed. Each entry now a
 out of the destination fails the download while one that stays inside is still written through.
 The single-file branch matches the tar one: any symlink at the target is refused, and the file is
 opened with `NOFOLLOW_LINKS`. The walk, the writes and the materialized set stay lexical.
+
+The walk keeps a check-then-open window: its open must follow a contained link, so a link swapped in
+between the check and the open is not caught. This is the residual ADR-0047's 2026-09-30 amendment
+accepts for the tar extract walk, for the same reason: the swap needs a concurrent writer at
+Homer's own UID in the destination, which crosses no principal.

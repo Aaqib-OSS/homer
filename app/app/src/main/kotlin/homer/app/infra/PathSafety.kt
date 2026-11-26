@@ -2,7 +2,9 @@ package homer.app.infra
 
 import java.nio.file.Files
 import java.nio.file.LinkOption
+import java.nio.file.OpenOption
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.deleteRecursively
 
@@ -81,6 +83,23 @@ object PathSafety {
                 )
             }
         }
+    }
+
+    /** Opens that create or truncate a file and refuse a link at its own name, even one swapped in after a check (CWE-59). */
+    val NOFOLLOW_WRITE: List<OpenOption> =
+        listOf(StandardOpenOption.WRITE, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, LinkOption.NOFOLLOW_LINKS)
+
+    /**
+     * Refuses a single-file download [local] that leaves its own directory or is a link, live or dangling; returns that
+     * directory. Open [local] with [NOFOLLOW_WRITE] after it. See ADR-0047 (amendment of 2026-09-30) and ADR-0055.
+     */
+    fun assertSingleFileTarget(local: Path): Path {
+        val parent =
+            local.toAbsolutePath().normalize().parent
+                ?: throw SecurityException("Single-file download target '$local' has no parent directory")
+        assertContained(parent, local)
+        assertNoSymlinkComponentsBelow(parent, local)
+        return parent
     }
 
     // Requires every hop of a dangling symlink chain to resolve inside [root], by realpath, never
