@@ -14,6 +14,7 @@ import java.nio.channels.Channels
 import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.LinkOption
+import java.nio.file.OpenOption
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.PosixFilePermission
@@ -41,6 +42,8 @@ class WorkspaceSync(
 ) {
     companion object {
         const val DEFAULT_MAX_DIR_ENTRIES = 100_000
+
+        private val NOFOLLOW_WRITE = PathSafety.NOFOLLOW_WRITE.toTypedArray()
 
         /**
          * Resolves a remote-supplied entry name against [localDir], accepting only a plain single-segment child: an
@@ -293,10 +296,25 @@ class WorkspaceSync(
             if (materialized != null) TarStreams.prune(local, materialized)
         } else {
             if (mode == DownloadMode.OVERLAY && Files.exists(local)) return@withSftp
-            local.parent?.let { Files.createDirectories(it) }
-            // CWE-400: bound the transfer so a stalling peer cannot hold resources indefinitely.
-            withTransferTimeout { sftp.read(remote).use { input -> Files.newOutputStream(local).use { input.copyTo(it) } } }
+            downloadFile(sftp, remote, local)
         }
+    }
+
+    /** Streams [remote] to the file [local], refusing a symlink there, live, dangling or swapped in before the open. */
+    private suspend fun downloadFile(
+        sftp: SftpClient,
+        remote: String,
+        local: Path,
+    ) {
+        local
+            .toAbsolutePath()
+            .normalize()
+            .parent
+            ?.let { Files.createDirectories(it) }
+        PathSafety.assertSingleFileTarget(local)
+        beforeLocalOpen(local)
+        // CWE-400: bound the transfer so a stalling peer cannot hold resources indefinitely.
+        withTransferTimeout { sftp.read(remote).use { input -> Files.newOutputStream(local, *NOFOLLOW_WRITE).use { input.copyTo(it) } } }
     }
 
     private suspend fun downloadDirInto(
@@ -325,6 +343,8 @@ class WorkspaceSync(
             // the walk, its writes and `materialized` stay lexical, like prune() (ADR-0055).
             val localChild = containedChild(localDir, fn)
             PathSafety.assertContained(root, localChild)
+            // CWE-59: assertContained resolves past a dangling link, which the write below follows (ADR-0055).
+            PathSafety.assertDanglingLinkContained(root, localChild)
             materialized?.add(root.toAbsolutePath().normalize().relativize(localChild.toAbsolutePath().normalize()))
             if (entry.attributes.isDirectory) {
                 downloadDirInto(sftp, remoteChild, localChild, mode, root, materialized)

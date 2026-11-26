@@ -349,4 +349,32 @@ class PathSafetyTest {
 
         assertEquals(link.resolve("child.txt"), PathSafety.assertContained(root, link.resolve("child.txt")))
     }
+
+    @Test
+    fun `a single-file target that is a live or dangling link is refused (CWE-59)`(
+        @TempDir root: Path,
+    ) {
+        val outside = Files.createTempFile("outside", ".txt")
+        try {
+            val live = Files.createSymbolicLink(root.resolve("live.txt"), outside)
+            val dangling = Files.createSymbolicLink(root.resolve("dangling.txt"), outside.resolveSibling("absent-target"))
+            assertFailsWith<SecurityException> { PathSafety.assertSingleFileTarget(live) }
+            assertFailsWith<SecurityException> { PathSafety.assertSingleFileTarget(dangling) }
+        } finally {
+            Files.deleteIfExists(outside)
+        }
+    }
+
+    @Test
+    fun `a single-file target that is a plain path returns its own directory`(
+        @TempDir root: Path,
+    ) {
+        assertEquals(root.toAbsolutePath().normalize(), PathSafety.assertSingleFileTarget(root.resolve("file.txt")))
+    }
+
+    @Test
+    fun `a single-file target with no parent directory is refused`() {
+        val fsRoot = Path.of("/").toAbsolutePath()
+        assertFailsWith<SecurityException> { PathSafety.assertSingleFileTarget(fsRoot) }
+    }
 }

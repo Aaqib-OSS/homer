@@ -4,6 +4,7 @@
 
 ### Homer
 
+- **Security: the ssh runner's download no longer writes through a symlink leading out of the destination** — A downloaded file whose local name is a dangling symlink pointing outside the workspace, or a single-file download whose target is any symlink, now fails the download instead of writing where the link points (CWE-59). See [ADR-0055](docs/adr/0055-workdir-sync-down-is-a-mirror.md).
 - **Security: tar extraction refuses a tar of more than 500,000 entries** — A transferred tar past that many entries or created paths, or with an entry name over 4096 bytes or 65 levels, is refused like one past the byte cap, instead of creating every empty file and directory it lists (CWE-770). See [ADR-0047](docs/adr/0047-security-by-design-and-threat-model.md).
 - **Security: runner requests without a valid domain token no longer drain the global rate-limit bucket** — They draw from an aggregate bucket of their own, so an unauthenticated runner-protocol flood can no longer make authenticated API requests answer `429` (CWE-770). See [ADR-0014](docs/adr/0014-per-caller-rate-limiting.md).
 - **BREAKING: `langfuse.serverUrl` must be `https://` or loopback `http://` in every export mode** — A set URL that is plaintext to a remote host, another scheme or unparseable now fails startup even when `openTelemetryExport` is not `LANGFUSE`, because prompt fetches send the Langfuse keys to it (CWE-319).
