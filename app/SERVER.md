@@ -2000,6 +2000,7 @@ egress note above.
 | `!<claude>` / `!<codex>` / `!<opencode>` | `llm.session_id` | CLI session / thread id, when the output carried one |
 | `!<claude>` / `!<codex>` / `!<opencode>` | `llm.usage.*` | Token usage the CLI reported, summed over every turn end of the attempt: `input`, `output`, `cache_read`, `cache_write`, `reasoning` |
 | `!<claude>` | `llm.cost.parse_failed` | `true` when result events carried no parseable, non-negative cost (a CLI schema-drift signal) |
+| `!<claude>` / `!<codex>` / `!<opencode>` | `llm.cost.scan_truncated` | `true` when the cost scan skipped a stdout line over 4 MiB or stopped after 32 MiB; a `result` event past the cut is not priced, so the fallback reason may read `no result event` |
 | `!<claude>` | `claude.max_turns_stop` | `true` when the attempt stopped at `maxTurns` and `maxTurnsExitCode` applied |
 | `!<claude>` | `claude.is_error_stop` | `true` when the `result` event carried `is_error` and `isErrorExitCode` applied |
 | `!<claude>` | `claude.dropped_system_events` | Events removed by `server.claudeDropSystemSubtypes` |

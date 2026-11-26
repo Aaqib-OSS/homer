@@ -1,6 +1,7 @@
 package homer.app.executors.llm
 
 import homer.app.fixtures.TestFixtures
+import homer.app.infra.LlmAccountingScan
 import homer.app.infra.LlmCostResolver
 import homer.app.models.CostSource
 import homer.app.models.FALLBACK_REASON_NO_RESULT_EVENT
@@ -11,14 +12,18 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.slf4j.LoggerFactory
 import java.nio.file.Path
+import kotlin.io.path.bufferedWriter
 import kotlin.io.path.writeText
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class LlmAttemptPricingTest {
     private val logger = LoggerFactory.getLogger(LlmAttemptPricingTest::class.java)
@@ -35,13 +40,15 @@ class LlmAttemptPricingTest {
     ) = runTest {
         val out = dir.resolve("out").also { it.writeText("{\"t\":\"start\",\"sid\":\"s\"}\n{\"t\":\"end\",\"ok\":true,\"cost\":0.25}\n") }
         val resolver = resolver()
+        val span = TestFixtures.mockSpan()
 
-        val priced = LlmAttemptPricing(FakeHarness(), resolver, logger).price(out, TestFixtures.mockSpan(), true, 10L, 20L)
+        val priced = LlmAttemptPricing(FakeHarness(), resolver, logger).price(out, span, true, 10L, 20L)
 
         assertEquals(0.25, priced.costUsd)
         assertEquals(CostSource.CLI, priced.source)
         assertNull(priced.fallbackReason)
         coVerify { resolver.resolve("s", 0.25, any(), 10L, 20L) }
+        verify(exactly = 0) { span.setAttribute("llm.cost.scan_truncated", any<Boolean>()) }
     }
 
     @Test
@@ -94,6 +101,62 @@ class LlmAttemptPricingTest {
         assertNull(priced.fallbackReason)
         assertNull(telemetryCostUsd(LlmAccounting(null, 0.0, CostSource.NONE)))
         assertEquals(0.5, telemetryCostUsd(LlmAccounting(null, 0.5, CostSource.CLI)))
+    }
+
+    @Test
+    fun `a turn end on a stdout line over the line bound is skipped unread and prices nothing (CWE-400)`(
+        @TempDir dir: Path,
+    ) {
+        val padding = "x".repeat(4 * 1024 * 1024)
+        val out = dir.resolve("out").also { it.writeText("{\"t\":\"end\",\"ok\":true,\"cost\":0.25,\"pad\":\"$padding\"}\n") }
+
+        val span = TestFixtures.mockSpan()
+
+        val scan = LlmAttemptPricing(FakeHarness(), resolver(), logger).scan(out, span)
+
+        assertEquals(LlmAccountingScan(sessionId = null, cliCostUsd = null, resultSeen = false, modelCalls = 0, usage = null), scan)
+        verify { span.setAttribute("llm.cost.scan_truncated", true) }
+    }
+
+    @Test
+    fun `a turn end after a skipped over-long line is still priced, and the span says a line was skipped`(
+        @TempDir dir: Path,
+    ) {
+        val padding = "x".repeat(4 * 1024 * 1024)
+        val out =
+            dir.resolve("out").also {
+                it.writeText("{\"t\":\"start\",\"sid\":\"s\",\"pad\":\"$padding\"}\n{\"t\":\"end\",\"ok\":true,\"cost\":0.25}\n")
+            }
+        val span = TestFixtures.mockSpan()
+
+        val scan = LlmAttemptPricing(FakeHarness(), resolver(), logger).scan(out, span)
+
+        assertNull(scan.sessionId)
+        assertEquals(0.25, scan.cliCostUsd)
+        assertTrue(scan.resultSeen)
+        verify { span.setAttribute("llm.cost.scan_truncated", true) }
+    }
+
+    @Test
+    fun `a stdout stream past the byte bound is priced from its head only (CWE-770)`(
+        @TempDir dir: Path,
+    ) {
+        val out = dir.resolve("out")
+        out.bufferedWriter().use { w ->
+            w.write("{\"t\":\"start\",\"sid\":\"s\"}\n")
+            val filler = " ".repeat(1023) + "\n"
+            repeat(32 * 1024) { w.write(filler) }
+            w.write("{\"t\":\"end\",\"ok\":true,\"cost\":0.25}\n")
+        }
+
+        val span = TestFixtures.mockSpan()
+
+        val scan = LlmAttemptPricing(FakeHarness(), resolver(), logger).scan(out, span)
+
+        assertEquals("s", scan.sessionId)
+        assertNull(scan.cliCostUsd)
+        assertFalse(scan.resultSeen)
+        verify { span.setAttribute("llm.cost.scan_truncated", true) }
     }
 
     @Test
