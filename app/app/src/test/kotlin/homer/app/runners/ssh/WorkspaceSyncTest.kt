@@ -20,6 +20,7 @@ import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.concurrent.CountDownLatch
@@ -905,6 +906,72 @@ class WorkspaceSyncTest {
 
         assertEquals("local-keep", localSub.resolve("keep.txt").readText(), "overlay must keep pre-existing local file")
         assertEquals("remote-new", localSub.resolve("new.txt").readText(), "remote-only nested file must still download")
+    }
+
+    @Test
+    fun `downloadDir refuses to write through a dangling local symlink leading outside the destination, in every mode (CWE-59, CWE-22)`(
+        @TempDir local: Path,
+        @TempDir outside: Path,
+    ) = runBlocking {
+        val remoteRoot = server.rootDir.resolve("art-dangling").createDirectories()
+        remoteRoot.resolve("pwn.txt").writeText("pwned")
+        val target = outside.resolve("host-file.txt")
+        Files.createSymbolicLink(local.resolve("pwn.txt"), target)
+
+        for (mode in DownloadMode.entries) {
+            assertThrows<SecurityException>("mode $mode") {
+                runBlocking { sync.downloadDir(remoteRoot.toString(), local, mode = mode) }
+            }
+            assertTrue(Files.notExists(target, LinkOption.NOFOLLOW_LINKS), "mode $mode must write nothing at the link's target")
+        }
+        assertTrue(Files.isSymbolicLink(local.resolve("pwn.txt")), "a refused download must not prune the planted link")
+    }
+
+    @Test
+    fun `downloadDir still writes through a dangling symlink that stays inside the destination`(
+        @TempDir local: Path,
+    ) = runBlocking {
+        val remoteRoot = server.rootDir.resolve("art-dangling-inside").createDirectories()
+        remoteRoot.resolve("ok").writeText("inner")
+        val realTarget = local.resolve("real.txt")
+        Files.createSymbolicLink(local.resolve("ok"), realTarget)
+
+        sync.downloadDir(remoteRoot.toString(), local, mode = DownloadMode.OVERWRITE)
+
+        assertEquals("inner", realTarget.readText())
+    }
+
+    @Test
+    fun `single-file download refuses a live or dangling symlink at its target and writes nothing through it (CWE-59)`(
+        @TempDir local: Path,
+        @TempDir outside: Path,
+    ) = runBlocking {
+        val remote = server.rootDir.resolve("single-linked.txt").also { it.writeText("pwned") }
+        val dangling = outside.resolve("not-there.txt")
+        val live = outside.resolve("host-file.txt").also { it.writeText("host") }
+        Files.createSymbolicLink(local.resolve("dangling.txt"), dangling)
+        Files.createSymbolicLink(local.resolve("live.txt"), live)
+
+        assertThrows<SecurityException> { sync.download(remote.toString(), local.resolve("dangling.txt"), mode = DownloadMode.OVERWRITE) }
+        assertThrows<SecurityException> { sync.download(remote.toString(), local.resolve("live.txt"), mode = DownloadMode.OVERWRITE) }
+
+        assertTrue(Files.notExists(dangling, LinkOption.NOFOLLOW_LINKS), "nothing may be written at the dangling link's target")
+        assertEquals("host", live.readText(), "the live link's target must keep its content")
+    }
+
+    @Test
+    fun `single-file download never writes through a symlink swapped in for its target after its checks (CWE-367, CWE-59)`(
+        @TempDir local: Path,
+        @TempDir outside: Path,
+    ) = runBlocking {
+        val remote = server.rootDir.resolve("single-swapped.txt").also { it.writeText("pwned") }
+        val host = outside.resolve("host-file.txt").also { it.writeText("host") }
+        val target = local.resolve("swapped.txt").also { it.writeText("stale") }
+
+        val result = runCatching { syncSwapping(target, host).download(remote.toString(), target, mode = DownloadMode.OVERWRITE) }
+
+        assertTrue(result.isFailure, "the swapped-in symlink must be refused at the open")
+        assertEquals("host", host.readText(), "the swapped-in link's target must keep its content")
     }
 
     // ===== Upload symlinks must not leak host content outside the upload root =====
