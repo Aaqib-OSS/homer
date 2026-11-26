@@ -1895,7 +1895,8 @@ used for three things:
 
 - **Trace export**, when `openTelemetryExport` is `LANGFUSE` (the default).
 - **Fetching `!<langfuse>` prompts** for Claude/Codex/opencode commands, regardless of the
-  export setting.
+  export setting. Prompt fetches send the API keys too, so the `serverUrl` rule in the field
+  table applies in every export mode.
 - **Trace deep links**, when `projectId` is also set (see the field table).
 
 Leave it out if you need none of these.
@@ -1925,7 +1926,7 @@ langfuse:
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `serverUrl` | `String` | No | `""` | Langfuse instance URL. When export is `LANGFUSE`, a plaintext `http://` URL to a non-loopback host is rejected at startup (it would leak the API keys + prompt content); use `https://` or a `localhost`/`127.0.0.1` collector. Userinfo (`https://user:pass@host`), query and fragment are stripped before the endpoint is written to the log; the exporter still uses the URL as given. |
+| `serverUrl` | `String` | No | `""` | Langfuse instance URL. When set, it must be `https://`, or `http://` to `localhost`, `127.0.0.1` or `[::1]`, whatever `openTelemetryExport` is: prompt fetches and the trace export both send the API keys to it, so any other URL (plaintext to a remote host, another scheme, or one that does not parse) is rejected at startup. Userinfo (`https://user:pass@host`), query and fragment are stripped before the endpoint is written to the log; the exporter still uses the URL as given. |
 | `publicKey` | `String` | No | `""` | Langfuse public API key |
 | `secretKey` | `String` | No | `""` | Langfuse secret API key |
 | `projectId` | `String` | No | `""` | Langfuse project id. Used only to deep-link a run to its trace (`{serverUrl}/project/{projectId}/traces/{traceId}`), surfaced as `langfuseTraceUrl` on the process status API and as a link on the console's process detail. Langfuse derives the project from the API key pair and never returns it over OTLP, so it has to be configured; copy it out of any Langfuse URL. Blank = no trace links. **Setting it makes the link visible to every principal that can see the run** — the URL grants nothing on its own (reading the trace needs Langfuse credentials Homer does not issue), but it does reveal your `serverUrl` and `projectId` to those callers. Leave blank if that is unwanted. |
