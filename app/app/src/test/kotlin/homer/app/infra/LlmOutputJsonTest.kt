@@ -4,6 +4,11 @@ import homer.app.exceptions.MalformedLlmOutputException
 import homer.app.executors.llm.ClaudeHarness
 import homer.app.models.LlmEvent
 import homer.app.models.Translation
+import io.kotest.property.Arb
+import io.kotest.property.arbitrary.int
+import io.kotest.property.arbitrary.pattern
+import io.kotest.property.checkAll
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -129,12 +134,51 @@ class LlmOutputJsonTest {
         Files.write(file, "line\n".repeat(10).toByteArray())
         val bounded = BoundedLines(file, maxBytes = 12)
         val lines = bounded.lines.toList()
-        // 5 bytes per line: 3 whole lines (15 bytes) are read, the 4th pushes the budget
-        // negative and the sequence stops there.
+        // 12 bytes: two whole 5-byte lines and the partial third.
         assertEquals(3, lines.size)
         assertTrue(bounded.cut)
         assertFalse(BoundedLines(file, maxBytes = 100).cut)
     }
+
+    @Test
+    fun `BoundedLines never materializes a line past the byte bound (CWE-400)`() {
+        val file = tempDir.resolve("one-line.ndjson")
+        Files.write(file, ByteArray(1024 * 1024) { 'a'.code.toByte() })
+        val lines = BoundedLines(file, maxBytes = 1024).use { it.lines.toList() to it.cut }
+        assertEquals(listOf("a".repeat(1024)), lines.first)
+        assertTrue(lines.second)
+    }
+
+    @Test
+    fun `BoundedLines marks a cut only when the file holds more than the bound`() {
+        val file = tempDir.resolve("exact.ndjson")
+        Files.write(file, "{}\n{}\n".toByteArray())
+        val exact = BoundedLines(file, maxBytes = 6).use { it.lines.toList() to it.cut }
+        val short = BoundedLines(file, maxBytes = 4).use { it.lines.toList() to it.cut }
+        assertEquals(listOf("{}", "{}") to false, exact)
+        assertEquals(listOf("{}", "{") to true, short)
+    }
+
+    @Test
+    fun `BoundedLines bounds bytes, not chars, and decodes a split character as a replacement`() {
+        val file = Files.writeString(tempDir.resolve("multibyte.ndjson"), "日日日\n")
+        val read = BoundedLines(file, maxBytes = 4).use { it.lines.toList() to it.cut }
+        assertEquals(listOf("日\uFFFD") to true, read)
+    }
+
+    @Test
+    fun `BoundedLines reads the file as it is up to the bound, and marks a cut exactly when it holds more`() =
+        runTest {
+            checkAll(Arb.pattern("[a-z{}\":,é日\\n]{0,300}"), Arb.int(0..400)) { content, maxBytes ->
+                val bytes = content.toByteArray()
+                val file = Files.write(tempDir.resolve("prop.ndjson"), bytes)
+                BoundedLines(file, maxBytes.toLong()).use { bounded ->
+                    val lines = bounded.lines.toList()
+                    assertEquals(String(bytes.copyOf(minOf(bytes.size, maxBytes)), Charsets.UTF_8).reader().readLines(), lines)
+                    assertEquals(bytes.size > maxBytes, bounded.cut)
+                }
+            }
+        }
 
     @Test
     fun `translateStream counts ignored and malformed lines and keeps the raw list`() {
