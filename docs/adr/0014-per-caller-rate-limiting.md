@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-05
 deciders: Lukáš Vlk
-amended: 2026-09-24, 2026-09-30, 2026-11-20
+amended: 2026-09-24, 2026-09-30, 2026-11-20, 2026-11-26
 ---
 # ADR-0014: Per-caller rate limiting on the secured API
 
@@ -258,3 +258,33 @@ The hold ends in one of two ways:
 The MCP SDK hold goes with the Ktor hold. Both are registered as W-001 and W-002 in
 [`docs/workarounds.md`](../workarounds.md), whose `decision-records` check fails whenever either
 version moves, so each upgrade re-checks this exit.
+
+## Amendment (2026-11-26): unverified runner requests leave the global bucket
+
+The 2026-09-30 amendment kept a runner-protocol request whose token does not verify on the `global`
+key, reasoning about what that caller gains. It did not weigh what the caller costs others: the
+runner routes are mounted outside `authenticate(...)`, so a client holding no credential could keep
+the `global` bucket at zero with `POST /api/v1/runner/register` and make every authenticated
+operator request answer `429` until it refilled (CWE-770). A bucket a credential-less caller can
+drain must not be the one operator traffic rides.
+
+Such a request now takes a fourth constant key, `runner-unverified`: one aggregate bucket for every
+peer, the size of the `global` one, like the aggregate login bucket. The route still answers `401`,
+the bucket sheds the flood with `429` once spent, and a verified domain token keeps its own bucket.
+The key space is now four constants plus one key per configured domain; a per-peer key was
+rejected for the reason login has an aggregate bucket — it would multiply the limiter cache.
+
+**Trust boundary.** Unauthenticated network clients against operators: unverified runner traffic
+now draws from no bucket an operator request uses. A flood of it can lock out only other unverified
+runner traffic, which its route refuses `401` anyway, never a domain whose token verifies.
+
+**Not closed by this amendment.** An unauthenticated request on any other path — a `401` on an
+operator route, a `404` sweep — still draws from the `global` bucket: the global limiter runs
+before authentication and cannot tell such a request from an operator's without verifying the
+credential first. Keeping that traffic out of the operators' bucket is a separate decision.
+
+`GlobalRateLimitUnverifiedRunnerTest` guards the denial paths: an invalid-token flood is refused
+`401`, then shed `429` from its own bucket, while every operator request the `global` bucket allows
+is served and a valid-token domain still registers; with the `global` bucket drained an unverified
+runner request is still refused `401` by its route; and no token or path yields a key outside the
+bounded set.
