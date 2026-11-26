@@ -135,7 +135,7 @@ object TarStreams {
         return materialized.takeIf { mode == DownloadMode.MIRROR && remoteIsDir }
     }
 
-    /** The refusal of a tar past [maxEntries] entries or recorded paths; the byte bound's exception, so both map to `413`. */
+    /** The refusal of a tar past [maxEntries] entries; the byte bound's exception, so both map to `413`. */
     internal fun entryCapExceeded(maxEntries: Int) =
         RunnerTransferTooLargeException("Transfer exceeds the limit of $maxEntries tar entries")
 
