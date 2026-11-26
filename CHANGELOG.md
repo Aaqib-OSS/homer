@@ -4,6 +4,7 @@
 
 ### Homer
 
+- **Security: runner requests without a valid domain token no longer drain the global rate-limit bucket** — They draw from an aggregate bucket of their own, so an unauthenticated runner-protocol flood can no longer make authenticated API requests answer `429` (CWE-770). See [ADR-0014](docs/adr/0014-per-caller-rate-limiting.md).
 - **Security: tar extraction counts a sparse entry's expanded bytes against the transfer cap** — A downloaded tar whose entries expand past the cap, sparse holes included, is refused instead of writing past it (CWE-409). See [ADR-0047](docs/adr/0047-security-by-design-and-threat-model.md).
 - **Security: the LLM telemetry hand-off stops reading stdout at its 32 MiB bound** — A single over-long stdout line is cut at the bound instead of being read whole into memory.
 - **Security: a captured result can no longer choose an LLM command's executable** — An agent whose `!<claude>`, `!<codex>` or `!<opencode>` `cmd` references a `resultEnvParam` name fails to load, as one referencing an input already did (CWE-78). See [ADR-0047](docs/adr/0047-security-by-design-and-threat-model.md).
