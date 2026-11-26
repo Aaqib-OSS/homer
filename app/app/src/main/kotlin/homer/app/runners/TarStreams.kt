@@ -98,8 +98,8 @@ object TarStreams {
         }
     }
 
-    // Extracts a gzip'd tar from [input] into [local]; [maxDecompressedBytes] bounds decompressed size
-    // (ADR-0047 rule 4, CWE-409). A refused entry leaves only a partial tree, never anything outside [local].
+    // Extracts a gzip'd tar from [input] into [local]; [maxDecompressedBytes] bounds both the decompressed size and the
+    // bytes its entries expand to (ADR-0047 rule 4, CWE-409). A refused entry leaves a partial tree, never anything outside [local].
     fun extract(
         input: InputStream,
         local: Path,
@@ -111,7 +111,8 @@ object TarStreams {
         posixViewLookup: ((Path, Boolean) -> PosixFileAttributeView?)? = null,
     ): Set<Path>? {
         val materialized = if (mode == DownloadMode.MIRROR && remoteIsDir) mutableSetOf<Path>() else null
-        TarArchiveInputStream(BoundedInputStream(GzipCompressorInputStream(input), maxDecompressedBytes)).use { tar ->
+        val decompressed = BoundedInputStream(GzipCompressorInputStream(input), maxDecompressedBytes)
+        BoundedTarInputStream(decompressed, maxDecompressedBytes).use { tar ->
             generateSequence { tar.nextEntry }.forEach { entry ->
                 TarExtraction.extractEntry(tar, entry, remoteIsDir, local, fileName, mode, materialized, sourceLabel, posixViewLookup)
             }
@@ -349,4 +350,23 @@ internal class BoundedInputStream(
     }
 
     override fun close() = inner.close()
+}
+
+// Fails with [RunnerTransferTooLargeException] once its entries yield more than [limit] bytes, read or skipped: a
+// sparse entry's holes are synthesized here, past the decompressed-byte bound (ADR-0047 rule 4, CWE-409).
+internal class BoundedTarInputStream(
+    input: InputStream,
+    private val limit: Long,
+) : TarArchiveInputStream(input) {
+    private var count = 0L
+
+    override fun read(
+        b: ByteArray,
+        off: Int,
+        len: Int,
+    ): Int =
+        super.read(b, off, len).also {
+            if (it > 0) count += it
+            if (count > limit) throw RunnerTransferTooLargeException(limit)
+        }
 }
