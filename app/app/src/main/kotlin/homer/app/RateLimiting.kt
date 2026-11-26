@@ -26,11 +26,12 @@ import kotlin.time.Duration.Companion.seconds
 // limiter. Exact-match only — `/health`, `/heartbeat` and the stream/runner paths keep their ceiling.
 internal fun isProbePath(path: String): Boolean = path == "/api/v1/livez" || path == "/api/v1/readyz"
 
-// Request keys for the global limiter: three constants plus one RunnerDomainLimitKey per configured
+// Request keys for the global limiter: four constants plus one RunnerDomainLimitKey per configured
 // domain, so it caches a bounded set of limiter instances (ADR-0047 rule 4). See ADR-0014.
 internal const val PROBE_LIMIT_KEY = "probe"
 internal const val LOGIN_LIMIT_KEY = "login"
 internal const val GLOBAL_LIMIT_KEY = "global"
+internal const val RUNNER_UNVERIFIED_LIMIT_KEY = "runner-unverified"
 
 /** A verified runner-protocol request's key: the domain alias only, never the token (Ktor logs keys at trace). */
 internal data class RunnerDomainLimitKey(
@@ -58,8 +59,8 @@ internal fun runnerDomainRateLimit(domain: RunnerConfig.External): Int =
 private const val RUNNER_PROTOCOL_PREFIX = "/api/v1/runner/"
 private const val LOGIN_PATH = "/api/v1/auth/login"
 
-// The global limiter's key: probes exempt; a mounted login POST to one aggregate bucket; a runner
-// request to its domain's bucket only when [matchRunnerDomain] verifies the token. See ADR-0014.
+// The global limiter's key: probes exempt; a mounted login POST and an unverified runner request to one aggregate bucket
+// each, never the operators' global one (CWE-770); a token [matchRunnerDomain] verifies to its domain's bucket. See ADR-0014.
 internal fun globalRateLimitKey(
     method: HttpMethod,
     path: String,
@@ -77,7 +78,8 @@ internal fun globalRateLimitKey(
         }
 
         path.startsWith(RUNNER_PROTOCOL_PREFIX) -> {
-            matchRunnerDomain(runnerDomains, runnerToken) { it.token }?.let { RunnerDomainLimitKey(it.alias) } ?: GLOBAL_LIMIT_KEY
+            matchRunnerDomain(runnerDomains, runnerToken) { it.token }?.let { RunnerDomainLimitKey(it.alias) }
+                ?: RUNNER_UNVERIFIED_LIMIT_KEY
         }
 
         else -> {
@@ -130,9 +132,9 @@ private fun globalRateLimiter(
             RateLimiter.Unlimited
         }
 
-        // The aggregate login ceiling: one bucket for every peer, the size of
-        // the global one, so per-peer keys cannot multiply it (ADR-0047 rule 4).
-        LOGIN_LIMIT_KEY -> {
+        // Aggregate login and unverified-runner ceilings: one bucket each for every peer, the
+        // size of the global one, so per-peer keys cannot multiply them (ADR-0047 rule 4).
+        LOGIN_LIMIT_KEY, RUNNER_UNVERIFIED_LIMIT_KEY -> {
             RateLimiter.default(
                 limit = config.server.rateLimit.limit,
                 refillPeriod = config.server.rateLimit.refillPeriod.seconds,

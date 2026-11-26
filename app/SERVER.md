@@ -510,7 +510,7 @@ server:
 |-------|------|----------|---------|-------------|
 | `port` | `Int` | No | `8080` | HTTP server port |
 | `apiAuth` | `AuthConfig` | **Yes** | — | API authentication configuration. Omitting it is a **startup error** — running without auth requires the explicit `!<unsecured>` opt-in. See [ADR-0036](../docs/adr/0036-explicit-api-auth-opt-in.md). |
-| `rateLimit` | `RateLimitConfig` | No | `{limit=1000, refillPeriod=60}` | Global API rate limiting: a server-wide ceiling, one bucket shared by every request; the `/livez` and `/readyz` probes are exempt and never answer `429` (see [Liveness & readiness probes](#liveness--readiness-probes)), and `POST /api/v1/auth/login` and runner requests carrying a valid domain token use their own buckets; the same size also caps all logins together (see [Rate Limiting](#rate-limiting)) |
+| `rateLimit` | `RateLimitConfig` | No | `{limit=1000, refillPeriod=60}` | Global API rate limiting: a server-wide ceiling, one bucket shared by every request; the `/livez` and `/readyz` probes are exempt and never answer `429` (see [Liveness & readiness probes](#liveness--readiness-probes)), and `POST /api/v1/auth/login` and runner requests use their own buckets; the same size also caps all logins together, and all runner requests without a valid domain token together (see [Rate Limiting](#rate-limiting)) |
 | `perCallerRateLimit` | `RateLimitConfig` | No | `{limit=300, refillPeriod=60}` | Per-caller rate limit on the secured `/api/v1` routes, keyed on the authenticated identity so each token/key/user gets its own bucket. Layered *under* `rateLimit` (both apply). Raise `limit` to effectively disable. See [Rate Limiting](#rate-limiting) and [ADR-0014](../docs/adr/0014-per-caller-rate-limiting.md). |
 | `loginRateLimit` | `RateLimitConfig` | No | `{limit=5, refillPeriod=60}` | Stricter per-IP cap on `POST /api/v1/auth/login` to slow brute-force guessing. Keyed on the direct TCP peer — behind a reverse proxy that peer is the proxy, so it becomes one shared bucket for all clients; raise `limit` for a busy multi-user or proxied deployment. See [Rate Limiting](#rate-limiting). |
 | `corsAllowedOrigins` | `List<String>` | No | `[]` | Allowed CORS origins, each `http(s)://host[:port]` with no path and a port of 1–65535 if any (e.g. `["http://console.example.com"]`). An entry may contain `@SYSENV:VAR` placeholders, resolved at startup like the auth secrets, so the console's port can come from the environment: `"http://localhost:@SYSENV:FRONTEND_PORT"`. An unset variable, or an entry that does not resolve to an origin, is a **startup error**. Unlike `globalEnv`, a placeholder here does not mark the value secret. Empty list = any host **without** credential reflection (development default; a `*` response can never carry cookies). Pinned origins enable credentialed CORS. Under a `Password` (cookie) auth scheme an empty list is a **startup error** — cookie auth needs credentialed CORS, so explicit origins are required. See [ADR-0016](../docs/adr/0016-cookie-auth-csrf-protection.md). |
@@ -1660,9 +1660,9 @@ server:
 - Rate limiting is applied globally to all API endpoints, through **one bucket shared by every request** (it is not keyed on caller or path), including `401`s and `404`s, with three exceptions:
   - the `/livez` and `/readyz` probes are exempt and never answer `429` (see [Liveness & readiness probes](#liveness--readiness-probes));
   - `POST /api/v1/auth/login`, when a `password` scheme mounts it, uses an aggregate login bucket of its own instead, the same size as `rateLimit` (see [Login rate limiting](#login-rate-limiting));
-  - a request under `/api/v1/runner/` whose domain token verifies uses its domain's own bucket instead (see [Runner rate limiting](#runner-rate-limiting)). A missing or invalid token stays in the global bucket.
+  - a request under `/api/v1/runner/` whose domain token verifies uses its domain's own bucket instead, and one with a missing or invalid token an aggregate unverified-runner bucket, the same size as `rateLimit` (see [Runner rate limiting](#runner-rate-limiting)).
 
-  So a client draining the global bucket cannot stall run pickup or lock operators out of login. See [ADR-0014](../docs/adr/0014-per-caller-rate-limiting.md).
+  So a client draining the global bucket cannot stall run pickup or lock operators out of login, and a runner-protocol flood without a valid token cannot drain the global bucket. See [ADR-0014](../docs/adr/0014-per-caller-rate-limiting.md).
 - When the limit is exceeded, the server responds with **`429 Too Many Requests`** and no response body
 - The bucket refills fully after each `refillPeriod` interval
 
@@ -1761,9 +1761,11 @@ server:
 Requests under `/api/v1/runner/` whose domain token verifies (the same
 constant-time match the routes use) skip the global bucket and draw from a
 bucket of their domain's own, so an unauthenticated flood cannot stall run
-pickup or let a healthy instance miss its heartbeat. A missing or invalid token
-stays in the global bucket and gets `429` from it like any other request. A
-domain token exempts runner routes only; on an operator route it is
+pickup or let a healthy instance miss its heartbeat. A request with a missing
+or invalid token is refused `401` and draws from one aggregate unverified-runner
+bucket, the size of `rateLimit`, shared by every such request and answering
+`429` once spent; it never draws from the global bucket operator requests use.
+A domain token exempts runner routes only; on an operator route it is
 unauthenticated traffic like any other.
 
 - **Size.** `maxInstances × maxConcurrencyPerInstance × 1000` requests per 60 s
