@@ -41,7 +41,7 @@ def shared_saver(monkeypatch):
     saver = MemorySaver()
     # `run` (runner) and `state` (introspection) each open their own saver.
     monkeypatch.setattr(runner, "SqliteSaver", lambda conn: saver)
-    monkeypatch.setattr(introspection, "SqliteSaver", lambda conn: saver)
+    monkeypatch.setattr(introspection, "SqliteSaver", lambda conn, serde: saver)
     return saver
 
 

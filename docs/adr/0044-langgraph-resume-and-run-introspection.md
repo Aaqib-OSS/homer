@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-19
 deciders: Lukáš Vlk
-amended: 2026-08-20, 2026-09-30, 2026-10-09, 2026-11-20
+amended: 2026-08-20, 2026-09-30, 2026-10-09, 2026-11-20, 2026-11-25
 ---
 # ADR-0044: LangGraph resume and run introspection
 
@@ -313,6 +313,31 @@ is FINISHED while its thread keeps advancing in later segments, so the
 thread-scoped statuses still change. The artifact-only probe that drives the
 Resume button is separate and cheap (no Python on the backend); it also runs
 while a command runs, because the artifact is written before the graph starts.
+
+## Amendment (2026-11-25): `state` reads the checkpoint store with the strict serializer
+
+`state` is started by `ProcessGraphStateRunner` on the server host as Homer's own user, for any
+caller who can see the run, and it reads a store that agent runs write. `SqliteSaver(conn)` reads
+with LangGraph's permissive default serde, under which a msgpack value naming any module and
+callable is imported and called on read (CWE-502): a row a run plants executes in the server-host
+process whenever its status is polled. `state` now opens the store with
+`JsonPlusSerializer(allowed_msgpack_modules=None)`, which revives only LangGraph's built-in safe
+types and leaves any other typed value in its plain stored form, never importing it. The file checks
+above still decide which store is opened; the serde decides what its rows can do.
+
+- **Strict rather than an allow-list.** Everything Homer's runtime writes (`Send`, `Interrupt`,
+  `Command`) is in LangGraph's safe set, so an allow-list of what `state` needs is the strict form.
+  `state` reports no state values, so a typed value read as its plain form changes nothing in its
+  output; real stores, the committed former-line fixture included, read with nothing blocked.
+- **`run` keeps the default serde.** `LangGraphExecutor` starts `run` (fresh, resume and the
+  `HMR_LG_RECOVER` segment alike) in the agent's selected runner, in the process that imports and
+  executes the agent's own graph code, against the store of the owner that caused the run
+  (ADR-0046). Every writer of that store runs as the same runner user, so no principal is crossed
+  (same-UID, ADR-0047), and on the `local` runner agent code already runs as Homer's user (AR-13).
+  A strict serde there would buy nothing and would resume an enum, dataclass or pydantic state
+  value as a plain value or dict.
+- **Rejected: setting `LANGGRAPH_STRICT_MSGPACK` in the subprocess environment.** It depends on
+  every launcher setting it before LangGraph is imported; the explicit serde is local to the reader.
 
 ## More Information
 
