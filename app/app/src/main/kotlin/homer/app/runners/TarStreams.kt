@@ -32,8 +32,20 @@ object TarStreams {
     // Extraction bound where the caller configures none; matches `maxTransferBytes`'s default.
     const val DEFAULT_MAX_EXTRACTED_BYTES: Long = 1L * 1024 * 1024 * 1024
 
+    /** Most entries one extraction reads, and most paths it records and creates; not configurable (ADR-0047 rule 4, CWE-770). */
+    const val MAX_EXTRACTED_ENTRIES: Int = 500_000
+
+    /** Most characters the paths one extraction records may total, about 134 a path at the entry cap (CWE-770). */
+    const val MAX_RECORDED_PATH_CHARS: Long = 64L * 1024 * 1024
+
     /** Directory nesting an upload walk descends, here and in the ssh upload (ADR-0047 rule 4, CWE-674). */
     internal const val MAX_UPLOAD_DEPTH = 64
+
+    /** Longest tar entry name, in UTF-8 bytes, an extraction accepts: Linux's `PATH_MAX` (ADR-0047 rule 4, CWE-770). */
+    internal const val MAX_ENTRY_NAME_BYTES = 4096
+
+    /** Most segments (`.` aside) a tar entry name may have: [pack] emits names one segment deeper than its walk's depth. */
+    internal const val MAX_ENTRY_SEGMENTS = MAX_UPLOAD_DEPTH + 1
 
     /** Octal `0100`, the owner-execute mode bit. */
     internal const val OWNER_EXECUTE_BIT = 64
@@ -98,8 +110,8 @@ object TarStreams {
         }
     }
 
-    // Extracts a gzip'd tar from [input] into [local]; [maxDecompressedBytes] bounds both the decompressed size and the
-    // bytes its entries expand to (ADR-0047 rule 4, CWE-409). A refused entry leaves a partial tree, never anything outside [local].
+    // Extracts a gzip'd tar from [input] into [local] within [maxDecompressedBytes] decompressed and expanded (CWE-409), [maxEntries]
+    // entries and recorded paths, and bounded entry names (CWE-770; ADR-0047 rule 4). A refused entry leaves a partial tree in [local].
     fun extract(
         input: InputStream,
         local: Path,
@@ -109,16 +121,34 @@ object TarStreams {
         sourceLabel: String,
         maxDecompressedBytes: Long,
         posixViewLookup: ((Path, Boolean) -> PosixFileAttributeView?)? = null,
+        maxEntries: Int = MAX_EXTRACTED_ENTRIES,
     ): Set<Path>? {
-        val materialized = if (mode == DownloadMode.MIRROR && remoteIsDir) mutableSetOf<Path>() else null
+        val materialized = BoundedPathSet(maxEntries)
         val decompressed = BoundedInputStream(GzipCompressorInputStream(input), maxDecompressedBytes)
         BoundedTarInputStream(decompressed, maxDecompressedBytes).use { tar ->
-            generateSequence { tar.nextEntry }.forEach { entry ->
+            generateSequence { tar.nextEntry }.forEachIndexed { index, entry ->
+                if (index >= maxEntries) throw entryCapExceeded(maxEntries)
+                if (!entryNameWithinBounds(entry.name)) throw entryNameTooLong()
                 TarExtraction.extractEntry(tar, entry, remoteIsDir, local, fileName, mode, materialized, sourceLabel, posixViewLookup)
             }
         }
-        return materialized
+        return materialized.takeIf { mode == DownloadMode.MIRROR && remoteIsDir }
     }
+
+    /** The refusal of a tar past [maxEntries] entries or recorded paths; the byte bound's exception, so both map to `413`. */
+    internal fun entryCapExceeded(maxEntries: Int) =
+        RunnerTransferTooLargeException("Transfer exceeds the limit of $maxEntries tar entries")
+
+    /** Whether [name] is at most [MAX_ENTRY_NAME_BYTES] UTF-8 bytes and [MAX_ENTRY_SEGMENTS] segments, `.` and empty ones aside. */
+    internal fun entryNameWithinBounds(name: String): Boolean =
+        name.length <= MAX_ENTRY_NAME_BYTES &&
+            name.toByteArray(Charsets.UTF_8).size <= MAX_ENTRY_NAME_BYTES &&
+            name.split('/').count { it.isNotEmpty() && it != "." } <= MAX_ENTRY_SEGMENTS
+
+    private fun entryNameTooLong() =
+        RunnerTransferTooLargeException(
+            "Tar entry name exceeds $MAX_ENTRY_NAME_BYTES bytes or $MAX_ENTRY_SEGMENTS levels",
+        )
 
     // Deletes local paths under [local] absent from [keep], deepest first. Only called after a
     // fully successful download. See ADR-0055.
@@ -369,4 +399,29 @@ internal class BoundedTarInputStream(
             if (it > 0) count += it
             if (count > limit) throw RunnerTransferTooLargeException(limit)
         }
+}
+
+// The paths one extraction records; a new one past [limit] paths or [maxChars] characters in all fails with
+// [RunnerTransferTooLargeException] before the set grows and before the path is created (ADR-0047 rule 4, CWE-770).
+internal class BoundedPathSet(
+    private val limit: Int,
+    private val maxChars: Long = TarStreams.MAX_RECORDED_PATH_CHARS,
+    private val paths: MutableSet<Path> = mutableSetOf(),
+) : MutableSet<Path> by paths {
+    private var chars = 0L
+
+    override fun add(element: Path): Boolean {
+        if (element in paths) return false
+        if (paths.size >= limit) throw TarStreams.entryCapExceeded(limit)
+        val length = element.toString().length
+        if (chars + length >
+            maxChars
+        ) {
+            throw RunnerTransferTooLargeException("Transfer exceeds the limit of $maxChars recorded path characters")
+        }
+        chars += length
+        return paths.add(element)
+    }
+
+    override fun addAll(elements: Collection<Path>): Boolean = elements.fold(false) { changed, path -> add(path) || changed }
 }

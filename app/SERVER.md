@@ -3287,8 +3287,9 @@ See [ADR-0043](../docs/adr/0043-k8s-sync-workspaces.md).
   Sync-down is best-effort: a failure, or a missing pod path, leaves
   the host copy possibly partially updated, never pruned, and is
   logged loudly but does not fail an otherwise-successful run. A
-  download is also refused once it has extracted 1 GiB (not
-  configurable) and is then treated like any other sync-down failure.
+  download is also refused once it has extracted 1 GiB or 500,000
+  entries, or at an entry name over 4096 bytes or 65 levels (none
+  configurable), and is then treated like any other sync-down failure.
   See [ADR-0055](../docs/adr/0055-workdir-sync-down-is-a-mirror.md).
 - **`cleanWorkspace` is a no-op** on kubernetes — the `emptyDir` dies
   with the pod, so pod deletion *is* the cleanup. A pod kept via
@@ -3952,7 +3953,8 @@ dropped and its runs fail; a command result is awaited for its `timeout` plus
 `heartbeatTimeoutSec`; each transfer request (a tar either way, an output
 chunk) for `transferTimeoutSec`; a tar the instance posts for at most
 `maxTransferBytes`, compressed, decompressed and as the bytes its entries
-expand to (sparse holes included); a domain holds at most
+expand to (sparse holes included), and for at most 500,000 entries, each
+named in at most 4096 bytes and 65 levels; a domain holds at most
 `maxInstances` instances, an instance at most its `concurrency` claim polls;
 a transfer is served one request at a time (per op for a tar, per op and
 stream for output), and a concurrent duplicate is `429`. A domain token is
@@ -4056,7 +4058,7 @@ register, so this entry has neither.
 | `maxInstances` | `Int` | No | `32` | Registration beyond the bound is `429`. |
 | `maxConcurrencyPerInstance` | `Int` | No | `16` | Cap on the `concurrency` an instance may announce (`422` above it). |
 | `transferTimeoutSec` | `Long` | No | `300` | Deadline for one tar transfer (workspace upload to the instance, artifacts/workdir download from it), enforced both on the waiting run and on the transfer request itself, and for each output-chunk request. A posted tar or chunk past it is `408`; a fetched tar is cut off mid-stream, its `200` already sent. |
-| `maxTransferBytes` | `Long` | No | `1073741824` | Largest tar an instance may post for one download, applied to the compressed body, the bytes it decompresses to and the bytes its entries expand to (a sparse file's holes included), so a gzip bomb or a sparse-file bomb is refused at the same ceiling; over it the post is `413` and the run fails. |
+| `maxTransferBytes` | `Long` | No | `1073741824` | Largest tar an instance may post for one download, applied to the compressed body, the bytes it decompresses to and the bytes its entries expand to (a sparse file's holes included), so a gzip bomb or a sparse-file bomb is refused at the same ceiling; over it the post is `413` and the run fails. A tar of more than 500,000 entries or created paths, of paths totalling more than 64 Mi characters, or with an entry name over 4096 bytes or 65 levels is refused the same way, whatever this value. |
 | `env` | `Map<String, String>` | No | `{}` | Per-domain environment variables for runs on any instance of this domain; same layering and `@SYSENV:` support as the ssh/kubernetes `env`, and keys must not be blank or use the reserved `HMR_` prefix. Unlike there, keys need not be shell identifiers: the runner instance hands each command its env directly, not through a sourced shell file. |
 | `extraUploads` | `List<ExtraUploadSpec>` | No | `[]` | Host files/folders uploaded into every workspace on whichever instance claims the run, after the agent dir; same shape rules, reserved paths and startup check as the ssh runner's `extraUploads`, but always uploaded in full (a domain has no `syncExcludes`), and `env` (optional, non-`HMR_`) is repointed at the instance's copy under its session root. Every instance of the domain receives them, so the ssh runner's security contract applies: no secrets in declared folders. See ADR-0042. |
 
@@ -4091,7 +4093,7 @@ rate-limited by its domain's bucket, not the global one (see
 | `POST /api/v1/runner/instances/{id}/claim` | Long-poll up to `pollSec` (30 s). `200 {sessionId, processId, agentName, tags}` or `204`. At most `concurrency` concurrent polls per instance, the next is `429`. Also a heartbeat. |
 | `POST /api/v1/runner/sessions/{sid}/next` | Body optionally `{completed: <result>}`, at most 64 KiB (`413` over it). Long-poll up to `pollSec`; `200 <op>` or `204`. Also a heartbeat. A result for an op that already has one is ignored. At most 3 concurrent polls per session, a further one is `429` — the refused call still records the result it carried, so only the wait is refused. |
 | `GET /api/v1/runner/sessions/{sid}/ops/{opId}/tar` | Streams the gzip'd tar for an `upload` op, for at most `transferTimeoutSec`; past it the stream is cut. `429` while another fetch of the same op is in flight. |
-| `POST /api/v1/runner/sessions/{sid}/ops/{opId}/tar?kind=dir\|file` | The instance posts the gzip'd tar for a `download` op, at most `maxTransferBytes` compressed, decompressed **and** as the bytes its entries expand to (sparse holes included); `202`, `413` over any of the three, `408` past `transferTimeoutSec`, `422` if an entry is refused (it escapes the target, or its mode cannot be normalized) — extraction streams entries, so a refused tar may leave already-contained entries on disk, never outside the target. `429` while another post for the same op is in flight. |
+| `POST /api/v1/runner/sessions/{sid}/ops/{opId}/tar?kind=dir\|file` | The instance posts the gzip'd tar for a `download` op, at most `maxTransferBytes` compressed, decompressed **and** as the bytes its entries expand to (sparse holes included), and with at most 500,000 entries, each named in at most 4096 bytes and 65 levels; `202`, `413` past any of these, `408` past `transferTimeoutSec`, `422` if an entry is refused (it escapes the target, or its mode cannot be normalized) — extraction streams entries, so a refused tar may leave already-contained entries on disk, never outside the target. `429` while another post for the same op is in flight. |
 | `POST /api/v1/runner/sessions/{sid}/ops/{opId}/output?stream=stdout\|stderr&seq=N` | Raw chunk body, at most 1 MiB and at most `transferTimeoutSec`. Appended in `seq` order per stream; a gap or repeat is `409`. `429` while another chunk of the same op and stream is in flight; the other stream is unaffected. |
 
 A claim poll is refused with `429` when `openPolls + activeSessions >=
