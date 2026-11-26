@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-21
 deciders: Lukáš Vlk
-amended: 2026-09-23, 2026-09-30, 2026-10-06, 2026-10-16, 2026-11-05, 2026-11-20, 2026-11-21, 2026-11-25
+amended: 2026-09-23, 2026-09-30, 2026-10-06, 2026-10-16, 2026-11-05, 2026-11-20, 2026-11-21, 2026-11-25, 2026-11-26
 ---
 # ADR-0047: Security is a design input, and these are the boundaries it defends
 
@@ -475,6 +475,36 @@ transfer past it.
 Refusing every sparse entry was rejected. Homer's own pack never writes one, but a pod's or a
 third-party runner's `tar` may (libarchive's bsdtar does for a sparse file by default), so refusal
 would fail a legitimate download, and on its own it would still leave the bytes written uncounted.
+
+## Amendment (2026-11-26): a tar's entries are capped too
+
+Rule 4's byte ceiling charges an empty file or a directory only its 512-byte header, so about two
+million of them fit under the default 1 GiB, each one a created path and syscalls, and in `MIRROR`
+mode a path kept on the heap (CWE-400, CWE-770). A deep entry name multiplies that again: one
+header can create every missing directory of its path. `TarStreams.extract` therefore refuses a
+transfer past `MAX_EXTRACTED_ENTRIES` (500,000) headers, or past as many distinct paths recorded,
+an entry's ancestors included; a path is recorded before it is created, so no more than the cap
+ever reaches the destination. Recording first gives up the bound `PATH_MAX` set on the old order,
+where creating the directory failed before its ancestors were kept: one long, deep name would be
+recorded as one path per ancestor, each a copy of its prefix. An entry name is therefore refused
+before anything touches it when it is longer than 4096 UTF-8 bytes (Linux's `PATH_MAX`) or deeper
+than 65 segments, `.` aside (`MAX_UPLOAD_DEPTH` plus the leaf, the deepest name Homer's own pack
+writes), and the record also refuses a path once the paths it holds total 64 Mi characters. Every
+refusal is the byte ceiling's exception: `413` on the runner tar route, a failed sync-down or op
+elsewhere.
+
+Paths are recorded in every mode, not only `MIRROR`: counting created paths needs their distinct
+set, since a legitimate tree's entries share ancestors, and counting every ancestor of every entry
+would refuse a tree of 100,000 files ten levels deep. The record's character bound, not the entry
+cap times the name bound, is what bounds its heap.
+
+The numbers are fixed, not configuration. It is several times a large monorepo's `node_modules` tree,
+the largest legitimate workspace these paths carry, and keeps the `MIRROR` record's heap bounded
+independently of `maxTransferBytes`, which an operator may raise. A per-domain setting was rejected:
+the Kubernetes sync and `homer-runner` have no per-transfer configuration to hang it on, and one
+fixed cap gives all three callers the same refusal. The character bound allows about 134 characters
+a path at the entry cap. Homer's own pack is not capped by count; a workspace past the cap fails at
+the extracting side, as does a pod's workspace nested deeper than the segment bound.
 
 ## Pros and Cons of the Options
 

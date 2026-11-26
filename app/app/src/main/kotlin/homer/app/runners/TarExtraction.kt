@@ -48,14 +48,14 @@ internal object TarExtraction {
         }
         val root = local.toAbsolutePath().normalize()
         val target = entryTarget(entry, remoteIsDir, local, root, fileName, materialized)
+        // Recorded before created, so a bounded record refuses a path before it reaches the disk (ADR-0047 rule 4, CWE-770).
+        recordAncestors(root, target.parent, materialized)
         if (entry.isDirectory) {
             Files.createDirectories(target)
-            recordAncestors(root, target.parent, materialized)
             return
         }
         if (mode == DownloadMode.OVERLAY && Files.exists(target)) return
         target.parent?.let { Files.createDirectories(it) }
-        recordAncestors(root, target.parent, materialized)
         // NOFOLLOW_LINKS on the single-file branch only: the directory branch must follow a contained link, which a
         // live workspace legitimately holds; assertContained guards it (ADR-0047, amendment of 2026-09-30).
         val options = if (remoteIsDir) emptyArray() else NOFOLLOW_WRITE
