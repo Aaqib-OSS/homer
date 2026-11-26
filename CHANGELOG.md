@@ -5,6 +5,7 @@
 ### Homer
 
 - **Security: the ssh runner's download no longer writes through a symlink leading out of the destination** — A downloaded file whose local name is a dangling symlink pointing outside the workspace, or a single-file download whose target is any symlink, now fails the download instead of writing where the link points (CWE-59). See [ADR-0055](docs/adr/0055-workdir-sync-down-is-a-mirror.md).
+- **BREAKING: `langfuse.serverUrl` must be `https://` or loopback `http://` in every export mode** — A set URL that is plaintext to a remote host, another scheme or unparseable now fails startup even when `openTelemetryExport` is not `LANGFUSE`, because prompt fetches send the Langfuse keys to it (CWE-319).
 - **Security: tar extraction counts a sparse entry's expanded bytes against the transfer cap** — A downloaded tar whose entries expand past the cap, sparse holes included, is refused instead of writing past it (CWE-409). See [ADR-0047](docs/adr/0047-security-by-design-and-threat-model.md).
 - **Security: the LLM telemetry hand-off stops reading stdout at its 32 MiB bound** — A single over-long stdout line is cut at the bound instead of being read whole into memory.
 - **Security: a captured result can no longer choose an LLM command's executable** — An agent whose `!<claude>`, `!<codex>` or `!<opencode>` `cmd` references a `resultEnvParam` name fails to load, as one referencing an input already did (CWE-78). See [ADR-0047](docs/adr/0047-security-by-design-and-threat-model.md).

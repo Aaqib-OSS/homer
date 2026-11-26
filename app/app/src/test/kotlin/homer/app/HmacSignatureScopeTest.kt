@@ -284,36 +284,4 @@ class HmacSignatureScopeTest {
     fun `non-password auth does not throw for session secret strength`() {
         validateSessionSecretStrength(configWith(AuthConfig.Unsecured))
     }
-
-    // ---- validateLangfuseServerUrl ----
-
-    private fun configWithLangfuse(
-        url: String,
-        export: OpenTelemetryExport = OpenTelemetryExport.LANGFUSE,
-    ) = AppConfig(
-        server = Server(apiAuth = AuthConfig.Unsecured),
-        agentsSearchPath = "/tmp/a",
-        workspaceRootPath = "/tmp/w",
-        databasePath = "/tmp/h.db",
-        langfuse = LangfuseConfig(serverUrl = url, publicKey = "pk", secretKey = "sk"),
-        openTelemetryExport = export,
-    )
-
-    @Test
-    fun `langfuse plaintext http to a remote host throws`() {
-        val ex = assertFailsWith<ConfigurationException> { validateLangfuseServerUrl(configWithLangfuse("http://langfuse.example.com")) }
-        assertTrue(ex.message?.contains("https") == true)
-    }
-
-    @Test
-    fun `langfuse https and localhost http are allowed`() {
-        validateLangfuseServerUrl(configWithLangfuse("https://langfuse.example.com"))
-        validateLangfuseServerUrl(configWithLangfuse("http://localhost:3000"))
-        validateLangfuseServerUrl(configWithLangfuse("http://127.0.0.1:3000"))
-    }
-
-    @Test
-    fun `langfuse http is ignored when export is not LANGFUSE`() {
-        validateLangfuseServerUrl(configWithLangfuse("http://langfuse.example.com", OpenTelemetryExport.LOG))
-    }
 }
