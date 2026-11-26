@@ -318,6 +318,7 @@ private const val MIN_RUNNER_TOKEN_LEN = 32
 /**
  * Fail-fast on a set `langfuse.serverUrl` that is not `https://` or loopback `http://`, whatever the export mode:
  * prompt fetches and the OTLP export both send the Langfuse keys there. The message never echoes userinfo or query.
+ * Checked at boot, not in `LangfuseConfig.init`: only the server sends the keys, and its deep link must tolerate any value.
  */
 internal fun validateLangfuseServerUrl(config: AppConfig) {
     val url = config.langfuse.serverUrl
