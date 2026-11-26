@@ -1,5 +1,6 @@
 package homer.app.executors.llm
 
+import homer.app.infra.parseNdjsonLenient
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.choice
 import io.kotest.property.arbitrary.element
@@ -120,6 +121,24 @@ class ByteBoundedLinesTest {
         Files.write(file, "{}\n{}\n".toByteArray())
         assertEquals(listOf("{}", "{}") to false, readKeepingCutLine(file, maxBytes = 6))
         assertEquals(listOf("{}", "{") to true, readKeepingCutLine(file, maxBytes = 4))
+    }
+
+    @Test
+    fun `lines split on a newline only, so a carriage return stays on its line`() {
+        val crlf = Files.writeString(tempDir.resolve("crlf.ndjson"), "{\"a\":1}\r\n{\"b\":2}\r\n")
+        val bareCr = Files.writeString(tempDir.resolve("cr.ndjson"), "{\"a\":1}\r{\"b\":2}\n")
+        assertEquals(listOf("{\"a\":1}\r", "{\"b\":2}\r") to false, readKeepingCutLine(crlf, maxBytes = 100))
+        assertEquals(listOf("{\"a\":1}\r{\"b\":2}") to false, readKeepingCutLine(bareCr, maxBytes = 100))
+    }
+
+    @Test
+    fun `the hand-off parses a CRLF stream whole and a bare carriage return as one malformed line`() {
+        val crlf = Files.writeString(tempDir.resolve("crlf.ndjson"), "{\"a\":1}\r\n{\"b\":2}\r\n")
+        val bareCr = Files.writeString(tempDir.resolve("cr.ndjson"), "{\"a\":1}\r{\"b\":2}\n")
+        val parsedCrlf = ByteBoundedLines(crlf, 100).use { parseNdjsonLenient(it.lines) }
+        val parsedBareCr = ByteBoundedLines(bareCr, 100).use { parseNdjsonLenient(it.lines) }
+        assertEquals(2 to 0L, parsedCrlf.events.size to parsedCrlf.skippedLines)
+        assertEquals(0 to 1L, parsedBareCr.events.size to parsedBareCr.skippedLines)
     }
 
     @Test
