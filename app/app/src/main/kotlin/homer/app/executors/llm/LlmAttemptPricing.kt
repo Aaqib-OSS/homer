@@ -50,8 +50,9 @@ internal class LlmAttemptPricing(
         span: Span,
     ): LlmAccountingScan {
         val scan =
-            runCatching { ByteBoundedLines(stdoutFile, SCAN_MAX_LINE_BYTES, SCAN_MAX_BYTES).use { scanBounded(it, span) } }
-                .getOrElse { LlmAccountingScan(sessionId = null, cliCostUsd = null, resultSeen = false, modelCalls = 0, usage = null) }
+            runCatching {
+                ByteBoundedLines(stdoutFile, SCAN_MAX_BYTES, SCAN_MAX_LINE_BYTES, dropCutLine = true).use { scanBounded(it, span) }
+            }.getOrElse { LlmAccountingScan(sessionId = null, cliCostUsd = null, resultSeen = false, modelCalls = 0, usage = null) }
         if (harness.reportsCost && scan.resultSeen && scan.cliCostUsd == null) {
             // Gated on resultSeen: a missing result event (kill, crash, timeout) is no schema drift,
             // and gets its own "no result event" reason below.
