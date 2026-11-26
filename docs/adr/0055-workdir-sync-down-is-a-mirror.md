@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-08-26
-amended: 2026-11-20
+amended: 2026-11-20, 2026-11-26
 deciders: Lukáš Vlk
 ---
 # ADR-0055: `workdir` sync-down is a mirror, not an overlay
@@ -132,3 +132,17 @@ allowed. The realpath is only checked, never used. The recursion, the writes and
 set keep the lexical path: a realpath child compared with the lexical root one level down would
 reject every deep download on a host whose workspace path has a symlinked prefix (macOS `/var`),
 and the lexical prune walk must find the same paths the download recorded.
+
+## Amendment (2026-11-26): the ssh download refuses a dangling link out of the destination
+
+The 2026-11-20 amendment's claim held only for a live link: `assertContained` resolves past a
+dangling one, and the write followed it to wherever it pointed. Each entry now also passes
+`PathSafety.assertDanglingLinkContained`, as the tar extract walk does, so a dangling link leading
+out of the destination fails the download while one that stays inside is still written through.
+The single-file branch matches the tar one: any symlink at the target is refused, and the file is
+opened with `NOFOLLOW_LINKS`. The walk, the writes and the materialized set stay lexical.
+
+The walk keeps a check-then-open window: its open must follow a contained link, so a link swapped in
+between the check and the open is not caught. This is the residual ADR-0047's 2026-09-30 amendment
+accepts for the tar extract walk, for the same reason: the swap needs a concurrent writer at
+Homer's own UID in the destination, which crosses no principal.

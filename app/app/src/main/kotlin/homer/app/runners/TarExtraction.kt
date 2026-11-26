@@ -21,13 +21,7 @@ import java.nio.file.attribute.PosixFilePermissions
 internal object TarExtraction {
     private val logger = LoggerFactory.getLogger(TarStreams::class.java)
 
-    private val NOFOLLOW_WRITE =
-        arrayOf<OpenOption>(
-            StandardOpenOption.WRITE,
-            StandardOpenOption.CREATE,
-            StandardOpenOption.TRUNCATE_EXISTING,
-            LinkOption.NOFOLLOW_LINKS,
-        )
+    private val NOFOLLOW_WRITE = PathSafety.NOFOLLOW_WRITE.toTypedArray()
 
     /** Extracts [entry] of [tar] under [local]; the contract is [TarStreams.extract]'s. */
     fun extractEntry(
@@ -48,14 +42,14 @@ internal object TarExtraction {
         }
         val root = local.toAbsolutePath().normalize()
         val target = entryTarget(entry, remoteIsDir, local, root, fileName, materialized)
+        // Recorded before created, so a bounded record refuses a path before it reaches the disk (ADR-0047 rule 4, CWE-770).
+        recordAncestors(root, target.parent, materialized)
         if (entry.isDirectory) {
             Files.createDirectories(target)
-            recordAncestors(root, target.parent, materialized)
             return
         }
         if (mode == DownloadMode.OVERLAY && Files.exists(target)) return
         target.parent?.let { Files.createDirectories(it) }
-        recordAncestors(root, target.parent, materialized)
         // NOFOLLOW_LINKS on the single-file branch only: the directory branch must follow a contained link, which a
         // live workspace legitimately holds; assertContained guards it (ADR-0047, amendment of 2026-09-30).
         val options = if (remoteIsDir) emptyArray() else NOFOLLOW_WRITE
@@ -94,12 +88,7 @@ internal object TarExtraction {
             if (entry.name.removePrefix("./") != fileName) {
                 throw SecurityException("Unexpected tar entry '${entry.name}' for single-file download")
             }
-            // `local` is the file, so its own directory is the containment root: a live or dangling symlink planted
-            // at `local` must not steer the write at a host file (ADR-0047, amendment of 2026-09-30).
-            val parent =
-                root.parent ?: throw SecurityException("Single-file download target '$local' has no parent directory")
-            PathSafety.assertContained(parent, local)
-            PathSafety.assertNoSymlinkComponentsBelow(parent, local)
+            PathSafety.assertSingleFileTarget(local)
             local
         }
 
