@@ -374,10 +374,12 @@ class RunnerOutputSequenceException(
     got: Long,
 ) : HomerException("Output chunk sequence mismatch: expected $expected, got $got")
 
-/** A posted tar exceeded the domain's `maxTransferBytes`. Maps to 413. */
+/** A transferred tar exceeded a bound: the domain's `maxTransferBytes`, or the extractor's entry cap. Maps to 413. */
 class RunnerTransferTooLargeException(
-    maxBytes: Long,
-) : HomerException("Transfer exceeds the domain limit of $maxBytes bytes")
+    message: String,
+) : HomerException(message) {
+    constructor(maxBytes: Long) : this("Transfer exceeds the domain limit of $maxBytes bytes")
+}
 
 // A transfer handler outran the domain's `transferTimeoutSec`. The handler owns this bound; the
 // one in `ExternalRunnerSession.await` is a different component's (ADR-0047 rule 4). Maps to 408.
