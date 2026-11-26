@@ -3080,9 +3080,9 @@ sessionSecretPrevious: "@SYSENV:OLD_SECRET"</code></pre>
         <article class="f">
           <h3>Rate limiting <span class="where">server config</span></h3>
           <p>Layered buckets: a global ceiling, a per-identity bucket on secured routes, a stricter per-IP one on login
-            under an aggregate login ceiling, and one per runner domain. Login requests, and runner requests carrying a
-            valid domain token, use their own buckets instead of the global one, so draining it cannot lock operators out
-            or stall run pickup. The <code>/livez</code> and <code>/readyz</code> probes bypass all of them and never
+            under an aggregate login ceiling, one per runner domain, and an aggregate one for runner requests without a
+            valid domain token. Login and runner requests use their own buckets instead of the global one, so draining it
+            cannot lock operators out or stall run pickup, and a runner-protocol flood cannot drain it. The <code>/livez</code> and <code>/readyz</code> probes bypass all of them and never
             answer <code>429</code>, so a drained bucket cannot make the kubelet restart the pod. Raise a configured limit
             to effectively disable it; the per-domain runner bucket is sized from the runner config, not set here.</p>
           <pre><code>server:

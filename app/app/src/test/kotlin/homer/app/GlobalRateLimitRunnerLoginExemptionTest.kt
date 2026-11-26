@@ -48,7 +48,7 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * Runner-protocol requests with a valid domain token, and `POST /api/v1/auth/login`, leave the unauthenticated global
  * bucket (ADR-0014 amendment 2026-09-30). Every test asserts the denial path (ADR-0047 rule 8): a missing or invalid
- * token still rides the drained global bucket, a token flood hits its own domain's bucket, and login keeps its own.
+ * token gains no domain bucket, a token flood hits its own domain's bucket, and login keeps its own.
  */
 @ExtendWith(ResetDrainingExtension::class)
 class GlobalRateLimitRunnerLoginExemptionTest {
@@ -132,10 +132,10 @@ class GlobalRateLimitRunnerLoginExemptionTest {
             val domain = registry.externalDomains.single()
             val instance = domain.instance(instanceId)!!
 
-            // Denial path: without a verified token the runner routes still ride the drained bucket.
-            assertEquals(HttpStatusCode.TooManyRequests, runnerPost("/api/v1/runner/instances/$instanceId/claim", null).status)
+            // Denial path: without a verified token the runner routes are still refused by the route itself.
+            assertEquals(HttpStatusCode.Unauthorized, runnerPost("/api/v1/runner/instances/$instanceId/claim", null).status)
             assertEquals(
-                HttpStatusCode.TooManyRequests,
+                HttpStatusCode.Unauthorized,
                 runnerPost("/api/v1/runner/instances/$instanceId/claim", "not-the-workers-token-0123456789ab").status,
                 "an invalid domain token must gain nothing from the exemption",
             )
@@ -279,11 +279,11 @@ class GlobalRateLimitRunnerLoginExemptionTest {
         assertEquals(RunnerDomainLimitKey("workers"), key("/api/v1/runner/sessions/s/next", WORKERS_TOKEN))
         assertEquals(RunnerDomainLimitKey("workers"), key("/api/v1/runner/instances/i/claim", WORKERS_TOKEN))
 
-        // Denial paths: every unverified or out-of-scope request keeps the global key.
-        assertEquals(GLOBAL_LIMIT_KEY, key("/api/v1/runner/register"))
-        assertEquals(GLOBAL_LIMIT_KEY, key("/api/v1/runner/register", ""))
-        assertEquals(GLOBAL_LIMIT_KEY, key("/api/v1/runner/register", WORKERS_TOKEN.dropLast(1)))
-        assertEquals(GLOBAL_LIMIT_KEY, key("/api/v1/runner/register", WORKERS_TOKEN + "x"))
+        // Denial paths: an unverified runner request gets no domain key, an out-of-scope one keeps the global key.
+        assertEquals(RUNNER_UNVERIFIED_LIMIT_KEY, key("/api/v1/runner/register"))
+        assertEquals(RUNNER_UNVERIFIED_LIMIT_KEY, key("/api/v1/runner/register", ""))
+        assertEquals(RUNNER_UNVERIFIED_LIMIT_KEY, key("/api/v1/runner/register", WORKERS_TOKEN.dropLast(1)))
+        assertEquals(RUNNER_UNVERIFIED_LIMIT_KEY, key("/api/v1/runner/register", WORKERS_TOKEN + "x"))
         assertEquals(GLOBAL_LIMIT_KEY, key("/api/v1/status", WORKERS_TOKEN))
         assertEquals(GLOBAL_LIMIT_KEY, key("/api/v1/runnerx/register", WORKERS_TOKEN))
         assertEquals(GLOBAL_LIMIT_KEY, key("/api/v1/auth/login", method = HttpMethod.Get))
