@@ -164,6 +164,29 @@ class TarEntryCapTest {
     }
 
     @Test
+    fun `an entry name of 4096 UTF-8 bytes is within the bound and one of 4097 is not`() {
+        val segment = "é".repeat(31) + "x"
+        val atBound = List(64) { segment }.joinToString("/") + "y"
+        val pastBound = atBound + "y"
+        assertEquals(4096, atBound.toByteArray(Charsets.UTF_8).size)
+
+        assertTrue(TarStreams.entryNameWithinBounds(atBound))
+        assertFalse(TarStreams.entryNameWithinBounds(pastBound))
+    }
+
+    @Test
+    fun `a tar past the recorded-path cap is refused naming the path bound, not the entry count`() {
+        val names = sequenceOf("d1/d2/f1", "d1/d2/f2")
+
+        val refusal =
+            assertThrows<RunnerTransferTooLargeException> {
+                extract(ByteArrayInputStream(tarOf(names)), destination(), 3, DownloadMode.MIRROR)
+            }
+
+        assertTrue("3 recorded paths" in refusal.message.orEmpty(), refusal.message)
+    }
+
+    @Test
     fun `an entry one level past the depth bound is refused, one at it extracts`() {
         val atBound = (1..TarStreams.MAX_ENTRY_SEGMENTS).joinToString("/") { "d$it" }
 

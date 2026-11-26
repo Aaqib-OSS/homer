@@ -412,7 +412,7 @@ internal class BoundedPathSet(
 
     override fun add(element: Path): Boolean {
         if (element in paths) return false
-        if (paths.size >= limit) throw TarStreams.entryCapExceeded(limit)
+        if (paths.size >= limit) throw RunnerTransferTooLargeException("Transfer exceeds the limit of $limit recorded paths")
         val length = element.toString().length
         if (chars + length >
             maxChars
