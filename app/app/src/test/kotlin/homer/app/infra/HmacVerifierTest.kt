@@ -494,4 +494,49 @@ class HmacVerifierTest {
             )
         assertEquals(HmacVerifier.Result.Rejected(noMatch), result)
     }
+
+    private val fullTemplate =
+        HmacKeyConfig(
+            secret = "s",
+            signatureHeader = "X-Sig",
+            timestampHeader = "X-Ts",
+            payloadTemplate = "{{timestamp}}.{{method}}.{{path}}.{{query}}.{{body}}",
+        )
+
+    private fun verifyFull(
+        sig: String,
+        body: ByteArray,
+    ) = verifier().verify(
+        keys = mapOf("k" to fullTemplate),
+        method = "POST",
+        path = "/api/x",
+        query = "a=1",
+        headers = { mapOf("X-Sig" to sig, "X-Ts" to "1700000000")[it] },
+        rawBody = body,
+    )
+
+    @Test
+    fun `a body carrying a placeholder no longer verifies under the signature of the value it names (CWE-347)`() {
+        val expansions = mapOf("{{timestamp}}" to "1700000000", "{{method}}" to "POST", "{{path}}" to "/api/x", "{{query}}" to "a=1")
+        for ((token, value) in expansions) {
+            val sigForValue = hex(sign("s", "HmacSHA256", "1700000000.POST./api/x.a=1.$value".toByteArray()))
+            assertTrue(verifyFull(sigForValue, value.toByteArray()) is HmacVerifier.Result.Authenticated, token)
+            assertEquals(HmacVerifier.Result.Rejected(noMatch), verifyFull(sigForValue, token.toByteArray()), token)
+        }
+    }
+
+    @Test
+    fun `a body carrying placeholder text verifies only under a signature over that text as written`() {
+        val body = "{{path}}{{body}}{{method}}".toByteArray()
+        val sig = hex(sign("s", "HmacSHA256", "1700000000.POST./api/x.a=1.{{path}}{{body}}{{method}}".toByteArray()))
+        assertEquals(HmacVerifier.Result.Authenticated("k"), verifyFull(sig, body))
+    }
+
+    @Test
+    fun `a body that is not valid UTF-8 is signed as its raw bytes, so two such bodies never share a signature`() {
+        val prefix = "1700000000.POST./api/x.a=1.".toByteArray()
+        val sigFF = hex(sign("s", "HmacSHA256", prefix + byteArrayOf(0xFF.toByte())))
+        assertEquals(HmacVerifier.Result.Authenticated("k"), verifyFull(sigFF, byteArrayOf(0xFF.toByte())))
+        assertEquals(HmacVerifier.Result.Rejected(noMatch), verifyFull(sigFF, byteArrayOf(0xFE.toByte())))
+    }
 }
