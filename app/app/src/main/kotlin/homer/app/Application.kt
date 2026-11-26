@@ -292,7 +292,7 @@ private fun validateStartupConfig(config: AppConfig) {
     validateSessionSecretStrength(config)
     // Non-fatal: warn on HMAC keys with no replay window.
     warnOnHmacReplayWindow(config)
-    // Abort boot if Langfuse keys/content would egress over plaintext http.
+    // Abort boot unless a set langfuse.serverUrl is https:// or loopback http:// (CWE-319).
     validateLangfuseServerUrl(config)
     // Abort boot on an extraUploads entry whose local path is missing (ADR-0042).
     validateExtraUploads(config)
