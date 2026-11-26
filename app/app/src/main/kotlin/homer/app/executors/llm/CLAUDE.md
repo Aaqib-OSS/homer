@@ -27,9 +27,8 @@ the process record through `StepRecords.settleAccounting`; the telemetry hand-of
 Langfuse sees the settled figure. The command span is over by then (OpenTelemetry drops attribute
 writes after `end()`), so the settled figure and a hand-off failure land on the step's
 `llm_cost_settlement` child span, not on the command span — the command span keeps the preview's
-`session figure pending`. That waiting hand-off (`LlmTelemetryHandOff.handOff`, which
-`LlmHarnessExecutor` delegates to) is bounded locally: it
-holds one of `MAX_CONCURRENT_SETTLEMENT_HANDOFFS` permits while it waits, so concurrent steps
+`session figure pending`. That waiting hand-off (`LlmTelemetryHandOff.handOff`) is bounded
+locally: it holds one of `MAX_CONCURRENT_SETTLEMENT_HANDOFFS` permits while it waits, so concurrent steps
 cannot multiply the parsed streams kept alive on the heap, and it waits at most
 `SETTLEMENT_HANDOFF_TIMEOUT_MS` for the settlement. A hand-off that finds no permit sheds rather
 than queues: it reports the harness figure inline, while the command span is still open, and sets
@@ -70,16 +69,15 @@ so no figure crosses into another read or run. A charged attempt is
 never left without a priced generation: with no successful turn end its last turn end carries
 the charge, and with no turn end at all one fallback generation does. See ADR-0074.
 
-Only an exit-0 stream is parsed strictly. The telemetry hand-off of a non-zero exit, the cap
-inspection of a non-zero exit, and an attempt whose shell threw or whose accounting was
-cancelled (where `execute`'s own hand-off never runs), read the stream with
-`parseNdjsonLenient`, so a killed CLI's truncated last line costs that line only, not the
-attempt's tool and message spans. Every
-skipped line is counted into `telemetry.llm.malformed_events`. The read is bounded at
-32 MiB and the parse at 50 000 events kept, and a tripped bound sets
-`telemetry.llm.handoff_truncated`; a hand-off shed at its concurrency or wait bound sets
-`telemetry.llm.handoff_shed` (ADR-0047 §12 rule 4); the abort-path hand-off also runs
-under a 5 s timeout, so it cannot hold a cancelled run's teardown open.
+Only an exit-0 stream is parsed strictly. The telemetry hand-off and cap inspection of a non-zero
+exit, and an attempt whose shell threw or whose accounting was cancelled (where `execute`'s own
+hand-off never runs), read the stream with `parseNdjsonLenient`, so a killed CLI's truncated last
+line costs that line only. Each skipped line counts into `telemetry.llm.malformed_events`. The
+read is bounded at 32 MiB and the parse at 50 000 events kept; a tripped bound sets
+`telemetry.llm.handoff_truncated`, a shed at the concurrency or wait bound
+`telemetry.llm.handoff_shed` (ADR-0047 §12 rule 4); the abort-path hand-off runs under a 5 s
+timeout. The cost scan's read is bounded too (fixed, not `maxOutputBytes`): it skips a line over
+4 MiB, stops after 32 MiB, and either sets `llm.cost.scan_truncated`.
 
 ## Escalation tiers
 

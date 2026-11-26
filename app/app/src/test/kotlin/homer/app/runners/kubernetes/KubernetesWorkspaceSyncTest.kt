@@ -829,6 +829,127 @@ class KubernetesWorkspaceSyncTest {
     }
 
     @Test
+    fun `a download whose tar floods stderr keeps only the capped head and still drains the stream to EOF (CWE-770)`(
+        @TempDir local: Path,
+        @TempDir remote: Path,
+    ) {
+        remote.resolve("workdir").createDirectories()
+        val flood = FloodStream("tar: first error\n".toByteArray(), totalBytes = 32L * 1024 * 1024)
+        val emptyTar =
+            ByteArrayOutputStream().also { buf -> GzipCompressorOutputStream(buf).use { TarArchiveOutputStream(it).close() } }
+        val floodingTar =
+            mockk<Process>(relaxed = true) {
+                every { inputStream } returns ByteArrayInputStream(emptyTar.toByteArray())
+                every { errorStream } returns flood
+                every { waitFor(any<Long>(), any<TimeUnit>()) } returns true
+                every { exitValue() } returns 2
+            }
+        val client =
+            KubernetesExecClient { ns, pod, argv, stdin ->
+                if (argv.firstOrNull() == "tar") floodingTar else localExec.start(ns, pod, argv, stdin)
+            }
+
+        val ex =
+            assertFailsWith<IllegalStateException> {
+                KubernetesWorkspaceSync(client, "ns", "pod-1").download("$remote/workdir", local, DownloadMode.OVERLAY)
+            }
+
+        val message = ex.message!!
+        assertTrue(message.length < KubernetesWorkspaceSync.MAX_RETAINED_OUTPUT_BYTES + 512, "kept ${message.length} chars")
+        assertTrue(message.contains("exit 2): tar: first error"), message.take(200))
+        assertTrue(message.endsWith("(truncated)"), message.takeLast(200))
+        assertTrue(flood.eof.await(10, TimeUnit.SECONDS), "stderr was not drained to EOF")
+        assertEquals(flood.totalBytes, flood.served)
+        assertTrue(flood.closed.await(10, TimeUnit.SECONDS), "stderr was not closed after EOF")
+    }
+
+    @Test
+    fun `mkdirs drains a flooding stdout off the calling thread, to EOF, and closes it (CWE-770)`() {
+        assertStdoutDrainedOffTheCaller(exit = 0) { it.mkdirs("/w/a") }
+    }
+
+    @Test
+    fun `a probe drains a flooding stdout off the calling thread, to EOF, and closes it (CWE-770)`(
+        @TempDir local: Path,
+    ) {
+        assertStdoutDrainedOffTheCaller(exit = 1) { it.download("/w/missing", local, DownloadMode.OVERLAY) }
+    }
+
+    /**
+     * Runs [call] against an exec whose stdout serves nothing while its gate is shut: [call] must return before the stream
+     * is read, so the caller never buffers it, and the drain must then read it to EOF and close it.
+     */
+    private fun assertStdoutDrainedOffTheCaller(
+        exit: Int,
+        call: (KubernetesWorkspaceSync) -> Unit,
+    ) {
+        val gate = java.util.concurrent.CountDownLatch(1)
+        val flood = FloodStream(ByteArray(0), totalBytes = 4L * 1024 * 1024, gate)
+        val proc =
+            mockk<Process>(relaxed = true) {
+                every { inputStream } returns flood
+                every { errorStream } returns ByteArrayInputStream(ByteArray(0))
+                every { waitFor(any<Long>(), any<TimeUnit>()) } returns true
+                every { exitValue() } returns exit
+            }
+        val sync = KubernetesWorkspaceSync(KubernetesExecClient { _, _, _, _ -> proc }, "ns", "pod-1")
+        try {
+            java.util.concurrent.CompletableFuture
+                .runAsync { call(sync) }
+                .get(10, TimeUnit.SECONDS)
+            assertEquals(0L, flood.served)
+        } finally {
+            gate.countDown()
+        }
+        assertTrue(flood.eof.await(10, TimeUnit.SECONDS), "stdout was not drained to EOF")
+        assertEquals(flood.totalBytes, flood.served)
+        assertTrue(flood.closed.await(10, TimeUnit.SECONDS), "stdout was not closed after EOF")
+    }
+
+    /**
+     * [prefix] then filler up to [totalBytes], generated on read so the test holds none of it, served once [gate] opens;
+     * [eof] opens at the end and [closed] on close.
+     */
+    private class FloodStream(
+        private val prefix: ByteArray,
+        val totalBytes: Long,
+        private val gate: java.util.concurrent.CountDownLatch = java.util.concurrent.CountDownLatch(0),
+    ) : java.io.InputStream() {
+        val eof = java.util.concurrent.CountDownLatch(1)
+        val closed = java.util.concurrent.CountDownLatch(1)
+
+        @Volatile
+        var served = 0L
+            private set
+
+        override fun close() = closed.countDown()
+
+        override fun read(): Int {
+            val one = ByteArray(1)
+            return if (read(one, 0, 1) < 0) -1 else one[0].toInt() and 0xff
+        }
+
+        override fun read(
+            b: ByteArray,
+            off: Int,
+            len: Int,
+        ): Int {
+            check(gate.await(30, TimeUnit.SECONDS)) { "gate never opened" }
+            if (served == totalBytes) {
+                eof.countDown()
+                return -1
+            }
+            val n = minOf(len.toLong(), totalBytes - served).toInt()
+            for (i in 0 until n) {
+                val at = served + i
+                b[off + i] = if (at < prefix.size) prefix[at.toInt()] else 'x'.code.toByte()
+            }
+            served += n
+            return n
+        }
+    }
+
+    @Test
     fun `containedEntryPath rejects escaping and absolute entry names`(
         @TempDir base: Path,
     ) {

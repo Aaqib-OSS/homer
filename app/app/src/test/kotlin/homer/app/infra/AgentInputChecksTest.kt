@@ -12,8 +12,15 @@ import homer.app.models.ParamSource
 import homer.app.models.ResultEnvParam
 import homer.app.models.SrcType
 import homer.app.models.Tags
+import io.kotest.property.Arb
+import io.kotest.property.arbitrary.boolean
+import io.kotest.property.arbitrary.filter
+import io.kotest.property.arbitrary.pattern
+import io.kotest.property.checkAll
 import io.mockk.verify
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
+import org.slf4j.helpers.NOPLogger
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -156,6 +163,95 @@ class AgentInputChecksTest {
             errors,
         )
     }
+
+    @Test
+    fun `a captured result templated into a later LLM step's cmd is refused (CWE-78)`() {
+        val agent =
+            claudeAgent().copy(
+                commands =
+                    listOf(
+                        capturingStep(label = "fetch", envName = "TOOL"),
+                        claudeCommand(ClaudeCmdOptions(), label = "run").copy(cmd = "{{TOOL}}"),
+                    ),
+            )
+
+        assertFalse(checks.checkCommandBindings(agent, errors))
+        // Threat model (Secrets): the message names the step and the captured env key, never a value.
+        assertEquals(
+            listOf("Agent 'a': command 'run' cmd references captured result '{{TOOL}}'; a captured result must not choose the executable"),
+            errors,
+        )
+    }
+
+    @Test
+    fun `a captured result templated into a codex or opencode cmd is refused like a claude one (CWE-78)`() {
+        val prompt = LlmPrompt.Prompt("p")
+        for (llm in listOf(
+            Command.Codex(prompt = prompt, label = "run", cmd = "{{TOOL}}"),
+            Command.Opencode(prompt = prompt, label = "run", cmd = "{{TOOL}}"),
+        )) {
+            val refused = mutableListOf<String>()
+            val agent = Agent(name = "a", commands = listOf(capturingStep(label = "fetch", envName = "TOOL"), llm))
+
+            assertFalse(checks.checkCommandBindings(agent, refused), llm.toString())
+            assertEquals(
+                listOf(
+                    "Agent 'a': command 'run' cmd references captured result '{{TOOL}}'; a captured result must not choose the executable",
+                ),
+                refused,
+            )
+        }
+    }
+
+    @Test
+    fun `an onStop capture templated into a command's cmd is refused (CWE-78)`() {
+        val agent =
+            claudeAgent(claudeCommand(ClaudeCmdOptions(), label = "run").copy(cmd = "/opt/{{SAVED}}/claude"))
+                .copy(onStop = listOf(capturingStep(label = "save", envName = "SAVED")))
+
+        assertFalse(checks.checkCommandBindings(agent, errors))
+        assertEquals(
+            listOf("Agent 'a': command 'run' cmd references captured result '{{SAVED}}'; a captured result must not choose the executable"),
+            errors,
+        )
+    }
+
+    @Test
+    fun `a cmd templated on an author env name loads beside a capture of another name`() {
+        val agent =
+            claudeAgent().copy(
+                env = mapOf("CLAUDE_BIN" to "/usr/local/bin/claude"),
+                commands =
+                    listOf(
+                        capturingStep(label = "fetch", envName = "TOOL"),
+                        claudeCommand(ClaudeCmdOptions(), label = "run").copy(cmd = "{{CLAUDE_BIN}}"),
+                    ),
+            )
+
+        assertTrue(checks.checkCommandBindings(agent, errors))
+        assertEquals(emptyList(), errors)
+    }
+
+    @Test
+    fun `any captured name anywhere in an LLM cmd is refused, and an uncaptured one loads (CWE-78)`() =
+        runTest {
+            checkAll(
+                Arb.pattern("[A-Za-z_][A-Za-z0-9_]{0,12}").filter { !ReservedEnvNames.isReserved(it) && it != "OTHER" },
+                Arb.pattern("[a-z/ .-]{0,8}"),
+                Arb.pattern("[a-z/ .-]{0,8}"),
+                Arb.boolean(),
+            ) { captured, prefix, suffix, inStop ->
+                val quiet = AgentInputChecks(NOPLogger.NOP_LOGGER, ParamValidator())
+
+                fun agentWithCmd(name: String) =
+                    claudeAgent(claudeCommand(ClaudeCmdOptions(), label = "run").copy(cmd = "$prefix{{$name}}$suffix")).let {
+                        val capture = capturingStep(label = "fetch", envName = captured)
+                        if (inStop) it.copy(onStop = listOf(capture)) else it.copy(commands = listOf(capture) + it.commands)
+                    }
+                assertFalse(quiet.checkCommandBindings(agentWithCmd(captured), mutableListOf()), "cmd '$prefix{{$captured}}$suffix'")
+                assertTrue(quiet.checkCommandBindings(agentWithCmd("OTHER"), mutableListOf()), "cmd '$prefix{{OTHER}}$suffix'")
+            }
+        }
 
     /** An agent whose commands are the given claude steps. */
     private fun claudeAgent(vararg commands: Command.Claude) = Agent(name = "a", commands = commands.toList())

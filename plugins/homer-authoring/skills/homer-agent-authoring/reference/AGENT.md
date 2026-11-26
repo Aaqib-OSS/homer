@@ -680,7 +680,7 @@ commands:
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `cmd` | `String` | No | `"claude"` | Claude CLI command. `{{VAR}}` is substituted; a reference to an input's `envName` fails the agent at load |
+| `cmd` | `String` | No | `"claude"` | Claude CLI command. `{{VAR}}` is substituted; a reference to an input's or a captured result's `envName` fails the agent at load |
 | `prompt` | `LlmPrompt` | Yes | - | Prompt configuration (inline or Langfuse) |
 | `options` | `ClaudeCmdOptions` | Yes | - | Claude CLI options |
 | `retry` | `LlmRetry` | No | `null` | Retry policy for transient LLM failures (see below) |
@@ -931,7 +931,7 @@ commands:
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `cmd` | `String` | No | `"codex"` | Codex CLI command. `{{VAR}}` is substituted; a reference to an input's `envName` fails the agent at load |
+| `cmd` | `String` | No | `"codex"` | Codex CLI command. `{{VAR}}` is substituted; a reference to an input's or a captured result's `envName` fails the agent at load |
 | `prompt` | `LlmPrompt` | Yes | - | Prompt configuration (inline or Langfuse), same type as `Command.Claude` |
 | `options` | `CodexCmdOptions` | No | `{}` | Codex CLI options |
 | `retry` | `LlmRetry` | No | `null` | Retry policy, same semantics as `Command.Claude` |
@@ -1085,7 +1085,7 @@ commands:
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `cmd` | `String` | No | `"opencode"` | opencode CLI command. `{{VAR}}` is substituted; a reference to an input's `envName` fails the agent at load |
+| `cmd` | `String` | No | `"opencode"` | opencode CLI command. `{{VAR}}` is substituted; a reference to an input's or a captured result's `envName` fails the agent at load |
 | `prompt` | `LlmPrompt` | Yes | - | Prompt configuration (inline or Langfuse), same type as `Command.Claude` |
 | `options` | `OpencodeCmdOptions` | No | `{}` | opencode CLI options |
 | `retry` | `LlmRetry` | No | `null` | Retry policy, same semantics as `Command.Claude` |
@@ -2511,7 +2511,11 @@ responsibility:
   templated too, and templating it on an input would let the caller pick the
   executable Homer runs. This is rejected, not warned: an agent whose `cmd`
   references an input's `envName` fails to load, with an error naming the
-  command label and the input. References to agent `env`, `globalEnv` or
+  command label and the input. The same holds for a `resultEnvParam` `envName`
+  captured by any step, `onStop:` included, since captured output can carry
+  caller-influenced text. The rule is by name, so it covers a `RESULT_CODE`
+  capture too, and a new capture source is covered without revisiting it.
+  References to agent `env`, `globalEnv` or
   `@SYSENV` values stay allowed.
 
 Homer logs a load-time warning for the lock-key, workspace-path, cooldown-key,

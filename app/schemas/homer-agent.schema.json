@@ -411,7 +411,7 @@
       "required": ["prompt", "options"],
       "properties": {
         "type": { "const": "claude" },
-        "cmd": { "type": "string", "default": "claude", "description": "CLI binary (argv[0]). {{VAR}} is substituted; referencing an input envName fails the agent at load." },
+        "cmd": { "type": "string", "default": "claude", "description": "CLI binary (argv[0]). {{VAR}} is substituted; referencing an input or a captured result envName fails the agent at load." },
         "prompt": { "$ref": "#/$defs/LlmPrompt" },
         "options": { "$ref": "#/$defs/ClaudeCmdOptions" },
         "retry": { "$ref": "#/$defs/LlmRetry" },
@@ -471,7 +471,7 @@
       "required": ["prompt"],
       "properties": {
         "type": { "const": "codex" },
-        "cmd": { "type": "string", "default": "codex", "description": "CLI binary (argv[0]). {{VAR}} is substituted; referencing an input envName fails the agent at load." },
+        "cmd": { "type": "string", "default": "codex", "description": "CLI binary (argv[0]). {{VAR}} is substituted; referencing an input or a captured result envName fails the agent at load." },
         "prompt": { "$ref": "#/$defs/LlmPrompt" },
         "options": { "$ref": "#/$defs/CodexCmdOptions" },
         "retry": { "$ref": "#/$defs/LlmRetry" },
@@ -545,7 +545,7 @@
       "required": ["prompt"],
       "properties": {
         "type": { "const": "opencode" },
-        "cmd": { "type": "string", "default": "opencode", "description": "CLI binary (argv[0]). {{VAR}} is substituted; referencing an input envName fails the agent at load." },
+        "cmd": { "type": "string", "default": "opencode", "description": "CLI binary (argv[0]). {{VAR}} is substituted; referencing an input or a captured result envName fails the agent at load." },
         "prompt": { "$ref": "#/$defs/LlmPrompt" },
         "options": { "$ref": "#/$defs/OpencodeCmdOptions" },
         "retry": { "$ref": "#/$defs/LlmRetry" },
