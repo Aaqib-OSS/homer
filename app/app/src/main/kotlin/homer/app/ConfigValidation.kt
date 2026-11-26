@@ -7,11 +7,11 @@ import homer.app.models.Action
 import homer.app.models.Agent
 import homer.app.models.AppConfig
 import homer.app.models.AuthConfig
-import homer.app.models.LOOPBACK_HTTP_URL
-import homer.app.models.OpenTelemetryExport
 import homer.app.models.ParamSource
 import homer.app.models.RunnerConfig
 import homer.app.models.flattenAuthSchemes
+import homer.app.models.isHttpsOrLoopbackHttpUrl
+import homer.app.models.stripUrlSecrets
 import org.slf4j.LoggerFactory
 import java.net.URI
 import java.net.URISyntaxException
@@ -316,18 +316,20 @@ internal fun validateRunnerDomainTokenStrength(config: AppConfig) {
 private const val MIN_RUNNER_TOKEN_LEN = 32
 
 /**
- * Fail-fast when Langfuse export is on with plaintext `http://` to a non-loopback host: the OTLP export carries
- * the Langfuse keys and prompt/tool content. Loopback `http://` (a local collector) is allowed.
+ * Fail-fast on a set `langfuse.serverUrl` that is not `https://` or loopback `http://`, whatever the export mode:
+ * prompt fetches and the OTLP export both send the Langfuse keys there. The message never echoes userinfo or query.
+ * Checked at boot, not in `LangfuseConfig.init`: only the server sends the keys, and its deep link must tolerate any value.
  */
 internal fun validateLangfuseServerUrl(config: AppConfig) {
-    if (config.openTelemetryExport != OpenTelemetryExport.LANGFUSE) return
     val url = config.langfuse.serverUrl
-    if (url.isBlank() || !url.startsWith("http://", ignoreCase = true)) return
-    if (!LOOPBACK_HTTP_URL.containsMatchIn(url)) {
+    if (url.isBlank()) return
+    // Judged after userinfo is dropped, which ADR-0050 permits here; unparseable fails closed. CWE-319.
+    val sanitized = stripUrlSecrets(url)
+    if (sanitized == null || !isHttpsOrLoopbackHttpUrl(sanitized)) {
         throw ConfigurationException(
-            "langfuse.serverUrl uses plaintext http:// to a non-loopback host ($url); the OTLP export " +
-                "carries the Langfuse public+secret keys and prompt content. Use https:// (or a localhost " +
-                "collector).",
+            "langfuse.serverUrl (${sanitized ?: "<unparseable URL>"}) must be an https:// URL, or http:// to " +
+                "localhost, 127.0.0.1 or [::1]: prompt fetches and the OTLP export send the Langfuse public and " +
+                "secret keys to it.",
         )
     }
 }
