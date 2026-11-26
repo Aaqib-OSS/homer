@@ -11,7 +11,6 @@ import homer.app.models.ResolvedCost
 import io.opentelemetry.api.trace.Span
 import org.slf4j.Logger
 import java.nio.file.Path
-import kotlin.io.path.bufferedReader
 
 /**
  * What one attempt cost, before [LlmAttemptAccounting] charges it: a lenient stdout scan
@@ -51,13 +50,31 @@ internal class LlmAttemptPricing(
         span: Span,
     ): LlmAccountingScan {
         val scan =
-            runCatching { stdoutFile.bufferedReader().useLines { scanLlmAccounting(it, harness.translator()) } }
+            runCatching { ByteBoundedLines(stdoutFile, SCAN_MAX_LINE_BYTES, SCAN_MAX_BYTES).use { scanBounded(it, span) } }
                 .getOrElse { LlmAccountingScan(sessionId = null, cliCostUsd = null, resultSeen = false, modelCalls = 0, usage = null) }
         if (harness.reportsCost && scan.resultSeen && scan.cliCostUsd == null) {
             // Gated on resultSeen: a missing result event (kill, crash, timeout) is no schema drift,
             // and gets its own "no result event" reason below.
             logger.warn("{} turn end has no parseable cost; this may indicate a CLI schema change", harness.id)
             span.setAttribute("llm.cost.parse_failed", true)
+        }
+        return scan
+    }
+
+    /** The scan of [bounded]'s lines; a tripped line or byte bound is logged and marks [span]. */
+    private fun scanBounded(
+        bounded: ByteBoundedLines,
+        span: Span,
+    ): LlmAccountingScan {
+        val scan = scanLlmAccounting(bounded.lines, harness.translator())
+        if (bounded.skippedLines > 0 || bounded.cut) {
+            logger.warn(
+                "{} accounting scan skipped {} over-long stdout lines (byte cap tripped: {})",
+                harness.id,
+                bounded.skippedLines,
+                bounded.cut,
+            )
+            span.setAttribute("llm.cost.scan_truncated", true)
         }
         return scan
     }
@@ -134,6 +151,11 @@ internal class LlmAttemptPricing(
     private companion object {
         // CWE-400: agent-stdout must not drive the poll schedule. See ADR-0047 rule 4, ADR-0061.
         const val MAX_EXPECTED_CALLS_FOR_POLLING = 1_000
+
+        // CWE-400: the scan's own bounds (ADR-0047 rule 4), fixed as the default output cap keeps real streams far below
+        // them. An over-long line is never buffered past its bound; a stream past the byte cap is priced from its head.
+        const val SCAN_MAX_LINE_BYTES = 4 * 1024 * 1024
+        const val SCAN_MAX_BYTES = 32L * 1024 * 1024
     }
 }
 

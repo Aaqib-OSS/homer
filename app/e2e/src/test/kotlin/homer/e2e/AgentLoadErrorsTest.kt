@@ -32,6 +32,20 @@ class AgentLoadErrorsTest : E2eTestBase() {
         }
 
     @Test
+    fun `an agent whose LLM cmd names a captured result is refused at load (CWE-78)`() =
+        runBlocking {
+            val message = HomerApi.agentLoadErrors().errors.single { "load-error-captured-cmd" in it }
+            assertTrue(
+                "cmd references captured result '{{TOOL}}'" in message,
+                "the refusal must name the step's captured env key: $message",
+            )
+            assertFalse(
+                HomerApi.agents().agents.any { it.name == "load-error-captured-cmd" },
+                "the refused fixture must not be in the catalog",
+            )
+        }
+
+    @Test
     fun `a reload replaces the startup errors with the ones it just reported`() =
         runBlocking {
             val reload: ReloadResult = HomerApi.decode(E2e.client.post("/api/v1/agents/reload"))

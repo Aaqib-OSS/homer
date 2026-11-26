@@ -1,0 +1,15 @@
+name: load-error-captured-cmd
+description: Never loads — a captured result chooses the LLM executable, which the load-time checks refuse
+commands:
+  - !<cmd>
+    label: fetch
+    cmd: [echo, never-runs]
+    resultEnvParam:
+      - src: STD_OUT
+        envName: TOOL
+  - !<claude>
+    label: run
+    cmd: "{{TOOL}}"
+    prompt: !<prompt>
+      prompt: never runs
+    options: {}
