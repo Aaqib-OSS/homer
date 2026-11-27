@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-05-14
 deciders: Lukáš Vlk
-amended: 2026-11-21
+amended: 2026-11-21, 2026-11-27
 ---
 # ADR-0010: Allowed API auth schemes — Bearer / HMAC / Combined / Unsecured
 
@@ -112,3 +112,18 @@ decision:
   the freshness window. At the entry cap only *expired* entries are reclaimed. A live marker is never
   evicted, because evicting it would re-open that signature's replay window. When nothing expired can be
   reclaimed, the new insert is rolled back and the request is rejected (fail closed, ADR-0047 rules 4-5).
+
+## Amendment (2026-11-27): the payload is expanded in one pass and the body is signed as its raw bytes
+
+`payloadTemplate` is expanded in a single left-to-right pass: the template text is encoded as UTF-8, and each
+known `{{name}}` is replaced once by its value's bytes. A substituted value is never rescanned. Chained
+replacement let a body that spells another placeholder (`{{timestamp}}`) be rewritten by a later step, so two
+different requests could share one signature (CWE-347).
+
+`{{body}}` is the exact bytes received, never decoded to a string and re-encoded. Decoding turned every invalid
+UTF-8 byte into U+FFFD, so distinct non-UTF-8 bodies collided and a sender signing its real bytes could not
+verify. For a valid UTF-8 body and template the payload is byte-identical to before.
+
+- **Rejected: require a UTF-8 body.** Refusing non-UTF-8 bodies would also close the collision, but HMAC signs
+  bytes, and a webhook sender signs what it sends. A charset rule would refuse legitimate binary or
+  Latin-1 payloads, and the signature check would still depend on a decoding step it does not need.
