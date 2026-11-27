@@ -122,7 +122,8 @@ different requests could share one signature (CWE-347).
 
 `{{body}}` is the exact bytes received, never decoded to a string and re-encoded. Decoding turned every invalid
 UTF-8 byte into U+FFFD, so distinct non-UTF-8 bodies collided and a sender signing its real bytes could not
-verify. For a valid UTF-8 body and template the payload is byte-identical to before.
+verify. The payload is byte-identical to before only for a valid UTF-8 body when no substituted value spells
+placeholder text; a value that does is now signed as written, which is the fix above.
 
 - **Rejected: require a UTF-8 body.** Refusing non-UTF-8 bodies would also close the collision, but HMAC signs
   bytes, and a webhook sender signs what it sends. A charset rule would refuse legitimate binary or
