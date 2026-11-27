@@ -1259,7 +1259,7 @@ apiAuth: !<hmac>
 | `algorithm` | `sha1 \| sha256 \| sha512` | No | `sha256` | HMAC algorithm. |
 | `encoding` | `hex \| base64` | No | `hex` | Encoding of the signature header value. |
 | `prefix` | `String` | No | `""` | Required prefix stripped before decoding (e.g. `sha256=` for GitHub). |
-| `payloadTemplate` | `String` | No | `{{body}}` | What gets HMACed. Tokens: `{{body}}`, `{{timestamp}}`, `{{method}}`, `{{path}}`, `{{query}}` (raw query string, no leading `?`). Query params are only authenticated when the template includes `{{query}}`. |
+| `payloadTemplate` | `String` | No | `{{body}}` | What gets HMACed. Tokens: `{{body}}`, `{{timestamp}}`, `{{method}}`, `{{path}}`, `{{query}}` (raw query string, no leading `?`). Query params are only authenticated when the template includes `{{query}}`. Each token is replaced once, in a single pass: a value is signed as written, never expanded again (a body spelling `{{path}}` is signed as that text), and `{{body}}` is the raw request bytes. |
 | `timestampHeader` | `String?` | No | `null` | If set, the header must hold an integer Unix timestamp — seconds, or milliseconds when the value is above 10^12. It is checked for staleness, and `payloadTemplate` **must** include `{{timestamp}}` (rejected at startup otherwise — an unsigned timestamp provides no replay protection). |
 | `replayToleranceSec` | `Long` | No | `300` | Max skew vs server clock (seconds). Only enforced when `timestampHeader` is set. |
 

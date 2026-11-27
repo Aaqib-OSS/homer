@@ -2,6 +2,8 @@ package homer.app.infra
 
 import homer.app.models.HmacEncoding
 import homer.app.models.HmacKeyConfig
+import homer.app.models.templatePlaceholderPattern
+import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 import java.util.Base64
 import java.util.HexFormat
@@ -83,18 +85,19 @@ class HmacVerifier(
             val tsMillis = parseTimestampMillis(tsRaw) ?: return null
             if (abs(clock() - tsMillis) / 1000 > cfg.replayToleranceSec) return null
         }
-        val payload =
-            cfg.payloadTemplate
-                .replace("{{body}}", body.toString(Charsets.UTF_8))
-                .replace("{{method}}", method.uppercase())
-                .replace("{{path}}", path)
-                .replace("{{query}}", query)
-                .replace("{{timestamp}}", tsRaw ?: "")
+        val values =
+            mapOf(
+                "body" to body,
+                "method" to method.uppercase().toByteArray(Charsets.UTF_8),
+                "path" to path.toByteArray(Charsets.UTF_8),
+                "query" to query.toByteArray(Charsets.UTF_8),
+                "timestamp" to (tsRaw ?: "").toByteArray(Charsets.UTF_8),
+            )
         val mac =
             Mac.getInstance(cfg.algorithm.javaName).apply {
                 init(SecretKeySpec(cfg.secret.toByteArray(Charsets.UTF_8), cfg.algorithm.javaName))
             }
-        return mac.doFinal(payload.toByteArray(Charsets.UTF_8))
+        return mac.doFinal(expandHmacPayload(cfg.payloadTemplate, values))
     }
 
     private fun parseTimestampMillis(raw: String?): Long? {
@@ -119,4 +122,24 @@ class HmacVerifier(
                 Base64.getDecoder().decode(s)
             }
         }
+}
+
+/**
+ * [template] as UTF-8 with each `{{name}}` that [values] maps replaced once by its bytes; any other text stays as written.
+ */
+internal fun expandHmacPayload(
+    template: String,
+    values: Map<String, ByteArray>,
+): ByteArray {
+    // Single pass: substituted bytes are never rescanned, or a body spelling a placeholder collides (CWE-347, ADR-0010).
+    val out = ByteArrayOutputStream()
+    var literalStart = 0
+    for (match in templatePlaceholderPattern.findAll(template)) {
+        val value = values[match.groupValues[1]] ?: continue
+        out.writeBytes(template.substring(literalStart, match.range.first).toByteArray(Charsets.UTF_8))
+        out.writeBytes(value)
+        literalStart = match.range.last + 1
+    }
+    out.writeBytes(template.substring(literalStart).toByteArray(Charsets.UTF_8))
+    return out.toByteArray()
 }
