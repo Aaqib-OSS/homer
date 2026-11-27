@@ -88,7 +88,7 @@ class QuestionsWorkspaceSetupTest {
         assertTrue(helper.isExecutable(), "helper must be executable")
         val content = helper.readText()
         assertTrue(content.startsWith("#!/bin/sh"), "helper must be a POSIX sh script")
-        assertTrue("--token" in content, "helper must accept --token")
+        assertTrue("HMR_RESULT_TOKEN" in content, "helper must read the result token from HMR_RESULT_TOKEN")
         assertTrue("callback/results" in content, "helper must GET the results callback")
         assertTrue("HMR_CALLBACK_TOKEN" in content, "helper must authenticate with the callback token")
     }
