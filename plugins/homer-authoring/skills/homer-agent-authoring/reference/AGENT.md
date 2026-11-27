@@ -4113,9 +4113,6 @@ HMR_RESULT_TOKEN="$TOKEN" homer-result            # writes the result body to st
 HMR_RESULT_TOKEN="$TOKEN" homer-result --out r.txt  # or to a file
 ```
 
-`homer-result --token "$TOKEN"` still works but is deprecated: it prints a
-notice on stderr, and the flag is removed in 1.45.0.
-
 The token is **reusable within its TTL** (`server.dispatch.resultTokenTtlSec`,
 default 3600 s), scoped to that one sub-process's artifact, and audience-bound:
 only a process running the continuation's target agent can redeem it — any

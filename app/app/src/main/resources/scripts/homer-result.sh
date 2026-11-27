@@ -37,11 +37,6 @@ TOKEN=${HMR_RESULT_TOKEN:-}
 OUT=""
 while [ $# -gt 0 ]; do
     case "$1" in
-        --token) # removeIn 1.45.0
-            [ $# -ge 2 ] || die "--token needs a value"
-            printf 'homer-result: --token is deprecated and shows the token on the command line; set HMR_RESULT_TOKEN instead\n' >&2
-            TOKEN=$2
-            shift 2 ;;
         --out) [ $# -ge 2 ] || die "--out needs a value"; OUT=$2; shift 2 ;;
         *) die "unknown argument: $1" ;;
     esac

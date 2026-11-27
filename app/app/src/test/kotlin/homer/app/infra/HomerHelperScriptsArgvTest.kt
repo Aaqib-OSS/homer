@@ -206,13 +206,13 @@ class HomerHelperScriptsArgvTest {
     }
 
     @Test
-    fun `homer-result still accepts the deprecated --token flag and warns on stderr`() {
+    fun `homer-result refuses the removed --token flag without a request or echoing the token (CWE-214)`() {
         val result = run("homer-result", listOf("--token", RESULT_TOKEN), response = "the result")
 
-        assertEquals(0, result.exit, "stderr=${result.stderr}")
-        assertEquals("the result", result.stdout)
-        assertTrue("--token is deprecated" in result.stderr, result.stderr)
-        assertTrue("url = \"$API/results/$RESULT_TOKEN\"" in recorded("config").orEmpty())
+        assertEquals(2, result.exit)
+        assertTrue("unknown argument: --token" in result.stderr, result.stderr)
+        assertFalse(RESULT_TOKEN in result.stderr, result.stderr)
+        assertEquals(0, curlCalls(), "a refused argument means no request")
     }
 
     @Test
