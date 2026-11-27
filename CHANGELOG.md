@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.45.0] - 2026-11-27
+
 ### Homer
 
 - **Security: an HMAC request body can no longer spell a placeholder into the signed payload** — `payloadTemplate` is expanded in one pass over the raw body bytes, so a body carrying `{{path}}` or another token is signed as written instead of colliding with a different request's signature (CWE-347).
